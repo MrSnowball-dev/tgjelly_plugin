@@ -23,4 +23,9 @@ public sealed class StatusSection
     /// Gets or sets the drop and eviction counters.
     /// </summary>
     public StatusCounters Counters { get; set; } = new();
+
+    /// <summary>
+    /// Gets or sets the flag set when Telegram rejected a button URL (spec §9.4 row 7).
+    /// </summary>
+    public PublicUrlFlag? PublicUrlFlag { get; set; }
 }
