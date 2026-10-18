@@ -3,6 +3,7 @@ using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.TgJelly.Configuration;
+using Jellyfin.Plugin.TgJelly.Pipeline;
 using Jellyfin.Plugin.TgJelly.State;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -22,6 +23,7 @@ public sealed class PersistenceService : BackgroundService
     private readonly TimeProvider _time;
     private readonly ILogger<PersistenceService> _logger;
     private bool _restoreChecked;
+    private bool _presetsUpgraded;
     private string? _lastFlushError;
     private DateTimeOffset _lastFlushErrorLoggedAt;
 
@@ -89,6 +91,13 @@ public sealed class PersistenceService : BackgroundService
         {
             _settings.RestoreBackupIfWiped();
             _restoreChecked = true;
+        }
+
+        // Spec §7.2: keys a later version added to a preset are added when the config loads.
+        if (!_presetsUpgraded)
+        {
+            _settings.UpdateIf(null, PresetUpgrader.Apply);
+            _presetsUpgraded = true;
         }
 
         // Reads secrets.json once now, so an unreadable file shows up in Status right away. Read problems become
