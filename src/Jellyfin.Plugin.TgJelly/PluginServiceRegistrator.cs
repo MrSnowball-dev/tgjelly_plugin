@@ -4,6 +4,7 @@ using Jellyfin.Plugin.TgJelly.Configuration;
 using Jellyfin.Plugin.TgJelly.Hosting;
 using Jellyfin.Plugin.TgJelly.Logging;
 using Jellyfin.Plugin.TgJelly.State;
+using Jellyfin.Plugin.TgJelly.Strings;
 using MediaBrowser.Common.Configuration;
 using MediaBrowser.Controller;
 using MediaBrowser.Controller.Plugins;
@@ -33,6 +34,7 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddRedactedLogger<PersistenceService>();
         serviceCollection.AddSingleton(sp => new DataPaths(sp.GetRequiredService<IApplicationPaths>().PluginConfigurationsPath));
         serviceCollection.AddSingleton(sp => CompatGuard.Evaluate(sp.GetRequiredService<IServerApplicationHost>().ApplicationVersion));
+        serviceCollection.AddSingleton(_ => StringTable.LoadEmbedded());
         serviceCollection.AddSingleton<SecretsStore>();
         serviceCollection.AddSingleton<StateStore>();
         serviceCollection.AddSingleton(sp => ResolveConfigurationHost(Plugin.Instance, sp.GetRequiredService<ILogger<PluginServiceRegistrator>>()));

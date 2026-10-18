@@ -45,6 +45,7 @@
   <ItemGroup>
     <EmbeddedResource Include="Web\tgjelly.html" />
     <EmbeddedResource Include="Web\tgjelly.js" />
+    <EmbeddedResource Include="Strings\en.json" />
   </ItemGroup>
 
 </Project>
