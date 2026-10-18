@@ -41,6 +41,7 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddRedactedLogger<BasicUpdateHandler>();
         serviceCollection.AddRedactedLogger<ProfileCalls>();
         serviceCollection.AddRedactedLogger<BotSupervisor>();
+        serviceCollection.AddRedactedLogger<BotTokenService>();
         serviceCollection.AddSingleton(sp => new DataPaths(sp.GetRequiredService<IApplicationPaths>().PluginConfigurationsPath));
         serviceCollection.AddSingleton(sp => CompatGuard.Evaluate(sp.GetRequiredService<IServerApplicationHost>().ApplicationVersion));
         serviceCollection.AddSingleton(_ => StringTable.LoadEmbedded());
@@ -61,6 +62,7 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<ProfileCalls>();
         serviceCollection.AddSingleton<BotSupervisor>();
         serviceCollection.AddSingleton<ISupervisorControl>(sp => sp.GetRequiredService<BotSupervisor>());
+        serviceCollection.AddSingleton<BotTokenService>();
 
         // Hosted services stop in reverse order: the Outbox and health loops first, then the bot (confirming the
         // last update batch), then persistence flushes, and the gate releases state.lock last.
