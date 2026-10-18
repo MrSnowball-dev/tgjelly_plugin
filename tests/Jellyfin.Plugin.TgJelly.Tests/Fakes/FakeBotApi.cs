@@ -101,6 +101,13 @@ public sealed class FakeBotApi : HttpMessageHandler
         var call = new BotApiCall(method, await ReadBodyAsync(request.Content, cancellationToken).ConfigureAwait(false));
         _calls.Enqueue(call);
 
+        if (method == "getUpdates")
+        {
+            // A real getUpdates never answers instantly (it long-polls). Without this, a scripted "[]" makes the
+            // poll loop spin synchronously, and under FakeTimeProvider.Advance it would spin on the test's thread.
+            await Task.Delay(5, cancellationToken).ConfigureAwait(false);
+        }
+
         var body = _handlers.TryGetValue(method, out var handler)
             ? await handler(call, cancellationToken).ConfigureAwait(false)
             : await DefaultAsync(call, cancellationToken).ConfigureAwait(false);

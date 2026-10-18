@@ -38,6 +38,9 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddRedactedLogger<HealthService>();
         serviceCollection.AddRedactedLogger<OutboxDelivery>();
         serviceCollection.AddRedactedLogger<OutboxService>();
+        serviceCollection.AddRedactedLogger<BasicUpdateHandler>();
+        serviceCollection.AddRedactedLogger<ProfileCalls>();
+        serviceCollection.AddRedactedLogger<BotSupervisor>();
         serviceCollection.AddSingleton(sp => new DataPaths(sp.GetRequiredService<IApplicationPaths>().PluginConfigurationsPath));
         serviceCollection.AddSingleton(sp => CompatGuard.Evaluate(sp.GetRequiredService<IServerApplicationHost>().ApplicationVersion));
         serviceCollection.AddSingleton(_ => StringTable.LoadEmbedded());
@@ -53,11 +56,18 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<Outbox>();
         serviceCollection.AddSingleton<PacingGate>();
         serviceCollection.AddSingleton<OutboxDelivery>();
+        serviceCollection.AddSingleton<IServerStartup, ServerStartup>();
+        serviceCollection.AddSingleton<IUpdateHandler, BasicUpdateHandler>();
+        serviceCollection.AddSingleton<ProfileCalls>();
+        serviceCollection.AddSingleton<BotSupervisor>();
+        serviceCollection.AddSingleton<ISupervisorControl>(sp => sp.GetRequiredService<BotSupervisor>());
 
-        // Hosted services stop in reverse order: persistence flushes first, then the gate releases state.lock.
+        // Hosted services stop in reverse order: the Outbox and health loops first, then the bot (confirming the
+        // last update batch), then persistence flushes, and the gate releases state.lock last.
         serviceCollection.AddSingleton<InstanceGate>();
         serviceCollection.AddHostedService(sp => sp.GetRequiredService<InstanceGate>());
         serviceCollection.AddHostedService<PersistenceService>();
+        serviceCollection.AddHostedService(sp => sp.GetRequiredService<BotSupervisor>());
         serviceCollection.AddHostedService(sp => sp.GetRequiredService<HealthService>());
         serviceCollection.AddHostedService<OutboxService>();
     }

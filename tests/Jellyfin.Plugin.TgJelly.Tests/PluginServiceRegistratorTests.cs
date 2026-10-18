@@ -46,6 +46,10 @@ public class PluginServiceRegistratorTests
         var hosted = provider.GetServices<IHostedService>().ToList();
         Assert.Same(provider.GetRequiredService<InstanceGate>(), hosted[0]);
         Assert.IsType<PersistenceService>(hosted[1]);
+        Assert.Same(provider.GetRequiredService<Jellyfin.Plugin.TgJelly.Bot.BotSupervisor>(), hosted[2]);
+        Assert.Same(provider.GetRequiredService<Jellyfin.Plugin.TgJelly.Destinations.HealthService>(), hosted[3]);
+        Assert.IsType<Jellyfin.Plugin.TgJelly.Delivery.OutboxService>(hosted[4]);
+        Assert.Equal(5, hosted.Count);
     }
 
     [Fact]
