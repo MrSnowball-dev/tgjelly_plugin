@@ -241,7 +241,7 @@ public sealed class HealthService : BackgroundService
         while (!stoppingToken.IsCancellationRequested)
         {
             await _wake.WaitAsync(LoopInterval, _time, stoppingToken).ConfigureAwait(false);
-            if (!_state.IsLoaded || _connection.State != ConnectionState.Connected)
+            if (!_state.IsLoaded || !_connection.CanSend)
             {
                 continue;
             }

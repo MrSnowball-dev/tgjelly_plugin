@@ -197,6 +197,13 @@ public sealed class Outbox
                         continue;
                     }
 
+                    // An edit waits while the message it edits is still queued; sent now, it would become a duplicate.
+                    if (candidate.Op == OutboxOp.Edit && candidate.TargetKey is { } target
+                        && group.Any(o => o.Op == OutboxOp.Send && o.SentKey == target))
+                    {
+                        continue;
+                    }
+
                     head = candidate;
                     break;
                 }

@@ -292,6 +292,9 @@ public sealed class BotSupervisor : BackgroundService, ISupervisorControl
             }
         }
 
+        // Connected as soon as getMe and the webhook check pass: an empty long poll takes 50 s to return, and
+        // neither Status nor the Outbox should wait for it.
+        _connection.SetState(ConnectionState.Connected);
         _health.RequestCheckAll();
         _ = RunProfileCallsAsync(sender, ct);
         await PollAsync(client, backoff, ct).ConfigureAwait(false);
@@ -321,16 +324,22 @@ public sealed class BotSupervisor : BackgroundService, ISupervisorControl
     private async Task PollAsync(ITelegramBotClient client, Backoff backoff, CancellationToken ct)
     {
         var conflictBackoff = new Backoff(TimeSpan.FromSeconds(30), TimeSpan.FromMinutes(5));
+
+        // The first poll of a session, and the first after an error, answer at once, so the state (and recovery
+        // after an outage) shows without waiting for a 50 s long poll.
+        var quick = true;
         while (true)
         {
             Update[] updates;
             try
             {
                 var offset = LastUpdateId is { } last ? last + 1 : (int?)null;
-                updates = await client.GetUpdates(offset: offset, limit: 100, timeout: 50, allowedUpdates: AllowedUpdates, cancellationToken: ct).ConfigureAwait(false);
+                updates = await client.GetUpdates(offset: offset, limit: 100, timeout: quick ? 0 : 50, allowedUpdates: AllowedUpdates, cancellationToken: ct).ConfigureAwait(false);
+                quick = false;
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
+                quick = true;
                 var error = TelegramErrorClassifier.ClassifyPoll(ex);
                 switch (error.Kind)
                 {

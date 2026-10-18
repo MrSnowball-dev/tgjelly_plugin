@@ -69,4 +69,13 @@ public class TelegramClientFactoryTests
         var credentials = (NetworkCredential)((WebProxy)handler.Proxy!).Credentials!;
         Assert.Equal(("u", "p"), (credentials.UserName, credentials.Password));
     }
+
+    [Fact]
+    public void Handler_GivesUpConnectingAfter15Seconds()
+    {
+        // A black-holed network or proxy must surface as "unreachable" quickly, not after the 100 s request timeout.
+        using var handler = TelegramClientFactory.CreateHandler(new ProxySettings(), BotSecrets.Empty);
+
+        Assert.Equal(TimeSpan.FromSeconds(15), handler.ConnectTimeout);
+    }
 }

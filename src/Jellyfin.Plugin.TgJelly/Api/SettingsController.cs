@@ -23,6 +23,7 @@ public class SettingsController : ControllerBase
     private readonly SecretsStore _secrets;
     private readonly StateStore _state;
     private readonly ISupervisorControl _supervisor;
+    private readonly InstanceGate _gate;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="SettingsController"/> class.
@@ -31,8 +32,10 @@ public class SettingsController : ControllerBase
     /// <param name="secrets">The secrets store, for proxy credentials.</param>
     /// <param name="state">The state store, for the public URL flag.</param>
     /// <param name="supervisor">Restarts the bot session after a proxy change.</param>
-    public SettingsController(SettingsStore settings, SecretsStore secrets, StateStore state, ISupervisorControl supervisor)
+    /// <param name="gate">The instance gate; changes wait until this instance owns the data folder.</param>
+    public SettingsController(SettingsStore settings, SecretsStore secrets, StateStore state, ISupervisorControl supervisor, InstanceGate gate)
     {
+        _gate = gate;
         _settings = settings;
         _secrets = secrets;
         _state = state;
@@ -59,6 +62,11 @@ public class SettingsController : ControllerBase
     public ActionResult<SettingsDto> PutSettings([FromBody] SettingsUpdateRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
+        if (ApiGuard.Block(_gate, _state) is { } blocked)
+        {
+            return blocked;
+        }
+
         var publicUrl = (request.PublicUrl ?? string.Empty).Trim();
         var before = _settings.Current.PublicUrl;
         var result = _settings.Update(request.ExpectedRevision, c =>
@@ -90,15 +98,27 @@ public class SettingsController : ControllerBase
     public ActionResult<SettingsDto> PutProxy([FromBody] ProxyRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
+        if (ApiGuard.Block(_gate, _state) is { } blocked)
+        {
+            return blocked;
+        }
+
         if (!Enum.TryParse<ProxyMode>(request.Mode, ignoreCase: true, out var mode) || !Enum.IsDefined(mode))
         {
             return BadRequest(new ErrorsDto { Errors = [new SettingsError("Proxy.Mode", "Must be System, None, Http or Socks5.")] });
         }
 
         var url = (request.Url ?? string.Empty).Trim();
-        if (mode is ProxyMode.Http or ProxyMode.Socks5 && !IsProxyUrl(mode, url))
+        if (mode is ProxyMode.Http or ProxyMode.Socks5 && ProxyUri(mode, url) is not { } proxyUri)
         {
             return BadRequest(new ErrorsDto { Errors = [new SettingsError("Proxy.Url", "Must be a proxy address such as host:port.")] });
+        }
+
+        if (url.Length > 0 && ProxyUri(mode, url) is { UserInfo.Length: > 0 })
+        {
+            // Spec §10.2/§12: credentials live in secrets.json and are never logged; a URL is stored in plain XML
+            // and appears in .NET's proxy error messages.
+            return BadRequest(new ErrorsDto { Errors = [new SettingsError("Proxy.Url", "Put the proxy username and password in their own fields, not in the address.")] });
         }
 
         var result = _settings.UpdateIf(request.ExpectedRevision, c =>
@@ -136,15 +156,15 @@ public class SettingsController : ControllerBase
         return ToDto(_settings.Current);
     }
 
-    private static bool IsProxyUrl(ProxyMode mode, string url)
+    private static Uri? ProxyUri(ProxyMode mode, string url)
     {
         if (url.Length == 0)
         {
-            return false;
+            return null;
         }
 
-        var withScheme = url.Contains("://", StringComparison.Ordinal) ? url : (mode == ProxyMode.Http ? "http://" : "socks5://") + url;
-        return Uri.TryCreate(withScheme, UriKind.Absolute, out var uri) && uri.Host.Length > 0;
+        var withScheme = url.Contains("://", StringComparison.Ordinal) ? url : (mode == ProxyMode.Socks5 ? "socks5://" : "http://") + url;
+        return Uri.TryCreate(withScheme, UriKind.Absolute, out var uri) && uri.Host.Length > 0 ? uri : null;
     }
 
     private SettingsDto ToDto(PluginConfiguration c)

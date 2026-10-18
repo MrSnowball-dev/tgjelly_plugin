@@ -3,6 +3,8 @@ using System.Net.Mime;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.TgJelly.Bot;
+using Jellyfin.Plugin.TgJelly.Compat;
+using Jellyfin.Plugin.TgJelly.State;
 using Jellyfin.Plugin.TgJelly.Strings;
 using MediaBrowser.Common.Api;
 using Microsoft.AspNetCore.Authorization;
@@ -22,16 +24,25 @@ public class BotController : ControllerBase
 {
     private readonly BotTokenService _tokens;
     private readonly StringTable _strings;
+    private readonly InstanceGate _gate;
+    private readonly StateStore _state;
+    private readonly CompatResult _compat;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="BotController"/> class.
     /// </summary>
     /// <param name="tokens">The token service.</param>
     /// <param name="strings">The string table.</param>
-    public BotController(BotTokenService tokens, StringTable strings)
+    /// <param name="gate">The instance gate; changes wait until this instance owns the data folder.</param>
+    /// <param name="state">The state store.</param>
+    /// <param name="compat">The compatibility result; an incompatible build never talks to Telegram.</param>
+    public BotController(BotTokenService tokens, StringTable strings, InstanceGate gate, StateStore state, CompatResult compat)
     {
         _tokens = tokens;
         _strings = strings;
+        _gate = gate;
+        _state = state;
+        _compat = compat;
     }
 
     /// <summary>
@@ -45,6 +56,11 @@ public class BotController : ControllerBase
     public async Task<ActionResult<TokenResponse>> PostToken([FromBody] TokenRequest request, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
+        if (ApiGuard.Block(_gate, _state, _compat) is { } blocked)
+        {
+            return blocked;
+        }
+
         var result = await _tokens.SaveAsync(request.Token, request.SetProfile, request.ConfirmSwitch, cancellationToken).ConfigureAwait(false);
         return new TokenResponse { Outcome = result.Outcome.ToString(), Message = result.Message, BotUsername = result.BotUsername, WebhookDeleted = result.WebhookDeleted };
     }
@@ -57,6 +73,11 @@ public class BotController : ControllerBase
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     public IActionResult DeleteToken()
     {
+        if (ApiGuard.Block(_gate, _state) is { } blocked)
+        {
+            return blocked;
+        }
+
         _tokens.Disconnect();
         return NoContent();
     }
@@ -72,6 +93,11 @@ public class BotController : ControllerBase
     [ProducesResponseType(StatusCodes.Status409Conflict)]
     public async Task<IActionResult> TakeOverWebhook(CancellationToken cancellationToken)
     {
+        if (ApiGuard.Block(_gate, _state, _compat) is { } blocked)
+        {
+            return blocked;
+        }
+
         try
         {
             return await _tokens.TakeOverWebhookAsync(cancellationToken).ConfigureAwait(false)

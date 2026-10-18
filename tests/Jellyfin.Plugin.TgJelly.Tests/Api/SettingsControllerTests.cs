@@ -5,20 +5,19 @@ using Jellyfin.Plugin.TgJelly.State;
 using Jellyfin.Plugin.TgJelly.State.Documents;
 using Jellyfin.Plugin.TgJelly.Tests.Fakes;
 using Microsoft.AspNetCore.Mvc;
+using System.Threading.Tasks;
 using Xunit;
 
 namespace Jellyfin.Plugin.TgJelly.Tests.Api;
 
-public sealed class SettingsControllerTests : IDisposable
+public sealed class SettingsControllerTests : IAsyncLifetime
 {
     private readonly BotTestHarness _h = new();
     private readonly FakeSupervisorControl _supervisor = new();
-    private readonly SettingsController _controller;
+    private SettingsController _controller = null!;
 
-    public SettingsControllerTests()
-    {
-        _controller = new SettingsController(_h.Settings, _h.Secrets, _h.State, _supervisor);
-    }
+    public async ValueTask InitializeAsync()
+        => _controller = new SettingsController(_h.Settings, _h.Secrets, _h.State, _supervisor, await _h.StartOwnedGateAsync());
 
     [Fact]
     public void Get_ReturnsSettings_ProxyForDisplay_AndPublicUrlValidity()
@@ -144,7 +143,33 @@ public sealed class SettingsControllerTests : IDisposable
     public void PutProxy_StaleRevision_Is409()
         => Assert.IsType<ConflictObjectResult>(_controller.PutProxy(new ProxyRequest { ExpectedRevision = 5, Mode = "None" }).Result);
 
-    public void Dispose() => _h.Dispose();
+    [Fact]
+    public void PutProxy_WithCredentialsInTheUrl_Is400_AndStoresNothing()
+    {
+        var bad = Assert.IsType<BadRequestObjectResult>(_controller.PutProxy(new ProxyRequest { ExpectedRevision = 0, Mode = "Http", Url = "http://bob:secret@proxy.lan:3128" }).Result);
+
+        Assert.Equal("Proxy.Url", Assert.Single(Assert.IsType<ErrorsDto>(bad.Value).Errors).Field);
+        Assert.DoesNotContain("secret", _h.Settings.Current.Proxy.Url, StringComparison.Ordinal);
+        Assert.Equal(0, _h.Settings.Current.Revision);
+    }
+
+    [Fact]
+    public void Mutations_BeforeOwnership_Are503()
+    {
+        using var gate = new InstanceGate(_h.Paths, _h.Time, Microsoft.Extensions.Logging.Abstractions.NullLogger<InstanceGate>.Instance);
+        var controller = new SettingsController(_h.Settings, _h.Secrets, _h.State, _supervisor, gate);
+
+        Assert.Equal(503, Assert.IsType<ObjectResult>(controller.PutProxy(new ProxyRequest { ExpectedRevision = 0, Mode = "None" }).Result).StatusCode);
+        Assert.Equal(503, Assert.IsType<ObjectResult>(controller.PutSettings(Request(0)).Result).StatusCode);
+        Assert.Equal(0, _h.Settings.Current.Revision);
+        Assert.NotNull(controller.GetSettings().Value);
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        _h.Dispose();
+        return ValueTask.CompletedTask;
+    }
 
     private static SettingsUpdateRequest Request(long revision) => new()
     {

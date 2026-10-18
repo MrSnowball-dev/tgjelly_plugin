@@ -94,7 +94,7 @@ public sealed class OutboxService : BackgroundService
 
         while (!stoppingToken.IsCancellationRequested)
         {
-            if (_connection.State != ConnectionState.Connected || _connection.Sender is null)
+            if (!_connection.CanSend)
             {
                 await _wake.WaitAsync(IdleWait, _time, stoppingToken).ConfigureAwait(false);
                 continue;

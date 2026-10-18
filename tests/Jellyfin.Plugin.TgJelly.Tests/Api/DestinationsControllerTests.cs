@@ -15,14 +15,16 @@ using Xunit;
 
 namespace Jellyfin.Plugin.TgJelly.Tests.Api;
 
-public sealed class DestinationsControllerTests : IDisposable
+public sealed class DestinationsControllerTests : IAsyncLifetime
 {
     private const string Member = """{"status":"member","user":{"id":123456789,"is_bot":true,"first_name":"b"}}""";
 
     private readonly BotTestHarness _h = new();
     private readonly HealthService _health;
     private readonly Outbox _outbox;
-    private readonly DestinationsController _controller;
+    private DestinationsController _controller = null!;
+    private readonly DestinationChecker _checker;
+    private readonly DestinationTester _tester;
 
     public DestinationsControllerTests()
     {
@@ -30,12 +32,14 @@ public sealed class DestinationsControllerTests : IDisposable
         var gate = new InstanceGate(_h.Paths, _h.Time, NullLogger<InstanceGate>.Instance);
         _h.Track(gate);
         var checker = new DestinationChecker(_h.Connection, _h.Strings);
+        _checker = checker;
         _health = new HealthService(gate, _h.Connection, checker, _h.Settings, _h.State, _h.Time, NullLogger<HealthService>.Instance);
         _h.Track(_health);
         _outbox = new Outbox(_h.State, _h.Strings, _h.Time);
-        var tester = new DestinationTester(_h.Connection, _health, _h.Strings, NullLogger<DestinationTester>.Instance);
-        _controller = new DestinationsController(_h.Settings, _h.Connection, checker, _health, tester, _outbox, _h.Strings, NullLogger<DestinationsController>.Instance);
+        _tester = new DestinationTester(_h.Connection, _health, _h.Strings, NullLogger<DestinationTester>.Instance);
     }
+
+    public async ValueTask InitializeAsync() => _controller = NewController(_h.Connection, await _h.StartOwnedGateAsync());
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
@@ -273,7 +277,8 @@ public sealed class DestinationsControllerTests : IDisposable
         Assert.Equal("https://t.me/tgjelly_test_bot?startgroup=add", links.StartGroup);
         Assert.Equal("https://t.me/tgjelly_test_bot?startchannel&admin=post_messages+edit_messages", links.StartChannel);
 
-        var empty = new DestinationsController(_h.Settings, new Jellyfin.Plugin.TgJelly.Bot.BotConnection(), new DestinationChecker(_h.Connection, _h.Strings), _health, new DestinationTester(_h.Connection, _health, _h.Strings, NullLogger<DestinationTester>.Instance), _outbox, _h.Strings, NullLogger<DestinationsController>.Instance).GetLinks().Value!;
+        using var gate = new InstanceGate(_h.Paths, _h.Time, NullLogger<InstanceGate>.Instance);
+        var empty = NewController(new Jellyfin.Plugin.TgJelly.Bot.BotConnection(), gate).GetLinks().Value!;
         Assert.Equal(string.Empty, empty.OpenBot);
     }
 
@@ -290,5 +295,31 @@ public sealed class DestinationsControllerTests : IDisposable
         Assert.Equal(_h.Settings.Current.Revision, list.Revision);
     }
 
-    public void Dispose() => _h.Dispose();
+    [Fact]
+    public async Task Mutations_BeforeOwnership_Are503_AndChangeNothing()
+    {
+        var d = _h.AddDestination(-1001);
+        using var gate = new InstanceGate(_h.Paths, _h.Time, NullLogger<InstanceGate>.Instance);
+        var controller = NewController(_h.Connection, gate);
+        var revision = _h.Settings.Current.Revision;
+
+        Assert.Equal(503, Assert.IsType<ObjectResult>((await controller.Add(new AddDestinationRequest { ExpectedRevision = revision, ChatId = -1002 }, Ct)).Result).StatusCode);
+        Assert.Equal(503, Assert.IsType<ObjectResult>(controller.Update(d.Id, new UpdateDestinationRequest { ExpectedRevision = revision, Enabled = false }).Result).StatusCode);
+        Assert.Equal(503, Assert.IsType<ObjectResult>(await controller.Delete(d.Id, leave: true, expectedRevision: revision, Ct)).StatusCode);
+        Assert.Equal(503, Assert.IsType<ObjectResult>((await controller.Test(d.Id, Ct)).Result).StatusCode);
+        Assert.Equal(503, Assert.IsType<ObjectResult>((await controller.Check(d.Id, Ct)).Result).StatusCode);
+
+        Assert.Equal(revision, _h.Settings.Current.Revision);
+        Assert.Empty(_h.Api.Calls);
+        Assert.Single(controller.Get().Value!.Items);
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        _h.Dispose();
+        return ValueTask.CompletedTask;
+    }
+
+    private DestinationsController NewController(Jellyfin.Plugin.TgJelly.Bot.BotConnection connection, InstanceGate gate)
+        => new(_h.Settings, connection, _checker, _health, _tester, _outbox, _h.Strings, gate, _h.State, NullLogger<DestinationsController>.Instance);
 }

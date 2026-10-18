@@ -144,4 +144,17 @@ public sealed class OutboxServiceTests : IDisposable
         QueuedAt = Now,
         Message = new OutboxMessage { Text = text, Caption = text },
     };
+
+    [Fact]
+    public async Task Sends_DuringAWebhookConflict()
+    {
+        _h.Connect();
+        _h.Connection.SetState(Jellyfin.Plugin.TgJelly.Bot.ConnectionState.WebhookConflict);
+        var d = _h.AddDestination(-1001);
+        _outbox.Enqueue(Entry(d, "server.task_failed", "task"));
+        using var service = await StartAsync();
+
+        await Eventually.TrueAsync(() => _h.Api.CallsTo("sendMessage").Any(), "sending works while another app owns the webhook");
+        await service.StopAsync(CancellationToken.None);
+    }
 }

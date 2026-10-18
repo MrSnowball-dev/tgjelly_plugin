@@ -92,6 +92,21 @@ public sealed class BotConnection
     }
 
     /// <summary>
+    /// Gets a value indicating whether messages can be sent now: a bot is attached and it works, even while another
+    /// app holds its webhook or polls it (those only block receiving updates).
+    /// </summary>
+    public bool CanSend
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _sender is not null && _state is ConnectionState.Connected or ConnectionState.WebhookConflict or ConnectionState.ConflictingInstance;
+            }
+        }
+    }
+
+    /// <summary>
     /// Sets the state.
     /// </summary>
     /// <param name="state">The state.</param>

@@ -88,10 +88,12 @@ public sealed class BotSupervisorTests : IDisposable
     {
         using var supervisor = await StartAsync();
 
-        await Eventually.TrueAsync(() => _h.Api.CallsTo("getUpdates").Any(), "polled");
+        await Eventually.TrueAsync(() => _h.Api.CallsTo("getUpdates").Count() >= 2, "polled twice");
 
-        var body = _h.Api.CallsTo("getUpdates").First().Body;
+        var polls = _h.Api.CallsTo("getUpdates").ToArray();
+        var body = polls[1].Body;
         Assert.Equal((100, 50), ((int)body["limit"]!, (int)body["timeout"]!));
+        Assert.Equal(0, (int)polls[0].Body["timeout"]!); // the first poll of a session answers at once
         Assert.Equal(["message", "callback_query", "my_chat_member"], body["allowed_updates"]!.AsArray().Select(n => (string)n!).ToArray());
         await supervisor.StopAsync(CancellationToken.None);
     }
@@ -331,5 +333,43 @@ public sealed class BotSupervisorTests : IDisposable
         _h.Track(supervisor);
         await supervisor.StartAsync(CancellationToken.None);
         return supervisor;
+    }
+
+    [Fact]
+    public async Task Connected_BeforeTheFirstLongPollReturns()
+    {
+        // Real Telegram holds an empty long poll for 50 s; Status, the Outbox and health checks must not wait for it.
+        _h.Api.OnAsync("getUpdates", async (_, ct) =>
+        {
+            await Task.Delay(TimeSpan.FromSeconds(50), _h.Time, ct);
+            return FakeBotApi.Ok("[]");
+        });
+        using var supervisor = await StartAsync();
+
+        await Eventually.TrueAsync(() => _h.Connection.State == ConnectionState.Connected, "connected once getMe and the webhook check passed");
+        await supervisor.StopAsync(CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task AfterAnError_TheNextPollIsQuick()
+    {
+        var calls = 0;
+        _h.Api.OnAsync("getUpdates", async (_, ct) =>
+        {
+            if (Interlocked.Increment(ref calls) == 2)
+            {
+                throw new HttpRequestException("network blip");
+            }
+
+            await Task.Delay(20, ct);
+            return FakeBotApi.Ok("[]");
+        });
+        using var supervisor = await StartAsync();
+
+        await Eventually.AdvanceUntilAsync(_h.Time, TimeSpan.FromSeconds(1), () => _h.Api.CallsTo("getUpdates").Count() >= 4, "polling resumed");
+
+        var timeouts = _h.Api.CallsTo("getUpdates").Select(c => (int)c.Body["timeout"]!).Take(4).ToArray();
+        Assert.Equal([0, 50, 0, 50], timeouts);
+        await supervisor.StopAsync(CancellationToken.None);
     }
 }

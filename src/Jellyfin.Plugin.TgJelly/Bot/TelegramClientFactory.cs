@@ -80,7 +80,8 @@ public sealed class TelegramClientFactory : ITelegramClientFactory, IDisposable
     /// <returns>The handler.</returns>
     internal static SocketsHttpHandler CreateHandler(ProxySettings proxy, BotSecrets secrets)
     {
-        var handler = new SocketsHttpHandler { PooledConnectionLifetime = TimeSpan.FromMinutes(3) };
+        // ConnectTimeout: a black-holed network or proxy shows as unreachable in seconds, not after the 100 s timeout.
+        var handler = new SocketsHttpHandler { PooledConnectionLifetime = TimeSpan.FromMinutes(3), ConnectTimeout = TimeSpan.FromSeconds(15) };
         switch (proxy.Mode)
         {
             case ProxyMode.None:

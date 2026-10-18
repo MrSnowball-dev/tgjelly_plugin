@@ -8,6 +8,7 @@ using Jellyfin.Plugin.TgJelly.Bot;
 using Jellyfin.Plugin.TgJelly.Configuration;
 using Jellyfin.Plugin.TgJelly.Delivery;
 using Jellyfin.Plugin.TgJelly.Destinations;
+using Jellyfin.Plugin.TgJelly.State;
 using Jellyfin.Plugin.TgJelly.State.Documents;
 using Jellyfin.Plugin.TgJelly.Strings;
 using MediaBrowser.Common.Api;
@@ -37,6 +38,8 @@ public class DestinationsController : ControllerBase
     private readonly Outbox _outbox;
     private readonly StringTable _strings;
     private readonly ILogger<DestinationsController> _logger;
+    private readonly InstanceGate _gate;
+    private readonly StateStore _state;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="DestinationsController"/> class.
@@ -48,9 +51,13 @@ public class DestinationsController : ControllerBase
     /// <param name="tester">The test sender.</param>
     /// <param name="outbox">The Outbox.</param>
     /// <param name="strings">The string table.</param>
+    /// <param name="gate">The instance gate; changes wait until this instance owns the data folder.</param>
+    /// <param name="state">The state store.</param>
     /// <param name="logger">The logger.</param>
-    public DestinationsController(SettingsStore settings, BotConnection connection, DestinationChecker checker, HealthService health, DestinationTester tester, Outbox outbox, StringTable strings, ILogger<DestinationsController> logger)
+    public DestinationsController(SettingsStore settings, BotConnection connection, DestinationChecker checker, HealthService health, DestinationTester tester, Outbox outbox, StringTable strings, InstanceGate gate, StateStore state, ILogger<DestinationsController> logger)
     {
+        _gate = gate;
+        _state = state;
         _settings = settings;
         _connection = connection;
         _checker = checker;
@@ -82,6 +89,11 @@ public class DestinationsController : ControllerBase
     public async Task<ActionResult<AddDestinationResponse>> Add([FromBody] AddDestinationRequest request, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
+        if (ApiGuard.Block(_gate, _state) is { } blocked)
+        {
+            return blocked;
+        }
+
         if (_connection.Sender is null)
         {
             return Error("Bot", _strings.Get("destination.notConnected"));
@@ -194,6 +206,11 @@ public class DestinationsController : ControllerBase
     public ActionResult<DestinationDto> Update([FromRoute] string id, [FromBody] UpdateDestinationRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
+        if (ApiGuard.Block(_gate, _state) is { } blocked)
+        {
+            return blocked;
+        }
+
         PresetKind? preset = null;
         if (request.Preset is not null)
         {
@@ -283,6 +300,11 @@ public class DestinationsController : ControllerBase
     [ProducesResponseType(StatusCodes.Status409Conflict)]
     public async Task<IActionResult> Delete([FromRoute] string id, [FromQuery] bool leave, [FromQuery] long expectedRevision, CancellationToken cancellationToken)
     {
+        if (ApiGuard.Block(_gate, _state) is { } blocked)
+        {
+            return blocked;
+        }
+
         Destination? removed = null;
         var result = _settings.UpdateIf(expectedRevision, c =>
         {
@@ -334,6 +356,11 @@ public class DestinationsController : ControllerBase
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<TestResultDto>> Test([FromRoute] string id, CancellationToken cancellationToken)
     {
+        if (ApiGuard.Block(_gate, _state) is { } blocked)
+        {
+            return blocked;
+        }
+
         if (_settings.Current.Destinations.FirstOrDefault(d => d.Id == id) is not { } destination)
         {
             return NotFound();
@@ -354,6 +381,11 @@ public class DestinationsController : ControllerBase
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<CheckResultDto>> Check([FromRoute] string id, CancellationToken cancellationToken)
     {
+        if (ApiGuard.Block(_gate, _state) is { } blocked)
+        {
+            return blocked;
+        }
+
         if (_settings.Current.Destinations.All(d => d.Id != id))
         {
             return NotFound();

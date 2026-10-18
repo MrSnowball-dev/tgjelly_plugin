@@ -256,4 +256,19 @@ public sealed class OutboxTests : IDisposable
 
     private SentMessage Sent(int messageId, int secondsAfterNow)
         => new() { MessageId = messageId, Kind = SentKind.Text, SentAt = Now + TimeSpan.FromSeconds(secondsAfterNow), EventKey = "media.movie" };
+
+    [Fact]
+    public void Pick_HoldsAnEditWhileItsTargetIsStillQueued()
+    {
+        var send = Entry("d1", "media.episodes", 0);
+        send.SentKey = "g1";
+        _outbox.Enqueue(send);
+        _outbox.Retry(send.EntryId, Now + TimeSpan.FromSeconds(2), countAttempt: true);
+        _outbox.Enqueue(Edit("d1", "media.episodes", "g1", "updated"));
+
+        var pick = _outbox.Pick(Views(("d1", true)), _pacing, Now);
+
+        Assert.Null(pick.Entry);
+        Assert.Equal(send.EntryId, _outbox.Pick(Views(("d1", true)), _pacing, Now + TimeSpan.FromSeconds(2)).Entry!.EntryId);
+    }
 }
