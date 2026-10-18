@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Jellyfin.Plugin.TgJelly.State.Documents;
 
 namespace Jellyfin.Plugin.TgJelly.Api;
 
@@ -35,4 +36,9 @@ public sealed class StatusDto
 
     /// <summary>Gets warnings from loading the state files.</summary>
     public IReadOnlyList<string> LoadWarnings { get; init; } = [];
+
+    /// <summary>
+    /// Gets the most recent errors, oldest first (spec §10.3 <c>status.lastErrors</c>).
+    /// </summary>
+    public IReadOnlyList<StatusError> LastErrors { get; init; } = [];
 }

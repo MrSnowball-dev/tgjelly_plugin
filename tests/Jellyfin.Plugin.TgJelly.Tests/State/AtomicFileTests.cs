@@ -49,4 +49,22 @@ public class AtomicFileTests
         Assert.Equal(Path.Combine(dir.Path, "state.bad-20261016123005.json"), moved);
         Assert.Equal("{not json", File.ReadAllText(moved));
     }
+
+    [Fact]
+    public void TwoQuarantinesInTheSameSecond_KeepBothFiles()
+    {
+        using var dir = new TempDir();
+        var path = Path.Combine(dir.Path, "state.json");
+        var now = new DateTimeOffset(2026, 10, 18, 10, 0, 0, TimeSpan.Zero);
+
+        File.WriteAllText(path, "first");
+        var a = AtomicFile.Quarantine(path, now);
+        File.WriteAllText(path, "second");
+        var b = AtomicFile.Quarantine(path, now);
+
+        Assert.NotEqual(a, b);
+        Assert.Equal("first", File.ReadAllText(a));
+        Assert.Equal("second", File.ReadAllText(b));
+        Assert.EndsWith("-1.json", b, StringComparison.Ordinal);
+    }
 }

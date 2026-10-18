@@ -50,9 +50,11 @@ public class PluginServiceRegistratorTests
     [Fact]
     public void WithoutAPluginInstance_ADetachedHostIsUsed_SoStartupCannotThrow()
     {
-        var host = PluginServiceRegistrator.ResolveConfigurationHost(null);
+        var logger = new ListLogger<PluginServiceRegistrator>();
+        var host = PluginServiceRegistrator.ResolveConfigurationHost(null, logger);
 
         Assert.IsType<DetachedConfigurationHost>(host);
+        Assert.Equal(1, logger.Count(Microsoft.Extensions.Logging.LogLevel.Warning));
         Assert.Equal(0, host.Configuration.Revision);
         Assert.Throws<InvalidOperationException>(() => host.SaveFromStore(new PluginConfiguration()));
     }

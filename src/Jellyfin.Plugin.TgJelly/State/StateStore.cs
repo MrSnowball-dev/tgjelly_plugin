@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Runtime.ExceptionServices;
 using System.Text.Json;
@@ -17,6 +18,11 @@ public sealed class StateStore
     /// <summary>How many load warnings are kept (oldest dropped first), like the other capped status lists.</summary>
     public const int MaxLoadWarnings = 20;
 
+    /// <summary>
+    /// The number of entries <c>status.lastErrors</c> keeps.
+    /// </summary>
+    public const int MaxLastErrors = 20;
+
     /// <summary>How long queue.json may stay dirty before it is written.</summary>
     public static readonly TimeSpan QueueWriteInterval = TimeSpan.FromSeconds(10);
 
@@ -25,6 +31,7 @@ public sealed class StateStore
     private readonly ILogger<StateStore> _logger;
     private readonly Lock _gate = new();
     private readonly Lock _writeGate = new();
+    private readonly List<StatusError> _pendingErrors = [];
     private StateDocument _state = new();
     private QueueDocument _queue = new();
     private bool _loaded;
@@ -82,6 +89,14 @@ public sealed class StateStore
             while (_state.Status.LoadWarnings.Count > MaxLoadWarnings)
             {
                 _state.Status.LoadWarnings.RemoveAt(0);
+                _stateDirty = true;
+            }
+
+            if (_pendingErrors.Count > 0)
+            {
+                _state.Status.LastErrors.AddRange(_pendingErrors);
+                _pendingErrors.Clear();
+                TrimErrors(_state.Status.LastErrors);
                 _stateDirty = true;
             }
 
@@ -148,6 +163,36 @@ public sealed class StateStore
             change(_queue);
             _queueDirty = true;
             _queueUrgent |= urgent;
+        }
+    }
+
+    /// <summary>
+    /// Adds an entry to <c>status.lastErrors</c>. Works before <see cref="Load"/>: the entry is kept in memory
+    /// and added to the loaded document.
+    /// </summary>
+    /// <param name="source">The part of TgJelly reporting it.</param>
+    /// <param name="message">The error text.</param>
+    public void RecordError(string source, string message)
+    {
+        var error = new StatusError { At = _time.GetUtcNow(), Source = source, Message = message };
+        lock (_gate)
+        {
+            var list = _loaded ? _state.Status.LastErrors : _pendingErrors;
+            list.Add(error);
+            TrimErrors(list);
+            _stateDirty |= _loaded;
+        }
+    }
+
+    /// <summary>
+    /// Returns a copy of <c>status.lastErrors</c>, oldest first. Works before <see cref="Load"/>.
+    /// </summary>
+    /// <returns>The errors.</returns>
+    public IReadOnlyList<StatusError> LastErrorsSnapshot()
+    {
+        lock (_gate)
+        {
+            return (_loaded ? _state.Status.LastErrors : _pendingErrors).ToArray();
         }
     }
 
@@ -235,6 +280,14 @@ public sealed class StateStore
         }
     }
 
+    private static void TrimErrors(List<StatusError> errors)
+    {
+        if (errors.Count > MaxLastErrors)
+        {
+            errors.RemoveRange(0, errors.Count - MaxLastErrors);
+        }
+    }
+
     private void EnsureLoaded()
     {
         if (!_loaded)
@@ -261,6 +314,13 @@ public sealed class StateStore
             var moved = AtomicFile.Quarantine(path, now);
             warning = Path.GetFileName(path) + " was unreadable and has been moved to " + Path.GetFileName(moved) + ".";
             _logger.LogError(ex, "TgJelly {File} was unreadable and has been moved to {Path}", Path.GetFileName(path), moved);
+            return new T();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // Not moved aside: the move may fail too, and the file may be fine once permissions are fixed.
+            warning = Path.GetFileName(path) + " can't be read: " + ex.Message;
+            _logger.LogError(ex, "TgJelly {File} can't be read", Path.GetFileName(path));
             return new T();
         }
     }

@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.TgJelly.Configuration;
@@ -21,6 +22,8 @@ public sealed class PersistenceService : BackgroundService
     private readonly TimeProvider _time;
     private readonly ILogger<PersistenceService> _logger;
     private bool _restoreChecked;
+    private string? _lastFlushError;
+    private DateTimeOffset _lastFlushErrorLoggedAt;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="PersistenceService"/> class.
@@ -88,13 +91,37 @@ public sealed class PersistenceService : BackgroundService
             _restoreChecked = true;
         }
 
-        // Reads secrets.json once now, so an unreadable file shows up in Status right away.
-        _ = _secrets.Load();
+        // Reads secrets.json once now, so an unreadable file shows up in Status right away. Read problems become
+        // a load warning inside SecretsStore; anything else must not stop the flush loop either.
+        try
+        {
+            _ = _secrets.Load();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _logger.LogWarning(ex, "TgJelly could not read secrets.json");
+        }
 
         using var timer = new PeriodicTimer(TimeSpan.FromSeconds(1), _time);
         while (await timer.WaitForNextTickAsync(stoppingToken).ConfigureAwait(false))
         {
-            _state.FlushDue();
+            try
+            {
+                _state.FlushDue();
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // The change stays pending (StateStore re-marks it dirty) and is written once the folder recovers.
+                // Reported once per distinct message per minute, so a stuck disk doesn't flood Status or the log.
+                var now = _time.GetUtcNow();
+                if (ex.Message != _lastFlushError || now - _lastFlushErrorLoggedAt >= TimeSpan.FromMinutes(1))
+                {
+                    _state.RecordError("persistence", ex.Message);
+                    _logger.LogWarning(ex, "TgJelly could not write its state");
+                    _lastFlushError = ex.Message;
+                    _lastFlushErrorLoggedAt = now;
+                }
+            }
         }
     }
 }

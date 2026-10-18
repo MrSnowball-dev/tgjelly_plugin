@@ -44,7 +44,7 @@ public class TgJellyControllerTests
     }
 
     [Fact]
-    public void Status_Answers_BeforeOwnershipAndBeforeStateIsLoaded()
+    public async Task Status_Answers_BeforeOwnershipAndBeforeStateIsLoaded()
     {
         // The page may be opened while a previous instance still holds state.lock.
         using var dir = new TempDir();
@@ -52,7 +52,11 @@ public class TgJellyControllerTests
         var time = new FakeTimeProvider();
         var state = new StateStore(paths, time, NullLogger<StateStore>.Instance);
         using var settings = new SettingsStore(new FakeConfigurationHost(), paths, state, time, NullLogger<SettingsStore>.Instance);
+        using var previous = InstanceLock.TryAcquire(paths.Lock);
+        Assert.NotNull(previous);
         using var gate = new InstanceGate(paths, time, NullLogger<InstanceGate>.Instance);
+        await gate.StartAsync(CancellationToken.None);
+        await Eventually.TrueAsync(() => gate.WaitingMessage == InstanceGate.WaitingForPreviousInstance, "the gate found state.lock busy");
         var compat = CompatGuard.Evaluate(new Version(BuildInfo.TargetJellyfinMajor, 0, 0, 0));
 
         var status = new TgJellyController(compat, gate, settings, state, new SecretsStore(paths, time, NullLogger<SecretsStore>.Instance)).GetStatus().Value!;
@@ -61,6 +65,7 @@ public class TgJellyControllerTests
         Assert.False(status.InstanceOwner);
         Assert.Equal(InstanceGate.WaitingForPreviousInstance, status.InstanceMessage);
         Assert.Equal(0, status.Revision);
+        await gate.StopAsync(CancellationToken.None);
     }
 
     [Fact]
@@ -83,5 +88,23 @@ public class TgJellyControllerTests
 
         var warning = Assert.Single(status.LoadWarnings);
         Assert.StartsWith("secrets.json was unreadable", warning, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Status_ShowsLastErrors()
+    {
+        using var dir = new TempDir();
+        var paths = new DataPaths(dir.Path);
+        var time = new FakeTimeProvider();
+        var state = new StateStore(paths, time, NullLogger<StateStore>.Instance);
+        state.Load();
+        using var settings = new SettingsStore(new FakeConfigurationHost(), paths, state, time, NullLogger<SettingsStore>.Instance);
+        using var gate = new InstanceGate(paths, time, NullLogger<InstanceGate>.Instance);
+        state.RecordError("outbox", "boom");
+
+        var status = new TgJellyController(CompatGuard.Evaluate(new Version(BuildInfo.TargetJellyfinMajor, 0, 0, 0)), gate, settings, state, new SecretsStore(paths, time, NullLogger<SecretsStore>.Instance)).GetStatus().Value!;
+
+        var error = Assert.Single(status.LastErrors);
+        Assert.Equal(("outbox", "boom"), (error.Source, error.Message));
     }
 }

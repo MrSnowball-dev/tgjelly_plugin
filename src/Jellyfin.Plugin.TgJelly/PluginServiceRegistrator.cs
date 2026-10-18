@@ -8,6 +8,7 @@ using MediaBrowser.Controller;
 using MediaBrowser.Controller.Plugins;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
 
 namespace Jellyfin.Plugin.TgJelly;
 
@@ -25,7 +26,7 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton(sp => CompatGuard.Evaluate(sp.GetRequiredService<IServerApplicationHost>().ApplicationVersion));
         serviceCollection.AddSingleton<SecretsStore>();
         serviceCollection.AddSingleton<StateStore>();
-        serviceCollection.AddSingleton(_ => ResolveConfigurationHost(Plugin.Instance));
+        serviceCollection.AddSingleton(sp => ResolveConfigurationHost(Plugin.Instance, sp.GetRequiredService<ILogger<PluginServiceRegistrator>>()));
         serviceCollection.AddSingleton<SettingsStore>();
 
         // Hosted services stop in reverse order: persistence flushes first, then the gate releases state.lock.
@@ -39,7 +40,16 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
     /// resolution from throwing at host start, which would stop the whole server (F3).
     /// </summary>
     /// <param name="instance">The plugin instance, if Jellyfin created one.</param>
+    /// <param name="logger">Where the fallback is reported.</param>
     /// <returns>The host to use.</returns>
-    internal static IConfigurationHost ResolveConfigurationHost(Plugin? instance)
-        => (IConfigurationHost?)instance ?? new DetachedConfigurationHost();
+    internal static IConfigurationHost ResolveConfigurationHost(Plugin? instance, ILogger logger)
+    {
+        if (instance is not null)
+        {
+            return instance;
+        }
+
+        logger.LogWarning("TgJelly's plugin instance is missing; settings can't be saved until Jellyfin restarts");
+        return new DetachedConfigurationHost();
+    }
 }

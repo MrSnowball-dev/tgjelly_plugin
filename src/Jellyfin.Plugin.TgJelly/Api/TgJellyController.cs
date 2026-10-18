@@ -60,6 +60,7 @@ public class TgJellyController : ControllerBase
             Revision = _settings.Current.Revision,
             BackupRestoredAt = _state.Read(s => s.Status.BackupRestoredAt),
             LoadWarnings = [.. _state.Read(s => s.Status.LoadWarnings.ToArray()), .. _secrets.LoadWarning is { } w ? new[] { w } : []],
+            LastErrors = _state.LastErrorsSnapshot(),
         };
     }
 }

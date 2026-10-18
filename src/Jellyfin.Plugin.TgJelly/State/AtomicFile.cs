@@ -59,7 +59,7 @@ public static class AtomicFile
     }
 
     /// <summary>
-    /// Moves an unreadable file aside as <c>name.bad-yyyyMMddHHmmss.json</c> so a fresh one can be written.
+    /// Moves an unreadable file aside as <c>name.bad-yyyyMMddHHmmss.json</c> (with <c>-1</c>, <c>-2</c>… when that name is taken) so a fresh one can be written.
     /// </summary>
     /// <param name="path">The unreadable file.</param>
     /// <param name="now">The current time.</param>
@@ -67,8 +67,14 @@ public static class AtomicFile
     public static string Quarantine(string path, DateTimeOffset now)
     {
         var withoutExtension = Path.Combine(Path.GetDirectoryName(path)!, Path.GetFileNameWithoutExtension(path));
-        var target = withoutExtension + ".bad-" + now.UtcDateTime.ToString("yyyyMMddHHmmss", CultureInfo.InvariantCulture) + ".json";
-        File.Move(path, target, overwrite: true);
+        var stem = withoutExtension + ".bad-" + now.UtcDateTime.ToString("yyyyMMddHHmmss", CultureInfo.InvariantCulture);
+        var target = stem + ".json";
+        for (var i = 1; File.Exists(target); i++)
+        {
+            target = stem + "-" + i.ToString(CultureInfo.InvariantCulture) + ".json";
+        }
+
+        File.Move(path, target);
         return target;
     }
 }

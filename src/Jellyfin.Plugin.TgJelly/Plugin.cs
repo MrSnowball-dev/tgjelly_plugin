@@ -123,7 +123,9 @@ public class Plugin : BasePlugin<PluginConfiguration>, IConfigurationHost, IHasW
         lock (_saveGate)
         {
             incoming.Normalize();
-            incoming.Revision = Math.Max(Configuration.Revision, incoming.Revision) + 1;
+            // long.MaxValue would wrap around and then suppress every later SettingsChanged.
+            var current = Configuration.Revision;
+            incoming.Revision = (incoming.Revision == long.MaxValue ? current : Math.Max(current, incoming.Revision)) + 1;
             SaveOrRollBack(incoming);
         }
 
