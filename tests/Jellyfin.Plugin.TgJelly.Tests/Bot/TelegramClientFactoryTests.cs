@@ -3,13 +3,14 @@ using System.Net;
 using Jellyfin.Plugin.TgJelly.Bot;
 using Jellyfin.Plugin.TgJelly.Configuration;
 using Jellyfin.Plugin.TgJelly.State;
+using Jellyfin.Plugin.TgJelly.Tests.Fakes;
 using Xunit;
 
 namespace Jellyfin.Plugin.TgJelly.Tests.Bot;
 
 public class TelegramClientFactoryTests
 {
-    private const string Token = "123456789:AAEhBP0av28KrBd9xL4Zq3Wm7Tn5Ys1Cv6QpZ";
+    private const string Token = FakeBotApi.Token;
 
     [Fact]
     public void Options_DefaultToTheRealApi_WithRetriesOff()
