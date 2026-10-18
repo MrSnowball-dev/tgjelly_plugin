@@ -129,6 +129,25 @@ public sealed class SettingsStoreTests : IDisposable
     }
 
     [Fact]
+    public void Update_WithNullStrings_SavesDefaults_AndSettingsStayReadable()
+    {
+        var events = 0;
+        _store.SettingsChanged += (_, _) => events++;
+
+        var result = _store.Update(null, c =>
+        {
+            c.PublicUrl = null!;
+            c.Proxy.Url = null!;
+        });
+
+        Assert.Equal(SettingsUpdateStatus.Saved, result.Status);
+        Assert.Equal(1, events);
+        Assert.Equal(string.Empty, _store.Current.PublicUrl);
+        Assert.Equal(string.Empty, _store.Current.Proxy.Url);
+        Assert.True(File.Exists(_paths.SettingsBackup));
+    }
+
+    [Fact]
     public void BackupWriteFailure_DoesNotTurnASaveIntoAnError()
     {
         Directory.CreateDirectory(_paths.SettingsBackup); // a folder where settings.bak.json should be

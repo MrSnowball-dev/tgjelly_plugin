@@ -1,5 +1,7 @@
+using System;
 using System.IO;
 using System.Linq;
+using System.Runtime.Versioning;
 using Jellyfin.Plugin.TgJelly.Configuration;
 using Jellyfin.Plugin.TgJelly.Tests.Fakes;
 using Xunit;
@@ -58,6 +60,42 @@ public class PluginConfigurationHostTests
     }
 
     [Fact]
+    [UnsupportedOSPlatform("windows")]
+    public void SaveFromStore_WhenTheXmlCannotBeWritten_KeepsThePreviousSettings()
+    {
+        // Jellyfin replaces the live settings before writing the XML; a failed write must not leave them changed.
+        Assert.SkipWhen(OperatingSystem.IsWindows() || Environment.UserName == "root", "needs Unix permissions as a normal user");
+        using var dir = new TempDir();
+        var plugin = TestPlugin.Create(dir.Path);
+        plugin.SaveFromStore(new PluginConfiguration { Revision = 1, PublicUrl = "https://old.example.com" });
+        File.SetUnixFileMode(XmlPath(dir), UnixFileMode.UserRead);
+
+        Assert.ThrowsAny<UnauthorizedAccessException>(() => plugin.SaveFromStore(new PluginConfiguration { Revision = 2, PublicUrl = "https://new.example.com" }));
+
+        Assert.Equal(1, plugin.Configuration.Revision);
+        Assert.Equal("https://old.example.com", plugin.Configuration.PublicUrl);
+    }
+
+    [Fact]
+    [UnsupportedOSPlatform("windows")]
+    public void OutsideSave_WhenTheXmlCannotBeWritten_KeepsThePreviousSettings_AndRaisesNoEvent()
+    {
+        Assert.SkipWhen(OperatingSystem.IsWindows() || Environment.UserName == "root", "needs Unix permissions as a normal user");
+        using var dir = new TempDir();
+        var plugin = TestPlugin.Create(dir.Path);
+        plugin.SaveFromStore(new PluginConfiguration { Revision = 1, PublicUrl = "https://old.example.com" });
+        var outside = 0;
+        plugin.ExternalConfigurationSaved += (_, _) => outside++;
+        File.SetUnixFileMode(XmlPath(dir), UnixFileMode.UserRead);
+
+        Assert.ThrowsAny<UnauthorizedAccessException>(() => plugin.UpdateConfiguration(new PluginConfiguration { PublicUrl = "https://new.example.com" }));
+
+        Assert.Equal(1, plugin.Configuration.Revision);
+        Assert.Equal("https://old.example.com", plugin.Configuration.PublicUrl);
+        Assert.Equal(0, outside);
+    }
+
+    [Fact]
     public void OutsideAndStoreSaves_NeverShareARevision()
     {
         using var dir = new TempDir();
@@ -85,4 +123,6 @@ public class PluginConfigurationHostTests
         Assert.Equal(400, revisions.Distinct().Count());
         Assert.Equal(400, plugin.Configuration.Revision);
     }
+
+    private static string XmlPath(TempDir dir) => Path.Combine(dir.Path, "plugins", "configurations", "Jellyfin.Plugin.TgJelly.xml");
 }

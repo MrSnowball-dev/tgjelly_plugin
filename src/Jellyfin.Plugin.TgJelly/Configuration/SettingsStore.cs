@@ -8,7 +8,7 @@ using Microsoft.Extensions.Logging;
 namespace Jellyfin.Plugin.TgJelly.Configuration;
 
 /// <summary>
-/// The only way TgJelly changes its settings (spec §10.4): under the host's save lock, clone, change, validate, bump the
+/// The only way TgJelly changes its settings (spec §10.4): under the host's save lock, clone, change, normalize, validate, bump the
 /// revision, save, back up to settings.bak.json, then raise <see cref="SettingsChanged"/> once.
 /// </summary>
 public sealed class SettingsStore : IDisposable
@@ -72,6 +72,7 @@ public sealed class SettingsStore : IDisposable
 
             var next = Clone(current);
             change(next);
+            next.Normalize(); // a null string would otherwise be saved and make every later Clone throw
             var errors = SettingsValidator.Validate(next);
             if (errors.Count > 0)
             {

@@ -113,7 +113,7 @@ public class Plugin : BasePlugin<PluginConfiguration>, IConfigurationHost, IHasW
         ArgumentNullException.ThrowIfNull(configuration);
         if (SavingFromStore.Value)
         {
-            base.UpdateConfiguration(configuration);
+            SaveOrRollBack(configuration);
             return;
         }
 
@@ -124,9 +124,25 @@ public class Plugin : BasePlugin<PluginConfiguration>, IConfigurationHost, IHasW
         {
             incoming.Normalize();
             incoming.Revision = Math.Max(Configuration.Revision, incoming.Revision) + 1;
-            base.UpdateConfiguration(incoming);
+            SaveOrRollBack(incoming);
         }
 
         ExternalConfigurationSaved?.Invoke(this, new ConfigurationSavedEventArgs(incoming));
+    }
+
+    // Jellyfin replaces the live settings before it writes the XML. If the write fails, put the previous settings
+    // back, so memory never runs ahead of disk and of SettingsChanged.
+    private void SaveOrRollBack(BasePluginConfiguration configuration)
+    {
+        var previous = Configuration;
+        try
+        {
+            base.UpdateConfiguration(configuration);
+        }
+        catch
+        {
+            Configuration = previous;
+            throw;
+        }
     }
 }
