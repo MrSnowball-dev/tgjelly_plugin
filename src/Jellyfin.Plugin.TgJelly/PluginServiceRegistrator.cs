@@ -2,6 +2,7 @@ using System;
 using Jellyfin.Plugin.TgJelly.Bot;
 using Jellyfin.Plugin.TgJelly.Compat;
 using Jellyfin.Plugin.TgJelly.Configuration;
+using Jellyfin.Plugin.TgJelly.Destinations;
 using Jellyfin.Plugin.TgJelly.Hosting;
 using Jellyfin.Plugin.TgJelly.Logging;
 using Jellyfin.Plugin.TgJelly.State;
@@ -33,6 +34,7 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddRedactedLogger<SettingsStore>();
         serviceCollection.AddRedactedLogger<InstanceGate>();
         serviceCollection.AddRedactedLogger<PersistenceService>();
+        serviceCollection.AddRedactedLogger<HealthService>();
         serviceCollection.AddSingleton(sp => new DataPaths(sp.GetRequiredService<IApplicationPaths>().PluginConfigurationsPath));
         serviceCollection.AddSingleton(sp => CompatGuard.Evaluate(sp.GetRequiredService<IServerApplicationHost>().ApplicationVersion));
         serviceCollection.AddSingleton(_ => StringTable.LoadEmbedded());
@@ -42,11 +44,15 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<SettingsStore>();
         serviceCollection.AddSingleton(_ => BotApiEnvironment.FromEnvironment());
         serviceCollection.AddSingleton<ITelegramClientFactory, TelegramClientFactory>();
+        serviceCollection.AddSingleton<BotConnection>();
+        serviceCollection.AddSingleton<DestinationChecker>();
+        serviceCollection.AddSingleton<HealthService>();
 
         // Hosted services stop in reverse order: persistence flushes first, then the gate releases state.lock.
         serviceCollection.AddSingleton<InstanceGate>();
         serviceCollection.AddHostedService(sp => sp.GetRequiredService<InstanceGate>());
         serviceCollection.AddHostedService<PersistenceService>();
+        serviceCollection.AddHostedService(sp => sp.GetRequiredService<HealthService>());
     }
 
     /// <summary>
