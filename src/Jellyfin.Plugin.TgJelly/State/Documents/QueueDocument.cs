@@ -20,4 +20,13 @@ public sealed class QueueDocument
 
     /// <summary>Gets or sets the poster file_id cache, keyed by item ID and image modification time.</summary>
     public Dictionary<string, CachedFileId> FileIdCache { get; set; } = new(StringComparer.Ordinal);
+
+    /// <summary>Gets or sets the items (or albums) waiting for readiness, keyed by ID (<c>N</c>), with when they were first seen (spec §7.4 step 2).</summary>
+    public Dictionary<string, DateTimeOffset> PendingMedia { get; set; } = new(StringComparer.Ordinal);
+
+    /// <summary>Gets or sets the identities of removed items with when they were removed (48 h, spec §7.4 step 8).</summary>
+    public Dictionary<string, DateTimeOffset> RemovedIdentities { get; set; } = new(StringComparer.Ordinal);
+
+    /// <summary>Gets or sets recently added series, keyed by ID (<c>N</c>), with when they were added (24 h).</summary>
+    public Dictionary<string, DateTimeOffset> NewSeries { get; set; } = new(StringComparer.Ordinal);
 }

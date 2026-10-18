@@ -57,6 +57,7 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddRedactedLogger<TaskWatcher>();
         serviceCollection.AddRedactedLogger<RestartWatcher>();
         serviceCollection.AddRedactedLogger<StartupWatcher>();
+        serviceCollection.AddRedactedLogger<Pipeline.MediaReadiness>();
         serviceCollection.AddRedactedLogger<LoginFailedConsumer>();
         serviceCollection.AddRedactedLogger<LoginSucceededConsumer>();
         serviceCollection.AddRedactedLogger<LockoutConsumer>();
