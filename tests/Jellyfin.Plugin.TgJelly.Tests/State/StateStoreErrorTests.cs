@@ -37,4 +37,16 @@ public class StateStoreErrorTests
 
         Assert.Single(store.LastErrorsSnapshot(), e => e.Message == "disk full");
     }
+
+    [Fact]
+    public void RecordError_RedactsTokens()
+    {
+        using var dir = new TempDir();
+        var store = new StateStore(new DataPaths(dir.Path), new FakeTimeProvider(), NullLogger<StateStore>.Instance);
+        store.Load();
+
+        store.RecordError("bot", "oops 123456789:AAEhBP0av28KrBd9xL4Zq3Wm7Tn5Ys1Cv6QpZ");
+
+        Assert.Equal("oops <token>", Assert.Single(store.LastErrorsSnapshot()).Message);
+    }
 }

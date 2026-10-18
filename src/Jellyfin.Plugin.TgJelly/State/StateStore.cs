@@ -4,6 +4,7 @@ using System.IO;
 using System.Runtime.ExceptionServices;
 using System.Text.Json;
 using System.Threading;
+using Jellyfin.Plugin.TgJelly.Logging;
 using Jellyfin.Plugin.TgJelly.State.Documents;
 using Microsoft.Extensions.Logging;
 
@@ -174,7 +175,7 @@ public sealed class StateStore
     /// <param name="message">The error text.</param>
     public void RecordError(string source, string message)
     {
-        var error = new StatusError { At = _time.GetUtcNow(), Source = source, Message = message };
+        var error = new StatusError { At = _time.GetUtcNow(), Source = source, Message = SecretRedactor.Redact(message) };
         lock (_gate)
         {
             var list = _loaded ? _state.Status.LastErrors : _pendingErrors;

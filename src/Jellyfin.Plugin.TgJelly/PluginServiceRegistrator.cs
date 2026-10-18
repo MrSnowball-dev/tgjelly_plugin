@@ -2,6 +2,7 @@ using System;
 using Jellyfin.Plugin.TgJelly.Compat;
 using Jellyfin.Plugin.TgJelly.Configuration;
 using Jellyfin.Plugin.TgJelly.Hosting;
+using Jellyfin.Plugin.TgJelly.Logging;
 using Jellyfin.Plugin.TgJelly.State;
 using MediaBrowser.Common.Configuration;
 using MediaBrowser.Controller;
@@ -22,6 +23,14 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
     public void RegisterServices(IServiceCollection serviceCollection, IServerApplicationHost applicationHost)
     {
         serviceCollection.TryAddSingleton(TimeProvider.System);
+
+        // Every TgJelly type that takes an ILogger<T> gets a redacting one (spec §12); a test enforces the list.
+        serviceCollection.AddRedactedLogger<PluginServiceRegistrator>();
+        serviceCollection.AddRedactedLogger<SecretsStore>();
+        serviceCollection.AddRedactedLogger<StateStore>();
+        serviceCollection.AddRedactedLogger<SettingsStore>();
+        serviceCollection.AddRedactedLogger<InstanceGate>();
+        serviceCollection.AddRedactedLogger<PersistenceService>();
         serviceCollection.AddSingleton(sp => new DataPaths(sp.GetRequiredService<IApplicationPaths>().PluginConfigurationsPath));
         serviceCollection.AddSingleton(sp => CompatGuard.Evaluate(sp.GetRequiredService<IServerApplicationHost>().ApplicationVersion));
         serviceCollection.AddSingleton<SecretsStore>();

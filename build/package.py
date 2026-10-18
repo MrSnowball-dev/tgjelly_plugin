@@ -38,8 +38,8 @@ IMAGE_URL = "https://mrsnowball-dev.github.io/tgjelly_plugin/logo.png"
 REPO_URL = "https://github.com/MrSnowball-dev/tgjelly_plugin"
 
 # Exactly these DLLs ship, and meta.json lists them, so no stray framework DLL is ever loaded (spec §13.4, F5).
-# Plan 2 adds Telegram.Bot.dll; plan 5 adds Scriban.dll.
-ASSEMBLIES = ["Jellyfin.Plugin.TgJelly.dll"]
+# Plan 5 adds Scriban.dll.
+ASSEMBLIES = ["Jellyfin.Plugin.TgJelly.dll", "Telegram.Bot.dll"]
 
 TRACKS = [
     {"track": 1, "tfm": "net9.0", "target_abi": "10.11.0.0"},

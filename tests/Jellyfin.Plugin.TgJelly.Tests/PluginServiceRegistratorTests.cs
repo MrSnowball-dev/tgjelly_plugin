@@ -31,6 +31,7 @@ public class PluginServiceRegistratorTests
 
         var services = new ServiceCollection();
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
+        services.AddSingleton<ILoggerFactory>(NullLoggerFactory.Instance); // Jellyfin's container has both
         services.AddSingleton(paths);
         services.AddSingleton(host);
         new PluginServiceRegistrator().RegisterServices(services, host);
@@ -57,5 +58,25 @@ public class PluginServiceRegistratorTests
         Assert.Equal(1, logger.Count(Microsoft.Extensions.Logging.LogLevel.Warning));
         Assert.Equal(0, host.Configuration.Revision);
         Assert.Throws<InvalidOperationException>(() => host.SaveFromStore(new PluginConfiguration()));
+    }
+
+    [Fact]
+    public void EveryTgJellyLogger_IsRedacting()
+    {
+        var services = new ServiceCollection();
+        new PluginServiceRegistrator().RegisterServices(services, Substitute.For<IServerApplicationHost>());
+        var needed = typeof(Plugin).Assembly.GetTypes()
+            .SelectMany(t => t.GetConstructors())
+            .SelectMany(c => c.GetParameters())
+            .Select(p => p.ParameterType)
+            .Where(t => t.IsGenericType && t.GetGenericTypeDefinition() == typeof(ILogger<>))
+            .Distinct()
+            .ToArray();
+
+        Assert.NotEmpty(needed);
+        foreach (var loggerType in needed)
+        {
+            Assert.Contains(services, d => d.ServiceType == loggerType && d.ImplementationFactory is not null);
+        }
     }
 }

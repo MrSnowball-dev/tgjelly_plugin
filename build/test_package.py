@@ -10,6 +10,9 @@ import package
 
 
 class TrackVersionTests(unittest.TestCase):
+    def test_whitelist_includes_telegram_bot(self):
+        self.assertEqual(package.ASSEMBLIES, ["Jellyfin.Plugin.TgJelly.dll", "Telegram.Bot.dll"])
+
     def test_maps_release_to_both_tracks(self):
         self.assertEqual(package.track_version(1, "0.3"), "1.0.3.0")
         self.assertEqual(package.track_version(2, "1.12"), "2.1.12.0")
