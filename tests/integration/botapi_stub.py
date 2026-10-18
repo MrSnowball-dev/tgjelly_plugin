@@ -32,6 +32,10 @@ class StubBotApi:
         stub = self
 
         class Handler(BaseHTTPRequestHandler):
+            # HTTP/1.1 keep-alive like the real Bot API. With HTTP/1.0 replies, .NET's connection pool reused
+            # connections the stub had already closed ("The response ended prematurely") under concurrent calls.
+            protocol_version = "HTTP/1.1"
+
             def do_POST(self):  # noqa: N802 (http.server naming)
                 stub._handle(self)
 

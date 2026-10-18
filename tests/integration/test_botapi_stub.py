@@ -64,6 +64,18 @@ class StubTests(unittest.TestCase):
         conn.close()
         self.assertEqual(-1001234567890, result["id"])
 
+    def test_answers_http_1_1_and_keeps_the_connection_open(self):
+        # .NET pools connections; HTTP/1.0 replies that close them made concurrent calls fail in CI.
+        import http.client
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        for _ in range(2):
+            conn.request("POST", f"/bot{TOKEN}/getMe", body=b"{}", headers={"Content-Type": "application/json"})
+            response = conn.getresponse()
+            response.read()
+            self.assertEqual(11, response.version)
+            self.assertNotEqual("close", (response.getheader("Connection") or "").lower())
+        conn.close()
+
 
 if __name__ == "__main__":
     unittest.main()
