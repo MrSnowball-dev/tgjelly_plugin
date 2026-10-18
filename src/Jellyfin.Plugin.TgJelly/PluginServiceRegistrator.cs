@@ -1,16 +1,23 @@
 using System;
+using Jellyfin.Data.Events.Users;
 using Jellyfin.Plugin.TgJelly.Bot;
 using Jellyfin.Plugin.TgJelly.Compat;
 using Jellyfin.Plugin.TgJelly.Configuration;
 using Jellyfin.Plugin.TgJelly.Delivery;
 using Jellyfin.Plugin.TgJelly.Destinations;
 using Jellyfin.Plugin.TgJelly.Hosting;
+using Jellyfin.Plugin.TgJelly.Intake;
+using Jellyfin.Plugin.TgJelly.Intake.Consumers;
 using Jellyfin.Plugin.TgJelly.Library;
 using Jellyfin.Plugin.TgJelly.Logging;
 using Jellyfin.Plugin.TgJelly.State;
 using Jellyfin.Plugin.TgJelly.Strings;
 using MediaBrowser.Common.Configuration;
+using MediaBrowser.Common.Updates;
 using MediaBrowser.Controller;
+using MediaBrowser.Controller.Events;
+using MediaBrowser.Controller.Events.Authentication;
+using MediaBrowser.Controller.Events.Updates;
 using MediaBrowser.Controller.Plugins;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -46,6 +53,16 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddRedactedLogger<DestinationTester>();
         serviceCollection.AddRedactedLogger<Api.DestinationsController>();
         serviceCollection.AddRedactedLogger<JellyfinLibrary>();
+        serviceCollection.AddRedactedLogger<LoginFailedConsumer>();
+        serviceCollection.AddRedactedLogger<LoginSucceededConsumer>();
+        serviceCollection.AddRedactedLogger<LockoutConsumer>();
+        serviceCollection.AddRedactedLogger<UserCreatedConsumer>();
+        serviceCollection.AddRedactedLogger<UserDeletedConsumer>();
+        serviceCollection.AddRedactedLogger<PasswordChangedConsumer>();
+        serviceCollection.AddRedactedLogger<PluginInstalledConsumer>();
+        serviceCollection.AddRedactedLogger<PluginUpdatedConsumer>();
+        serviceCollection.AddRedactedLogger<PluginUninstalledConsumer>();
+        serviceCollection.AddRedactedLogger<PluginInstallFailedConsumer>();
         serviceCollection.AddSingleton(sp => new DataPaths(sp.GetRequiredService<IApplicationPaths>().PluginConfigurationsPath));
         serviceCollection.AddSingleton(sp => CompatGuard.Evaluate(sp.GetRequiredService<IServerApplicationHost>().ApplicationVersion));
         serviceCollection.AddSingleton(_ => StringTable.LoadEmbedded());
@@ -70,6 +87,19 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<DestinationTester>();
         serviceCollection.AddSingleton<ILibraryAccess, JellyfinLibrary>();
         serviceCollection.AddSingleton<IServerInfo, JellyfinServerInfo>();
+        serviceCollection.AddSingleton<IntakeQueues>();
+
+        // Consumers are scoped, like Jellyfin's own and the Webhook plugin's; they take only the queue and a logger (F6).
+        serviceCollection.AddScoped<IEventConsumer<AuthenticationRequestEventArgs>, LoginFailedConsumer>();
+        serviceCollection.AddScoped<IEventConsumer<AuthenticationResultEventArgs>, LoginSucceededConsumer>();
+        serviceCollection.AddScoped<IEventConsumer<UserLockedOutEventArgs>, LockoutConsumer>();
+        serviceCollection.AddScoped<IEventConsumer<UserCreatedEventArgs>, UserCreatedConsumer>();
+        serviceCollection.AddScoped<IEventConsumer<UserDeletedEventArgs>, UserDeletedConsumer>();
+        serviceCollection.AddScoped<IEventConsumer<UserPasswordChangedEventArgs>, PasswordChangedConsumer>();
+        serviceCollection.AddScoped<IEventConsumer<PluginInstalledEventArgs>, PluginInstalledConsumer>();
+        serviceCollection.AddScoped<IEventConsumer<PluginUpdatedEventArgs>, PluginUpdatedConsumer>();
+        serviceCollection.AddScoped<IEventConsumer<PluginUninstalledEventArgs>, PluginUninstalledConsumer>();
+        serviceCollection.AddScoped<IEventConsumer<InstallationFailedEventArgs>, PluginInstallFailedConsumer>();
 
         // Hosted services stop in reverse order: the Outbox and health loops first, then the bot (confirming the
         // last update batch), then persistence flushes, and the gate releases state.lock last.
