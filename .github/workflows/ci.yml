@@ -1,0 +1,71 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build, test, package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: |
+            9.0.x
+            10.0.x
+
+      - name: Build (net9.0 + net10.0, warnings are errors)
+        run: dotnet build Jellyfin.Plugin.TgJelly.slnx -c Release
+
+      - name: Unit tests (both frameworks)
+        run: dotnet test --solution Jellyfin.Plugin.TgJelly.slnx -c Release --no-build
+
+      - name: Script tests
+        run: |
+          python3 -m unittest discover -s build -p 'test_*.py' -v
+          python3 -m unittest discover -s tests/integration -p 'test_*.py' -v
+
+      - name: Package both tracks
+        run: python3 build/package.py --release 0.0 --changelog "CI build ${{ github.sha }}" --output artifacts
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: packages
+          path: |
+            artifacts/*.zip
+            artifacts/manifest.json
+
+  smoke:
+    name: Smoke ${{ matrix.image }}
+    needs: build
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: jellyfin/jellyfin:10.11.0
+            zip: tgjelly_1.0.0.0.zip
+          - image: jellyfin/jellyfin:10.11.11
+            zip: tgjelly_1.0.0.0.zip
+          - image: jellyfin/jellyfin:12.0
+            zip: tgjelly_2.0.0.0.zip
+          - image: jellyfin/jellyfin:12.2
+            zip: tgjelly_2.0.0.0.zip
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: packages
+          path: artifacts
+
+      - name: Install the plugin into a real Jellyfin and check it
+        run: python3 tests/integration/smoke.py --image ${{ matrix.image }} --zip artifacts/${{ matrix.zip }}

@@ -1,0 +1,8 @@
+bin/
+obj/
+.vs/
+.idea/
+artifacts/
+__pycache__/
+*.pyc
+.directory
