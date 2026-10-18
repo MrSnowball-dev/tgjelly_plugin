@@ -34,10 +34,15 @@ public class PluginServiceRegistratorTests
         services.AddSingleton<ILoggerFactory>(NullLoggerFactory.Instance); // Jellyfin's container has both
         services.AddSingleton(paths);
         services.AddSingleton(host);
+        services.AddSingleton(Substitute.For<MediaBrowser.Controller.Library.ILibraryManager>());
+        services.AddSingleton(Substitute.For<MediaBrowser.Controller.Configuration.IServerConfigurationManager>());
+        services.AddSingleton(Substitute.For<MediaBrowser.Model.Tasks.ITaskManager>());
         new PluginServiceRegistrator().RegisterServices(services, host);
         using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true });
 
         Assert.NotNull(provider.GetRequiredService<SettingsStore>());
+        Assert.NotNull(provider.GetRequiredService<Jellyfin.Plugin.TgJelly.Library.ILibraryAccess>());
+        Assert.NotNull(provider.GetRequiredService<Jellyfin.Plugin.TgJelly.Library.IServerInfo>());
         Assert.NotNull(provider.GetRequiredService<SecretsStore>());
         Assert.NotNull(provider.GetRequiredService<StateStore>());
         Assert.True(provider.GetRequiredService<CompatResult>().IsCompatible);

@@ -5,6 +5,7 @@ using Jellyfin.Plugin.TgJelly.Configuration;
 using Jellyfin.Plugin.TgJelly.Delivery;
 using Jellyfin.Plugin.TgJelly.Destinations;
 using Jellyfin.Plugin.TgJelly.Hosting;
+using Jellyfin.Plugin.TgJelly.Library;
 using Jellyfin.Plugin.TgJelly.Logging;
 using Jellyfin.Plugin.TgJelly.State;
 using Jellyfin.Plugin.TgJelly.Strings;
@@ -44,6 +45,7 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddRedactedLogger<BotTokenService>();
         serviceCollection.AddRedactedLogger<DestinationTester>();
         serviceCollection.AddRedactedLogger<Api.DestinationsController>();
+        serviceCollection.AddRedactedLogger<JellyfinLibrary>();
         serviceCollection.AddSingleton(sp => new DataPaths(sp.GetRequiredService<IApplicationPaths>().PluginConfigurationsPath));
         serviceCollection.AddSingleton(sp => CompatGuard.Evaluate(sp.GetRequiredService<IServerApplicationHost>().ApplicationVersion));
         serviceCollection.AddSingleton(_ => StringTable.LoadEmbedded());
@@ -66,6 +68,8 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<ISupervisorControl>(sp => sp.GetRequiredService<BotSupervisor>());
         serviceCollection.AddSingleton<BotTokenService>();
         serviceCollection.AddSingleton<DestinationTester>();
+        serviceCollection.AddSingleton<ILibraryAccess, JellyfinLibrary>();
+        serviceCollection.AddSingleton<IServerInfo, JellyfinServerInfo>();
 
         // Hosted services stop in reverse order: the Outbox and health loops first, then the bot (confirming the
         // last update batch), then persistence flushes, and the gate releases state.lock last.
