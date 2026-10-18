@@ -55,6 +55,15 @@ class StubTests(unittest.TestCase):
         second = self.call("sendMessage", {"chat_id": 5, "text": "b"})[1]["result"]["message_id"]
         self.assertEqual(first + 1, second)
 
+    def test_chunked_bodies_are_read(self):
+        import http.client
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        conn.request("POST", f"/bot{TOKEN}/getChat", body=iter([b'{"chat_id":', b'-1001234567890}']),
+                     headers={"Content-Type": "application/json; charset=utf-8"}, encode_chunked=True)
+        result = json.loads(conn.getresponse().read())["result"]
+        conn.close()
+        self.assertEqual(-1001234567890, result["id"])
+
 
 if __name__ == "__main__":
     unittest.main()

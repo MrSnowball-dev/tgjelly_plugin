@@ -59,8 +59,7 @@ class StubBotApi:
         if len(parts) != 2 or not parts[0].startswith("bot"):
             return self._reply(request, 404, {"ok": False, "error_code": 404, "description": "Not Found"})
         token, method = parts[0][3:], parts[1]
-        length = int(request.headers.get("Content-Length") or 0)
-        raw = request.rfile.read(length) if length else b""
+        raw = self._read_body(request)
         body = {}
         if raw and "json" in (request.headers.get("Content-Type") or ""):
             try:
@@ -104,13 +103,32 @@ class StubBotApi:
         return None
 
     @staticmethod
+    def _read_body(request):
+        # Telegram.Bot sends JSON with chunked transfer encoding (no Content-Length).
+        if request.headers.get("Transfer-Encoding", "").lower() == "chunked":
+            chunks = []
+            while True:
+                size = int(request.rfile.readline().split(b";")[0].strip() or b"0", 16)
+                if size == 0:
+                    request.rfile.readline()
+                    break
+                chunks.append(request.rfile.read(size))
+                request.rfile.readline()
+            return b"".join(chunks)
+        length = int(request.headers.get("Content-Length") or 0)
+        return request.rfile.read(length) if length else b""
+
+    @staticmethod
     def _reply(request, status, payload):
         data = json.dumps(payload).encode("utf-8")
-        request.send_response(status)
-        request.send_header("Content-Type", "application/json")
-        request.send_header("Content-Length", str(len(data)))
-        request.end_headers()
-        request.wfile.write(data)
+        try:
+            request.send_response(status)
+            request.send_header("Content-Type", "application/json")
+            request.send_header("Content-Length", str(len(data)))
+            request.end_headers()
+            request.wfile.write(data)
+        except (BrokenPipeError, ConnectionResetError):
+            pass  # the client gave up, e.g. a long poll cancelled by a session restart
 
 
 def main():

@@ -186,6 +186,7 @@ def telegram_checks(base: str, token: str, stub) -> None:
     status, _, text = http("POST", f"{base}/TgJelly/Destinations", request, token=token, timeout=60)
     added = json.loads(text) if status == 200 else {}
     check(added.get("Outcome") == "Added" and added.get("TestSent") is True, f"POST /TgJelly/Destinations adds the chat (got {status} {text[:300]})")
+    check(added["Destination"]["ChatId"] == SMOKE_CHAT, "the destination has the chat's ID")
 
     sent = [c for c in stub.calls() if c["method"] == "sendMessage" and c["body"].get("chat_id") == SMOKE_CHAT]
     check(any("TgJelly test" in c["body"].get("text", "") for c in sent), "the chat received the automatic test message")
