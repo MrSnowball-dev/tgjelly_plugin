@@ -1,4 +1,5 @@
 using System;
+using Jellyfin.Plugin.TgJelly.Bot;
 using Jellyfin.Plugin.TgJelly.Compat;
 using Jellyfin.Plugin.TgJelly.Configuration;
 using Jellyfin.Plugin.TgJelly.Hosting;
@@ -39,6 +40,8 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<StateStore>();
         serviceCollection.AddSingleton(sp => ResolveConfigurationHost(Plugin.Instance, sp.GetRequiredService<ILogger<PluginServiceRegistrator>>()));
         serviceCollection.AddSingleton<SettingsStore>();
+        serviceCollection.AddSingleton(_ => BotApiEnvironment.FromEnvironment());
+        serviceCollection.AddSingleton<ITelegramClientFactory, TelegramClientFactory>();
 
         // Hosted services stop in reverse order: persistence flushes first, then the gate releases state.lock.
         serviceCollection.AddSingleton<InstanceGate>();
