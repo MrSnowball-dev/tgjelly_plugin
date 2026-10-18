@@ -53,6 +53,10 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddRedactedLogger<DestinationTester>();
         serviceCollection.AddRedactedLogger<Api.DestinationsController>();
         serviceCollection.AddRedactedLogger<JellyfinLibrary>();
+        serviceCollection.AddRedactedLogger<LibraryWatcher>();
+        serviceCollection.AddRedactedLogger<TaskWatcher>();
+        serviceCollection.AddRedactedLogger<RestartWatcher>();
+        serviceCollection.AddRedactedLogger<StartupWatcher>();
         serviceCollection.AddRedactedLogger<LoginFailedConsumer>();
         serviceCollection.AddRedactedLogger<LoginSucceededConsumer>();
         serviceCollection.AddRedactedLogger<LockoutConsumer>();
@@ -88,6 +92,12 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<ILibraryAccess, JellyfinLibrary>();
         serviceCollection.AddSingleton<IServerInfo, JellyfinServerInfo>();
         serviceCollection.AddSingleton<IntakeQueues>();
+        serviceCollection.AddSingleton<PendingIdSet>();
+        serviceCollection.AddSingleton<LibraryWatcher>();
+        serviceCollection.AddSingleton<IScanState>(sp => sp.GetRequiredService<LibraryWatcher>());
+        serviceCollection.AddSingleton<TaskWatcher>();
+        serviceCollection.AddSingleton<RestartWatcher>();
+        serviceCollection.AddSingleton<StartupWatcher>();
 
         // Consumers are scoped, like Jellyfin's own and the Webhook plugin's; they take only the queue and a logger (F6).
         serviceCollection.AddScoped<IEventConsumer<AuthenticationRequestEventArgs>, LoginFailedConsumer>();
