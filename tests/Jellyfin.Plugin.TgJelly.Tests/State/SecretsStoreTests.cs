@@ -109,4 +109,27 @@ public class SecretsStoreTests
             File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite);
         }
     }
+
+    [Fact]
+    [UnsupportedOSPlatform("windows")]
+    public void UnreadableFile_IsReadAgain_OnceReadable()
+    {
+        Assert.SkipWhen(OperatingSystem.IsWindows() || Environment.UserName == "root", "needs Unix permissions as a normal user");
+        using var dir = new TempDir();
+        NewStore(dir).Save(new BotSecrets { BotToken = "t" });
+        var path = new DataPaths(dir.Path).Secrets;
+        var store = NewStore(dir);
+        File.SetUnixFileMode(path, UnixFileMode.None);
+        try
+        {
+            Assert.Equal(BotSecrets.Empty, store.Load());
+        }
+        finally
+        {
+            File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+        }
+
+        Assert.Equal("t", store.Load().BotToken);
+        Assert.Null(store.LoadWarning);
+    }
 }

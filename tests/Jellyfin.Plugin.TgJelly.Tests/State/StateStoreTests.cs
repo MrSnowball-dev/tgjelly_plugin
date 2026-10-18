@@ -236,4 +236,43 @@ public class StateStoreTests
             File.SetUnixFileMode(paths.State, UnixFileMode.UserRead | UnixFileMode.UserWrite);
         }
     }
+
+    [Fact]
+    [UnsupportedOSPlatform("windows")]
+    public void UnreadableQueueFile_IsNeverOverwritten_AndLoadsOnceReadable()
+    {
+        Assert.SkipWhen(OperatingSystem.IsWindows() || Environment.UserName == "root", "needs Unix permissions as a normal user");
+        using var dir = new TempDir();
+        var paths = new DataPaths(dir.Path);
+        var time = new FakeTimeProvider(Restored);
+        var first = NewStore(dir, time);
+        first.Load();
+        first.UpdateQueue(q => q.Outbox.Add(new OutboxEntry { EntryId = "e1", DestinationId = "d1", EventKey = "server.started" }));
+        first.FlushAll();
+        var original = File.ReadAllBytes(paths.Queue);
+        File.SetUnixFileMode(paths.Queue, UnixFileMode.None);
+        var store = NewStore(dir, time);
+        try
+        {
+            store.Load();
+            Assert.Contains(store.Read(s => s.Status.LoadWarnings.ToArray()), w => w.Contains("queue.json", StringComparison.Ordinal) && w.Contains("can't be read", StringComparison.Ordinal));
+
+            store.UpdateQueue(q => q.Outbox.Clear());
+            store.FlushAll();
+            time.Advance(TimeSpan.FromSeconds(1));
+            store.FlushDue();
+        }
+        finally
+        {
+            File.SetUnixFileMode(paths.Queue, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+        }
+
+        Assert.Equal(original, File.ReadAllBytes(paths.Queue));
+
+        time.Advance(StateStore.BlockedRetryInterval);
+        store.FlushDue();
+
+        Assert.Equal("e1", store.ReadQueue(q => q.Outbox.Single().EntryId));
+        Assert.Contains("queue.json is readable again; changes made while it couldn't be read were not kept.", store.Read(s => s.Status.LoadWarnings.ToArray()));
+    }
 }
