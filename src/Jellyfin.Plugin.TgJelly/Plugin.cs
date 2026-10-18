@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Threading;
 using Jellyfin.Plugin.TgJelly.Configuration;
 using MediaBrowser.Common.Configuration;
@@ -11,7 +12,7 @@ namespace Jellyfin.Plugin.TgJelly;
 /// <summary>
 /// The TgJelly plugin entry point.
 /// </summary>
-public class Plugin : BasePlugin<PluginConfiguration>, IConfigurationHost
+public class Plugin : BasePlugin<PluginConfiguration>, IConfigurationHost, IHasWebPages
 {
     /// <summary>
     /// The plugin name. Fixed forever (spec §5.1).
@@ -55,6 +56,32 @@ public class Plugin : BasePlugin<PluginConfiguration>, IConfigurationHost
 
     /// <inheritdoc />
     public override string Description => "Telegram notifications for Jellyfin.";
+
+    /// <summary>
+    /// Lists the dashboard pages (spec §11.1). The HTML page must come first: the plugin's Settings button
+    /// opens the first page, and a JS page there would crash the view.
+    /// </summary>
+    /// <returns>The page descriptors.</returns>
+    public IEnumerable<PluginPageInfo> GetPages()
+    {
+        var resourcePrefix = typeof(Plugin).Namespace + ".Web.";
+        return
+        [
+            new PluginPageInfo
+            {
+                Name = "tgjelly",
+                DisplayName = "Telegram",
+                EmbeddedResourcePath = resourcePrefix + "tgjelly.html",
+                EnableInMainMenu = true,
+                MenuIcon = "send",
+            },
+            new PluginPageInfo
+            {
+                Name = "tgjelly.js",
+                EmbeddedResourcePath = resourcePrefix + "tgjelly.js",
+            },
+        ];
+    }
 
     /// <inheritdoc />
     public T RunExclusive<T>(Func<T> action)

@@ -37,4 +37,9 @@
     <InternalsVisibleTo Include="Jellyfin.Plugin.TgJelly.Tests" />
   </ItemGroup>
 
+  <ItemGroup>
+    <EmbeddedResource Include="Web\tgjelly.html" />
+    <EmbeddedResource Include="Web\tgjelly.js" />
+  </ItemGroup>
+
 </Project>
