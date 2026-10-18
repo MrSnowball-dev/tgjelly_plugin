@@ -36,6 +36,9 @@ jobs:
       - name: Package both tracks
         run: python3 build/package.py --release 0.0 --changelog "CI build ${{ github.sha }}" --output artifacts
 
+      - name: List publish output (spec §15 Q7)
+        run: ls -1 artifacts/publish/net9.0 artifacts/publish/net10.0
+
       - uses: actions/upload-artifact@v7
         with:
           name: packages
@@ -44,7 +47,7 @@ jobs:
             artifacts/manifest.json
 
   smoke:
-    name: Smoke ${{ matrix.image }}
+    name: Smoke ${{ matrix.image }} ${{ matrix.zip }} ${{ matrix.args }}
     needs: build
     runs-on: ubuntu-latest
     strategy:
@@ -53,12 +56,20 @@ jobs:
         include:
           - image: jellyfin/jellyfin:10.11.0
             zip: tgjelly_1.0.0.0.zip
+            args: --stub
           - image: jellyfin/jellyfin:10.11.11
             zip: tgjelly_1.0.0.0.zip
+            args: --stub
           - image: jellyfin/jellyfin:12.0
             zip: tgjelly_2.0.0.0.zip
+            args: --stub
           - image: jellyfin/jellyfin:12.2
             zip: tgjelly_2.0.0.0.zip
+            args: --stub
+          # Spec F8: after a 10.11 -> 12 upgrade the old build keeps loading until it is updated.
+          - image: jellyfin/jellyfin:12.2
+            zip: tgjelly_1.0.0.0.zip
+            args: --expect-incompatible
     steps:
       - uses: actions/checkout@v7
 
@@ -68,4 +79,4 @@ jobs:
           path: artifacts
 
       - name: Install the plugin into a real Jellyfin and check it
-        run: python3 tests/integration/smoke.py --image ${{ matrix.image }} --zip artifacts/${{ matrix.zip }}
+        run: python3 tests/integration/smoke.py --image ${{ matrix.image }} --zip artifacts/${{ matrix.zip }} ${{ matrix.args }}

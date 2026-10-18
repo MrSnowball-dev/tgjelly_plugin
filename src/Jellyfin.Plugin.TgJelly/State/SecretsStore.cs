@@ -103,5 +103,12 @@ public sealed class SecretsStore
             _logger.LogError(ex, "secrets.json was unreadable and has been moved to {Path}", moved);
             return BotSecrets.Empty;
         }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // Not moved aside: the file may be fine once its permissions are fixed.
+            _loadWarning = "secrets.json can't be read: " + ex.Message;
+            _logger.LogError(ex, "secrets.json can't be read");
+            return BotSecrets.Empty;
+        }
     }
 }

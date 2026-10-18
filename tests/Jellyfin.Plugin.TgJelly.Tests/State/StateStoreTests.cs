@@ -1,8 +1,9 @@
-using System;
 using System.IO;
+using System.Linq;
 using System.Runtime.Versioning;
-using Jellyfin.Plugin.TgJelly.State;
+using System;
 using Jellyfin.Plugin.TgJelly.State.Documents;
+using Jellyfin.Plugin.TgJelly.State;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Time.Testing;
 using Xunit;
@@ -205,5 +206,34 @@ public class StateStoreTests
 
         Assert.NotNull(store.Read(s => s.Status));
         Assert.Single(store.Read(s => s.Status.LoadWarnings.ToArray()));
+    }
+
+    [Fact]
+    [UnsupportedOSPlatform("windows")]
+    public void UnreadableStateFile_IsALoadWarning_NotAnException()
+    {
+        Assert.SkipWhen(OperatingSystem.IsWindows() || Environment.UserName == "root", "needs Unix permissions as a normal user");
+        using var dir = new TempDir();
+        var paths = new DataPaths(dir.Path);
+        var first = NewStore(dir, new FakeTimeProvider());
+        first.Load();
+        first.Update(s => s.Status.BackupRestoredAt = Restored);
+        first.FlushAll();
+        File.SetUnixFileMode(paths.State, UnixFileMode.None);
+        try
+        {
+            var store = NewStore(dir, new FakeTimeProvider());
+            store.Load();
+
+            Assert.True(store.IsLoaded);
+            var warning = Assert.Single(store.Read(s => s.Status.LoadWarnings.ToArray()));
+            Assert.Contains("state.json", warning, StringComparison.Ordinal);
+            Assert.True(File.Exists(paths.State));
+            Assert.Empty(Directory.GetFiles(paths.Root, "*.bad-*"));
+        }
+        finally
+        {
+            File.SetUnixFileMode(paths.State, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+        }
     }
 }

@@ -13,6 +13,11 @@ class HelperTests(unittest.TestCase):
         self.assertEqual(smoke.parse_host_port("127.0.0.1:49153\n"), 49153)
         self.assertEqual(smoke.parse_host_port("127.0.0.1:40001\n[::1]:40002"), 40001)
 
+    def test_stub_docker_args(self):
+        self.assertEqual(
+            smoke.stub_docker_args(8081),
+            ["--add-host=host.docker.internal:host-gateway", "-e", "TGJELLY_BOT_API_BASE_URL=http://host.docker.internal:8081"])
+
 
 if __name__ == "__main__":
     unittest.main()

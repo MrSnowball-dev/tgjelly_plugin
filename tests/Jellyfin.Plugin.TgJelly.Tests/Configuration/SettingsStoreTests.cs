@@ -226,4 +226,14 @@ public sealed class SettingsStoreTests : IDisposable
         _store.Dispose();
         _dir.Dispose();
     }
+
+    [Fact]
+    public void Update_ReturningFalse_SavesNothing_AndIsUnchanged()
+    {
+        var events = 0;
+        _store.SettingsChanged += (_, _) => events++;
+        var result = _store.UpdateIf(0, _ => false);
+        Assert.Equal(SettingsUpdateStatus.Unchanged, result.Status);
+        Assert.Equal((0, 0L, 0), (_host.Saves, _host.Configuration.Revision, events));
+    }
 }

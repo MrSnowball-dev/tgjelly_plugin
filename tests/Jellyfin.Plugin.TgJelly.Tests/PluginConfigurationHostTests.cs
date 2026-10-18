@@ -125,4 +125,26 @@ public class PluginConfigurationHostTests
     }
 
     private static string XmlPath(TempDir dir) => Path.Combine(dir.Path, "plugins", "configurations", "Jellyfin.Plugin.TgJelly.xml");
+
+    [Fact]
+    public void OutsideSave_WithMaxRevision_DoesNotWrapAround()
+    {
+        using var dir = new TempDir();
+        var plugin = TestPlugin.Create(dir.Path);
+        var paths = new Jellyfin.Plugin.TgJelly.State.DataPaths(dir.Path);
+        var time = new Microsoft.Extensions.Time.Testing.FakeTimeProvider();
+        var state = new Jellyfin.Plugin.TgJelly.State.StateStore(paths, time, Microsoft.Extensions.Logging.Abstractions.NullLogger<Jellyfin.Plugin.TgJelly.State.StateStore>.Instance);
+        state.Load();
+        using var store = new SettingsStore(plugin, paths, state, time, Microsoft.Extensions.Logging.Abstractions.NullLogger<SettingsStore>.Instance);
+        plugin.SaveFromStore(new PluginConfiguration { Revision = 5 });
+        var events = 0;
+        store.SettingsChanged += (_, _) => events++;
+
+        plugin.UpdateConfiguration(new PluginConfiguration { Revision = long.MaxValue });
+        Assert.Equal(6, plugin.Configuration.Revision);
+
+        store.Update(null, c => c.PublicUrl = "https://jf.example.com");
+        Assert.Equal(7, plugin.Configuration.Revision);
+        Assert.Equal(2, events);
+    }
 }

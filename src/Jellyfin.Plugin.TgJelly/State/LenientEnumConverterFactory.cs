@@ -22,7 +22,16 @@ public sealed class LenientEnumConverterFactory : JsonConverterFactory
         where T : struct, Enum
     {
         public override T Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
-            => reader.TokenType == JsonTokenType.String ? EnumText.Parse<T>(reader.GetString()) : EnumText.Fallback<T>();
+        {
+            if (reader.TokenType == JsonTokenType.String)
+            {
+                return EnumText.Parse<T>(reader.GetString());
+            }
+
+            // An object or array must be consumed whole, or System.Text.Json fails the entire document.
+            reader.Skip();
+            return EnumText.Fallback<T>();
+        }
 
         public override void Write(Utf8JsonWriter writer, T value, JsonSerializerOptions options)
             => writer.WriteStringValue(value.ToString());

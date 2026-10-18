@@ -13,4 +13,19 @@ public sealed class StatusSection
 
     /// <summary>Gets or sets warnings from loading the state files (e.g. a quarantined file).</summary>
     public List<string> LoadWarnings { get; set; } = [];
+
+    /// <summary>
+    /// Gets or sets the most recent errors, newest last (capped at <see cref="StateStore.MaxLastErrors"/>).
+    /// </summary>
+    public List<StatusError> LastErrors { get; set; } = [];
+
+    /// <summary>
+    /// Gets or sets the drop and eviction counters.
+    /// </summary>
+    public StatusCounters Counters { get; set; } = new();
+
+    /// <summary>
+    /// Gets or sets the flag set when Telegram rejected a button URL (spec §9.4 row 7).
+    /// </summary>
+    public PublicUrlFlag? PublicUrlFlag { get; set; }
 }

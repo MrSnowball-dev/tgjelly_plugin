@@ -1,0 +1,42 @@
+using System.Collections.Generic;
+
+namespace Jellyfin.Plugin.TgJelly.Api;
+
+/// <summary>
+/// A destination for the dashboard.
+/// </summary>
+public sealed class DestinationDto
+{
+    /// <summary>Gets the ID.</summary>
+    public string Id { get; init; } = string.Empty;
+
+    /// <summary>Gets the chat ID.</summary>
+    public long ChatId { get; init; }
+
+    /// <summary>Gets the forum topic, or 0.</summary>
+    public int ThreadId { get; init; }
+
+    /// <summary>Gets the chat title.</summary>
+    public string Title { get; init; } = string.Empty;
+
+    /// <summary>Gets the chat kind.</summary>
+    public string Kind { get; init; } = string.Empty;
+
+    /// <summary>Gets a value indicating whether it's enabled (not paused).</summary>
+    public bool Enabled { get; init; }
+
+    /// <summary>Gets the preset.</summary>
+    public string Preset { get; init; } = string.Empty;
+
+    /// <summary>Gets the event keys.</summary>
+    public IReadOnlyList<string> Events { get; init; } = [];
+
+    /// <summary>Gets the library filter (empty means all).</summary>
+    public IReadOnlyList<string> LibraryIds { get; init; } = [];
+
+    /// <summary>Gets the silent groups.</summary>
+    public IReadOnlyList<string> SilentGroups { get; init; } = [];
+
+    /// <summary>Gets the health.</summary>
+    public HealthDto Health { get; init; } = new();
+}

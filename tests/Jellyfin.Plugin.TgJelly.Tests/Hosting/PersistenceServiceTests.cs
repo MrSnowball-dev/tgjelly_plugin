@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Linq;
 using System.Runtime.Versioning;
 using System.Text.Json;
 using System.Threading;
@@ -8,6 +9,7 @@ using Jellyfin.Plugin.TgJelly.Configuration;
 using Jellyfin.Plugin.TgJelly.Hosting;
 using Jellyfin.Plugin.TgJelly.State;
 using Jellyfin.Plugin.TgJelly.Tests.Fakes;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Time.Testing;
 using Xunit;
@@ -93,8 +95,8 @@ public sealed class PersistenceServiceTests : IDisposable
         try
         {
             _state.Update(s => s.Status.LoadWarnings.Add("pending"));
-            _time.Advance(TimeSpan.FromSeconds(1)); // flush fails; the supervisor logs and restarts the loop after 1 s
-            await Eventually.SettleAsync();
+            await Eventually.AdvanceUntilAsync(
+                _time, TimeSpan.FromSeconds(1), () => _state.LastErrorsSnapshot().Any(e => e.Source == "persistence"), "the failed flush is recorded");
             Assert.False(File.Exists(_paths.State));
         }
         finally
@@ -112,5 +114,34 @@ public sealed class PersistenceServiceTests : IDisposable
         _settings.Dispose();
         _gate.Dispose();
         _dir.Dispose();
+    }
+
+    [Fact]
+    [UnsupportedOSPlatform("windows")]
+    public async Task FlushFailure_IsRecordedInStatus_AndTheLoopKeepsRunning()
+    {
+        Assert.SkipWhen(OperatingSystem.IsWindows() || Environment.UserName == "root", "needs Unix permissions as a normal user");
+        var logger = new ListLogger<PersistenceService>();
+        using var service = new PersistenceService(_gate, _state, _settings, _secrets, _time, logger);
+        await _gate.StartAsync(CancellationToken.None);
+        await service.StartAsync(CancellationToken.None);
+        await Eventually.TrueAsync(() => _state.IsLoaded, "state loaded");
+
+        File.SetUnixFileMode(_paths.Root, UnixFileMode.UserRead | UnixFileMode.UserExecute);
+        try
+        {
+            _state.Update(s => s.Status.LoadWarnings.Add("pending"));
+            await Eventually.AdvanceUntilAsync(
+                _time, TimeSpan.FromSeconds(1), () => _state.LastErrorsSnapshot().Any(e => e.Source == "persistence"), "the failed flush is recorded");
+        }
+        finally
+        {
+            File.SetUnixFileMode(_paths.Root, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        }
+
+        await Eventually.AdvanceUntilAsync(_time, TimeSpan.FromSeconds(1), () => File.Exists(_paths.State), "the same loop writes state.json once the folder recovered");
+        Assert.Equal(0, logger.Count(LogLevel.Error)); // the supervisor never had to restart the loop
+        await service.StopAsync(CancellationToken.None);
+        await _gate.StopAsync(CancellationToken.None);
     }
 }

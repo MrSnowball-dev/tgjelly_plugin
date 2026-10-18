@@ -1017,6 +1017,10 @@ Implementation follows test-driven development: write a failing test first for e
 5. Which exact `Content-Type` does 10.11 serve for embedded `.js`? (Checked by the smoke test.)
 6. Are `emby-select`, `emby-textarea`, `emby-collapse` and `emby-toggle` registered on a deep link? (The page works either way.)
 7. Does a net9.0/net10.0 build put `Microsoft.Extensions.Options.dll` or `System.Text.Json.dll` in `bin`? (Irrelevant for the zip; the CI check shows it.)
+   **Answered (plan 2, CI publish listing):**
+   - **net9.0:** `bin` gets `Microsoft.Extensions.Options.dll`, `Microsoft.Extensions.Primitives.dll` and `Microsoft.Extensions.DependencyInjection.Abstractions.dll`. These are Telegram.Bot's 8.0 dependencies, which Jellyfin 10.11's own packages don't bring in here because of `ExcludeAssets=runtime`.
+   - **net10.0:** `bin` gets neither of these, and `System.Text.Json.dll` doesn't appear in either build.
+   - **Effect on the zip:** none. The zip ships only the whitelist (`Jellyfin.Plugin.TgJelly.dll`, `Telegram.Bot.dll`). At runtime the plugin's load context falls back to the host's newer copies, which the smoke tests confirm on 10.11 and 12.
 8. Is there a server-side time limit for bots editing their own messages (F38)? `LateEditHours` ≤ 24 keeps the exposure small.
 9. The exact Bot API descriptions of an HTML parse error and of "can't initiate conversation", recorded into Appendix A and the fixtures. The classifier already matches several variants.
 

@@ -1,5 +1,6 @@
-using System;
 using System.IO;
+using System.Runtime.Versioning;
+using System;
 using Jellyfin.Plugin.TgJelly.State;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Time.Testing;
@@ -84,5 +85,28 @@ public class SecretsStoreTests
         Assert.DoesNotContain("ABCDEFsecret", text, StringComparison.Ordinal);
         Assert.DoesNotContain("hunter2", text, StringComparison.Ordinal);
         Assert.Contains("HasBotToken = True", text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    [UnsupportedOSPlatform("windows")]
+    public void UnreadableFile_IsALoadWarning_NotAnException()
+    {
+        Assert.SkipWhen(OperatingSystem.IsWindows() || Environment.UserName == "root", "needs Unix permissions as a normal user");
+        using var dir = new TempDir();
+        NewStore(dir).Save(new BotSecrets { BotToken = "t" });
+        var path = new DataPaths(dir.Path).Secrets;
+        File.SetUnixFileMode(path, UnixFileMode.None);
+        try
+        {
+            var store = NewStore(dir);
+
+            Assert.Equal(BotSecrets.Empty, store.Load());
+            Assert.Contains("secrets.json", store.LoadWarning, StringComparison.Ordinal);
+            Assert.True(File.Exists(path));
+        }
+        finally
+        {
+            File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+        }
     }
 }
