@@ -13,4 +13,7 @@ public enum SettingsUpdateStatus
 
     /// <summary>The change failed validation; nothing was saved (HTTP 400).</summary>
     Invalid,
+
+    /// <summary>The change decided there was nothing to do; nothing was saved and no event fired.</summary>
+    Unchanged,
 }

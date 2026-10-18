@@ -61,6 +61,25 @@ public sealed class SettingsStore : IDisposable
     public SettingsUpdateResult Update(long? expectedRevision, Action<PluginConfiguration> change)
     {
         ArgumentNullException.ThrowIfNull(change);
+        return UpdateIf(expectedRevision, c =>
+        {
+            change(c);
+            return true;
+        });
+    }
+
+    /// <summary>
+    /// Applies a change that may decide there is nothing to do (a separate name, not an <c>Update</c> overload, so a
+    /// lambda such as <c>c =&gt; c.Message.ShowPoster = false</c> can't silently bind here): when <paramref name="change"/> returns
+    /// <c>false</c>, nothing is saved, the revision stays and no event fires (<see cref="SettingsUpdateStatus.Unchanged"/>).
+    /// The revision check still runs first.
+    /// </summary>
+    /// <param name="expectedRevision">The revision the caller based its change on, or <c>null</c> to skip the check.</param>
+    /// <param name="change">The change, applied to a copy; returns whether anything should be saved.</param>
+    /// <returns>The outcome.</returns>
+    public SettingsUpdateResult UpdateIf(long? expectedRevision, Func<PluginConfiguration, bool> change)
+    {
+        ArgumentNullException.ThrowIfNull(change);
 
         var result = _host.RunExclusive(() =>
         {
@@ -71,7 +90,11 @@ public sealed class SettingsStore : IDisposable
             }
 
             var next = Clone(current);
-            change(next);
+            if (!change(next))
+            {
+                return new SettingsUpdateResult(SettingsUpdateStatus.Unchanged, Clone(current), []);
+            }
+
             next.Normalize(); // a null string would otherwise be saved and make every later Clone throw
             var errors = SettingsValidator.Validate(next);
             if (errors.Count > 0)
