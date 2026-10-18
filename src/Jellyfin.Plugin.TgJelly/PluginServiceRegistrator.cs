@@ -92,6 +92,8 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<DestinationTester>();
         serviceCollection.AddSingleton<ILibraryAccess, JellyfinLibrary>();
         serviceCollection.AddSingleton<IServerInfo, JellyfinServerInfo>();
+        serviceCollection.AddSingleton<Rendering.Formatter>();
+        serviceCollection.AddSingleton<Rendering.LinkBuilder>();
         serviceCollection.AddSingleton<IntakeQueues>();
         serviceCollection.AddSingleton<PendingIdSet>();
         serviceCollection.AddSingleton<LibraryWatcher>();

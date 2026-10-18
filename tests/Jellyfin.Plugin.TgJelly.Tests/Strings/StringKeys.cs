@@ -18,5 +18,7 @@ public static class StringKeys
         "outbox.summary.one", "outbox.summary.other",
         "profile.description", "profile.shortDescription",
         "command.menu", "command.status", "command.test", "command.help",
+        "destination.notForum",
+        "time.utc", "delivery.delayed", "media.runtime.hours", "media.runtime.minutes", "media.more",
     ];
 }

@@ -41,5 +41,10 @@
   "command.menu": "Open the menu",
   "command.status": "Show the status",
   "command.test": "Send a test message",
-  "command.help": "How TgJelly works"
+  "command.help": "How TgJelly works",
+  "time.utc": "{time} UTC",
+  "delivery.delayed": "⏱ {time}",
+  "media.runtime.hours": "{hours}h {minutes}m",
+  "media.runtime.minutes": "{minutes}m",
+  "media.more": "+{count} more"
 }
