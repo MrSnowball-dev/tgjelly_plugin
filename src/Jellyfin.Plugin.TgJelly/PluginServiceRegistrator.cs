@@ -2,6 +2,7 @@ using System;
 using Jellyfin.Plugin.TgJelly.Bot;
 using Jellyfin.Plugin.TgJelly.Compat;
 using Jellyfin.Plugin.TgJelly.Configuration;
+using Jellyfin.Plugin.TgJelly.Delivery;
 using Jellyfin.Plugin.TgJelly.Destinations;
 using Jellyfin.Plugin.TgJelly.Hosting;
 using Jellyfin.Plugin.TgJelly.Logging;
@@ -35,6 +36,8 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddRedactedLogger<InstanceGate>();
         serviceCollection.AddRedactedLogger<PersistenceService>();
         serviceCollection.AddRedactedLogger<HealthService>();
+        serviceCollection.AddRedactedLogger<OutboxDelivery>();
+        serviceCollection.AddRedactedLogger<OutboxService>();
         serviceCollection.AddSingleton(sp => new DataPaths(sp.GetRequiredService<IApplicationPaths>().PluginConfigurationsPath));
         serviceCollection.AddSingleton(sp => CompatGuard.Evaluate(sp.GetRequiredService<IServerApplicationHost>().ApplicationVersion));
         serviceCollection.AddSingleton(_ => StringTable.LoadEmbedded());
@@ -47,12 +50,16 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<BotConnection>();
         serviceCollection.AddSingleton<DestinationChecker>();
         serviceCollection.AddSingleton<HealthService>();
+        serviceCollection.AddSingleton<Outbox>();
+        serviceCollection.AddSingleton<PacingGate>();
+        serviceCollection.AddSingleton<OutboxDelivery>();
 
         // Hosted services stop in reverse order: persistence flushes first, then the gate releases state.lock.
         serviceCollection.AddSingleton<InstanceGate>();
         serviceCollection.AddHostedService(sp => sp.GetRequiredService<InstanceGate>());
         serviceCollection.AddHostedService<PersistenceService>();
         serviceCollection.AddHostedService(sp => sp.GetRequiredService<HealthService>());
+        serviceCollection.AddHostedService<OutboxService>();
     }
 
     /// <summary>

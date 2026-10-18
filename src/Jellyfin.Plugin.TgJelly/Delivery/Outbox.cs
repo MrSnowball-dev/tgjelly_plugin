@@ -79,6 +79,12 @@ public sealed class Outbox
     }
 
     /// <summary>
+    /// Returns the IDs of the destinations that have queued entries.
+    /// </summary>
+    /// <returns>The IDs.</returns>
+    public IReadOnlyList<string> DestinationIds() => _state.ReadQueue(q => q.Outbox.Select(e => e.DestinationId).Distinct().ToList());
+
+    /// <summary>
     /// Returns copies of the queued entries.
     /// </summary>
     /// <returns>The entries.</returns>
