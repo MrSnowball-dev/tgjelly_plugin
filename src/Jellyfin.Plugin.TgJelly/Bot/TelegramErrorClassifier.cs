@@ -1,4 +1,5 @@
 using System;
+using Jellyfin.Plugin.TgJelly.Logging;
 using Telegram.Bot.Exceptions;
 
 namespace Jellyfin.Plugin.TgJelly.Bot;
@@ -30,7 +31,7 @@ public static class TelegramErrorClassifier
         ArgumentNullException.ThrowIfNull(exception);
         if (exception is not ApiRequestException api)
         {
-            return new DeliveryError(exception is RequestException ? DeliveryErrorKind.Transport : DeliveryErrorKind.Other, exception.Message);
+            return new DeliveryError(exception is RequestException ? DeliveryErrorKind.Transport : DeliveryErrorKind.Other, SecretRedactor.Redact(exception.Message));
         }
 
         var d = api.Message;
@@ -49,6 +50,7 @@ public static class TelegramErrorClassifier
             400 when HasAny(d, LengthPatterns) => DeliveryErrorKind.TooLong,
             400 when HasAny(d, EditPatterns) => DeliveryErrorKind.EditTargetGone,
             400 when Has(d, "message is not modified") => DeliveryErrorKind.NotModified,
+            401 => DeliveryErrorKind.Unauthorized,
             429 => DeliveryErrorKind.RateLimited,
             >= 500 => DeliveryErrorKind.ServerError,
             _ => DeliveryErrorKind.Other,
@@ -56,7 +58,7 @@ public static class TelegramErrorClassifier
 
         return new DeliveryError(
             kind,
-            d,
+            SecretRedactor.Redact(d),
             kind == DeliveryErrorKind.RateLimited ? RetryAfter(api) : null,
             kind == DeliveryErrorKind.Migrated ? api.Parameters!.MigrateToChatId : null);
     }
@@ -71,7 +73,7 @@ public static class TelegramErrorClassifier
         ArgumentNullException.ThrowIfNull(exception);
         if (exception is not ApiRequestException api)
         {
-            return new PollError(exception is RequestException ? PollErrorKind.Unreachable : PollErrorKind.ApiError, exception.Message);
+            return new PollError(exception is RequestException ? PollErrorKind.Unreachable : PollErrorKind.ApiError, SecretRedactor.Redact(exception.Message));
         }
 
         var kind = api.ErrorCode switch
@@ -83,7 +85,7 @@ public static class TelegramErrorClassifier
             _ => PollErrorKind.ApiError,
         };
 
-        return new PollError(kind, api.Message, kind == PollErrorKind.RateLimited ? RetryAfter(api) : null);
+        return new PollError(kind, SecretRedactor.Redact(api.Message), kind == PollErrorKind.RateLimited ? RetryAfter(api) : null);
     }
 
     private static TimeSpan RetryAfter(ApiRequestException api)

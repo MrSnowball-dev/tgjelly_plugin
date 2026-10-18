@@ -129,6 +129,55 @@ public sealed class DestinationsControllerTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Add_CheckerApiError_ShowsTelegramsRedactedText()
+    {
+        _h.Api.On("getChat", _ => FakeBotApi.Error(400, "Bad Request: something odd"));
+
+        var bad = Assert.IsType<BadRequestObjectResult>((await _controller.Add(new AddDestinationRequest { ExpectedRevision = 0, ChatId = -1001 }, Ct)).Result);
+
+        var error = Assert.Single(Assert.IsType<ErrorsDto>(bad.Value).Errors);
+        Assert.Equal(("ChatId", "Telegram answered with an error: Bad Request: something odd"), (error.Field, error.Message));
+    }
+
+    [Fact]
+    public async Task Add_CheckerTransportError_SaysUnreachable()
+    {
+        _h.Api.On("getChat", _ => throw new System.Net.Http.HttpRequestException("connection refused"));
+
+        var bad = Assert.IsType<BadRequestObjectResult>((await _controller.Add(new AddDestinationRequest { ExpectedRevision = 0, ChatId = -1001 }, Ct)).Result);
+
+        Assert.Equal(_h.Strings.Get("token.unreachable"), Assert.Single(Assert.IsType<ErrorsDto>(bad.Value).Errors).Message);
+    }
+
+    [Fact]
+    public async Task Add_AlreadyExistsRecheckFails_StillAnswersAlreadyExists()
+    {
+        var existing = _h.AddDestination(-1001);
+        _h.Api.SetMember(-1001, Member);
+        var calls = 0;
+        _h.Api.On("getChat", _ => Interlocked.Increment(ref calls) == 1
+            ? FakeBotApi.Ok("""{"id":-1001,"type":"supergroup","title":"G","accent_color_id":0,"max_reaction_count":11}""")
+            : throw new System.Net.Http.HttpRequestException("connection refused"));
+
+        var response = (await _controller.Add(new AddDestinationRequest { ExpectedRevision = _h.Settings.Current.Revision, ChatId = -1001 }, Ct)).Value!;
+
+        Assert.Equal(("AlreadyExists", existing.Id), (response.Outcome, response.Destination.Id));
+    }
+
+    [Fact]
+    public async Task Add_MessageLinkInANonForumChat_IsRejected()
+    {
+        _h.Api.AddChat(-1001234567890, "supergroup", "Not a forum");
+        _h.Api.SetMember(-1001234567890, Member);
+
+        var bad = Assert.IsType<BadRequestObjectResult>((await _controller.Add(new AddDestinationRequest { ExpectedRevision = 0, TopicLink = "https://t.me/c/1234567890/55" }, Ct)).Result);
+
+        var error = Assert.Single(Assert.IsType<ErrorsDto>(bad.Value).Errors);
+        Assert.Equal(("TopicLink", _h.Strings.Get("destination.notForum")), (error.Field, error.Message));
+        Assert.Empty(_h.Settings.Current.Destinations);
+    }
+
+    [Fact]
     public async Task Add_WithAStaleRevision_Is409_WithCurrentData()
     {
         _h.AddDestination(-1001);

@@ -16,6 +16,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
+using Telegram.Bot.Exceptions;
 using Telegram.Bot.Types;
 
 namespace Jellyfin.Plugin.TgJelly.Api;
@@ -133,7 +134,7 @@ public class DestinationsController : ControllerBase
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             _logger.LogWarning(ex, "TgJelly could not check a chat to add");
-            return Error("ChatId", _strings.Get("token.unreachable"));
+            return Error("ChatId", CheckError(ex));
         }
 
         if (!check.Passed)
@@ -141,10 +142,24 @@ public class DestinationsController : ControllerBase
             return Error("ChatId", check.Message ?? string.Empty);
         }
 
+        // A link to a message in a chat without topics looks like a topic link (t.me/c/<chat>/<message>).
+        if (threadId > 0 && !check.IsForum)
+        {
+            return Error("TopicLink", _strings.Get("destination.notForum"));
+        }
+
         // The duplicate rule (spec §6.2): an existing destination for this chat and topic is re-checked, not added.
         if (Find(_settings.Current, check.ChatId, threadId) is { } existing)
         {
-            await _health.CheckNowAsync(existing.Id, cancellationToken).ConfigureAwait(false);
+            try
+            {
+                await _health.CheckNowAsync(existing.Id, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogWarning(ex, "TgJelly could not re-check destination {Destination}", existing.Title);
+            }
+
             return new AddDestinationResponse { Outcome = "AlreadyExists", Destination = ToDto(existing) };
         }
 
@@ -438,6 +453,13 @@ public class DestinationsController : ControllerBase
 
     private static HealthDto ToDto(DestinationHealth h)
         => new() { Status = h.Status.ToString(), PhotosBlocked = h.PhotosBlocked, LastError = h.LastError, At = h.At };
+
+    private string CheckError(Exception ex) => ex switch
+    {
+        BotNotConnectedException => _strings.Get("destination.notConnected"),
+        ApiRequestException => _strings.Get("token.failed", ("error", TelegramErrorClassifier.ClassifyDelivery(ex).Description)),
+        _ => _strings.Get("token.unreachable"),
+    };
 
     private BadRequestObjectResult Error(string field, string message)
         => BadRequest(new ErrorsDto { Errors = [new SettingsError(field, message)] });

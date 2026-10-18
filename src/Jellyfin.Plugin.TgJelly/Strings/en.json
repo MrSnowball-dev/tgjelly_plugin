@@ -27,6 +27,7 @@
   "destination.duplicate": "{title} is already set up",
   "destination.notConnected": "Connect a bot first",
   "destination.badLink": "This isn't a Telegram topic link",
+  "destination.notForum": "This chat has no topics, so that link points to a message. Use the chat ID instead.",
   "test.message": "✅ TgJelly test: this chat will receive <i>{groups}</i>",
   "groups.media": "new media",
   "groups.security": "security alerts",

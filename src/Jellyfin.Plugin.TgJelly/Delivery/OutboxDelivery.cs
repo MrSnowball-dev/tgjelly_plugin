@@ -217,8 +217,15 @@ public sealed class OutboxDelivery
     // Returns the changed entry (and destination) to re-send now, or null when the outcome is recorded.
     private (OutboxEntry Entry, Destination Destination)? OnFailure(OutboxEntry entry, Destination destination, Attempt attempt, Exception exception)
     {
-        var error = TelegramErrorClassifier.ClassifyDelivery(exception);
         var message = entry.Message;
+        if (exception is IOException or UnauthorizedAccessException && attempt.UploadPath is not null)
+        {
+            // The poster file couldn't be opened or read; Telegram's own transport errors arrive as RequestException.
+            message.ForceTextOnly = true;
+            return (entry, destination);
+        }
+
+        var error = TelegramErrorClassifier.ClassifyDelivery(exception);
         var now = _time.GetUtcNow();
         switch (error.Kind)
         {
@@ -289,6 +296,7 @@ public sealed class OutboxDelivery
                 return null;
             case DeliveryErrorKind.Transport:
             case DeliveryErrorKind.ServerError:
+            case DeliveryErrorKind.Unauthorized:
                 if (error.Kind == DeliveryErrorKind.Transport && attempt.UploadPath is not null && ++entry.PhotoFailures >= 2)
                 {
                     message.ForceTextOnly = true;

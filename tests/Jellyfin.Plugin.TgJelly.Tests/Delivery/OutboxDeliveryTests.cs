@@ -303,6 +303,43 @@ public sealed class OutboxDeliveryTests : IDisposable
 
     public void Dispose() => _h.Dispose();
 
+    [Fact]
+    public async Task Unauthorized_KeepsTheEntry_ForARetry()
+    {
+        var d = _h.AddDestination(-1001);
+        _h.Api.On("sendMessage", _ => FakeBotApi.Error(401, "Unauthorized"));
+        var entry = Entry(d, "hi");
+
+        await Deliver(entry, d);
+
+        var queued = Assert.Single(_outbox.Snapshot());
+        Assert.True(queued.NotBefore > Now);
+        Assert.Equal(1, queued.Attempts);
+        Assert.Equal(0, _h.State.Read(s => s.Status.Counters.DroppedOutbox));
+    }
+
+    [Fact]
+    [System.Runtime.Versioning.UnsupportedOSPlatform("windows")]
+    public async Task UnreadablePoster_SendsTheTextLayout()
+    {
+        Assert.SkipWhen(OperatingSystem.IsWindows() || Environment.UserName == "root", "needs Unix permissions as a normal user");
+        var d = _h.AddDestination(-1001);
+        var poster = Poster();
+        File.SetUnixFileMode(poster, UnixFileMode.None);
+        try
+        {
+            await Deliver(Entry(d, "text layout", poster: poster), d);
+        }
+        finally
+        {
+            File.SetUnixFileMode(poster, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+        }
+
+        Assert.Empty(_h.Api.CallsTo("sendPhoto"));
+        Assert.Equal("text layout", (string)Assert.Single(_h.Api.CallsTo("sendMessage")).Body["text"]!);
+        Assert.Equal(0, _outbox.Count);
+    }
+
     private async Task Deliver(OutboxEntry entry, Destination destination)
     {
         _outbox.Enqueue(entry);
