@@ -35,4 +35,13 @@ public sealed class QueueDocument
 
     /// <summary>Gets or sets the closed groups waiting for release, keyed by destination ID (spec §7.4 step 5).</summary>
     public Dictionary<string, ReleaseBuffer> ReleaseBuffers { get; set; } = new(StringComparer.Ordinal);
+
+    /// <summary>Gets or sets the failed-login windows, keyed by the upper-cased user name (spec §7.5).</summary>
+    public Dictionary<string, SecurityWindow> SecurityWindows { get; set; } = new(StringComparer.Ordinal);
+
+    /// <summary>Gets or sets the dedupe markers of security events (spec §7.5).</summary>
+    public DedupeSection Dedupe { get; set; } = new();
+
+    /// <summary>Gets or sets the recent plugin events, the reasons a restart is pending (spec §7.5).</summary>
+    public List<RecentPluginEvent> RecentPluginEvents { get; set; } = [];
 }
