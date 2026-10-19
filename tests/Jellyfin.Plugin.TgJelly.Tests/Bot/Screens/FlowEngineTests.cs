@@ -45,13 +45,23 @@ public sealed class FlowEngineTests : IDisposable, IAsyncLifetime
     }
 
     [Fact]
-    public async Task PlainStartWithoutDestinations_ShowsThePlainMenu()
+    public async Task PlainStartWithoutDestinations_StartsOnboarding()
     {
         await _rig.Deliver(TelegramFixtures.Update("private_command_start"));
 
-        var text = (string)Assert.Single(_h.Api.CallsTo("sendMessage")).Body["text"]!;
-        Assert.Contains("🏠 Menu", text, StringComparison.Ordinal);
-        Assert.DoesNotContain("set up", text, StringComparison.Ordinal);
+        var call = Assert.Single(_h.Api.CallsTo("sendMessage"));
+        Assert.Equal("Where should notifications go?", (string)call.Body["text"]!);
+        Assert.NotNull(call.Body["reply_markup"]!["keyboard"]);
+    }
+
+    [Fact]
+    public async Task UnknownStartPayload_ShowsSetUpMenu()
+    {
+        _h.AddDestination(-1001);
+
+        await _rig.Deliver(TelegramFixtures.Update("private_text", ("text", "/start frobnicate")));
+
+        Assert.Contains("TgJelly is set up: 1 destination", (string)Assert.Single(_h.Api.CallsTo("sendMessage")).Body["text"]!, StringComparison.Ordinal);
     }
 
     [Fact]

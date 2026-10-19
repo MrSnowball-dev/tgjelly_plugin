@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
+using Jellyfin.Plugin.TgJelly.Bot.Flows;
 using Jellyfin.Plugin.TgJelly.Configuration;
 using Jellyfin.Plugin.TgJelly.Strings;
 using Microsoft.Extensions.Logging;
@@ -12,7 +13,7 @@ namespace Jellyfin.Plugin.TgJelly.Bot.Screens;
 
 /// <summary>
 /// The bot's flow engine: routes private messages and button presses to screens. Runs on the <see cref="BotWorker"/>,
-/// one update at a time. Later tasks add the destination, settings and onboarding screens.
+/// one update at a time.
 /// </summary>
 public sealed class FlowEngine : IBotFlows
 {
@@ -25,6 +26,7 @@ public sealed class FlowEngine : IBotFlows
     private readonly StatusScreen _status;
     private readonly DestinationScreens _destinations;
     private readonly SettingsScreens _settingsScreens;
+    private readonly OnboardingFlow _onboarding;
     private readonly ILogger<FlowEngine> _logger;
 
     /// <summary>
@@ -39,8 +41,9 @@ public sealed class FlowEngine : IBotFlows
     /// <param name="status">The status screen.</param>
     /// <param name="destinations">The destination screens.</param>
     /// <param name="settingsScreens">The settings screens.</param>
+    /// <param name="onboarding">The onboarding flow.</param>
     /// <param name="logger">The logger.</param>
-    public FlowEngine(BotConnection connection, BotMemory memory, ScreenSender screens, SettingsStore settings, StringTable strings, MenuScreens menus, StatusScreen status, DestinationScreens destinations, SettingsScreens settingsScreens, ILogger<FlowEngine> logger)
+    public FlowEngine(BotConnection connection, BotMemory memory, ScreenSender screens, SettingsStore settings, StringTable strings, MenuScreens menus, StatusScreen status, DestinationScreens destinations, SettingsScreens settingsScreens, OnboardingFlow onboarding, ILogger<FlowEngine> logger)
     {
         _connection = connection;
         _memory = memory;
@@ -51,6 +54,7 @@ public sealed class FlowEngine : IBotFlows
         _status = status;
         _destinations = destinations;
         _settingsScreens = settingsScreens;
+        _onboarding = onboarding;
         _logger = logger;
     }
 
@@ -70,6 +74,11 @@ public sealed class FlowEngine : IBotFlows
         ArgumentNullException.ThrowIfNull(message);
         var chatId = message.Chat.Id;
         _memory.TouchManager(chatId);
+        if (await OnPickerAnswerAsync(message, ct).ConfigureAwait(false))
+        {
+            return;
+        }
+
         var command = ParseCommand(message.Text);
         if (command.Length > 0)
         {
@@ -98,6 +107,9 @@ public sealed class FlowEngine : IBotFlows
                 break;
             case "/help":
                 await ShowAsync(chatId, new Screen(_strings.Get("help.text"), null), null, ct).ConfigureAwait(false);
+                break;
+            case "/start" when StartsOnboarding(message.Text):
+                await _onboarding.StartAsync(chatId, ct).ConfigureAwait(false);
                 break;
             default:
                 await ShowAsync(chatId, SetUpMenu(), null, ct).ConfigureAwait(false);
@@ -137,6 +149,22 @@ public sealed class FlowEngine : IBotFlows
             case "st":
                 await ShowAsync(chatId, _status.Build(), message.MessageId, ct).ConfigureAwait(false);
                 break;
+            case "oa":
+            case "ot":
+                await _onboarding.StartAsync(chatId, ct).ConfigureAwait(false);
+                break;
+            case "ox":
+                await ShowAsync(chatId, MainMenu(), message.MessageId, ct).ConfigureAwait(false);
+                break;
+            case "op":
+                await _onboarding.OnPresetAsync(query, args.Count > 0 ? args[0] : string.Empty, ct).ConfigureAwait(false);
+                break;
+            case "oc":
+                await _onboarding.OnCustomToggleAsync(query, args.Count > 0 ? args[0] : string.Empty, ct).ConfigureAwait(false);
+                break;
+            case "ocd":
+                await _onboarding.OnCustomDoneAsync(query, ct).ConfigureAwait(false);
+                break;
             default:
                 var screen = await _destinations.HandleAsync(action, args, ct).ConfigureAwait(false)
                     ?? await _settingsScreens.HandleAsync(action, args, chatId, ct).ConfigureAwait(false);
@@ -173,6 +201,38 @@ public sealed class FlowEngine : IBotFlows
         var word = text.Split([' ', '\n'], 2)[0];
         var at = word.IndexOf('@', StringComparison.Ordinal);
         return (at < 0 ? word : word[..at]).ToLowerInvariant();
+    }
+
+    /// <summary>The prompt's answers (a picked chat, "💬 Right here", Cancel) go to onboarding before any other text.</summary>
+    /// <returns>True when the message was one of them.</returns>
+    private async Task<bool> OnPickerAnswerAsync(Message message, CancellationToken ct)
+    {
+        Func<Message, CancellationToken, Task>? handler = message switch
+        {
+            { ChatShared: not null } => _onboarding.OnChatSharedAsync,
+            { Text: { } text } when text == _strings.Get("onboard.here") => _onboarding.OnRightHereAsync,
+            { Text: { } text } when text == _strings.Get("onboard.cancel") => _onboarding.OnCancelAsync,
+            _ => null,
+        };
+        if (handler is null)
+        {
+            return false;
+        }
+
+        _settingsScreens.CancelInput(message.Chat.Id);
+        await handler(message, ct).ConfigureAwait(false);
+        return true;
+    }
+
+    /// <summary>
+    /// Whether a <c>/start</c> begins onboarding (spec §6.2): the <c>setup</c> and <c>add</c> payloads, or no payload
+    /// while there are no destinations yet.
+    /// </summary>
+    private bool StartsOnboarding(string? text)
+    {
+        var parts = (text ?? string.Empty).Split([' ', '\n'], 2, StringSplitOptions.RemoveEmptyEntries);
+        var payload = parts.Length > 1 ? parts[1].Trim() : string.Empty;
+        return payload is "setup" or "add" || (payload.Length == 0 && _settings.Current.Destinations.Length == 0);
     }
 
     private Task ShowAsync(long chatId, Screen screen, int? editMessageId, CancellationToken ct)

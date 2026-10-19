@@ -173,11 +173,7 @@ public sealed class DestinationScreens
         }
 
         var health = _health.Get(d.Id);
-        var groups = EventCatalog.Groups
-            .Where(g => d.Events.Any(e => EventCatalog.GroupOf(e) == g))
-            .Select(g => _strings.Get("groups." + g))
-            .ToList();
-        var sends = groups.Count == 0 ? _strings.Get("groups.none") : string.Join(_strings.Get("groups.separator"), groups);
+        var sends = DestinationTester.GroupsText(_strings, d.Events);
         var html = new StringBuilder("<b>").Append(_formatter.Escape(d.Title)).Append("</b>\n");
         html.Append(_formatter.Escape(_strings.Get("dest.line.kind", ("kind", _strings.Get("dest.kind." + d.Kind))))).Append('\n');
         html.Append(_formatter.Escape(_strings.Get("dest.line.status", ("status", HealthText(health))))).Append('\n');
@@ -398,7 +394,10 @@ public sealed class DestinationScreens
         }
     }
 
-    private static string Mark(bool on) => on ? "✅" : "▫️";
+    /// <summary>The mark in front of a switch label.</summary>
+    /// <param name="on">Whether the switch is on.</param>
+    /// <returns>✅ or ▫️.</returns>
+    internal static string Mark(bool on) => on ? "✅" : "▫️";
 
     private string HealthText(DestinationHealth health)
         => _strings.Get("dest.health." + (health.Status == HealthStatus.Ok && health.PhotosBlocked ? "PhotosBlocked" : health.Status.ToString()));

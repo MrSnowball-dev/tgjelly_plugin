@@ -1,7 +1,9 @@
 using System;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.TgJelly.Bot;
+using Jellyfin.Plugin.TgJelly.Bot.Flows;
 using Jellyfin.Plugin.TgJelly.Bot.Screens;
 using Jellyfin.Plugin.TgJelly.Delivery;
 using Jellyfin.Plugin.TgJelly.Destinations;
@@ -40,7 +42,19 @@ public sealed class BotRig
         var destinations = new DestinationScreens(h.Settings, Health, tester, Library, Outbox, h.Connection, h.Strings, formatter, NullLogger<DestinationScreens>.Instance);
         Server = new FakeServerInfo();
         var settingsScreens = new SettingsScreens(h.Settings, new LinkBuilder(Server), Memory, h.Connection, h.Strings, formatter);
-        Flow = new FlowEngine(h.Connection, Memory, new ScreenSender(h.Connection), h.Settings, h.Strings, menus, Status, destinations, settingsScreens, NullLogger<FlowEngine>.Instance);
+        var checker = new DestinationChecker(h.Connection, h.Strings);
+        Retrier = new ChatCheckRetrier(checker, h.Time)
+        {
+            Delay = (delay, _) =>
+            {
+                Delays.Add(delay);
+                return Task.CompletedTask;
+            },
+        };
+        var creator = new DestinationCreator(h.Settings, Health, tester, NullLogger<DestinationCreator>.Instance);
+        var screens = new ScreenSender(h.Connection);
+        Onboarding = new OnboardingFlow(h.Connection, Memory, screens, h.Settings, Retrier, checker, creator, Health, destinations, menus, h.Strings, formatter, h.Time, NullLogger<OnboardingFlow>.Instance);
+        Flow = new FlowEngine(h.Connection, Memory, screens, h.Settings, h.Strings, menus, Status, destinations, settingsScreens, Onboarding, NullLogger<FlowEngine>.Instance);
         Queue = new BotWorkQueue(NullLogger<BotWorkQueue>.Instance);
         _router = new UpdateRouter(Queue, Flow, h.Connection, Health, new DestinationMigration(h.Settings, Outbox, Health), NullLogger<UpdateRouter>.Instance);
     }
@@ -61,6 +75,13 @@ public sealed class BotRig
     public StatusScreen Status { get; }
 
     public FlowEngine Flow { get; }
+
+    public OnboardingFlow Onboarding { get; }
+
+    public ChatCheckRetrier Retrier { get; }
+
+    /// <summary>The waits the retrier asked for; it returns at once instead of waiting.</summary>
+    public List<TimeSpan> Delays { get; } = [];
 
     public BotMemory Memory { get; }
 
