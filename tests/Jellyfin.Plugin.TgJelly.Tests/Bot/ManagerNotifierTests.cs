@@ -151,6 +151,81 @@ public sealed class ManagerNotifierTests : IDisposable
     }
 
     [Fact]
+    public async Task PermanentlyFailingManager_DoesNotCauseRepeats()
+    {
+        var d = _h.AddDestination(-1001);
+        _memory.TouchManager(11);
+        _memory.TouchManager(12);
+        _h.Api.On("sendMessage", call => (long)call.Body["chat_id"]! == 11
+            ? FakeBotApi.Error(400, "Bad Request: chat not found")
+            : FakeBotApi.Ok(SentOk));
+        _health.MarkProblem(d.Id, HealthStatus.Lost, "kicked");
+
+        for (var i = 0; i < 3; i++)
+        {
+            await _notifier.NotifyAsync(TestContext.Current.CancellationToken);
+        }
+
+        Assert.Single(_h.Api.CallsTo("sendMessage"), c => (long)c.Body["chat_id"]! == 12);
+        Assert.True(_health.Get(d.Id).Notified);
+        Assert.Equal([12L], _memory.RecentManagers());
+    }
+
+    [Fact]
+    public async Task OtherPermanentError_GivesUpWithoutRemovingTheManager()
+    {
+        var d = _h.AddDestination(-1001);
+        _memory.TouchManager(11);
+        _h.Api.On("sendMessage", _ => FakeBotApi.Error(400, "Bad Request: something odd"));
+        _health.MarkProblem(d.Id, HealthStatus.Lost, "kicked");
+
+        await _notifier.NotifyAsync(TestContext.Current.CancellationToken);
+
+        Assert.True(_health.Get(d.Id).Notified);
+        Assert.Equal([11L], _memory.RecentManagers());
+    }
+
+    [Fact]
+    public async Task TransientFailureOfOne_RetriesOnlyThatManager()
+    {
+        var d = _h.AddDestination(-1001);
+        _memory.TouchManager(11);
+        _memory.TouchManager(12);
+        var failed = false;
+        _h.Api.On("sendMessage", call =>
+        {
+            if ((long)call.Body["chat_id"]! == 11 && !failed)
+            {
+                failed = true;
+                return FakeBotApi.Error(502, "Bad Gateway");
+            }
+
+            return FakeBotApi.Ok(SentOk);
+        });
+        _health.MarkProblem(d.Id, HealthStatus.Lost, "kicked");
+
+        await _notifier.NotifyAsync(TestContext.Current.CancellationToken);
+        Assert.False(_health.Get(d.Id).Notified);
+        await _notifier.NotifyAsync(TestContext.Current.CancellationToken);
+
+        Assert.True(_health.Get(d.Id).Notified);
+        Assert.Single(_h.Api.CallsTo("sendMessage"), c => (long)c.Body["chat_id"]! == 12);
+        Assert.Equal(2, _h.Api.CallsTo("sendMessage").Count(c => (long)c.Body["chat_id"]! == 11));
+    }
+
+    [Fact]
+    public async Task OverlongError_IsCut()
+    {
+        var d = _h.AddDestination(-1001);
+        _memory.TouchManager(11);
+        _health.MarkProblem(d.Id, HealthStatus.Lost, new string('x', 299) + "😀😀😀");
+
+        await _notifier.NotifyAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal("⚠️ <b>Chat -1001</b>: " + new string('x', 299) + "😀…", (string)_h.Api.CallsTo("sendMessage").Single().Body["text"]!);
+    }
+
+    [Fact]
     public async Task Disconnected_LeavesNotifiedFalse()
     {
         var d = _h.AddDestination(-1001);

@@ -22,6 +22,8 @@ namespace Jellyfin.Plugin.TgJelly.Bot;
 /// </summary>
 public sealed class ManagerNotifier
 {
+    private const int MaxProblemChars = 300;
+
     private readonly BotMemory _memory;
     private readonly HealthService _health;
     private readonly SettingsStore _settings;
@@ -29,6 +31,7 @@ public sealed class ManagerNotifier
     private readonly StateStore _state;
     private readonly StringTable _strings;
     private readonly ILogger<ManagerNotifier> _logger;
+    private readonly Dictionary<string, (HealthStatus Status, HashSet<long> Done)> _handled = new(StringComparer.Ordinal);
 
     /// <summary>
     /// Initializes a new instance of the <see cref="ManagerNotifier"/> class.
@@ -53,8 +56,9 @@ public sealed class ManagerNotifier
 
     /// <summary>
     /// Messages the recent managers about every destination whose current problem has not been reported yet. A
-    /// problem is marked reported even when there is no manager to tell; a manager who blocked the bot is forgotten;
-    /// a transport or server error leaves the problem unreported so the next call retries.
+    /// problem is marked reported once every manager was messaged or given up on (blocked the bot, chat gone, other
+    /// permanent 4xx), also when there is no manager to tell. A rate limit, server or transport error leaves that
+    /// manager pending: the next call retries only the managers not yet messaged for this problem.
     /// </summary>
     /// <param name="ct">Cancels the run.</param>
     /// <returns>A task.</returns>
@@ -66,6 +70,7 @@ public sealed class ManagerNotifier
             var health = _health.Get(destination.Id);
             if (health.Notified || health.Status is not (HealthStatus.Lost or HealthStatus.NeedsPermissions or HealthStatus.TopicMissing))
             {
+                _handled.Remove(destination.Id);
                 continue;
             }
 
@@ -74,9 +79,22 @@ public sealed class ManagerNotifier
                 continue;
             }
 
-            var managers = _memory.RecentManagers();
-            var delivered = true;
-            if (managers.Count > 0)
+            if (!_handled.TryGetValue(destination.Id, out var progress) || progress.Status != health.Status)
+            {
+                progress = (health.Status, []);
+                _handled[destination.Id] = progress;
+            }
+
+            var pending = new List<long>();
+            foreach (var chatId in _memory.RecentManagers())
+            {
+                if (!progress.Done.Contains(chatId))
+                {
+                    pending.Add(chatId);
+                }
+            }
+
+            if (pending.Count > 0)
             {
                 var text = _strings.Get("notify.problem", ("title", HtmlText.Escape(destination.Title)), ("problem", HtmlText.Escape(ProblemText(health))));
                 var buttons = new InlineKeyboardMarkup(new[]
@@ -84,23 +102,45 @@ public sealed class ManagerNotifier
                     InlineKeyboardButton.WithCallbackData(_strings.Get("notify.btn.open"), CallbackData.Format("d", destination.Id)),
                     InlineKeyboardButton.WithCallbackData(_strings.Get("dest.btn.check"), CallbackData.Format("dc", destination.Id)),
                 });
-                foreach (var chatId in managers)
+                foreach (var chatId in pending)
                 {
-                    delivered &= await SendAsync(sender, chatId, text, buttons, destination, ct).ConfigureAwait(false);
+                    if (await SendAsync(sender, chatId, text, buttons, destination, ct).ConfigureAwait(false))
+                    {
+                        progress.Done.Add(chatId);
+                    }
                 }
             }
 
-            if (delivered)
+            if (pending.TrueForAll(progress.Done.Contains))
             {
                 MarkNotified(destination.Id, health.Status);
+                _handled.Remove(destination.Id);
             }
         }
     }
 
     private string ProblemText(DestinationHealth health)
-        => string.IsNullOrWhiteSpace(health.LastError) ? _strings.Get("dest.health." + health.Status) : health.LastError;
+        => string.IsNullOrWhiteSpace(health.LastError) ? _strings.Get("dest.health." + health.Status) : Cap(health.LastError);
 
-    /// <returns><c>false</c> when the send should be retried later.</returns>
+    /// <summary>Cuts a text to <see cref="MaxProblemChars"/> code points, adding an ellipsis.</summary>
+    private static string Cap(string text)
+    {
+        var count = 0;
+        var end = 0;
+        foreach (var rune in text.EnumerateRunes())
+        {
+            if (++count > MaxProblemChars)
+            {
+                return text[..end] + "…";
+            }
+
+            end += rune.Utf16SequenceLength;
+        }
+
+        return text;
+    }
+
+    /// <returns><c>true</c> when the manager is finished for this problem (messaged, or given up on); <c>false</c> to retry later.</returns>
     private async Task<bool> SendAsync(ITelegramSender sender, long chatId, string text, InlineKeyboardMarkup buttons, Destination destination, CancellationToken ct)
     {
         try
@@ -116,6 +156,16 @@ public sealed class ManagerNotifier
         {
             _logger.LogInformation("TgJelly forgot manager {Chat}: they blocked the bot", chatId);
             _memory.RemoveManager(chatId);
+            return true;
+        }
+        catch (ApiRequestException ex) when (ex.ErrorCode is >= 400 and < 500 and not 429)
+        {
+            _logger.LogWarning("TgJelly gave up telling manager {Chat} about destination {Destination}: {Error}", chatId, destination.Id, ex.Message);
+            if (ex.Message.Contains("chat not found", StringComparison.OrdinalIgnoreCase) || ex.Message.Contains("deactivated", StringComparison.OrdinalIgnoreCase))
+            {
+                _memory.RemoveManager(chatId);
+            }
+
             return true;
         }
         catch (Exception ex)
