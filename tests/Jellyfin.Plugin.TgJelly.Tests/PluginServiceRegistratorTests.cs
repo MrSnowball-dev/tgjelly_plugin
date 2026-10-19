@@ -61,14 +61,15 @@ public class PluginServiceRegistratorTests
                 typeof(InstanceGate), typeof(PersistenceService), typeof(Jellyfin.Plugin.TgJelly.Pipeline.PipelineService),
                 typeof(Jellyfin.Plugin.TgJelly.Intake.LibraryWatcher), typeof(Jellyfin.Plugin.TgJelly.Intake.TaskWatcher),
                 typeof(Jellyfin.Plugin.TgJelly.Intake.RestartWatcher), typeof(Jellyfin.Plugin.TgJelly.Intake.StartupWatcher),
+                typeof(Jellyfin.Plugin.TgJelly.Updates.UpdateChecker),
                 typeof(Jellyfin.Plugin.TgJelly.Bot.BotSupervisor), typeof(Jellyfin.Plugin.TgJelly.Destinations.HealthService),
                 typeof(Jellyfin.Plugin.TgJelly.Delivery.OutboxService),
             ],
             hosted.Select(h => h.GetType()));
         Assert.Same(provider.GetRequiredService<Jellyfin.Plugin.TgJelly.Pipeline.PipelineService>(), hosted[2]);
         Assert.Same(provider.GetRequiredService<Jellyfin.Plugin.TgJelly.Intake.LibraryWatcher>(), hosted[3]);
-        Assert.Same(provider.GetRequiredService<Jellyfin.Plugin.TgJelly.Bot.BotSupervisor>(), hosted[7]);
-        Assert.Same(provider.GetRequiredService<Jellyfin.Plugin.TgJelly.Destinations.HealthService>(), hosted[8]);
+        Assert.Same(provider.GetRequiredService<Jellyfin.Plugin.TgJelly.Bot.BotSupervisor>(), hosted[8]);
+        Assert.Same(provider.GetRequiredService<Jellyfin.Plugin.TgJelly.Destinations.HealthService>(), hosted[9]);
     }
 
     [Fact]

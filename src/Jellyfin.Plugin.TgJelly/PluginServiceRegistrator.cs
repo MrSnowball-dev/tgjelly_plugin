@@ -60,6 +60,7 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddRedactedLogger<Pipeline.MediaReadiness>();
         serviceCollection.AddRedactedLogger<Pipeline.NotificationPipeline>();
         serviceCollection.AddRedactedLogger<Pipeline.PipelineService>();
+        serviceCollection.AddRedactedLogger<Updates.UpdateChecker>();
         serviceCollection.AddRedactedLogger<LoginFailedConsumer>();
         serviceCollection.AddRedactedLogger<LoginSucceededConsumer>();
         serviceCollection.AddRedactedLogger<LockoutConsumer>();
@@ -111,6 +112,8 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<Pipeline.AlertCoalescer>();
         serviceCollection.AddSingleton<Pipeline.NotificationPipeline>();
         serviceCollection.AddSingleton<Pipeline.PipelineService>();
+        serviceCollection.AddSingleton<Updates.IReleaseFeed, Updates.GitHubReleaseFeed>();
+        serviceCollection.AddSingleton<Updates.UpdateChecker>();
 
         // Consumers are scoped, like Jellyfin's own and the Webhook plugin's; they take only the queue and a logger (F6).
         serviceCollection.AddScoped<IEventConsumer<AuthenticationRequestEventArgs>, LoginFailedConsumer>();
@@ -136,6 +139,7 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddHostedService(sp => sp.GetRequiredService<TaskWatcher>());
         serviceCollection.AddHostedService(sp => sp.GetRequiredService<RestartWatcher>());
         serviceCollection.AddHostedService(sp => sp.GetRequiredService<StartupWatcher>());
+        serviceCollection.AddHostedService(sp => sp.GetRequiredService<Updates.UpdateChecker>());
         serviceCollection.AddHostedService(sp => sp.GetRequiredService<BotSupervisor>());
         serviceCollection.AddHostedService(sp => sp.GetRequiredService<HealthService>());
         serviceCollection.AddHostedService<OutboxService>();

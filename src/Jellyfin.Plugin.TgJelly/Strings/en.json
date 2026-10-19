@@ -106,5 +106,6 @@
   "server.reason.server.plugin_updated": "Updated {plugin} to {version}",
   "server.reason.server.plugin_uninstalled": "Removed {plugin} {version}",
   "server.reason.server.plugin_install_failed": "Failed to install {plugin} {version}",
-  "button.releaseNotes": "Release notes"
+  "button.releaseNotes": "Release notes",
+  "update.failing": "Update check failing: {reason}"
 }
