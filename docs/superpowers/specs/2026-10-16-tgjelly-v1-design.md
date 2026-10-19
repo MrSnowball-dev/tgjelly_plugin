@@ -501,7 +501,7 @@ Groups: `media.*` = **media**, `security.*` = **security**, `server.*` = **serve
 ### 8.3 Buttons and links
 - **Open in Jellyfin:** `{origin}{BaseUrl}/web/#/details?id={item.Id:N}&serverId={SystemId}` (F23).
   - `origin` and the base path come from `PublicUrl`. Jellyfin's BaseUrl is appended only if `new Uri(PublicUrl).AbsolutePath` doesn't already end with it (case-insensitive).
-  - `PublicUrl` is valid if it is an absolute `http(s)` URL whose host contains a `.` or is an IPv6 literal (F37).
+  - `PublicUrl` is valid if it is an absolute `http(s)` URL whose host contains a `.` and isn't an IP literal of IPv6 (F37). Telegram rejects IPv6 literals in button URLs with `BUTTON_URL_INVALID`, both public and private (§15 Q2). `http://` and private IPv4 addresses are accepted.
   - With an invalid or empty URL the button is left out, and the Messages section explains why.
   - The suggestion shown in the field comes from an `external=`/`all=` entry in `NetworkConfiguration.PublishedServerUriBySubnet`, otherwise `GetSmartApiUrl(IPAddress.Parse("8.8.8.8"))`. It is normalized by the same rule and labelled "verify".
 - **IMDb** (`https://www.imdb.com/title/{imdb}/`) and **TMDb** (`https://www.themoviedb.org/{movie|tv}/{id}`) for movies and shows, when the IDs exist.
@@ -909,7 +909,7 @@ README.md (setup with screenshots, BotFather restriction, GitHub contact for upd
   - plural strings,
   - poster eligibility (non-local, missing, > 10 MB, unsupported type, PhotosBlocked),
   - the file_id cache.
-- **LinkBuilder and PublicUrl:** no-dot hosts rejected, IPv6 accepted, BaseUrl appended exactly once.
+- **LinkBuilder and PublicUrl:** no-dot hosts and IPv6 literals rejected, `http://` and private IPv4 accepted, BaseUrl appended exactly once.
 - **Telegram-HTML validator:** allowed and forbidden tags, unbalanced tags.
 - **Scriban wrapper:**
   - auto-escaping vs `raw()`,
@@ -1012,8 +1012,10 @@ Implementation follows test-driven development: write a failing test first for e
 ## 15. Open questions to settle during implementation
 1. BotFather's exact menu path for the access restriction, and the three behaviours in §14.4 (a)–(c).
 2. Does Telegram reject `http://` or private-IP URLs in inline buttons (`BUTTON_URL_INVALID`)? Only TDLib's "no dot" rule is verified. The result decides whether PublicUrl validation also rejects private IPs.
+   **Answered (real bot, 2026-10-19):** `http://192.168.1.5:8096/…`, `http://10.0.0.5:8096/…`, `http://jellyfin.lan:8096/…` and `https://jf.example.com/web/#/details?…` are accepted. `http://localhost:8096/…` fails with `Bad Request: inline keyboard button URL 'http://localhost:8096/web/' is invalid: Wrong HTTP URL`. IPv6 literals fail, both `[fd00::1]` and `[2001:4860:4860::8888]`, with `Bad Request: BUTTON_URL_INVALID`. So private IPv4 stays valid, and IPv6 literals are now rejected (§8.3).
 3. What does `request_chat` look like on current clients, including the `chat_is_forum` promotion prompt, and do users see a confirmation before the bot gets admin rights? (Handled either way by the check in §6.2 step 2.)
 4. How should the General topic of a forum be targeted: no `message_thread_id` (current choice) or thread 1?
+   **Answered (real bot, 2026-10-19):** no `message_thread_id`. A send without it lands in General; `message_thread_id: 1` fails with `Bad Request: message thread not found`. `ThreadId = 0` stays. Also observed: a bot that is only a plain member of a supergroup can delete its own messages there.
 5. Which exact `Content-Type` does 10.11 serve for embedded `.js`? (Checked by the smoke test.)
 6. Are `emby-select`, `emby-textarea`, `emby-collapse` and `emby-toggle` registered on a deep link? (The page works either way.)
 7. Does a net9.0/net10.0 build put `Microsoft.Extensions.Options.dll` or `System.Text.Json.dll` in `bin`? (Irrelevant for the zip; the CI check shows it.)
@@ -1024,6 +1026,7 @@ Implementation follows test-driven development: write a failing test first for e
 8. Is there a server-side time limit for bots editing their own messages (F38)? `LateEditHours` ≤ 24 keeps the exposure small.
    **Answered (owner, from experience running bots):** there is no age limit; a bot can edit its own messages at any time. The 0–24 range of `LateEditHours` stays as a product choice (a late edit is silent, so very old messages shouldn't change unnoticed), not a Telegram constraint.
 9. The exact Bot API descriptions of an HTML parse error and of "can't initiate conversation", recorded into Appendix A and the fixtures. The classifier already matches several variants.
+   **Partly answered (real bot, 2026-10-19):** the parse error is `Bad Request: can't parse entities: Can't find end tag corresponding to start tag "b"`, which classifier row 6 matches. "Can't initiate conversation" needs a user who knows the bot but never pressed Start; a user ID the bot has never seen gives `Bad Request: chat not found` instead, which row 2 also treats as Lost.
 
 ---
 
@@ -1031,7 +1034,7 @@ Implementation follows test-driven development: write a failing test first for e
 - 409: `Conflict: can't use getUpdates method while webhook is active; use deleteWebhook to delete the webhook first` · `Conflict: terminated by other getUpdates request; make sure that only one bot instance is running` · `Conflict: terminated by setWebhook request`
 - 403: `Forbidden: bot was blocked by the user` · `Forbidden: user is deactivated` · `Forbidden: bot was kicked from the group chat` · `Forbidden: bot was kicked from the supergroup chat` · `Forbidden: bot was kicked from the channel chat` · `Forbidden: bot is not a member of the group chat` · `Forbidden: bot is not a member of the supergroup chat` · `Forbidden: bot is not a member of the channel chat` · `Forbidden: the group chat was deleted` · `Forbidden: bot can't initiate conversation with a user` (well known, but not among the research-verified strings; record it from a real bot, §15 Q9)
 - 400 (chat/rights): `Bad Request: chat not found` · `Bad Request: private chat not found` · `Bad Request: need administrator rights in the channel chat` · `Bad Request: have no write access to the chat` · `Bad Request: not enough rights to send text messages to the chat` · `Bad Request: not enough rights to send photos to the chat` · `Bad Request: message thread not found` · `Bad Request: group chat was upgraded to a supergroup chat` (with `parameters.migrate_to_chat_id`)
-- 400 (content): `Bad Request: message is too long` · `Bad Request: message caption is too long` · `Bad Request: can't parse entities: Unsupported start tag "x" at byte offset N` (wording of the prefix to be confirmed, §15 Q9) · `Bad Request: inline keyboard button URL '<url>' is invalid: Wrong HTTP URL`
+- 400 (content): `Bad Request: message is too long` · `Bad Request: message caption is too long` · `Bad Request: can't parse entities: Unsupported start tag "x" at byte offset N` · `Bad Request: can't parse entities: Can't find end tag corresponding to start tag "b"` (recorded, §15 Q9) · `Bad Request: inline keyboard button URL '<url>' is invalid: Wrong HTTP URL` (recorded) · `Bad Request: BUTTON_URL_INVALID` (recorded, for IPv6 literal hosts)
 - 400 (edits/callbacks): `Bad Request: message is not modified: specified new message content and reply markup are exactly the same as a current content and reply markup of the message` · `Bad Request: message to edit not found` · `Bad Request: message can't be edited` · `Bad Request: there is no text in the message to edit` · `Bad Request: query is too old and response timeout expired or query ID is invalid`
 - 429: `Too Many Requests: retry after N` (with `parameters.retry_after`)
 - Transport (Telegram.Bot `RequestException`): `Bot API Request timed out` · `Bot API Service Failure: <ExceptionType>: <message>`
