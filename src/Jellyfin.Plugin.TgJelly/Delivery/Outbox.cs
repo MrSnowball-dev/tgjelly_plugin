@@ -45,6 +45,10 @@ public sealed class Outbox
     private readonly StringTable _strings;
     private readonly TimeProvider _time;
 
+    // The entry Pick last handed to delivery, read and written under the state lock. A late edit must not merge into
+    // it: delivery holds a copy and writes that copy back (Complete, Replace), which would drop the merged content.
+    private string? _inFlight;
+
     /// <summary>
     /// Initializes a new instance of the <see cref="Outbox"/> class.
     /// </summary>
@@ -112,7 +116,7 @@ public sealed class Outbox
                 {
                     // The message isn't sent yet: render it again instead of queuing an edit (spec §7.5 step 3).
                     var unsent = q.Outbox.Find(e => e.Op == OutboxOp.Send && e.DestinationId == entry.DestinationId && e.SentKey == entry.TargetKey);
-                    if (unsent is not null)
+                    if (unsent is not null && unsent.EntryId != _inFlight)
                     {
                         var message = entry.Message;
                         message.ForceTextOnly |= unsent.Message.ForceTextOnly;
@@ -243,6 +247,7 @@ public sealed class Outbox
                 }
             }
 
+            _inFlight = best?.EntryId;
             return new OutboxPick(best is null ? null : Copy(best), wake);
         });
     }
@@ -261,6 +266,7 @@ public sealed class Outbox
         _state.UpdateQueue(q =>
         {
             q.Outbox.RemoveAll(e => e.EntryId == entry.EntryId);
+            Landed(entry.EntryId);
             if (sent is not null && entry.SentKey is not null)
             {
                 sent.Model = entry.Model;
@@ -307,6 +313,8 @@ public sealed class Outbox
             {
                 q.Outbox[i] = Copy(entry);
             }
+
+            Landed(entry.EntryId);
         });
     }
 
@@ -317,7 +325,11 @@ public sealed class Outbox
     public void Drop(string entryId)
     {
         var removed = 0;
-        _state.UpdateQueue(q => removed = q.Outbox.RemoveAll(e => e.EntryId == entryId));
+        _state.UpdateQueue(q =>
+        {
+            removed = q.Outbox.RemoveAll(e => e.EntryId == entryId);
+            Landed(entryId);
+        });
         AddCounters(droppedOutbox: removed);
         Changed?.Invoke(this, EventArgs.Empty);
     }
@@ -521,8 +533,18 @@ public sealed class Outbox
             {
                 change(entry);
             }
+
+            Landed(entryId);
         });
         Changed?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void Landed(string entryId)
+    {
+        if (_inFlight == entryId)
+        {
+            _inFlight = null;
+        }
     }
 
     private void AddCounters(int droppedOutbox = 0, int evictions = 0)

@@ -351,6 +351,24 @@ public sealed class MediaAggregatorTests : IDisposable
     }
 
     [Fact]
+    public void IdleTicks_DoNotRewriteQueueJson()
+    {
+        Add(Movie(), _d1);
+        _aggregator.ScanFinished();
+        _h.State.FlushAll();
+        System.IO.File.Delete(_h.Paths.Queue);
+
+        for (var i = 0; i < 3; i++)
+        {
+            Advance(11);
+            Assert.Empty(_aggregator.Tick());
+            _h.State.FlushDue();
+        }
+
+        Assert.False(System.IO.File.Exists(_h.Paths.Queue));
+    }
+
+    [Fact]
     public void OutputsAreCopies()
     {
         Add(Movie(), _d1);

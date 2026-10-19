@@ -135,6 +135,8 @@ public sealed class NotificationPipeline
     private static T Copy<T>(T value)
         => JsonSerializer.Deserialize<T>(JsonSerializer.Serialize(value, JsonDefaults.Options), JsonDefaults.Options)!;
 
+    private static bool Wants(Destination destination, string eventKey) => Router.Route(eventKey, null, [destination]).Count > 0;
+
     private void AddReady(IReadOnlyList<MediaReady> ready, IReadOnlyList<Destination> destinations)
     {
         foreach (var item in ready)
@@ -163,6 +165,14 @@ public sealed class NotificationPipeline
                     return;
                 }
 
+                // Groups wait up to hours in a release buffer; a destination disabled or unsubscribed meanwhile gets
+                // nothing from them.
+                var wanted = output.Groups.Where(g => Wants(destination, g.Model.EventKey)).ToList();
+                if (wanted.Count == 0)
+                {
+                    return;
+                }
+
                 if (output.Kind == MediaOutputKind.Digest)
                 {
                     var digest = new RenderModel
@@ -170,7 +180,7 @@ public sealed class NotificationPipeline
                         Kind = RenderKind.Digest,
                         EventKey = "media.digest",
                         At = _time.GetUtcNow(),
-                        Groups = output.Groups.Select(g => g.Model).ToList(),
+                        Groups = wanted.Select(g => g.Model).ToList(),
                     };
                     Enqueue(destination, digest, OutboxOp.Send, "digest", sentKey: null, targetKey: null, replyToKey: null);
                     return;

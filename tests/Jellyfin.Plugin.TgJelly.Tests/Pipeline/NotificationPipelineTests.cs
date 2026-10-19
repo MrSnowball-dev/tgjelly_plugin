@@ -125,6 +125,54 @@ public sealed class NotificationPipelineTests : IDisposable
         Assert.Equal(1, _h.State.Read(s => s.Status.Counters.DroppedIntake));
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void BufferedMedia_IsDropped_WhenTheDestinationNoLongerWantsIt(bool disable)
+    {
+        _h.AddDestination(-1001, preset: PresetKind.NewMedia);
+        _scan.IsScanRunning = true;
+        var movie = _library.Add(new MediaItem { Id = Guid.NewGuid(), Kind = MediaKind.Movie, Name = "Arrival" }, Movies);
+        var series = Guid.NewGuid();
+        var groups = Enumerable.Range(1, 11).Select(i => i == 1 ? movie : Episode(series, Guid.NewGuid(), 1)).ToArray();
+        Ready(_rig, groups);
+        Assert.Equal(SettingsUpdateStatus.Saved, _h.Settings.Update(null, c =>
+        {
+            if (disable)
+            {
+                c.Destinations[0].Enabled = false;
+            }
+            else
+            {
+                c.Destinations[0].Events = EventCatalog.Expand(PresetKind.AdminAlerts);
+            }
+        }).Status);
+
+        _rig.Queues.PublishMedia(MediaIntakeKind.ScanFinished, null);
+        _rig.Pipeline.RunOnce();
+
+        Assert.Empty(_rig.Outbox.Snapshot());
+    }
+
+    [Fact]
+    public void Digest_KeepsOnlyTheGroupsTheDestinationStillWants()
+    {
+        _h.AddDestination(-1001, preset: PresetKind.NewMedia);
+        _scan.IsScanRunning = true;
+        var series = Guid.NewGuid();
+        var movies = Enumerable.Range(1, 3).Select(i => _library.Add(new MediaItem { Id = Guid.NewGuid(), Kind = MediaKind.Movie, Name = $"M{i}" }, Movies));
+        Ready(_rig, [.. movies, .. Enumerable.Range(1, 10).Select(i => Episode(series, Guid.NewGuid(), 1))]);
+        Assert.Equal(SettingsUpdateStatus.Saved, _h.Settings.Update(null, c => c.Destinations[0].Events = ["media.movie"]).Status);
+
+        _rig.Queues.PublishMedia(MediaIntakeKind.ScanFinished, null);
+        _rig.Pipeline.RunOnce();
+
+        var entry = Assert.Single(_rig.Outbox.Snapshot());
+        Assert.Equal("media.digest", entry.EventKey);
+        Assert.Equal(3, entry.Model!.Groups.Count);
+        Assert.All(entry.Model.Groups, g => Assert.Equal("media.movie", g.EventKey));
+    }
+
     [Fact]
     public void ScanFinished_ReleasesAtOnce()
     {

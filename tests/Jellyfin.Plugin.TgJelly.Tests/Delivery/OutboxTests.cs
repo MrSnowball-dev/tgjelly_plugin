@@ -315,6 +315,34 @@ public sealed class OutboxTests : IDisposable
         Assert.Equal(("2", Now), (sent.Model!.Values["attempts"], sent.LastEditAt));
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void EditForASendBeingDelivered_IsQueued_NotMergedIntoIt(bool delivered)
+    {
+        var send = Entry("d1", "media.episodes", 0);
+        send.SentKey = "g1";
+        send.Model = Model("1");
+        _outbox.Enqueue(send);
+        var picked = _outbox.Pick(Views(("d1", true)), _pacing, Now).Entry!;
+        var edit = Edit("d1", "media.episodes", "g1", "two");
+        edit.Model = Model("2");
+
+        _outbox.Enqueue(edit);
+        if (delivered)
+        {
+            _outbox.Complete(picked, new SentMessage { MessageId = 7, SentAt = Now });
+        }
+        else
+        {
+            _outbox.Replace(picked); // a retryable failure writes the copy back
+        }
+
+        var queuedEdit = Assert.Single(_outbox.Snapshot(), e => e.Op == OutboxOp.Edit);
+        Assert.Equal(("g1", "two", "2"), (queuedEdit.TargetKey, queuedEdit.Message.Text, queuedEdit.Model!.Values["attempts"]));
+        Assert.Equal(delivered ? 1 : 2, _outbox.Count);
+    }
+
     [Fact]
     public void FindModel_PrefersQueuedEdit_ThenQueuedSend_ThenSent()
     {

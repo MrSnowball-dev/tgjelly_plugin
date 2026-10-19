@@ -140,6 +140,20 @@ public sealed class AlertCoalescer
         var now = _time.GetUtcNow();
         var outputs = Release(now, all: false);
         var evicted = 0;
+
+        // Most ticks find nothing to do; checking first keeps queue.json from being rewritten while idle.
+        if (!_state.ReadQueue(q => q.SecurityWindows.Values.Any(w => now >= w.LastAt + Window)
+            || q.Dedupe.Logins.Values.Any(at => now - at >= LoginDedupe)
+            || q.Dedupe.UserCreated.Values.Any(at => now - at > UserCreatedMerge)
+            || q.RecentPluginEvents.Exists(p => now - p.At > RestartReasons)
+            || q.SecurityWindows.Count > WindowsCap
+            || q.Dedupe.Logins.Count > LoginDedupeCap
+            || q.Dedupe.UserCreated.Count > UserCreatedCap
+            || q.RecentPluginEvents.Count > PluginEventsCap))
+        {
+            return outputs;
+        }
+
         _state.UpdateQueue(q =>
         {
             Expire(q.SecurityWindows, w => now >= w.LastAt + Window);

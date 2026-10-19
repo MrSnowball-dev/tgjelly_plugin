@@ -226,6 +226,25 @@ public sealed class AlertCoalescerTests : IDisposable
     }
 
     [Fact]
+    public void IdleTicks_DoNotRewriteQueueJson()
+    {
+        _coalescer.Process(Failed("alice", "1.1.1.1"));
+        Advance(3600);
+        _coalescer.Tick();
+        _h.State.FlushAll();
+        System.IO.File.Delete(_h.Paths.Queue);
+
+        for (var i = 0; i < 3; i++)
+        {
+            Advance(11);
+            Assert.Empty(_coalescer.Tick());
+            _h.State.FlushDue();
+        }
+
+        Assert.False(System.IO.File.Exists(_h.Paths.Queue));
+    }
+
+    [Fact]
     public void WindowsCap_EvictsOldest()
     {
         for (var i = 0; i <= AlertCoalescer.WindowsCap; i++)

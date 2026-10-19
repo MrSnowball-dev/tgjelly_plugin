@@ -214,10 +214,21 @@ public sealed class MediaAggregator
         var quiet = TimeSpan.FromSeconds(batching.QuietWindowSeconds);
         var maxHold = TimeSpan.FromMinutes(batching.MaxHoldMinutes);
         var releaseQuiet = TimeSpan.FromSeconds(batching.ReleaseQuietSeconds);
+        bool Closes(MediaGroupState g) => force || now - g.LastAt >= quiet || now - g.FirstAt >= maxHold;
+        bool Due(ReleaseBuffer b) => force
+            || b.Groups.Count >= BufferCapOverride
+            || (scan ? now - b.FirstAt >= ScanHoldLimit : now - b.LastAt >= releaseQuiet || now - b.FirstAt >= maxHold);
+
+        // Most ticks find nothing to do; checking first keeps queue.json from being rewritten while idle.
+        if (!_state.ReadQueue(q => q.OpenGroups.Exists(Closes) || q.ReleaseBuffers.Values.Any(Due)))
+        {
+            return [];
+        }
+
         var outputs = new List<MediaOutput>();
         _state.UpdateQueue(q =>
         {
-            var closing = force ? q.OpenGroups : q.OpenGroups.Where(g => now - g.LastAt >= quiet || now - g.FirstAt >= maxHold).ToList();
+            var closing = q.OpenGroups.Where(Closes).ToList();
             if (closing.Count > 0)
             {
                 var closed = closing.OrderBy(g => g.FirstAt).ToList();
@@ -232,12 +243,7 @@ public sealed class MediaAggregator
 
             foreach (var (destinationId, buffer) in q.ReleaseBuffers.OrderBy(b => b.Key, StringComparer.Ordinal).ToList())
             {
-                var due = force
-                    || buffer.Groups.Count >= BufferCapOverride
-                    || (scan
-                        ? now - buffer.FirstAt >= ScanHoldLimit
-                        : now - buffer.LastAt >= releaseQuiet || now - buffer.FirstAt >= maxHold);
-                if (!due)
+                if (!Due(buffer))
                 {
                     continue;
                 }
