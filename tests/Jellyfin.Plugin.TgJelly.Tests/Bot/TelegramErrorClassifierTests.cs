@@ -42,6 +42,7 @@ public class TelegramErrorClassifierTests
         { 400, "Bad Request: message is not modified: specified new message content and reply markup are exactly the same as a current content and reply markup of the message", DeliveryErrorKind.NotModified },
         { 429, "Too Many Requests: retry after 9", DeliveryErrorKind.RateLimited },
         { 502, "Bad Gateway", DeliveryErrorKind.ServerError },
+        { 401, "Unauthorized", DeliveryErrorKind.Unauthorized },
         { 400, "Bad Request: something new", DeliveryErrorKind.Other },
     };
 
@@ -94,4 +95,18 @@ public class TelegramErrorClassifierTests
     [Fact]
     public void RateLimit_WithoutParameters_Waits5Seconds()
         => Assert.Equal(TimeSpan.FromSeconds(5), TelegramErrorClassifier.ClassifyPoll(new ApiRequestException("Too Many Requests", 429)).RetryAfter);
+
+    [Fact]
+    public void Descriptions_AreRedacted()
+    {
+        const string token = "123456789:AAEhBP0av28KrBd9xL4Zq3Wm7Tn5Ys1Cv6QpZ";
+        var delivery = TelegramErrorClassifier.ClassifyDelivery(Api(400, "Bad Request: " + token));
+        var poll = TelegramErrorClassifier.ClassifyPoll(Api(400, "Bad Request: " + token));
+
+        Assert.All(new[] { delivery.Description, poll.Description }, d =>
+        {
+            Assert.Contains("<token>", d, StringComparison.Ordinal);
+            Assert.DoesNotContain(token, d, StringComparison.Ordinal);
+        });
+    }
 }

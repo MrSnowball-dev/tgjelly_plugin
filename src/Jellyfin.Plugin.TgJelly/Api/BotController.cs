@@ -68,17 +68,18 @@ public class BotController : ControllerBase
     /// <summary>
     /// Disconnects the bot (spec §10.4).
     /// </summary>
+    /// <param name="cancellationToken">Cancels the request.</param>
     /// <returns>No content.</returns>
     [HttpDelete("Token")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
-    public IActionResult DeleteToken()
+    public async Task<IActionResult> DeleteToken(CancellationToken cancellationToken)
     {
         if (ApiGuard.Block(_gate, _state) is { } blocked)
         {
             return blocked;
         }
 
-        _tokens.Disconnect();
+        await _tokens.DisconnectAsync(cancellationToken).ConfigureAwait(false);
         return NoContent();
     }
 

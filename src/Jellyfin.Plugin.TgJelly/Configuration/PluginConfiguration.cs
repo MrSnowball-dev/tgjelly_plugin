@@ -10,6 +10,12 @@ namespace Jellyfin.Plugin.TgJelly.Configuration;
 public class PluginConfiguration : BasePluginConfiguration
 {
     /// <summary>
+    /// The highest revision an outside save can set (spec §10.4); far below <see cref="long.MaxValue"/>, so later
+    /// increments never wrap around.
+    /// </summary>
+    public const long MaxOutsideRevision = long.MaxValue / 2;
+
+    /// <summary>
     /// Gets or sets the settings schema version.
     /// </summary>
     public int SchemaVersion { get; set; } = 1;

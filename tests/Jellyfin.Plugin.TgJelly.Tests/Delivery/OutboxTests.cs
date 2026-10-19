@@ -271,4 +271,135 @@ public sealed class OutboxTests : IDisposable
         Assert.Null(pick.Entry);
         Assert.Equal(send.EntryId, _outbox.Pick(Views(("d1", true)), _pacing, Now + TimeSpan.FromSeconds(2)).Entry!.EntryId);
     }
+
+    [Fact]
+    public void EditForAQueuedSend_ReRendersTheSend_InsteadOfQueuingAnEdit()
+    {
+        var send = Entry("d1", "security.login_failed", 0);
+        send.SentKey = "login_failed:ALICE";
+        send.Message.Text = "×1";
+        send.Message.PlainText = true;
+        send.Model = Model("1");
+        _outbox.Enqueue(send);
+        _h.Time.Advance(TimeSpan.FromSeconds(5));
+
+        var edit = Edit("d1", "security.login_failed", "login_failed:ALICE", "×5");
+        edit.SentKey = "login_failed:ALICE";
+        edit.Model = Model("5");
+        _outbox.Enqueue(edit);
+
+        var queued = Assert.Single(_outbox.Snapshot());
+        Assert.Equal((send.EntryId, send.QueuedAt, OutboxOp.Send, "×5"), (queued.EntryId, queued.QueuedAt, queued.Op, queued.Message.Text));
+        Assert.True(queued.Message.PlainText);
+        Assert.Equal("5", queued.Model!.Values["attempts"]);
+    }
+
+    [Fact]
+    public void Complete_RecordsTheModel_AndAnEditReplacesIt()
+    {
+        var send = Entry("d1", "media.episodes", 0);
+        send.SentKey = "g1";
+        send.Model = Model("1");
+        _outbox.Enqueue(send);
+        _outbox.Complete(send, new SentMessage { MessageId = 7, SentAt = Now });
+        Assert.True(_outbox.TryGetSent("d1", "g1", out var sent));
+        Assert.Equal("1", sent.Model!.Values["attempts"]);
+
+        _h.Time.Advance(TimeSpan.FromMinutes(1));
+        var edit = Edit("d1", "media.episodes", "g1", "two");
+        edit.Model = Model("2");
+        _outbox.Enqueue(edit);
+        _outbox.Complete(edit, null);
+
+        Assert.True(_outbox.TryGetSent("d1", "g1", out sent));
+        Assert.Equal(("2", Now), (sent.Model!.Values["attempts"], sent.LastEditAt));
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void EditForASendBeingDelivered_IsQueued_NotMergedIntoIt(bool delivered)
+    {
+        var send = Entry("d1", "media.episodes", 0);
+        send.SentKey = "g1";
+        send.Model = Model("1");
+        _outbox.Enqueue(send);
+        var picked = _outbox.Pick(Views(("d1", true)), _pacing, Now).Entry!;
+        var edit = Edit("d1", "media.episodes", "g1", "two");
+        edit.Model = Model("2");
+
+        _outbox.Enqueue(edit);
+        if (delivered)
+        {
+            _outbox.Complete(picked, new SentMessage { MessageId = 7, SentAt = Now });
+        }
+        else
+        {
+            _outbox.Replace(picked); // a retryable failure writes the copy back
+        }
+
+        var queuedEdit = Assert.Single(_outbox.Snapshot(), e => e.Op == OutboxOp.Edit);
+        Assert.Equal(("g1", "two", "2"), (queuedEdit.TargetKey, queuedEdit.Message.Text, queuedEdit.Model!.Values["attempts"]));
+        Assert.Equal(delivered ? 1 : 2, _outbox.Count);
+    }
+
+    [Fact]
+    public void FindModel_PrefersQueuedEdit_ThenQueuedSend_ThenSent()
+    {
+        var send = Entry("d1", "media.episodes", 0);
+        send.SentKey = "g1";
+        send.Model = Model("sent");
+        _outbox.Enqueue(send);
+        _outbox.Complete(send, new SentMessage { MessageId = 7, SentAt = Now, Model = send.Model });
+        Assert.Equal(("sent", false), Found("g1"));
+
+        var queuedSend = Entry("d1", "media.episodes", 0);
+        queuedSend.SentKey = "g2";
+        queuedSend.Model = Model("queued send");
+        _outbox.Enqueue(queuedSend);
+        Assert.Equal(("queued send", true), Found("g2"));
+
+        var edit = Edit("d1", "media.episodes", "g1", "x");
+        edit.Model = Model("queued edit");
+        _outbox.Enqueue(edit);
+        // The edit's target is already out, so the record keeps the original send time.
+        Assert.Equal(("queued edit", false), Found("g1"));
+        Assert.Equal(Now, _outbox.FindModel("d1", "g1")!.SentAt);
+        Assert.Null(_outbox.FindModel("d1", "nope"));
+    }
+
+    [Fact]
+    public void PruneSent_KeepsMessagesForLateEditsAndOpenWindows()
+    {
+        Sent("old", Now - TimeSpan.FromHours(6) - TimeSpan.FromMinutes(1), lastEdit: null);
+        Sent("edited", Now - TimeSpan.FromHours(7), lastEdit: Now - TimeSpan.FromMinutes(5));
+        Sent("login_failed:ALICE", Now - TimeSpan.FromMinutes(9), lastEdit: null);
+
+        Assert.Equal(1, _outbox.PruneSent(Now, lateEditHours: 6));
+        Assert.False(_outbox.TryGetSent("d1", "old", out _));
+        Assert.True(_outbox.TryGetSent("d1", "edited", out _));
+
+        Assert.Equal(0, _outbox.PruneSent(Now, lateEditHours: 0));
+        Assert.True(_outbox.TryGetSent("d1", "login_failed:ALICE", out _));
+        Assert.Equal(2, _outbox.PruneSent(Now + TimeSpan.FromMinutes(6), lateEditHours: 0));
+        Assert.False(_outbox.TryGetSent("d1", "login_failed:ALICE", out _));
+        Assert.Equal(0, _h.State.Read(s => s.Status.Counters.Evictions));
+    }
+
+    private (string?, bool) Found(string key) => _outbox.FindModel("d1", key) is { } r ? (r.Model.Values["attempts"], r.Queued) : (null, false);
+
+    private void Sent(string key, DateTimeOffset sentAt, DateTimeOffset? lastEdit)
+    {
+        var e = Entry("d1", "media.movie", 0);
+        e.SentKey = key;
+        _outbox.Enqueue(e);
+        _outbox.Complete(e, new SentMessage { MessageId = 1, SentAt = sentAt, LastEditAt = lastEdit });
+    }
+
+    private static RenderModel Model(string attempts) => new()
+    {
+        Kind = RenderKind.Alert,
+        EventKey = "security.login_failed",
+        Values = new Dictionary<string, string> { ["attempts"] = attempts },
+    };
 }

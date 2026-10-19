@@ -35,12 +35,19 @@ public sealed class Outbox
     /// <summary>How long a cached file_id is reused.</summary>
     public static readonly TimeSpan FileIdTtl = TimeSpan.FromHours(24);
 
+    // A sent message stays editable this long after its last edit (the sliding security window, spec §7.5).
+    private static readonly TimeSpan SentWindowGrace = TimeSpan.FromMinutes(10);
+
     private static readonly TimeSpan FirstRetry = TimeSpan.FromSeconds(2);
     private static readonly TimeSpan MaxRetry = TimeSpan.FromMinutes(5);
 
     private readonly StateStore _state;
     private readonly StringTable _strings;
     private readonly TimeProvider _time;
+
+    // The entry Pick last handed to delivery, read and written under the state lock. A late edit must not merge into
+    // it: delivery holds a copy and writes that copy back (Complete, Replace), which would drop the merged content.
+    private string? _inFlight;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="Outbox"/> class.
@@ -107,6 +114,19 @@ public sealed class Outbox
                 var mine = q.Outbox.Where(e => e.DestinationId == entry.DestinationId);
                 if (entry.Op == OutboxOp.Edit && entry.TargetKey is not null)
                 {
+                    // The message isn't sent yet: render it again instead of queuing an edit (spec §7.5 step 3).
+                    var unsent = q.Outbox.Find(e => e.Op == OutboxOp.Send && e.DestinationId == entry.DestinationId && e.SentKey == entry.TargetKey);
+                    if (unsent is not null && unsent.EntryId != _inFlight)
+                    {
+                        var message = entry.Message;
+                        message.ForceTextOnly |= unsent.Message.ForceTextOnly;
+                        message.NoButtons |= unsent.Message.NoButtons;
+                        message.PlainText |= unsent.Message.PlainText;
+                        unsent.Message = message;
+                        unsent.Model = entry.Model ?? unsent.Model;
+                        return;
+                    }
+
                     var queued = q.Outbox.FindIndex(e => e.Op == OutboxOp.Edit && e.DestinationId == entry.DestinationId && e.TargetKey == entry.TargetKey);
                     if (queued >= 0)
                     {
@@ -227,6 +247,7 @@ public sealed class Outbox
                 }
             }
 
+            _inFlight = best?.EntryId;
             return new OutboxPick(best is null ? null : Copy(best), wake);
         });
     }
@@ -245,8 +266,10 @@ public sealed class Outbox
         _state.UpdateQueue(q =>
         {
             q.Outbox.RemoveAll(e => e.EntryId == entry.EntryId);
+            Landed(entry.EntryId);
             if (sent is not null && entry.SentKey is not null)
             {
+                sent.Model = entry.Model;
                 q.SentMessages[SentKey(entry.DestinationId, entry.SentKey)] = sent;
                 evicted = EvictOldest(q.SentMessages, SentMessagesCap, m => m.SentAt);
             }
@@ -255,6 +278,7 @@ public sealed class Outbox
                 && q.SentMessages.TryGetValue(SentKey(entry.DestinationId, entry.TargetKey), out var target))
             {
                 target.LastEditAt = now;
+                target.Model = entry.Model ?? target.Model;
             }
         });
 
@@ -289,6 +313,8 @@ public sealed class Outbox
             {
                 q.Outbox[i] = Copy(entry);
             }
+
+            Landed(entry.EntryId);
         });
     }
 
@@ -299,7 +325,11 @@ public sealed class Outbox
     public void Drop(string entryId)
     {
         var removed = 0;
-        _state.UpdateQueue(q => removed = q.Outbox.RemoveAll(e => e.EntryId == entryId));
+        _state.UpdateQueue(q =>
+        {
+            removed = q.Outbox.RemoveAll(e => e.EntryId == entryId);
+            Landed(entryId);
+        });
         AddCounters(droppedOutbox: removed);
         Changed?.Invoke(this, EventArgs.Empty);
     }
@@ -379,6 +409,59 @@ public sealed class Outbox
     }
 
     /// <summary>
+    /// Finds the latest model of the message under <paramref name="key"/>: a queued edit's, else a queued send's, else
+    /// the sent message's.
+    /// </summary>
+    /// <param name="destinationId">The destination.</param>
+    /// <param name="key">The <c>sentMessages</c> key.</param>
+    /// <returns>The record, or <c>null</c> when there is none with a model.</returns>
+    public SentRecord? FindModel(string destinationId, string key) => _state.ReadQueue(q =>
+    {
+        var send = q.Outbox.Find(e => e.Op == OutboxOp.Send && e.DestinationId == destinationId && e.SentKey == key);
+        var edit = q.Outbox.Find(e => e.Op == OutboxOp.Edit && e.DestinationId == destinationId && e.TargetKey == key);
+        q.SentMessages.TryGetValue(SentKey(destinationId, key), out var sent);
+        if (edit?.Model is { } editModel)
+        {
+            return new SentRecord(Copy(editModel), sent?.SentAt ?? edit.QueuedAt, sent is null);
+        }
+
+        if (send?.Model is { } sendModel)
+        {
+            return new SentRecord(Copy(sendModel), send.QueuedAt, true);
+        }
+
+        return sent?.Model is { } sentModel ? new SentRecord(Copy(sentModel), sent.SentAt, false) : null;
+    });
+
+    /// <summary>
+    /// Forgets sent messages nothing will edit any more: kept until max(<c>sentAt</c> + LateEditHours,
+    /// <c>lastEditAt</c> + 10 min) (spec §10.3). Not counted as evictions.
+    /// </summary>
+    /// <param name="now">The current time.</param>
+    /// <param name="lateEditHours">The late-edit window in hours.</param>
+    /// <returns>How many were removed.</returns>
+    public int PruneSent(DateTimeOffset now, int lateEditHours)
+    {
+        var lateEdit = TimeSpan.FromHours(lateEditHours);
+        bool Expired(SentMessage m) => now >= Max(m.SentAt + lateEdit, (m.LastEditAt ?? m.SentAt) + SentWindowGrace);
+        if (!_state.ReadQueue(q => q.SentMessages.Values.Any(Expired)))
+        {
+            return 0;
+        }
+
+        var removed = 0;
+        _state.UpdateQueue(q =>
+        {
+            foreach (var key in q.SentMessages.Where(kv => Expired(kv.Value)).Select(kv => kv.Key).ToList())
+            {
+                q.SentMessages.Remove(key);
+                removed++;
+            }
+        });
+        return removed;
+    }
+
+    /// <summary>
     /// Looks up a cached poster file_id younger than 24 h.
     /// </summary>
     /// <param name="cacheKey">The poster's cache key.</param>
@@ -420,6 +503,8 @@ public sealed class Outbox
 
     private static DateTimeOffset? Min(DateTimeOffset? a, DateTimeOffset b) => a is { } x && x <= b ? x : b;
 
+    private static DateTimeOffset Max(DateTimeOffset a, DateTimeOffset b) => a >= b ? a : b;
+
     private static int EvictOldest<T>(Dictionary<string, T> items, int cap, Func<T, DateTimeOffset> age)
     {
         var over = items.Count - cap;
@@ -448,8 +533,18 @@ public sealed class Outbox
             {
                 change(entry);
             }
+
+            Landed(entryId);
         });
         Changed?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void Landed(string entryId)
+    {
+        if (_inFlight == entryId)
+        {
+            _inFlight = null;
+        }
     }
 
     private void AddCounters(int droppedOutbox = 0, int evictions = 0)

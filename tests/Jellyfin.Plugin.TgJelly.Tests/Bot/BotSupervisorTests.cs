@@ -202,9 +202,11 @@ public sealed class BotSupervisorTests : IDisposable
 
         supervisor.Restart();
 
-        await Eventually.TrueAsync(() => _h.Api.CallsTo("getMe").Count() > before && _h.Api.CallsTo("getUpdates").Count() >= 3, "new session polled");
-        var firstOfNewSession = _h.Api.Calls.SkipWhile(c => c.Method != "getMe").Skip(1).SkipWhile(c => c.Method != "getMe").First(c => c.Method == "getUpdates");
-        Assert.False(firstOfNewSession.Body.ContainsKey("offset"));
+        // The old session may still finish a long poll after the restart, so wait for a poll that follows the new
+        // session's getMe rather than counting polls.
+        BotApiCall? FirstOfNewSession() => _h.Api.Calls.SkipWhile(c => c.Method != "getMe").Skip(1).SkipWhile(c => c.Method != "getMe").FirstOrDefault(c => c.Method == "getUpdates");
+        await Eventually.TrueAsync(() => _h.Api.CallsTo("getMe").Count() > before && FirstOfNewSession() is not null, "new session polled");
+        Assert.False(FirstOfNewSession()!.Body.ContainsKey("offset"));
         await supervisor.StopAsync(CancellationToken.None);
     }
 

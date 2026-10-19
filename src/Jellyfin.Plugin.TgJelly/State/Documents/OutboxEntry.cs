@@ -34,6 +34,9 @@ public sealed class OutboxEntry
     /// <summary>Gets or sets the rendered message.</summary>
     public OutboxMessage Message { get; set; } = new();
 
+    /// <summary>Gets or sets the model the message was rendered from, if any.</summary>
+    public RenderModel? Model { get; set; }
+
     /// <summary>Gets or sets when it was queued; the 24 h TTL counts from here.</summary>
     public DateTimeOffset QueuedAt { get; set; }
 

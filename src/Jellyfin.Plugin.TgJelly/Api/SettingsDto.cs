@@ -16,6 +16,9 @@ public sealed class SettingsDto
     /// <summary>Gets a value indicating whether the public URL can be used for buttons (spec §8.3).</summary>
     public bool PublicUrlValid { get; init; }
 
+    /// <summary>Gets the suggested public URL, normalized and valid, or <c>null</c>; the page labels it "verify" (spec §8.3).</summary>
+    public string? PublicUrlSuggestion { get; init; }
+
     /// <summary>Gets the message toggles.</summary>
     public MessageOptions Message { get; init; } = new();
 

@@ -27,6 +27,11 @@ public sealed class StateStore
     /// <summary>How long queue.json may stay dirty before it is written.</summary>
     public static readonly TimeSpan QueueWriteInterval = TimeSpan.FromSeconds(10);
 
+    /// <summary>How often a file that couldn't be read (permissions, I/O) is tried again; it is never overwritten meanwhile.</summary>
+    public static readonly TimeSpan BlockedRetryInterval = TimeSpan.FromSeconds(30);
+
+    private const string ReadableAgain = " is readable again; changes made while it couldn't be read were not kept.";
+
     private readonly DataPaths _paths;
     private readonly TimeProvider _time;
     private readonly ILogger<StateStore> _logger;
@@ -40,6 +45,9 @@ public sealed class StateStore
     private bool _queueDirty;
     private bool _queueUrgent;
     private DateTimeOffset _lastQueueWrite = DateTimeOffset.MinValue;
+    private bool _stateBlocked;
+    private bool _queueBlocked;
+    private DateTimeOffset _lastBlockedRetry;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="StateStore"/> class.
@@ -72,12 +80,15 @@ public sealed class StateStore
     public void Load()
     {
         var now = _time.GetUtcNow();
-        var state = ReadOrDefault<StateDocument>(_paths.State, now, out var stateWarning);
-        var queue = ReadOrDefault<QueueDocument>(_paths.Queue, now, out var queueWarning);
+        var state = ReadOrDefault<StateDocument>(_paths.State, now, out var stateWarning, out var stateBlocked);
+        var queue = ReadOrDefault<QueueDocument>(_paths.Queue, now, out var queueWarning, out var queueBlocked);
         lock (_gate)
         {
             _state = state;
             _queue = queue;
+            _stateBlocked = stateBlocked;
+            _queueBlocked = queueBlocked;
+            _lastBlockedRetry = now;
             foreach (var warning in new[] { stateWarning, queueWarning })
             {
                 if (warning is not null)
@@ -200,7 +211,11 @@ public sealed class StateStore
     /// <summary>
     /// Writes whatever is due now. Called once per second by the persistence loop.
     /// </summary>
-    public void FlushDue() => Flush(force: false);
+    public void FlushDue()
+    {
+        RetryBlocked();
+        Flush(force: false);
+    }
 
     /// <summary>
     /// Writes everything that changed, e.g. on shutdown.
@@ -221,13 +236,13 @@ public sealed class StateStore
                     return;
                 }
 
-                if (_stateDirty)
+                if (_stateDirty && !_stateBlocked)
                 {
                     stateJson = JsonSerializer.Serialize(_state, JsonDefaults.Options);
                     _stateDirty = false;
                 }
 
-                if (_queueDirty && (force || _queueUrgent || now - _lastQueueWrite >= QueueWriteInterval))
+                if (_queueDirty && !_queueBlocked && (force || _queueUrgent || now - _lastQueueWrite >= QueueWriteInterval))
                 {
                     queueJson = JsonSerializer.Serialize(_queue, JsonDefaults.Options);
                     _queueDirty = false;
@@ -281,11 +296,96 @@ public sealed class StateStore
         }
     }
 
+    private static void AddIfNotNull(List<string> list, string? item)
+    {
+        if (item is not null)
+        {
+            list.Add(item);
+        }
+    }
+
     private static void TrimErrors(List<StatusError> errors)
     {
         if (errors.Count > MaxLastErrors)
         {
             errors.RemoveRange(0, errors.Count - MaxLastErrors);
+        }
+    }
+
+    // A file that couldn't be read is never written (that would replace what's in it). Once it can be read again,
+    // its contents replace the in-memory document: what changed meanwhile was never saved, and the warning says so.
+    private void RetryBlocked()
+    {
+        var now = _time.GetUtcNow();
+        bool stateBlocked;
+        bool queueBlocked;
+        lock (_gate)
+        {
+            if (!_loaded || (!_stateBlocked && !_queueBlocked) || now - _lastBlockedRetry < BlockedRetryInterval)
+            {
+                return;
+            }
+
+            _lastBlockedRetry = now;
+            stateBlocked = _stateBlocked;
+            queueBlocked = _queueBlocked;
+        }
+
+        lock (_writeGate)
+        {
+            var warnings = new List<string>();
+            StateDocument? state = null;
+            QueueDocument? queue = null;
+            if (stateBlocked)
+            {
+                var read = ReadOrDefault<StateDocument>(_paths.State, now, out var warning, out var blocked, retry: true);
+                if (!blocked)
+                {
+                    state = read;
+                    AddIfNotNull(warnings, warning);
+                    warnings.Add(Path.GetFileName(_paths.State) + ReadableAgain);
+                }
+            }
+
+            if (queueBlocked)
+            {
+                var read = ReadOrDefault<QueueDocument>(_paths.Queue, now, out var warning, out var blocked, retry: true);
+                if (!blocked)
+                {
+                    queue = read;
+                    AddIfNotNull(warnings, warning);
+                    warnings.Add(Path.GetFileName(_paths.Queue) + ReadableAgain);
+                }
+            }
+
+            if (warnings.Count == 0)
+            {
+                return;
+            }
+
+            lock (_gate)
+            {
+                if (state is not null)
+                {
+                    _state = state;
+                    _stateBlocked = false;
+                }
+
+                if (queue is not null)
+                {
+                    _queue = queue;
+                    _queueBlocked = false;
+                    _queueDirty = false;
+                }
+
+                _state.Status.LoadWarnings.AddRange(warnings);
+                while (_state.Status.LoadWarnings.Count > MaxLoadWarnings)
+                {
+                    _state.Status.LoadWarnings.RemoveAt(0);
+                }
+
+                _stateDirty = true;
+            }
         }
     }
 
@@ -297,10 +397,11 @@ public sealed class StateStore
         }
     }
 
-    private T ReadOrDefault<T>(string path, DateTimeOffset now, out string? warning)
+    private T ReadOrDefault<T>(string path, DateTimeOffset now, out string? warning, out bool blocked, bool retry = false)
         where T : new()
     {
         warning = null;
+        blocked = false;
         if (!File.Exists(path))
         {
             return new T();
@@ -320,8 +421,13 @@ public sealed class StateStore
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             // Not moved aside: the move may fail too, and the file may be fine once permissions are fixed.
-            warning = Path.GetFileName(path) + " can't be read: " + ex.Message;
-            _logger.LogError(ex, "TgJelly {File} can't be read", Path.GetFileName(path));
+            warning = Path.GetFileName(path) + " can't be read: " + ex.Message + " TgJelly won't overwrite it until it can.";
+            blocked = true;
+            if (!retry)
+            {
+                _logger.LogError(ex, "TgJelly {File} can't be read", Path.GetFileName(path));
+            }
+
             return new T();
         }
     }

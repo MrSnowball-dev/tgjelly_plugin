@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using Jellyfin.Plugin.TgJelly.Configuration;
 using Jellyfin.Plugin.TgJelly.Delivery;
 using Jellyfin.Plugin.TgJelly.Destinations;
+using Jellyfin.Plugin.TgJelly.Rendering;
 using Jellyfin.Plugin.TgJelly.State;
 using Jellyfin.Plugin.TgJelly.State.Documents;
 using Jellyfin.Plugin.TgJelly.Tests.Fakes;
@@ -21,6 +22,7 @@ public sealed class OutboxDeliveryTests : IDisposable
     private readonly PacingGate _pacing;
     private readonly HealthService _health;
     private readonly OutboxDelivery _delivery;
+    private readonly Formatter _formatter;
 
     public OutboxDeliveryTests()
     {
@@ -31,7 +33,8 @@ public sealed class OutboxDeliveryTests : IDisposable
         _h.Track(gate);
         _health = new HealthService(gate, _h.Connection, new DestinationChecker(_h.Connection, _h.Strings), _h.Settings, _h.State, _h.Time, NullLogger<HealthService>.Instance);
         _h.Track(_health);
-        _delivery = new OutboxDelivery(_h.Connection, _outbox, _health, _h.Settings, _h.State, _pacing, _h.Time, NullLogger<OutboxDelivery>.Instance)
+        _formatter = new Formatter(_h.Strings);
+        _delivery = new OutboxDelivery(_h.Connection, _outbox, _health, _h.Settings, _h.State, _pacing, _formatter, _h.Time, NullLogger<OutboxDelivery>.Instance)
         {
             Random = () => 0.5,
         };
@@ -302,6 +305,104 @@ public sealed class OutboxDeliveryTests : IDisposable
     }
 
     public void Dispose() => _h.Dispose();
+
+    [Fact]
+    public async Task Unauthorized_KeepsTheEntry_ForARetry()
+    {
+        var d = _h.AddDestination(-1001);
+        _h.Api.On("sendMessage", _ => FakeBotApi.Error(401, "Unauthorized"));
+        var entry = Entry(d, "hi");
+
+        await Deliver(entry, d);
+
+        var queued = Assert.Single(_outbox.Snapshot());
+        Assert.True(queued.NotBefore > Now);
+        Assert.Equal(1, queued.Attempts);
+        Assert.Equal(0, _h.State.Read(s => s.Status.Counters.DroppedOutbox));
+    }
+
+    [Fact]
+    [System.Runtime.Versioning.UnsupportedOSPlatform("windows")]
+    public async Task UnreadablePoster_SendsTheTextLayout()
+    {
+        Assert.SkipWhen(OperatingSystem.IsWindows() || Environment.UserName == "root", "needs Unix permissions as a normal user");
+        var d = _h.AddDestination(-1001);
+        var poster = Poster();
+        File.SetUnixFileMode(poster, UnixFileMode.None);
+        try
+        {
+            await Deliver(Entry(d, "text layout", poster: poster), d);
+        }
+        finally
+        {
+            File.SetUnixFileMode(poster, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+        }
+
+        Assert.Empty(_h.Api.CallsTo("sendPhoto"));
+        Assert.Equal("text layout", (string)Assert.Single(_h.Api.CallsTo("sendMessage")).Body["text"]!);
+        Assert.Equal(0, _outbox.Count);
+    }
+
+    [Fact]
+    public async Task HeldForMoreThan5Minutes_AddsTheDelayedLine_ToTextAndCaption()
+    {
+        var d = _h.AddDestination(-1001);
+        var text = Entry(d, "<b>hi</b>");
+        text.QueuedAt = Now - TimeSpan.FromMinutes(6);
+        var photo = Entry(d, "cap", poster: Poster());
+        photo.QueuedAt = Now - TimeSpan.FromMinutes(6);
+
+        await Deliver(text, d);
+        _h.Time.Advance(TimeSpan.FromSeconds(1));
+        await Deliver(photo, d);
+
+        var line = "\n\n" + _formatter.DelayedLine(text.QueuedAt, Now - TimeSpan.FromSeconds(1));
+        Assert.Equal("<b>hi</b>" + line, (string)Assert.Single(_h.Api.CallsTo("sendMessage")).Body["text"]!);
+        Assert.Equal("cap\n\n" + _formatter.DelayedLine(photo.QueuedAt, Now), (string)Assert.Single(_h.Api.CallsTo("sendPhoto")).Body["caption"]!);
+    }
+
+    [Fact]
+    public async Task Under5Minutes_NoLine()
+    {
+        var d = _h.AddDestination(-1001);
+        var entry = Entry(d, "hi");
+        entry.QueuedAt = Now - TimeSpan.FromMinutes(5);
+
+        await Deliver(entry, d);
+
+        Assert.Equal("hi", (string)Assert.Single(_h.Api.CallsTo("sendMessage")).Body["text"]!);
+    }
+
+    [Fact]
+    public async Task Edit_NeverGetsTheLine()
+    {
+        var d = _h.AddDestination(-1001);
+        var send = Entry(d, "one", sentKey: "g1");
+        await Deliver(send, d);
+        var edit = Entry(d, "two");
+        edit.Op = OutboxOp.Edit;
+        edit.TargetKey = "g1";
+        edit.QueuedAt = Now - TimeSpan.FromMinutes(10);
+
+        await Deliver(edit, d);
+
+        Assert.Equal("two", (string)Assert.Single(_h.Api.CallsTo("editMessageText")).Body["text"]!);
+    }
+
+    [Fact]
+    public async Task PlainTextFallback_KeepsTheLineAsText()
+    {
+        var d = _h.AddDestination(-1001);
+        var entry = Entry(d, "<b>hi</b>");
+        entry.QueuedAt = Now - TimeSpan.FromMinutes(6);
+        entry.Message.PlainText = true;
+
+        await Deliver(entry, d);
+
+        var sent = (string)Assert.Single(_h.Api.CallsTo("sendMessage")).Body["text"]!;
+        Assert.StartsWith("hi\n\n⏱ ", sent, StringComparison.Ordinal);
+        Assert.EndsWith(" UTC", sent, StringComparison.Ordinal);
+    }
 
     private async Task Deliver(OutboxEntry entry, Destination destination)
     {

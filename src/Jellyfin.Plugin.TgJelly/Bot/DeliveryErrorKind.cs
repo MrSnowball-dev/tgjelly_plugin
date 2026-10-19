@@ -47,6 +47,9 @@ public enum DeliveryErrorKind
     /// <summary>Row 14: a Telegram server error; retry with backoff.</summary>
     ServerError,
 
+    /// <summary>401: the token was revoked; retried with backoff while the poll loop reports TokenRejected.</summary>
+    Unauthorized,
+
     /// <summary>Row 15: anything else; log and drop.</summary>
     Other,
 }

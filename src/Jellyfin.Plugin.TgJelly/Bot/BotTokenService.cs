@@ -149,13 +149,23 @@ public sealed class BotTokenService : IDisposable
 
     /// <summary>
     /// Disconnects the bot (spec §10.4): clears the token and the bot-scoped state, keeps the proxy credentials and
-    /// the bot identity.
+    /// the bot identity. Waits for a token save still in flight, so that save can't finish after it.
     /// </summary>
-    public void Disconnect()
+    /// <param name="ct">Cancels the wait.</param>
+    /// <returns>A task.</returns>
+    public async Task DisconnectAsync(CancellationToken ct)
     {
-        _secrets.Update(s => s with { BotToken = string.Empty });
-        _state.Update(s => _state.UpdateQueue(q => BotStateReset.ForDisconnect(s, q)));
-        _supervisor.Restart();
+        await _saving.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            _secrets.Update(s => s with { BotToken = string.Empty });
+            _state.Update(s => _state.UpdateQueue(q => BotStateReset.ForDisconnect(s, q)));
+            _supervisor.Restart();
+        }
+        finally
+        {
+            _saving.Release();
+        }
     }
 
     /// <summary>

@@ -1,0 +1,4 @@
+⚙️ <b>Plugin updated: Trakt 26.0.0.0</b>
+
+<blockquote expandable>- Fixed sync for &lt;b&gt;shows&lt;/b&gt;
+- Faster &amp; safer</blockquote>

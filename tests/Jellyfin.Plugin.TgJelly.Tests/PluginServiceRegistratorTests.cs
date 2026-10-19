@@ -34,10 +34,21 @@ public class PluginServiceRegistratorTests
         services.AddSingleton<ILoggerFactory>(NullLoggerFactory.Instance); // Jellyfin's container has both
         services.AddSingleton(paths);
         services.AddSingleton(host);
+        services.AddSingleton(Substitute.For<MediaBrowser.Controller.Library.ILibraryManager>());
+        services.AddSingleton(Substitute.For<MediaBrowser.Controller.Configuration.IServerConfigurationManager>());
+        services.AddSingleton(Substitute.For<MediaBrowser.Model.Tasks.ITaskManager>());
         new PluginServiceRegistrator().RegisterServices(services, host);
         using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true });
 
         Assert.NotNull(provider.GetRequiredService<SettingsStore>());
+        Assert.NotNull(provider.GetRequiredService<Jellyfin.Plugin.TgJelly.Library.ILibraryAccess>());
+        Assert.NotNull(provider.GetRequiredService<Jellyfin.Plugin.TgJelly.Library.IServerInfo>());
+        using (var scope = provider.CreateScope())
+        {
+            Assert.Single(scope.ServiceProvider.GetServices<MediaBrowser.Controller.Events.IEventConsumer<MediaBrowser.Controller.Events.Authentication.AuthenticationRequestEventArgs>>());
+            Assert.Single(scope.ServiceProvider.GetServices<MediaBrowser.Controller.Events.IEventConsumer<Jellyfin.Data.Events.Users.UserLockedOutEventArgs>>());
+        }
+
         Assert.NotNull(provider.GetRequiredService<SecretsStore>());
         Assert.NotNull(provider.GetRequiredService<StateStore>());
         Assert.True(provider.GetRequiredService<CompatResult>().IsCompatible);
@@ -45,11 +56,20 @@ public class PluginServiceRegistratorTests
 
         var hosted = provider.GetServices<IHostedService>().ToList();
         Assert.Same(provider.GetRequiredService<InstanceGate>(), hosted[0]);
-        Assert.IsType<PersistenceService>(hosted[1]);
-        Assert.Same(provider.GetRequiredService<Jellyfin.Plugin.TgJelly.Bot.BotSupervisor>(), hosted[2]);
-        Assert.Same(provider.GetRequiredService<Jellyfin.Plugin.TgJelly.Destinations.HealthService>(), hosted[3]);
-        Assert.IsType<Jellyfin.Plugin.TgJelly.Delivery.OutboxService>(hosted[4]);
-        Assert.Equal(5, hosted.Count);
+        Assert.Equal(
+            [
+                typeof(InstanceGate), typeof(PersistenceService), typeof(Jellyfin.Plugin.TgJelly.Pipeline.PipelineService),
+                typeof(Jellyfin.Plugin.TgJelly.Intake.LibraryWatcher), typeof(Jellyfin.Plugin.TgJelly.Intake.TaskWatcher),
+                typeof(Jellyfin.Plugin.TgJelly.Intake.RestartWatcher), typeof(Jellyfin.Plugin.TgJelly.Intake.StartupWatcher),
+                typeof(Jellyfin.Plugin.TgJelly.Updates.UpdateChecker),
+                typeof(Jellyfin.Plugin.TgJelly.Bot.BotSupervisor), typeof(Jellyfin.Plugin.TgJelly.Destinations.HealthService),
+                typeof(Jellyfin.Plugin.TgJelly.Delivery.OutboxService),
+            ],
+            hosted.Select(h => h.GetType()));
+        Assert.Same(provider.GetRequiredService<Jellyfin.Plugin.TgJelly.Pipeline.PipelineService>(), hosted[2]);
+        Assert.Same(provider.GetRequiredService<Jellyfin.Plugin.TgJelly.Intake.LibraryWatcher>(), hosted[3]);
+        Assert.Same(provider.GetRequiredService<Jellyfin.Plugin.TgJelly.Bot.BotSupervisor>(), hosted[8]);
+        Assert.Same(provider.GetRequiredService<Jellyfin.Plugin.TgJelly.Destinations.HealthService>(), hosted[9]);
     }
 
     [Fact]

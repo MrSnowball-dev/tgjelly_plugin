@@ -5,6 +5,8 @@ using Jellyfin.Plugin.TgJelly.Compat;
 using Jellyfin.Plugin.TgJelly.Configuration;
 using Jellyfin.Plugin.TgJelly.Delivery;
 using Jellyfin.Plugin.TgJelly.Destinations;
+using Jellyfin.Plugin.TgJelly.Library;
+using Jellyfin.Plugin.TgJelly.Pipeline;
 using Jellyfin.Plugin.TgJelly.State;
 using Jellyfin.Plugin.TgJelly.State.Documents;
 using Jellyfin.Plugin.TgJelly.Strings;
@@ -33,6 +35,8 @@ public class TgJellyController : ControllerBase
     private readonly Outbox _outbox;
     private readonly HealthService _health;
     private readonly StringTable _strings;
+    private readonly MediaReadiness _readiness;
+    private readonly ILibraryAccess _library;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="TgJellyController"/> class.
@@ -46,8 +50,12 @@ public class TgJellyController : ControllerBase
     /// <param name="outbox">The Outbox.</param>
     /// <param name="health">The health service.</param>
     /// <param name="strings">The string table.</param>
-    public TgJellyController(CompatResult compat, InstanceGate gate, SettingsStore settings, StateStore state, SecretsStore secrets, BotConnection connection, Outbox outbox, HealthService health, StringTable strings)
+    /// <param name="readiness">Media readiness, for the pending count.</param>
+    /// <param name="library">The library, for removed-library filters.</param>
+    public TgJellyController(CompatResult compat, InstanceGate gate, SettingsStore settings, StateStore state, SecretsStore secrets, BotConnection connection, Outbox outbox, HealthService health, StringTable strings, MediaReadiness readiness, ILibraryAccess library)
     {
+        _readiness = readiness;
+        _library = library;
         _compat = compat;
         _gate = gate;
         _settings = settings;
@@ -76,6 +84,9 @@ public class TgJellyController : ControllerBase
             _ => _strings.Get("connection." + state, ("bot", username)),
         };
 
+        var settings = _settings.Current;
+        var existing = _library.GetVirtualFolders().Select(l => l.Id).ToHashSet();
+        var updateCheck = _state.Read(s => (s.UpdateCheck.ConsecutiveFailures, s.UpdateCheck.LastError));
         return new StatusDto
         {
             Version = typeof(Plugin).Assembly.GetName().Version?.ToString() ?? string.Empty,
@@ -84,7 +95,7 @@ public class TgJellyController : ControllerBase
             CompatMessage = _compat.Message,
             InstanceOwner = _gate.IsOwner,
             InstanceMessage = _gate.WaitingMessage,
-            Revision = _settings.Current.Revision,
+            Revision = settings.Revision,
             BackupRestoredAt = _state.Read(s => s.Status.BackupRestoredAt),
             LoadWarnings = [.. _state.Read(s => s.Status.LoadWarnings.ToArray()), .. _secrets.LoadWarning is { } w ? new[] { w } : []],
             LastErrors = _state.LastErrorsSnapshot(),
@@ -94,7 +105,10 @@ public class TgJellyController : ControllerBase
             HasToken = !string.IsNullOrEmpty(_secrets.Load().BotToken),
             Counters = _state.Read(s => new StatusCounters { DroppedIntake = s.Status.Counters.DroppedIntake, DroppedOutbox = s.Status.Counters.DroppedOutbox, Evictions = s.Status.Counters.Evictions }),
             OutboxCount = _outbox.Count,
-            UnhealthyDestinations = _settings.Current.Destinations.Count(d => !_health.IsDeliverable(d.Id)),
+            UnhealthyDestinations = settings.Destinations.Count(d => !_health.IsDeliverable(d.Id)),
+            PendingMedia = _state.IsLoaded ? _readiness.PendingCount : 0,
+            UpdateCheckFailing = updateCheck.ConsecutiveFailures >= 3 ? _strings.Get("update.failing", ("reason", updateCheck.LastError)) : null,
+            RemovedLibraryFilters = settings.Destinations.Count(d => LibraryFilter.RefersOnlyToRemoved(d, existing)),
         };
     }
 }

@@ -20,4 +20,7 @@ public sealed class StateDocument
 
     /// <summary>Gets or sets each destination's health, keyed by destination ID (spec §9.4).</summary>
     public Dictionary<string, DestinationHealth> Health { get; set; } = new(StringComparer.Ordinal);
+
+    /// <summary>Gets or sets the update checker's state (spec §7.6).</summary>
+    public UpdateCheckState UpdateCheck { get; set; } = new();
 }

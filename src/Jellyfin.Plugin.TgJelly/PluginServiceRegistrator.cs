@@ -1,15 +1,23 @@
 using System;
+using Jellyfin.Data.Events.Users;
 using Jellyfin.Plugin.TgJelly.Bot;
 using Jellyfin.Plugin.TgJelly.Compat;
 using Jellyfin.Plugin.TgJelly.Configuration;
 using Jellyfin.Plugin.TgJelly.Delivery;
 using Jellyfin.Plugin.TgJelly.Destinations;
 using Jellyfin.Plugin.TgJelly.Hosting;
+using Jellyfin.Plugin.TgJelly.Intake;
+using Jellyfin.Plugin.TgJelly.Intake.Consumers;
+using Jellyfin.Plugin.TgJelly.Library;
 using Jellyfin.Plugin.TgJelly.Logging;
 using Jellyfin.Plugin.TgJelly.State;
 using Jellyfin.Plugin.TgJelly.Strings;
 using MediaBrowser.Common.Configuration;
+using MediaBrowser.Common.Updates;
 using MediaBrowser.Controller;
+using MediaBrowser.Controller.Events;
+using MediaBrowser.Controller.Events.Authentication;
+using MediaBrowser.Controller.Events.Updates;
 using MediaBrowser.Controller.Plugins;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -44,6 +52,25 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddRedactedLogger<BotTokenService>();
         serviceCollection.AddRedactedLogger<DestinationTester>();
         serviceCollection.AddRedactedLogger<Api.DestinationsController>();
+        serviceCollection.AddRedactedLogger<JellyfinLibrary>();
+        serviceCollection.AddRedactedLogger<LibraryWatcher>();
+        serviceCollection.AddRedactedLogger<TaskWatcher>();
+        serviceCollection.AddRedactedLogger<RestartWatcher>();
+        serviceCollection.AddRedactedLogger<StartupWatcher>();
+        serviceCollection.AddRedactedLogger<Pipeline.MediaReadiness>();
+        serviceCollection.AddRedactedLogger<Pipeline.NotificationPipeline>();
+        serviceCollection.AddRedactedLogger<Pipeline.PipelineService>();
+        serviceCollection.AddRedactedLogger<Updates.UpdateChecker>();
+        serviceCollection.AddRedactedLogger<LoginFailedConsumer>();
+        serviceCollection.AddRedactedLogger<LoginSucceededConsumer>();
+        serviceCollection.AddRedactedLogger<LockoutConsumer>();
+        serviceCollection.AddRedactedLogger<UserCreatedConsumer>();
+        serviceCollection.AddRedactedLogger<UserDeletedConsumer>();
+        serviceCollection.AddRedactedLogger<PasswordChangedConsumer>();
+        serviceCollection.AddRedactedLogger<PluginInstalledConsumer>();
+        serviceCollection.AddRedactedLogger<PluginUpdatedConsumer>();
+        serviceCollection.AddRedactedLogger<PluginUninstalledConsumer>();
+        serviceCollection.AddRedactedLogger<PluginInstallFailedConsumer>();
         serviceCollection.AddSingleton(sp => new DataPaths(sp.GetRequiredService<IApplicationPaths>().PluginConfigurationsPath));
         serviceCollection.AddSingleton(sp => CompatGuard.Evaluate(sp.GetRequiredService<IServerApplicationHost>().ApplicationVersion));
         serviceCollection.AddSingleton(_ => StringTable.LoadEmbedded());
@@ -66,12 +93,53 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<ISupervisorControl>(sp => sp.GetRequiredService<BotSupervisor>());
         serviceCollection.AddSingleton<BotTokenService>();
         serviceCollection.AddSingleton<DestinationTester>();
+        serviceCollection.AddSingleton<ILibraryAccess, JellyfinLibrary>();
+        serviceCollection.AddSingleton<IServerInfo, JellyfinServerInfo>();
+        serviceCollection.AddSingleton<Rendering.Formatter>();
+        serviceCollection.AddSingleton<Rendering.LinkBuilder>();
+        serviceCollection.AddSingleton<Rendering.MediaLayouts>();
+        serviceCollection.AddSingleton<Rendering.AlertLayouts>();
+        serviceCollection.AddSingleton<Rendering.NotificationRenderer>();
+        serviceCollection.AddSingleton<IntakeQueues>();
+        serviceCollection.AddSingleton<PendingIdSet>();
+        serviceCollection.AddSingleton<LibraryWatcher>();
+        serviceCollection.AddSingleton<IScanState>(sp => sp.GetRequiredService<LibraryWatcher>());
+        serviceCollection.AddSingleton<TaskWatcher>();
+        serviceCollection.AddSingleton<RestartWatcher>();
+        serviceCollection.AddSingleton<StartupWatcher>();
+        serviceCollection.AddSingleton<Pipeline.MediaReadiness>();
+        serviceCollection.AddSingleton<Pipeline.MediaAggregator>();
+        serviceCollection.AddSingleton<Pipeline.AlertCoalescer>();
+        serviceCollection.AddSingleton<Pipeline.NotificationPipeline>();
+        serviceCollection.AddSingleton<Pipeline.PipelineService>();
+        serviceCollection.AddSingleton<Updates.IReleaseFeed, Updates.GitHubReleaseFeed>();
+        serviceCollection.AddSingleton<Updates.UpdateChecker>();
 
-        // Hosted services stop in reverse order: the Outbox and health loops first, then the bot (confirming the
-        // last update batch), then persistence flushes, and the gate releases state.lock last.
+        // Consumers are scoped, like Jellyfin's own and the Webhook plugin's; they take only the queue and a logger (F6).
+        serviceCollection.AddScoped<IEventConsumer<AuthenticationRequestEventArgs>, LoginFailedConsumer>();
+        serviceCollection.AddScoped<IEventConsumer<AuthenticationResultEventArgs>, LoginSucceededConsumer>();
+        serviceCollection.AddScoped<IEventConsumer<UserLockedOutEventArgs>, LockoutConsumer>();
+        serviceCollection.AddScoped<IEventConsumer<UserCreatedEventArgs>, UserCreatedConsumer>();
+        serviceCollection.AddScoped<IEventConsumer<UserDeletedEventArgs>, UserDeletedConsumer>();
+        serviceCollection.AddScoped<IEventConsumer<UserPasswordChangedEventArgs>, PasswordChangedConsumer>();
+        serviceCollection.AddScoped<IEventConsumer<PluginInstalledEventArgs>, PluginInstalledConsumer>();
+        serviceCollection.AddScoped<IEventConsumer<PluginUpdatedEventArgs>, PluginUpdatedConsumer>();
+        serviceCollection.AddScoped<IEventConsumer<PluginUninstalledEventArgs>, PluginUninstalledConsumer>();
+        serviceCollection.AddScoped<IEventConsumer<InstallationFailedEventArgs>, PluginInstallFailedConsumer>();
+
+        // Hosted services stop in reverse order (spec §12): the Outbox and health loops first, then the bot (confirming
+        // the last update batch), then the watchers unsubscribe so nothing new arrives, then the pipeline drains the
+        // intake queues and sends held lockouts to the Outbox, then persistence flushes, and the gate releases
+        // state.lock last.
         serviceCollection.AddSingleton<InstanceGate>();
         serviceCollection.AddHostedService(sp => sp.GetRequiredService<InstanceGate>());
         serviceCollection.AddHostedService<PersistenceService>();
+        serviceCollection.AddHostedService(sp => sp.GetRequiredService<Pipeline.PipelineService>());
+        serviceCollection.AddHostedService(sp => sp.GetRequiredService<LibraryWatcher>());
+        serviceCollection.AddHostedService(sp => sp.GetRequiredService<TaskWatcher>());
+        serviceCollection.AddHostedService(sp => sp.GetRequiredService<RestartWatcher>());
+        serviceCollection.AddHostedService(sp => sp.GetRequiredService<StartupWatcher>());
+        serviceCollection.AddHostedService(sp => sp.GetRequiredService<Updates.UpdateChecker>());
         serviceCollection.AddHostedService(sp => sp.GetRequiredService<BotSupervisor>());
         serviceCollection.AddHostedService(sp => sp.GetRequiredService<HealthService>());
         serviceCollection.AddHostedService<OutboxService>();

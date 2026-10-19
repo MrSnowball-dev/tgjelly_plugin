@@ -102,7 +102,9 @@ public sealed class OutboxService : BackgroundService
 
             var now = _time.GetUtcNow();
             _outbox.PurgeExpired(now);
-            var destinations = _settings.Current.Destinations;
+            var settings = _settings.Current;
+            _outbox.PruneSent(now, settings.Batching.LateEditHours);
+            var destinations = settings.Destinations;
             foreach (var orphan in _outbox.DestinationIds().Where(id => destinations.All(d => d.Id != id)))
             {
                 _outbox.RemoveDestination(orphan);

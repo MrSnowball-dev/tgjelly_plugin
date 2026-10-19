@@ -54,7 +54,18 @@ public sealed class SecretsStore
     {
         lock (_gate)
         {
-            return _cached ??= ReadFromDisk();
+            if (_cached is not null)
+            {
+                return _cached;
+            }
+
+            var secrets = ReadFromDisk(out var cache);
+            if (cache)
+            {
+                _cached = secrets;
+            }
+
+            return secrets;
         }
     }
 
@@ -85,8 +96,10 @@ public sealed class SecretsStore
         }
     }
 
-    private BotSecrets ReadFromDisk()
+    // An unreadable file (permissions, I/O) isn't cached, so the next Load reads it again once it is fixed.
+    private BotSecrets ReadFromDisk(out bool cache)
     {
+        cache = true;
         if (!File.Exists(_path))
         {
             return BotSecrets.Empty;
@@ -94,7 +107,9 @@ public sealed class SecretsStore
 
         try
         {
-            return JsonSerializer.Deserialize<BotSecrets>(File.ReadAllText(_path), JsonDefaults.Options) ?? BotSecrets.Empty;
+            var secrets = JsonSerializer.Deserialize<BotSecrets>(File.ReadAllText(_path), JsonDefaults.Options) ?? BotSecrets.Empty;
+            _loadWarning = null;
+            return secrets;
         }
         catch (JsonException ex)
         {
@@ -106,6 +121,7 @@ public sealed class SecretsStore
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             // Not moved aside: the file may be fine once its permissions are fixed.
+            cache = false;
             _loadWarning = "secrets.json can't be read: " + ex.Message;
             _logger.LogError(ex, "secrets.json can't be read");
             return BotSecrets.Empty;

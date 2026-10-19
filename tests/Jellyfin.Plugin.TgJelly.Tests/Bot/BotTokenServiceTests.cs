@@ -171,7 +171,7 @@ public sealed class BotTokenServiceTests : IDisposable
         SeedBotScopedState(FakeBotApi.BotId, d.Id);
         var identity = (_h.State.Read(s => s.Telegram.BotId)!.Value, _h.State.Read(s => s.Telegram.BotUsername));
 
-        _service.Disconnect();
+        await _service.DisconnectAsync(Ct);
 
         var secrets = _h.Secrets.Load();
         Assert.Equal((string.Empty, "u", "p"), (secrets.BotToken, secrets.ProxyUsername, secrets.ProxyPassword));
@@ -190,7 +190,7 @@ public sealed class BotTokenServiceTests : IDisposable
     {
         _h.AddDestination(-1001);
         await _service.SaveAsync(FakeBotApi.Token, true, false, Ct);
-        _service.Disconnect();
+        await _service.DisconnectAsync(Ct);
 
         var result = await _service.SaveAsync(FakeBotApi.Token, true, false, Ct);
 
@@ -208,6 +208,32 @@ public sealed class BotTokenServiceTests : IDisposable
 
         Assert.Single(_h.Api.CallsTo("deleteWebhook"));
         Assert.Equal(1, _supervisor.Restarts);
+    }
+
+    [Fact]
+    public async Task Disconnect_WaitsForASaveInFlight_AndWins()
+    {
+        var getMe = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _h.Api.OnAsync("getMe", async (_, ct) =>
+        {
+            entered.TrySetResult();
+            await getMe.Task.WaitAsync(ct);
+            return FakeBotApi.Ok("""{"id":123456789,"is_bot":true,"first_name":"b","username":"tgjelly_test_bot"}""");
+        });
+
+        var save = _service.SaveAsync(FakeBotApi.Token, true, false, Ct);
+        await entered.Task.WaitAsync(Ct);
+        var disconnect = _service.DisconnectAsync(Ct);
+        await Task.Delay(100, Ct);
+        Assert.False(disconnect.IsCompleted);
+
+        getMe.SetResult();
+        await save;
+        await disconnect;
+
+        Assert.Equal(string.Empty, _h.Secrets.Load().BotToken);
+        Assert.Equal(2, _supervisor.Restarts);
     }
 
     [Fact]

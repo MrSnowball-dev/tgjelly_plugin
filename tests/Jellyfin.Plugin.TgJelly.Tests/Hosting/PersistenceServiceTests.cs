@@ -65,6 +65,25 @@ public sealed class PersistenceServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Start_UpgradesPresets_Once()
+    {
+        var stored = Jellyfin.Plugin.TgJelly.Tests.Pipeline.PresetUpgraderTests.Config(PresetKind.NewMedia, [.. EventCatalog.Expand(PresetKind.NewMedia).Where(k => k != "media.book")]);
+        stored.Revision = 4;
+        _host.SaveFromStore(stored);
+        using var service = new PersistenceService(_gate, _state, _settings, _secrets, _time, NullLogger<PersistenceService>.Instance);
+
+        await _gate.StartAsync(CancellationToken.None);
+        await service.StartAsync(CancellationToken.None);
+        await Eventually.TrueAsync(() => _host.Configuration.Revision == 5, "presets upgraded");
+        await Eventually.SettleAsync();
+
+        Assert.Contains("media.book", _host.Configuration.Destinations[0].Events);
+        Assert.Equal(5, _host.Configuration.Revision);
+        await service.StopAsync(CancellationToken.None);
+        await _gate.StopAsync(CancellationToken.None);
+    }
+
+    [Fact]
     public async Task WithoutOwnership_NothingIsLoadedOrWritten()
     {
         using var other = InstanceLock.TryAcquire(_paths.Lock);

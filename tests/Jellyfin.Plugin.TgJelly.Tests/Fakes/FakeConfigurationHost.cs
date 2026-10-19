@@ -14,10 +14,18 @@ public sealed class FakeConfigurationHost : IConfigurationHost
 
     public int Saves { get; private set; }
 
+    /// <summary>Gets or sets an exception every read throws (a broken host).</summary>
+    public Exception? Fault { get; set; }
+
     public T RunExclusive<T>(Func<T> action)
     {
         lock (_saveGate)
         {
+            if (Fault is { } fault)
+            {
+                throw fault;
+            }
+
             return action();
         }
     }

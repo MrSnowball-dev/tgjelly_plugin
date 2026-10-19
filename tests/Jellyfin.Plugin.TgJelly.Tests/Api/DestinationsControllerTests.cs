@@ -23,6 +23,7 @@ public sealed class DestinationsControllerTests : IAsyncLifetime
     private readonly HealthService _health;
     private readonly Outbox _outbox;
     private DestinationsController _controller = null!;
+    private readonly FakeLibrary _library = new();
     private readonly DestinationChecker _checker;
     private readonly DestinationTester _tester;
 
@@ -42,6 +43,31 @@ public sealed class DestinationsControllerTests : IAsyncLifetime
     public async ValueTask InitializeAsync() => _controller = NewController(_h.Connection, await _h.StartOwnedGateAsync());
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
+
+    [Fact]
+    public void Get_FlagsRemovedLibraries()
+    {
+        var existing = Guid.NewGuid();
+        var gone = Guid.NewGuid().ToString("N");
+        _library.VirtualFolders.Add(new Jellyfin.Plugin.TgJelly.Library.LibraryRef(existing, "Movies", "movies"));
+        _h.AddDestination(-1001);
+        _h.AddDestination(-1002);
+        _h.AddDestination(-1003);
+        Assert.Equal(SettingsUpdateStatus.Saved, _h.Settings.Update(null, c =>
+        {
+            c.Destinations[0].LibraryIds = [existing.ToString("N"), gone];
+            c.Destinations[1].LibraryIds = [gone];
+        }).Status);
+
+        var items = _controller.Get().Value!.Items;
+
+        Assert.Equal([gone], items[0].RemovedLibraryIds);
+        Assert.False(items[0].LibraryFilterBroken);
+        Assert.Equal([gone], items[1].RemovedLibraryIds);
+        Assert.True(items[1].LibraryFilterBroken);
+        Assert.Empty(items[2].RemovedLibraryIds);
+        Assert.False(items[2].LibraryFilterBroken);
+    }
 
     [Fact]
     public async Task AddByChatId_ChecksSavesAndSendsTheTestMessage()
@@ -126,6 +152,55 @@ public sealed class DestinationsControllerTests : IAsyncLifetime
         Assert.Equal(HealthStatus.Ok, _health.Get(existing.Id).Status);
         Assert.Single(_h.Settings.Current.Destinations);
         Assert.Empty(_h.Api.CallsTo("sendMessage"));
+    }
+
+    [Fact]
+    public async Task Add_CheckerApiError_ShowsTelegramsRedactedText()
+    {
+        _h.Api.On("getChat", _ => FakeBotApi.Error(400, "Bad Request: something odd"));
+
+        var bad = Assert.IsType<BadRequestObjectResult>((await _controller.Add(new AddDestinationRequest { ExpectedRevision = 0, ChatId = -1001 }, Ct)).Result);
+
+        var error = Assert.Single(Assert.IsType<ErrorsDto>(bad.Value).Errors);
+        Assert.Equal(("ChatId", "Telegram answered with an error: Bad Request: something odd"), (error.Field, error.Message));
+    }
+
+    [Fact]
+    public async Task Add_CheckerTransportError_SaysUnreachable()
+    {
+        _h.Api.On("getChat", _ => throw new System.Net.Http.HttpRequestException("connection refused"));
+
+        var bad = Assert.IsType<BadRequestObjectResult>((await _controller.Add(new AddDestinationRequest { ExpectedRevision = 0, ChatId = -1001 }, Ct)).Result);
+
+        Assert.Equal(_h.Strings.Get("token.unreachable"), Assert.Single(Assert.IsType<ErrorsDto>(bad.Value).Errors).Message);
+    }
+
+    [Fact]
+    public async Task Add_AlreadyExistsRecheckFails_StillAnswersAlreadyExists()
+    {
+        var existing = _h.AddDestination(-1001);
+        _h.Api.SetMember(-1001, Member);
+        var calls = 0;
+        _h.Api.On("getChat", _ => Interlocked.Increment(ref calls) == 1
+            ? FakeBotApi.Ok("""{"id":-1001,"type":"supergroup","title":"G","accent_color_id":0,"max_reaction_count":11}""")
+            : throw new System.Net.Http.HttpRequestException("connection refused"));
+
+        var response = (await _controller.Add(new AddDestinationRequest { ExpectedRevision = _h.Settings.Current.Revision, ChatId = -1001 }, Ct)).Value!;
+
+        Assert.Equal(("AlreadyExists", existing.Id), (response.Outcome, response.Destination.Id));
+    }
+
+    [Fact]
+    public async Task Add_MessageLinkInANonForumChat_IsRejected()
+    {
+        _h.Api.AddChat(-1001234567890, "supergroup", "Not a forum");
+        _h.Api.SetMember(-1001234567890, Member);
+
+        var bad = Assert.IsType<BadRequestObjectResult>((await _controller.Add(new AddDestinationRequest { ExpectedRevision = 0, TopicLink = "https://t.me/c/1234567890/55" }, Ct)).Result);
+
+        var error = Assert.Single(Assert.IsType<ErrorsDto>(bad.Value).Errors);
+        Assert.Equal(("TopicLink", _h.Strings.Get("destination.notForum")), (error.Field, error.Message));
+        Assert.Empty(_h.Settings.Current.Destinations);
     }
 
     [Fact]
@@ -321,5 +396,5 @@ public sealed class DestinationsControllerTests : IAsyncLifetime
     }
 
     private DestinationsController NewController(Jellyfin.Plugin.TgJelly.Bot.BotConnection connection, InstanceGate gate)
-        => new(_h.Settings, connection, _checker, _health, _tester, _outbox, _h.Strings, gate, _h.State, NullLogger<DestinationsController>.Instance);
+        => new(_h.Settings, connection, _checker, _health, _tester, _outbox, _h.Strings, gate, _h.State, NullLogger<DestinationsController>.Instance, _library);
 }
