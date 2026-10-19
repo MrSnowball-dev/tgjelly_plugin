@@ -94,6 +94,21 @@ public sealed class TopicFlowTests : IDisposable, IAsyncLifetime
     }
 
     [Fact]
+    public async Task DoubleCreateTopicClick_CreatesOnce()
+    {
+        AddForum();
+        await AskWhere();
+        var wizard = WizardId();
+
+        await Click("1|tc", wizard);
+        await Click("1|tc", wizard); // the same button redelivered
+
+        Assert.Single(_h.Api.CallsTo("createForumTopic"));
+        Assert.Equal("101", _rig.Memory.GetFlow(Manager)!.Params["threadId"]);
+        Assert.Empty(_h.Settings.Current.Destinations);
+    }
+
+    [Fact]
     public async Task Create_WithoutRights_SendsThePromotionPicker_ThenCreates()
     {
         AddForum(topics: false);

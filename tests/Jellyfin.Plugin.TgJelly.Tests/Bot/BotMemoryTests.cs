@@ -46,6 +46,27 @@ public sealed class BotMemoryTests : IDisposable
     }
 
     [Fact]
+    public void MigrateChat_MovesDetectedAndFlows_MergingKeepsTheEarliest()
+    {
+        _memory.RecordDetected(-1001, "Old", ChatKind.Group);
+        _h.Time.Advance(TimeSpan.FromMinutes(1));
+        _memory.RecordDetected(-1009, "New", ChatKind.Supergroup);
+        var flow = new FlowState { Screen = "where" };
+        flow.Params["chatId"] = "-1001";
+        _memory.SaveFlow(1, flow);
+
+        _memory.MigrateChat(-1001, -1009);
+
+        var detected = Assert.Single(_h.State.Read(s => s.DetectedChats));
+        Assert.Equal((-1009L, "New", ChatKind.Supergroup), (detected.ChatId, detected.Title, detected.Kind));
+        Assert.Equal(_h.Time.GetUtcNow() - TimeSpan.FromMinutes(1), detected.DetectedAt);
+        Assert.Equal("-1009", _memory.GetFlow(1)!.Params["chatId"]);
+
+        _memory.MigrateChat(-5, -6);
+        Assert.Single(_h.State.Read(s => s.DetectedChats));
+    }
+
+    [Fact]
     public void Flows_Cap200_EvictsLeastRecentlyUpdated_AndCounts()
     {
         for (var i = 1; i <= BotMemory.FlowsCap; i++)

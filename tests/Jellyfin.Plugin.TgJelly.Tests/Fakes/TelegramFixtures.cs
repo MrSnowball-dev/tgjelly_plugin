@@ -20,6 +20,7 @@ public static partial class TelegramFixtures
         ["user_id"] = "42",
         ["chat_id"] = "-1001234567890",
         ["new_chat_id"] = "-1009876543210",
+        ["old_chat_id"] = "-1001234567890",
         ["thread_id"] = "7",
         ["request_id"] = "1",
         ["callback_id"] = "cb1",

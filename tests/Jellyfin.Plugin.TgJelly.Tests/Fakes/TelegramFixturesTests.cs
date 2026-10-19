@@ -19,6 +19,7 @@ public class TelegramFixturesTests
     [InlineData("my_chat_member_private_unblocked")]
     [InlineData("group_text")]
     [InlineData("group_migrate_to")]
+    [InlineData("group_migrate_from")]
     public void UpdateFixtures_Parse(string name)
         => Assert.True(TelegramFixtures.Update(name).Id > 0);
 

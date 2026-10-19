@@ -20,6 +20,7 @@ public sealed class UpdateRouter : IUpdateHandler
     private readonly BotConnection _connection;
     private readonly HealthService _health;
     private readonly DestinationMigration _migration;
+    private readonly BotMemory _memory;
     private readonly ILogger<UpdateRouter> _logger;
 
     /// <summary>
@@ -30,14 +31,16 @@ public sealed class UpdateRouter : IUpdateHandler
     /// <param name="connection">The bot connection.</param>
     /// <param name="health">The health service.</param>
     /// <param name="migration">Moves destinations when a group becomes a supergroup.</param>
+    /// <param name="memory">The bot's memory, whose detected chats and flows follow the migration.</param>
     /// <param name="logger">The logger.</param>
-    public UpdateRouter(BotWorkQueue queue, IBotFlows flows, BotConnection connection, HealthService health, DestinationMigration migration, ILogger<UpdateRouter> logger)
+    public UpdateRouter(BotWorkQueue queue, IBotFlows flows, BotConnection connection, HealthService health, DestinationMigration migration, BotMemory memory, ILogger<UpdateRouter> logger)
     {
         _queue = queue;
         _flows = flows;
         _connection = connection;
         _health = health;
         _migration = migration;
+        _memory = memory;
         _logger = logger;
     }
 
@@ -104,6 +107,7 @@ public sealed class UpdateRouter : IUpdateHandler
                 _queue.Enqueue("migrate", _ =>
                 {
                     _migration.Migrate(oldId, newId);
+                    _memory.MigrateChat(oldId, newId);
                     _health.RequestCheckForChat(newId);
                     return Task.CompletedTask;
                 });

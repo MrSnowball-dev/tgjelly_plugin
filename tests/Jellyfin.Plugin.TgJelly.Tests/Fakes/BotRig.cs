@@ -57,7 +57,7 @@ public sealed class BotRig
         Onboarding = new OnboardingFlow(h.Connection, Memory, screens, h.Settings, Retrier, topics, checker, creator, Health, destinations, menus, h.Strings, formatter, h.Time, NullLogger<OnboardingFlow>.Instance);
         Flow = new FlowEngine(h.Connection, Memory, screens, h.Settings, h.Strings, menus, Status, destinations, settingsScreens, Onboarding, NullLogger<FlowEngine>.Instance);
         Queue = new BotWorkQueue(NullLogger<BotWorkQueue>.Instance);
-        _router = new UpdateRouter(Queue, Flow, h.Connection, Health, new DestinationMigration(h.Settings, Outbox, Health), NullLogger<UpdateRouter>.Instance);
+        _router = new UpdateRouter(Queue, Flow, h.Connection, Health, new DestinationMigration(h.Settings, Outbox, Health), Memory, NullLogger<UpdateRouter>.Instance);
     }
 
     /// <summary>Connects the harness and builds the rig over an owned instance gate.</summary>

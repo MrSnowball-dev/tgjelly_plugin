@@ -185,6 +185,43 @@ public sealed class BotMemory
     public void RemoveDetected(long chatId) => _state.Update(s => s.DetectedChats.RemoveAll(d => d.ChatId == chatId));
 
     /// <summary>
+    /// Follows a group that became a supergroup: its detected entry and every flow working on it move to the new ID.
+    /// </summary>
+    /// <param name="oldChatId">The chat ID before the upgrade.</param>
+    /// <param name="newChatId">The chat ID after the upgrade.</param>
+    public void MigrateChat(long oldChatId, long newChatId)
+    {
+        var oldKey = Key(oldChatId);
+        var newKey = Key(newChatId);
+        _state.Update(s =>
+        {
+            var old = s.DetectedChats.FirstOrDefault(d => d.ChatId == oldChatId);
+            if (old is not null)
+            {
+                var existing = s.DetectedChats.FirstOrDefault(d => d.ChatId == newChatId);
+                if (existing is null)
+                {
+                    old.ChatId = newChatId;
+                }
+                else
+                {
+                    // Already seen under the new ID: keep that entry, with the earliest detection time.
+                    existing.DetectedAt = existing.DetectedAt < old.DetectedAt ? existing.DetectedAt : old.DetectedAt;
+                    s.DetectedChats.Remove(old);
+                }
+            }
+
+            foreach (var flow in s.Flows.Values)
+            {
+                if (flow.Params.TryGetValue("chatId", out var id) && string.Equals(id, oldKey, StringComparison.Ordinal))
+                {
+                    flow.Params["chatId"] = newKey;
+                }
+            }
+        });
+    }
+
+    /// <summary>
     /// Lists the detected chats worth offering: older than <see cref="DetectedGrace"/> and not a destination.
     /// </summary>
     /// <param name="destinationChatIds">The chat IDs of the destinations.</param>

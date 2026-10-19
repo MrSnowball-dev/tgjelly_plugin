@@ -239,6 +239,22 @@ public sealed class OnboardingFlowTests : IDisposable, IAsyncLifetime
     }
 
     [Fact]
+    public async Task SecondPresetClick_AfterDone_SaysExpired()
+    {
+        AddChannel();
+        await Start();
+        await Shared(ChannelRequest());
+        var wizard = WizardId();
+        await Click("1|op|Everything", wizard);
+
+        await Click("1|op|Everything", wizard);
+
+        Assert.Single(_h.Settings.Current.Destinations);
+        Assert.Single(Sent(Channel));
+        Assert.Equal("That menu expired", (string)Sent().SkipLast(1).Last().Body["text"]!);
+    }
+
+    [Fact]
     public async Task Preset_ReChecksFirst_AndReportsAChatThatChanged()
     {
         AddChannel();

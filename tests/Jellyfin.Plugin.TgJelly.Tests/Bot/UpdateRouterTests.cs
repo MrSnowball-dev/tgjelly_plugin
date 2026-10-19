@@ -6,6 +6,7 @@ using Jellyfin.Plugin.TgJelly.Configuration;
 using Jellyfin.Plugin.TgJelly.Delivery;
 using Jellyfin.Plugin.TgJelly.Destinations;
 using Jellyfin.Plugin.TgJelly.State;
+using Jellyfin.Plugin.TgJelly.State.Documents;
 using Jellyfin.Plugin.TgJelly.Tests.Fakes;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -20,6 +21,7 @@ public sealed class UpdateRouterTests : IDisposable
     private readonly BotWorkQueue _queue = new(NullLogger<BotWorkQueue>.Instance);
     private readonly ListLogger<UpdateRouter> _log = new();
     private readonly HealthService _health;
+    private readonly BotMemory _memory;
     private readonly UpdateRouter _router;
 
     public UpdateRouterTests()
@@ -30,7 +32,8 @@ public sealed class UpdateRouterTests : IDisposable
         _health = new HealthService(gate, _h.Connection, new DestinationChecker(_h.Connection, _h.Strings), _h.Settings, _h.State, _h.Time, NullLogger<HealthService>.Instance);
         _h.Track(_health);
         var migration = new DestinationMigration(_h.Settings, new Outbox(_h.State, _h.Strings, _h.Time), _health);
-        _router = new UpdateRouter(_queue, _flows, _h.Connection, _health, migration, _log);
+        _memory = new BotMemory(_h.State, _h.Time);
+        _router = new UpdateRouter(_queue, _flows, _h.Connection, _health, migration, _memory, _log);
     }
 
     [Fact]
@@ -98,13 +101,48 @@ public sealed class UpdateRouterTests : IDisposable
     }
 
     [Fact]
+    public async Task MigrateFrom_IsIgnored()
+    {
+        var d = _h.AddDestination(-1009, ChatKind.Supergroup);
+        _memory.RecordDetected(-1009, "Family", ChatKind.Supergroup);
+
+        await _router.HandleAsync(TelegramFixtures.Update("group_migrate_from", ("chat_id", "-1009"), ("old_chat_id", "-1001")), TestContext.Current.CancellationToken);
+        await _queue.RunPendingAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(-1009, _h.Settings.Current.Destinations.Single().ChatId);
+        Assert.Equal(d.Id, _h.Settings.Current.Destinations.Single().Id);
+        Assert.Equal(-1009, _h.State.Read(s => s.DetectedChats.Single().ChatId));
+        Assert.Empty(_flows.Calls);
+        Assert.Empty(_h.Api.Calls);
+    }
+
+    [Fact]
+    public async Task Migration_MovesDetectedChatsAndLiveFlows()
+    {
+        _memory.RecordDetected(-1001, "Family", ChatKind.Group);
+        var live = new FlowState { Screen = "where" };
+        live.Params["chatId"] = "-1001";
+        _memory.SaveFlow(42, live);
+        var other = new FlowState { Screen = "where" };
+        other.Params["chatId"] = "-1002";
+        _memory.SaveFlow(43, other);
+
+        await _router.HandleAsync(TelegramFixtures.Update("group_migrate_to", ("chat_id", "-1001"), ("new_chat_id", "-1009")), TestContext.Current.CancellationToken);
+        await _queue.RunPendingAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(-1009, _h.State.Read(s => s.DetectedChats.Single().ChatId));
+        Assert.Equal("-1009", _memory.GetFlow(42)!.Params["chatId"]);
+        Assert.Equal("-1002", _memory.GetFlow(43)!.Params["chatId"]);
+    }
+
+    [Fact]
     public async Task MyChatMember_ReChecksAndQueues()
     {
         var d = _h.AddDestination(-1002);
         var gate = await _h.StartOwnedGateAsync();
         using var health = new HealthService(gate, _h.Connection, new DestinationChecker(_h.Connection, _h.Strings), _h.Settings, _h.State, _h.Time, NullLogger<HealthService>.Instance);
         await health.StartAsync(TestContext.Current.CancellationToken);
-        var router = new UpdateRouter(_queue, _flows, _h.Connection, health, new DestinationMigration(_h.Settings, new Outbox(_h.State, _h.Strings, _h.Time), health), _log);
+        var router = new UpdateRouter(_queue, _flows, _h.Connection, health, new DestinationMigration(_h.Settings, new Outbox(_h.State, _h.Strings, _h.Time), health), _memory, _log);
 
         await router.HandleAsync(TelegramFixtures.Update("my_chat_member_group_member", ("chat_id", "-1002")), TestContext.Current.CancellationToken);
 
