@@ -31,6 +31,12 @@ public sealed class MediaAggregator
     private readonly IScanState _scan;
     private readonly TimeProvider _time;
 
+    // An index over queue.json's open groups, so a big scan doesn't scan the list for every item. Only this class
+    // changes the list; the index is rebuilt whenever the list it was built from is replaced or changed size.
+    private readonly Dictionary<string, MediaGroupState> _openIndex = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, int> _openPerDestination = new(StringComparer.Ordinal);
+    private List<MediaGroupState>? _indexed;
+
     /// <summary>
     /// Initializes a new instance of the <see cref="MediaAggregator"/> class.
     /// </summary>
@@ -76,10 +82,11 @@ public sealed class MediaAggregator
         var outputs = new List<MediaOutput>();
         _state.UpdateQueue(q =>
         {
+            EnsureIndex(q.OpenGroups);
             foreach (var destination in destinations)
             {
                 var id = destination.Id;
-                if (q.OpenGroups.Find(g => g.Key == key && g.DestinationId == id) is { } open)
+                if (_openIndex.TryGetValue(IndexKey(id, key), out var open))
                 {
                     Merge(open.Model, itemId, ready);
                     open.LastAt = now;
@@ -100,14 +107,15 @@ public sealed class MediaAggregator
                     continue;
                 }
 
-                if (q.OpenGroups.Count(g => g.DestinationId == id) >= OpenGroupsCapOverride)
+                if (_openPerDestination.GetValueOrDefault(id) >= OpenGroupsCapOverride)
                 {
                     var oldest = q.OpenGroups.Where(g => g.DestinationId == id).MinBy(g => g.FirstAt)!;
                     q.OpenGroups.Remove(oldest);
+                    Unindex(oldest);
                     Close(q, oldest, now);
                 }
 
-                q.OpenGroups.Add(new MediaGroupState
+                var group = new MediaGroupState
                 {
                     DestinationId = id,
                     Key = key,
@@ -124,7 +132,9 @@ public sealed class MediaAggregator
                         NewSeries = ready.NewSeries,
                         Upgraded = ready.Upgraded,
                     },
-                });
+                };
+                q.OpenGroups.Add(group);
+                Index(group);
             }
         });
         return outputs;
@@ -153,6 +163,8 @@ public sealed class MediaAggregator
         model.Upgraded &= ready.Upgraded;
     }
 
+    private static string IndexKey(string destinationId, string key) => destinationId + "|" + key;
+
     private static void Close(QueueDocument q, MediaGroupState group, DateTimeOffset now)
     {
         if (!q.ReleaseBuffers.TryGetValue(group.DestinationId, out var buffer))
@@ -163,6 +175,35 @@ public sealed class MediaAggregator
 
         buffer.LastAt = now;
         buffer.Groups.Add(group);
+    }
+
+    private void EnsureIndex(List<MediaGroupState> open)
+    {
+        if (ReferenceEquals(_indexed, open) && _openIndex.Count == open.Count)
+        {
+            return;
+        }
+
+        _openIndex.Clear();
+        _openPerDestination.Clear();
+        foreach (var group in open)
+        {
+            Index(group);
+        }
+
+        _indexed = open;
+    }
+
+    private void Index(MediaGroupState group)
+    {
+        _openIndex[IndexKey(group.DestinationId, group.Key)] = group;
+        _openPerDestination[group.DestinationId] = _openPerDestination.GetValueOrDefault(group.DestinationId) + 1;
+    }
+
+    private void Unindex(MediaGroupState group)
+    {
+        _openIndex.Remove(IndexKey(group.DestinationId, group.Key));
+        _openPerDestination[group.DestinationId] = _openPerDestination.GetValueOrDefault(group.DestinationId) - 1;
     }
 
     private IReadOnlyList<MediaOutput> Run(bool force)
@@ -182,6 +223,7 @@ public sealed class MediaAggregator
                 var closed = closing.OrderBy(g => g.FirstAt).ToList();
                 var set = closed.ToHashSet();
                 q.OpenGroups.RemoveAll(set.Contains);
+                _indexed = null;
                 foreach (var group in closed)
                 {
                     Close(q, group, now);
