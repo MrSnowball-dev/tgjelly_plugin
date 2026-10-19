@@ -94,6 +94,9 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<IServerInfo, JellyfinServerInfo>();
         serviceCollection.AddSingleton<Rendering.Formatter>();
         serviceCollection.AddSingleton<Rendering.LinkBuilder>();
+        serviceCollection.AddSingleton<Rendering.MediaLayouts>();
+        serviceCollection.AddSingleton<Rendering.AlertLayouts>();
+        serviceCollection.AddSingleton<Rendering.NotificationRenderer>();
         serviceCollection.AddSingleton<IntakeQueues>();
         serviceCollection.AddSingleton<PendingIdSet>();
         serviceCollection.AddSingleton<LibraryWatcher>();

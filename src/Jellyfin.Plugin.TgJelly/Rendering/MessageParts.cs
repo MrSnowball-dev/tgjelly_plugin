@@ -9,4 +9,5 @@ namespace Jellyfin.Plugin.TgJelly.Rendering;
 /// <param name="List">List lines (HTML), shortened from the end with "+N more".</param>
 /// <param name="Overview">Plain text, escaped by the fitter, shortened first.</param>
 /// <param name="Tail">The closing lines (HTML), e.g. the library.</param>
-public sealed record MessageParts(string Head, IReadOnlyList<string> List, string? Overview, string Tail);
+/// <param name="QuoteOverview">Whether the overview goes in an expandable blockquote (changelogs, errors).</param>
+public sealed record MessageParts(string Head, IReadOnlyList<string> List, string? Overview, string Tail, bool QuoteOverview = false);

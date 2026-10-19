@@ -39,7 +39,7 @@ public static class MessageFitter
         var budget = limit - DelayedReserve;
         var overview = string.IsNullOrEmpty(parts.Overview) ? null : parts.Overview;
         var list = parts.List;
-        var text = Compose(parts.Head, list, overview, parts.Tail);
+        var text = Compose(parts.Head, list, overview, parts.Tail, parts.QuoteOverview);
         if (Fits(text, budget))
         {
             return text;
@@ -52,7 +52,7 @@ public static class MessageFitter
             while (lo < hi)
             {
                 var mid = (lo + hi + 1) / 2;
-                if (Fits(Compose(parts.Head, list, Prefix(runes, mid), parts.Tail), budget))
+                if (Fits(Compose(parts.Head, list, Prefix(runes, mid), parts.Tail, parts.QuoteOverview), budget))
                 {
                     lo = mid;
                 }
@@ -63,7 +63,7 @@ public static class MessageFitter
             }
 
             overview = lo >= MinOverview ? Prefix(runes, lo) : null;
-            text = Compose(parts.Head, list, overview, parts.Tail);
+            text = Compose(parts.Head, list, overview, parts.Tail, parts.QuoteOverview);
             if (Fits(text, budget))
             {
                 return text;
@@ -73,7 +73,7 @@ public static class MessageFitter
         for (var removed = 1; removed < list.Count; removed++)
         {
             var shortened = list.Take(list.Count - removed).Append(more(removed)).ToList();
-            text = Compose(parts.Head, shortened, overview, parts.Tail);
+            text = Compose(parts.Head, shortened, overview, parts.Tail, parts.QuoteOverview);
             if (Fits(text, budget))
             {
                 return text;
@@ -96,7 +96,7 @@ public static class MessageFitter
         return builder.ToString().TrimEnd() + Ellipsis;
     }
 
-    private static string Compose(string head, IReadOnlyList<string> list, string? overview, string tail)
+    private static string Compose(string head, IReadOnlyList<string> list, string? overview, string tail, bool quote)
     {
         var segments = new List<string>(4);
         if (head.Length > 0)
@@ -111,7 +111,7 @@ public static class MessageFitter
 
         if (overview is not null)
         {
-            segments.Add(HtmlText.Escape(overview));
+            segments.Add(quote ? "<blockquote expandable>" + HtmlText.Escape(overview) + "</blockquote>" : HtmlText.Escape(overview));
         }
 
         if (tail.Length > 0)
