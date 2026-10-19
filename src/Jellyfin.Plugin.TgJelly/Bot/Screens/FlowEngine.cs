@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Globalization;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.TgJelly.Configuration;
@@ -24,6 +23,7 @@ public sealed class FlowEngine : IBotFlows
     private readonly StringTable _strings;
     private readonly MenuScreens _menus;
     private readonly StatusScreen _status;
+    private readonly DestinationScreens _destinations;
     private readonly ILogger<FlowEngine> _logger;
 
     /// <summary>
@@ -36,8 +36,9 @@ public sealed class FlowEngine : IBotFlows
     /// <param name="strings">The string table.</param>
     /// <param name="menus">The menu screens.</param>
     /// <param name="status">The status screen.</param>
+    /// <param name="destinations">The destination screens.</param>
     /// <param name="logger">The logger.</param>
-    public FlowEngine(BotConnection connection, BotMemory memory, ScreenSender screens, SettingsStore settings, StringTable strings, MenuScreens menus, StatusScreen status, ILogger<FlowEngine> logger)
+    public FlowEngine(BotConnection connection, BotMemory memory, ScreenSender screens, SettingsStore settings, StringTable strings, MenuScreens menus, StatusScreen status, DestinationScreens destinations, ILogger<FlowEngine> logger)
     {
         _connection = connection;
         _memory = memory;
@@ -46,6 +47,7 @@ public sealed class FlowEngine : IBotFlows
         _strings = strings;
         _menus = menus;
         _status = status;
+        _destinations = destinations;
         _logger = logger;
     }
 
@@ -68,8 +70,11 @@ public sealed class FlowEngine : IBotFlows
         var command = ParseCommand(message.Text);
         switch (command)
         {
-            case "/menu" or "/test":
+            case "/menu":
                 await ShowAsync(chatId, MainMenu(), null, ct).ConfigureAwait(false);
+                break;
+            case "/test":
+                await ShowAsync(chatId, _destinations.Picker(0), null, ct).ConfigureAwait(false);
                 break;
             case "/status":
                 await ShowAsync(chatId, _status.Build(), null, ct).ConfigureAwait(false);
@@ -110,11 +115,13 @@ public sealed class FlowEngine : IBotFlows
             case "st":
                 await ShowAsync(chatId, _status.Build(), message.MessageId, ct).ConfigureAwait(false);
                 break;
-            case "dl":
-                var page = args.Count > 0 && int.TryParse(args[0], NumberStyles.None, CultureInfo.InvariantCulture, out var p) ? p : 0;
-                await ShowAsync(chatId, _menus.Destinations(_settings.Current.Destinations, page), message.MessageId, ct).ConfigureAwait(false);
-                break;
             default:
+                if (await _destinations.HandleAsync(action, args, ct).ConfigureAwait(false) is { } screen)
+                {
+                    await ShowAsync(chatId, screen, message.MessageId, ct).ConfigureAwait(false);
+                    break;
+                }
+
                 _logger.LogDebug("TgJelly has no screen for button action {Action}", action);
                 await ExpiredAsync(chatId, ct).ConfigureAwait(false);
                 break;

@@ -28,34 +28,6 @@ public class MenuScreensTests
         Assert.Equal(["📬 Destinations (2)", "➕ Add destination", "⚙️ Settings", "🩺 Status", "Chats added outside setup (3)"], labels);
     }
 
-    [Fact]
-    public void HostileTitles_AreEscaped_AndCut()
-    {
-        var title = "<b>A&B</b>" + string.Concat(Enumerable.Repeat("😀", 60));
-        var destination = new Destination { Id = "abcd1234", Title = title };
-
-        var screen = _menus.Destinations([destination], 0);
-
-        Assert.Contains("&lt;b&gt;A&amp;B&lt;/b&gt;", screen.Html, StringComparison.Ordinal);
-        Assert.DoesNotContain("<b>A&B", screen.Html, StringComparison.Ordinal);
-        var label = Labels(screen).First(l => l.StartsWith("<b>A&B", StringComparison.Ordinal));
-        Assert.Equal(40, label.EnumerateRunes().Count());
-        Assert.EndsWith("…", label, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void Destinations_PageEightAtATime()
-    {
-        var all = Enumerable.Range(1, 10).Select(i => new Destination { Id = "id" + i, Title = "T" + i }).ToList();
-
-        var second = Labels(_menus.Destinations(all, 1));
-
-        Assert.Contains("T9", second);
-        Assert.DoesNotContain("T1", second);
-        Assert.Contains("‹ Prev", second);
-        Assert.DoesNotContain("Next ›", second);
-    }
-
     private static string[] Labels(Screen screen)
         => screen.Buttons!.InlineKeyboard.SelectMany(r => r).Select(b => b.Text).ToArray();
 }

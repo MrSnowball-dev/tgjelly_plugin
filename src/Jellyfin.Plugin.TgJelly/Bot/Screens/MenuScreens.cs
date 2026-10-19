@@ -11,7 +11,7 @@ using Telegram.Bot.Types.ReplyMarkups;
 namespace Jellyfin.Plugin.TgJelly.Bot.Screens;
 
 /// <summary>
-/// The main menu and the destination list.
+/// The main menu.
 /// </summary>
 public sealed class MenuScreens
 {
@@ -47,37 +47,6 @@ public sealed class MenuScreens
     /// <param name="detected">The number of chats added outside setup; shown only when above 0.</param>
     /// <returns>The screen.</returns>
     public Screen SetUp(int destinations, int detected) => Build(_strings.Plural("menu.setUp", destinations), destinations, detected);
-
-    /// <summary>
-    /// Builds one page of the destination list.
-    /// </summary>
-    /// <param name="destinations">All destinations.</param>
-    /// <param name="page">The zero-based page.</param>
-    /// <returns>The screen.</returns>
-    public Screen Destinations(IReadOnlyList<Destination> destinations, int page)
-    {
-        ArgumentNullException.ThrowIfNull(destinations);
-        var shown = Paging.Page(destinations, page);
-        var html = new StringBuilder("<b>").Append(_strings.Get("menu.destinations.title")).Append("</b>");
-        if (destinations.Count == 0)
-        {
-            html.Append("\n\n").Append(_strings.Get("menu.destinations.empty"));
-        }
-
-        foreach (var destination in shown)
-        {
-            html.Append('\n').Append(_formatter.Escape(destination.Title));
-        }
-
-        var rows = shown.Select(d => new[] { InlineKeyboardButton.WithCallbackData(Label(d.Title), CallbackData.Format("d", d.Id)) }).ToList();
-        if (Paging.NavRow(page, destinations.Count, p => CallbackData.Format("dl", p.ToString(CultureInfo.InvariantCulture)), _strings.Get("menu.prev"), _strings.Get("menu.next")) is { } nav)
-        {
-            rows.Add(nav);
-        }
-
-        rows.Add([InlineKeyboardButton.WithCallbackData(_strings.Get("menu.back"), CallbackData.Format("m"))]);
-        return new Screen(html.ToString(), new InlineKeyboardMarkup(rows));
-    }
 
     /// <summary>
     /// Cuts a title to a button label: at most 40 code points, ending in <c>…</c> when cut. Button text is plain, so

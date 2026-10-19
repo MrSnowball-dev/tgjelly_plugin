@@ -35,7 +35,10 @@ public sealed class BotRig
         var formatter = new Formatter(h.Strings);
         var menus = new MenuScreens(h.Strings, formatter);
         Status = new StatusScreen(h.Connection, PipelineRig.Compatible, gate, h.Settings, h.State, Health, Readiness, Outbox, h.Strings, formatter, h.Time);
-        Flow = new FlowEngine(h.Connection, Memory, new ScreenSender(h.Connection), h.Settings, h.Strings, menus, Status, NullLogger<FlowEngine>.Instance);
+        Library = new FakeLibrary();
+        var tester = new DestinationTester(h.Connection, Health, h.Strings, NullLogger<DestinationTester>.Instance);
+        var destinations = new DestinationScreens(h.Settings, Health, tester, Library, Outbox, h.Connection, h.Strings, formatter, NullLogger<DestinationScreens>.Instance);
+        Flow = new FlowEngine(h.Connection, Memory, new ScreenSender(h.Connection), h.Settings, h.Strings, menus, Status, destinations, NullLogger<FlowEngine>.Instance);
         Queue = new BotWorkQueue(NullLogger<BotWorkQueue>.Instance);
         _router = new UpdateRouter(Queue, Flow, h.Connection, Health, new DestinationMigration(h.Settings, Outbox, Health), NullLogger<UpdateRouter>.Instance);
     }
@@ -48,6 +51,8 @@ public sealed class BotRig
     }
 
     public BotTestHarness Harness { get; }
+
+    public FakeLibrary Library { get; }
 
     public StatusScreen Status { get; }
 
