@@ -87,7 +87,20 @@ public sealed class DestinationsControllerTests : IAsyncLifetime
         Assert.Equal([-1002L, -1003L], dto.DetectedChats.Select(d => d.ChatId));
         var first = dto.DetectedChats[0];
         Assert.Equal(("Family", "Supergroup", _h.Time.GetUtcNow().AddSeconds(-30)), (first.Title, first.Kind, first.DetectedAt));
-        Assert.False(dto.ManualUnlocked);
+        Assert.True(dto.ManualUnlocked);
+    }
+
+    [Fact]
+    public void GetDestinations_ReportsManualUnlocked()
+    {
+        _h.AddDestination(-1001);
+        Assert.False(_controller.Get().Value!.ManualUnlocked);
+
+        _memory.RecordFailure(SetupFailureKind.CheckFailed);
+        Assert.True(_controller.Get().Value!.ManualUnlocked);
+
+        _h.Time.Advance(TimeSpan.FromDays(7));
+        Assert.False(_controller.Get().Value!.ManualUnlocked);
     }
 
     [Fact]
@@ -417,5 +430,5 @@ public sealed class DestinationsControllerTests : IAsyncLifetime
     }
 
     private DestinationsController NewController(Jellyfin.Plugin.TgJelly.Bot.BotConnection connection, InstanceGate gate)
-        => new(_h.Settings, connection, _checker, _health, _tester, _outbox, _h.Strings, gate, _h.State, NullLogger<DestinationsController>.Instance, new DestinationDtoMapper(_health, _library, _memory), new DestinationCreator(_h.Settings, _health, _tester, _memory, NullLogger<DestinationCreator>.Instance));
+        => new(_h.Settings, connection, _checker, _health, _tester, _outbox, _h.Strings, gate, _h.State, NullLogger<DestinationsController>.Instance, new DestinationDtoMapper(_health, _library, _memory, new SetupGate(_memory, _health, _h.Settings)), new DestinationCreator(_h.Settings, _health, _tester, _memory, NullLogger<DestinationCreator>.Instance));
 }

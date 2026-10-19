@@ -25,6 +25,7 @@ public sealed class FlowEngine : IBotFlows
     private readonly StringTable _strings;
     private readonly MenuScreens _menus;
     private readonly StatusScreen _status;
+    private readonly AdvancedScreen _advanced;
     private readonly DestinationScreens _destinations;
     private readonly SettingsScreens _settingsScreens;
     private readonly OnboardingFlow _onboarding;
@@ -41,12 +42,13 @@ public sealed class FlowEngine : IBotFlows
     /// <param name="strings">The string table.</param>
     /// <param name="menus">The menu screens.</param>
     /// <param name="status">The status screen.</param>
+    /// <param name="advanced">The Advanced options screen.</param>
     /// <param name="destinations">The destination screens.</param>
     /// <param name="settingsScreens">The settings screens.</param>
     /// <param name="onboarding">The onboarding flow.</param>
     /// <param name="detected">The detected chats flow.</param>
     /// <param name="logger">The logger.</param>
-    public FlowEngine(BotConnection connection, BotMemory memory, ScreenSender screens, SettingsStore settings, StringTable strings, MenuScreens menus, StatusScreen status, DestinationScreens destinations, SettingsScreens settingsScreens, OnboardingFlow onboarding, DetectedChatFlow detected, ILogger<FlowEngine> logger)
+    public FlowEngine(BotConnection connection, BotMemory memory, ScreenSender screens, SettingsStore settings, StringTable strings, MenuScreens menus, StatusScreen status, AdvancedScreen advanced, DestinationScreens destinations, SettingsScreens settingsScreens, OnboardingFlow onboarding, DetectedChatFlow detected, ILogger<FlowEngine> logger)
     {
         _connection = connection;
         _memory = memory;
@@ -55,6 +57,7 @@ public sealed class FlowEngine : IBotFlows
         _strings = strings;
         _menus = menus;
         _status = status;
+        _advanced = advanced;
         _destinations = destinations;
         _settingsScreens = settingsScreens;
         _onboarding = onboarding;
@@ -68,7 +71,7 @@ public sealed class FlowEngine : IBotFlows
     public static IReadOnlyList<string> Actions { get; } =
     [
         "m", "st", "dl", "noop", "d", "de", "det", "dlb", "dlt", "dsg", "dsgt", "dt", "dc", "dp", "dr", "drx", "tp",
-        "s", "sm", "smt", "su", "sut", "sum", "sp", "spu", "spt", "spc", "op", "oc", "ocd", "oa", "ot", "ox",
+        "s", "sm", "smt", "su", "sut", "sum", "sp", "spu", "spt", "spc", "op", "oc", "ocd", "oa", "ot", "ox", "ol", "od",
         "tg", "tc", "te", "xl", "xs", "xd",
     ];
 
@@ -166,7 +169,13 @@ public sealed class FlowEngine : IBotFlows
                 await _onboarding.StartAsync(chatId, ct).ConfigureAwait(false);
                 break;
             case "ox":
-                await ShowAsync(chatId, MainMenu(), message.MessageId, ct).ConfigureAwait(false);
+                await ShowAsync(chatId, _advanced.Options(), message.MessageId, ct).ConfigureAwait(false);
+                break;
+            case "od":
+                await ShowAsync(chatId, _advanced.Dashboard(), message.MessageId, ct).ConfigureAwait(false);
+                break;
+            case "ol":
+                await _onboarding.OnAdvancedTopicAsync(query, ct).ConfigureAwait(false);
                 break;
             case "op":
                 await _onboarding.OnPresetAsync(query, args.Count > 0 ? args[0] : string.Empty, ct).ConfigureAwait(false);

@@ -178,13 +178,13 @@ public sealed class OnboardingFlowTests : IDisposable, IAsyncLifetime
     }
 
     [Fact]
-    public async Task AdvancedOptions_ShowsTheMenu()
+    public async Task AdvancedOptions_ShowsTheAdvancedScreen()
     {
         await Click("1|ox", 77);
 
         var edit = Assert.Single(_h.Api.CallsTo("editMessageText"));
         Assert.Equal(77, (int)edit.Body["message_id"]!);
-        Assert.Contains("🏠 Menu", (string)edit.Body["text"]!, StringComparison.Ordinal);
+        Assert.Contains("Advanced options", (string)edit.Body["text"]!, StringComparison.Ordinal);
     }
 
     [Fact]

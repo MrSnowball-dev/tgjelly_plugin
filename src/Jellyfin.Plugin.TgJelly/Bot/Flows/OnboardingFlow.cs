@@ -343,6 +343,21 @@ public sealed class OnboardingFlow
     }
 
     /// <summary>
+    /// Handles Use an existing topic on the Advanced options screen (<c>ol</c>): with a picked chat in the flow the
+    /// link must name that chat; with none, the link's own chat is checked.
+    /// </summary>
+    /// <param name="query">The button press.</param>
+    /// <param name="ct">Cancels the work.</param>
+    /// <returns>A task.</returns>
+    public Task OnAdvancedTopicAsync(CallbackQuery query, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+        return _topics.Wizard(query) is not null
+            ? OnTopicAsync(query, "te", ct)
+            : _topics.AskForLinkAnywhereAsync(query.Message!.Chat.Id, query.Message.MessageId, ct);
+    }
+
+    /// <summary>
     /// Handles typed text while a topic link is awaited (spec §6.5, "Use an existing topic").
     /// </summary>
     /// <param name="chatId">The private chat.</param>

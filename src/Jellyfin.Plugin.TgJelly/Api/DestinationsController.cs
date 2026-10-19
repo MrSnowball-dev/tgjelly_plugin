@@ -397,13 +397,12 @@ public class DestinationsController : ControllerBase
             return new LinksDto();
         }
 
-        var start = "https://t.me/" + bot;
         return new LinksDto
         {
-            OpenBot = start + "?start=setup",
-            StartAdd = start + "?start=add",
-            StartGroup = start + "?startgroup=add",
-            StartChannel = start + "?startchannel&admin=post_messages+edit_messages",
+            OpenBot = BotLinks.OpenBot(bot),
+            StartAdd = BotLinks.StartAdd(bot),
+            StartGroup = BotLinks.StartGroup(bot),
+            StartChannel = BotLinks.StartChannel(bot),
         };
     }
 

@@ -260,5 +260,11 @@
   "topic.linkPrompt": "Send me the topic's link. Long-press the topic → Copy link.",
   "topic.badLink": "That isn't a topic link.",
   "topic.wrongChat": "That topic is in a different chat than the one you picked.",
-  "topic.failed": "I couldn't set up a topic there. You can post in the General topic instead."
+  "topic.failed": "I couldn't set up a topic there. You can post in the General topic instead.",
+  "advanced.title": "Advanced options\n\nIf the usual setup didn't work, you can add a chat another way.",
+  "advanced.group": "Add to a group",
+  "advanced.channel": "Add to a channel",
+  "advanced.topic": "Use an existing topic",
+  "advanced.dashboard": "Open dashboard",
+  "advanced.dashboardPath": "Dashboard → Plugins → Telegram → Advanced → Add chat by ID"
 }

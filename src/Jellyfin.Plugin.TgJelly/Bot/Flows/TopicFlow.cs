@@ -28,6 +28,7 @@ public sealed class TopicFlow
     private const string PromotionKey = "promotionRequest";
     private const string InputKey = "input";
     private const string LinkInput = "topicLink";
+    private const string AnyChatKey = "anyChat";
     private const string TopicName = "Jellyfin";
 
     private readonly BotConnection _connection;
@@ -73,7 +74,8 @@ public sealed class TopicFlow
     public static bool AwaitsLink(FlowState flow)
     {
         ArgumentNullException.ThrowIfNull(flow);
-        return flow.Params.ContainsKey(TopicKey) && flow.Params.TryGetValue(InputKey, out var input) && input == LinkInput;
+        return (flow.Params.ContainsKey(TopicKey) || flow.Params.ContainsKey(AnyChatKey))
+            && flow.Params.TryGetValue(InputKey, out var input) && input == LinkInput;
     }
 
     /// <summary>
@@ -295,6 +297,23 @@ public sealed class TopicFlow
     }
 
     /// <summary>
+    /// Use an existing topic from the Advanced options screen with no chat picked (spec §6.5): records
+    /// <see cref="SetupFailureKind.TopicNotPickable"/> and asks for the topic's link, whose chat is then checked
+    /// directly.
+    /// </summary>
+    /// <param name="chatId">The private chat.</param>
+    /// <param name="wizardMessageId">The message the Advanced screen is on; later screens edit it.</param>
+    /// <param name="ct">Cancels the work.</param>
+    /// <returns>A task.</returns>
+    public async Task AskForLinkAnywhereAsync(long chatId, int? wizardMessageId, CancellationToken ct)
+    {
+        var flow = new FlowState { Screen = OnboardingFlow.FlowScreen, WizardMessageId = wizardMessageId };
+        flow.Params[AnyChatKey] = "1";
+        _memory.RecordFailure(SetupFailureKind.TopicNotPickable);
+        await AskForLinkAsync(chatId, flow, null, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
     /// The pasted topic link: it must parse and name the picked chat, by its <c>-100…</c> ID or its username; then the
     /// topic is checked with a typing action in its thread. A bad link is explained and asked for again.
     /// </summary>
@@ -310,6 +329,11 @@ public sealed class TopicFlow
         {
             await AskForLinkAsync(chatId, flow, _strings.Get("topic.badLink"), ct).ConfigureAwait(false);
             return null;
+        }
+
+        if (flow.Params.ContainsKey(AnyChatKey))
+        {
+            return await OnAnyChatLinkAsync(chatId, flow, link, ct).ConfigureAwait(false);
         }
 
         var picked = Rebuild(flow);
@@ -338,6 +362,29 @@ public sealed class TopicFlow
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             _logger.LogWarning(ex, "TgJelly could not check the topic of {Title}", picked.Title);
+            return await FailAsync(chatId, flow, null, ct).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>A link with no picked chat: the link's own chat is checked, with a typing action in its topic.</summary>
+    private async Task<TopicChoice?> OnAnyChatLinkAsync(long chatId, FlowState flow, TopicLink link, CancellationToken ct)
+    {
+        try
+        {
+            var check = await _checker.CheckAsync(link.Chat, link.ThreadId, ct).ConfigureAwait(false);
+            if (!check.Passed || !check.IsForum)
+            {
+                return await FailAsync(chatId, flow, check.Passed ? _strings.Get("destination.notForum") : check.Message, ct).ConfigureAwait(false);
+            }
+
+            flow.Params.Remove(InputKey);
+            flow.Params.Remove(AnyChatKey);
+            _memory.SaveFlow(chatId, flow);
+            return new TopicChoice(check, link.ThreadId, flow.WizardMessageId);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex, "TgJelly could not check the chat of a topic link");
             return await FailAsync(chatId, flow, null, ct).ConfigureAwait(false);
         }
     }
@@ -425,7 +472,9 @@ public sealed class TopicFlow
         await DeleteAsync(chatId, checking, ct).ConfigureAwait(false);
         await DeleteAsync(chatId, prompt, ct).ConfigureAwait(false);
 
-        var buttons = new InlineKeyboardMarkup(new[] { Button("topic.general", "tg"), Button("onboard.advanced", "ox") });
+        // Without a picked chat there is no General topic to fall back to.
+        var anyChat = flow.Params.Remove(AnyChatKey);
+        var buttons = new InlineKeyboardMarkup(anyChat ? [Button("onboard.advanced", "ox")] : new[] { Button("topic.general", "tg"), Button("onboard.advanced", "ox") });
         var html = _formatter.Escape(string.IsNullOrEmpty(message) ? _strings.Get("topic.failed") : message);
         flow.WizardMessageId = await _screens.ShowAsync(chatId, new Screen(html, buttons), flow.WizardMessageId, ct).ConfigureAwait(false);
         _memory.SaveFlow(chatId, flow);

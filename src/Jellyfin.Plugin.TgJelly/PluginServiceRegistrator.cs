@@ -99,6 +99,7 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<BotWorkQueue>();
         serviceCollection.AddSingleton<Bot.Screens.ScreenSender>();
         serviceCollection.AddSingleton<Bot.Screens.MenuScreens>();
+        serviceCollection.AddSingleton<Bot.Screens.AdvancedScreen>();
         serviceCollection.AddSingleton<Bot.Screens.StatusScreen>();
         serviceCollection.AddSingleton<Bot.Screens.DestinationScreens>();
         serviceCollection.AddSingleton<Bot.Screens.SettingsScreens>();
@@ -117,6 +118,7 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<DestinationTester>();
         serviceCollection.AddSingleton<Destinations.DestinationCreator>();
         serviceCollection.AddSingleton<Destinations.DestinationMigration>();
+        serviceCollection.AddSingleton<Destinations.SetupGate>();
         serviceCollection.AddSingleton<Api.DestinationDtoMapper>();
         serviceCollection.AddSingleton<ILibraryAccess, JellyfinLibrary>();
         serviceCollection.AddSingleton<IServerInfo, JellyfinServerInfo>();

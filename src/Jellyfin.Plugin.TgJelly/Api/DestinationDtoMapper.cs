@@ -18,6 +18,7 @@ public sealed class DestinationDtoMapper
     private readonly HealthService _health;
     private readonly ILibraryAccess _library;
     private readonly BotMemory _memory;
+    private readonly SetupGate _gate;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="DestinationDtoMapper"/> class.
@@ -25,11 +26,13 @@ public sealed class DestinationDtoMapper
     /// <param name="health">The health service.</param>
     /// <param name="library">The library, for removed-library flags.</param>
     /// <param name="memory">The bot's memory, for the detected chats.</param>
-    public DestinationDtoMapper(HealthService health, ILibraryAccess library, BotMemory memory)
+    /// <param name="gate">The setup-failure gate, for whether the manual fallbacks are unlocked.</param>
+    public DestinationDtoMapper(HealthService health, ILibraryAccess library, BotMemory memory, SetupGate gate)
     {
         _health = health;
         _library = library;
         _memory = memory;
+        _gate = gate;
     }
 
     /// <summary>
@@ -64,7 +67,7 @@ public sealed class DestinationDtoMapper
             Revision = configuration.Revision,
             Items = [.. configuration.Destinations.Select(d => ToDto(d, existing))],
             DetectedChats = [.. _memory.VisibleDetected(configuration).Select(c => new DetectedChatDto { ChatId = c.ChatId, Title = c.Title, Kind = c.Kind.ToString(), DetectedAt = c.DetectedAt })],
-            ManualUnlocked = false,
+            ManualUnlocked = _gate.IsOpen(),
         };
     }
 

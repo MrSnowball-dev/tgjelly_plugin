@@ -37,7 +37,7 @@ public sealed class DetectedChatsControllerTests : IAsyncLifetime
         _h.Track(_health);
         var tester = new DestinationTester(_h.Connection, _health, _h.Strings, NullLogger<DestinationTester>.Instance);
         _creator = new DestinationCreator(_h.Settings, _health, tester, _memory, NullLogger<DestinationCreator>.Instance);
-        _mapper = new DestinationDtoMapper(_health, new FakeLibrary(), _memory);
+        _mapper = new DestinationDtoMapper(_health, new FakeLibrary(), _memory, new SetupGate(_memory, _health, _h.Settings));
     }
 
     public async ValueTask InitializeAsync() => _gate = await _h.StartOwnedGateAsync();

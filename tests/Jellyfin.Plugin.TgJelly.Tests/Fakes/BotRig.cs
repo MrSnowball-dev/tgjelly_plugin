@@ -39,6 +39,7 @@ public sealed class BotRig
         Status = new StatusScreen(h.Connection, PipelineRig.Compatible, gate, h.Settings, h.State, Health, Readiness, Outbox, h.Strings, formatter, h.Time);
         Library = new FakeLibrary();
         var tester = new DestinationTester(h.Connection, Health, h.Strings, NullLogger<DestinationTester>.Instance);
+        var advanced = new AdvancedScreen(h.Connection, h.Strings, formatter);
         var destinations = new DestinationScreens(h.Settings, Health, tester, Library, Outbox, h.Connection, h.Strings, formatter, NullLogger<DestinationScreens>.Instance);
         Server = new FakeServerInfo();
         var settingsScreens = new SettingsScreens(h.Settings, new LinkBuilder(Server), Memory, h.Connection, h.Strings, formatter);
@@ -56,7 +57,7 @@ public sealed class BotRig
         var topics = new TopicFlow(h.Connection, Memory, screens, Retrier, checker, h.Strings, formatter, h.Time, NullLogger<TopicFlow>.Instance);
         Onboarding = new OnboardingFlow(h.Connection, Memory, screens, h.Settings, Retrier, topics, checker, creator, Health, destinations, menus, h.Strings, formatter, h.Time, NullLogger<OnboardingFlow>.Instance);
         var detected = new DetectedChatFlow(Memory, h.Settings, checker, Onboarding, screens, menus, h.Strings, formatter, NullLogger<DetectedChatFlow>.Instance);
-        Flow = new FlowEngine(h.Connection, Memory, screens, h.Settings, h.Strings, menus, Status, destinations, settingsScreens, Onboarding, detected, NullLogger<FlowEngine>.Instance);
+        Flow = new FlowEngine(h.Connection, Memory, screens, h.Settings, h.Strings, menus, Status, advanced, destinations, settingsScreens, Onboarding, detected, NullLogger<FlowEngine>.Instance);
         Queue = new BotWorkQueue(NullLogger<BotWorkQueue>.Instance);
         _router = new UpdateRouter(Queue, Flow, h.Connection, Health, new DestinationMigration(h.Settings, Outbox, Health), Memory, NullLogger<UpdateRouter>.Instance);
     }
