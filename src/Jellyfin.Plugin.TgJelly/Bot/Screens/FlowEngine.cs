@@ -149,7 +149,9 @@ public sealed class FlowEngine : IBotFlows
 
     private Screen MainMenu() => _menus.Main(_settings.Current.Destinations.Length, 0);
 
-    private Screen SetUpMenu() => _menus.SetUp(_settings.Current.Destinations.Length, 0);
+    /// <summary>The "set up: N" menu; with no destinations there is nothing set up yet, so the plain menu.</summary>
+    private Screen SetUpMenu()
+        => _settings.Current.Destinations.Length == 0 ? MainMenu() : _menus.SetUp(_settings.Current.Destinations.Length, 0);
 
     private async Task ExpiredAsync(long chatId, CancellationToken ct)
     {

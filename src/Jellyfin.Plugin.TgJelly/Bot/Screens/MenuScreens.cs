@@ -114,7 +114,7 @@ public sealed class MenuScreens
         };
         if (detected > 0)
         {
-            rows.Add(Row(_strings.Get("menu.detected", ("count", detected)), "det"));
+            rows.Add(Row(_strings.Get("menu.detected", ("count", detected)), "xl", "0"));
         }
 
         return new Screen("<b>" + _formatter.Escape(heading) + "</b>", new InlineKeyboardMarkup(rows));

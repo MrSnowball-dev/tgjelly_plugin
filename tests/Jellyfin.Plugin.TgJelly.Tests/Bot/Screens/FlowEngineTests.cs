@@ -45,6 +45,16 @@ public sealed class FlowEngineTests : IDisposable, IAsyncLifetime
     }
 
     [Fact]
+    public async Task PlainStartWithoutDestinations_ShowsThePlainMenu()
+    {
+        await _rig.Deliver(TelegramFixtures.Update("private_command_start"));
+
+        var text = (string)Assert.Single(_h.Api.CallsTo("sendMessage")).Body["text"]!;
+        Assert.Contains("🏠 Menu", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("set up", text, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task UnknownText_ShowsSetUpMenu()
     {
         _h.AddDestination(-1001);
