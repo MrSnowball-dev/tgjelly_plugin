@@ -84,14 +84,22 @@ public sealed class FlowEngine : IBotFlows
         {
             _settingsScreens.CancelInput(chatId);
         }
-        else if (message.Text is { Length: > 0 } text && await _settingsScreens.OnTextAsync(chatId, text, ct).ConfigureAwait(false) is { Handled: true } typed)
+        else if (message.Text is { Length: > 0 } text)
         {
-            if (typed.Screen is { } done)
+            if (await _settingsScreens.OnTextAsync(chatId, text, ct).ConfigureAwait(false) is { Handled: true } typed)
             {
-                await ShowAsync(chatId, done, null, ct).ConfigureAwait(false);
+                if (typed.Screen is { } done)
+                {
+                    await ShowAsync(chatId, done, null, ct).ConfigureAwait(false);
+                }
+
+                return;
             }
 
-            return;
+            if (await _onboarding.OnTextAsync(chatId, text, ct).ConfigureAwait(false))
+            {
+                return;
+            }
         }
 
         switch (command)
@@ -161,6 +169,11 @@ public sealed class FlowEngine : IBotFlows
                 break;
             case "oc":
                 await _onboarding.OnCustomToggleAsync(query, args.Count > 0 ? args[0] : string.Empty, ct).ConfigureAwait(false);
+                break;
+            case "tg":
+            case "tc":
+            case "te":
+                await _onboarding.OnTopicAsync(query, action, ct).ConfigureAwait(false);
                 break;
             case "ocd":
                 await _onboarding.OnCustomDoneAsync(query, ct).ConfigureAwait(false);

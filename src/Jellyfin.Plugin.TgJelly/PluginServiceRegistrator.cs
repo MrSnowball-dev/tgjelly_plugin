@@ -49,6 +49,7 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddRedactedLogger<UpdateRouter>();
         serviceCollection.AddRedactedLogger<Bot.Screens.FlowEngine>();
         serviceCollection.AddRedactedLogger<Bot.Flows.OnboardingFlow>();
+        serviceCollection.AddRedactedLogger<Bot.Flows.TopicFlow>();
         serviceCollection.AddRedactedLogger<Bot.Screens.DestinationScreens>();
         serviceCollection.AddRedactedLogger<BotWorkQueue>();
         serviceCollection.AddRedactedLogger<BotWorker>();
@@ -100,6 +101,7 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<Bot.Screens.DestinationScreens>();
         serviceCollection.AddSingleton<Bot.Screens.SettingsScreens>();
         serviceCollection.AddSingleton<Bot.Flows.ChatCheckRetrier>();
+        serviceCollection.AddSingleton<Bot.Flows.TopicFlow>();
         serviceCollection.AddSingleton<Bot.Flows.OnboardingFlow>();
         serviceCollection.AddSingleton<IBotFlows, Bot.Screens.FlowEngine>();
         serviceCollection.AddSingleton<IUpdateHandler, UpdateRouter>();

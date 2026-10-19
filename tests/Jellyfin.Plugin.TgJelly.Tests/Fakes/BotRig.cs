@@ -53,7 +53,8 @@ public sealed class BotRig
         };
         var creator = new DestinationCreator(h.Settings, Health, tester, NullLogger<DestinationCreator>.Instance);
         var screens = new ScreenSender(h.Connection);
-        Onboarding = new OnboardingFlow(h.Connection, Memory, screens, h.Settings, Retrier, checker, creator, Health, destinations, menus, h.Strings, formatter, h.Time, NullLogger<OnboardingFlow>.Instance);
+        var topics = new TopicFlow(h.Connection, Memory, screens, Retrier, checker, h.Strings, formatter, h.Time, NullLogger<TopicFlow>.Instance);
+        Onboarding = new OnboardingFlow(h.Connection, Memory, screens, h.Settings, Retrier, topics, checker, creator, Health, destinations, menus, h.Strings, formatter, h.Time, NullLogger<OnboardingFlow>.Instance);
         Flow = new FlowEngine(h.Connection, Memory, screens, h.Settings, h.Strings, menus, Status, destinations, settingsScreens, Onboarding, NullLogger<FlowEngine>.Instance);
         Queue = new BotWorkQueue(NullLogger<BotWorkQueue>.Instance);
         _router = new UpdateRouter(Queue, Flow, h.Connection, Health, new DestinationMigration(h.Settings, Outbox, Health), NullLogger<UpdateRouter>.Instance);

@@ -246,5 +246,15 @@
   "onboard.advanced": "Advanced options",
   "onboard.expired": "That picker expired",
   "onboard.hereChosen": "Right here.",
-  "onboard.cancelled": "Cancelled."
+  "onboard.cancelled": "Cancelled.",
+  "topic.ask": "This group has topics. Where should I post?",
+  "topic.general": "General topic",
+  "topic.create": "Create a \"Jellyfin\" topic",
+  "topic.existing": "Use an existing topic…",
+  "topic.allow": "🗂 Allow topic creation",
+  "topic.allowPrompt": "To create a topic, I need permission to manage topics. Tap the button and pick this group again.",
+  "topic.linkPrompt": "Send me the topic's link. Long-press the topic → Copy link.",
+  "topic.badLink": "That isn't a topic link.",
+  "topic.wrongChat": "That topic is in a different chat than the one you picked.",
+  "topic.failed": "I couldn't set up a topic there. You can post in the General topic instead."
 }

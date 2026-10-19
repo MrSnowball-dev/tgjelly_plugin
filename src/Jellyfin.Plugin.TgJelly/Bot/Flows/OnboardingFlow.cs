@@ -24,24 +24,25 @@ namespace Jellyfin.Plugin.TgJelly.Bot.Flows;
 /// </summary>
 public sealed class OnboardingFlow
 {
-    private const string FlowScreen = "onboard";
+    internal const string FlowScreen = "onboard";
     private const string RequestChannelKey = "requestChannel";
     private const string RequestGroupKey = "requestGroup";
-    private const string AnswerKey = "answer";
-    private const string ChatIdKey = "chatId";
-    private const string TitleKey = "title";
-    private const string KindKey = "kind";
-    private const string IsForumKey = "isForum";
-    private const string PhotosBlockedKey = "photosBlocked";
-    private const string ThreadIdKey = "threadId";
+    internal const string AnswerKey = "answer";
+    internal const string ChatIdKey = "chatId";
+    internal const string TitleKey = "title";
+    internal const string KindKey = "kind";
+    internal const string IsForumKey = "isForum";
+    internal const string PhotosBlockedKey = "photosBlocked";
+    internal const string ThreadIdKey = "threadId";
     private const string EventsKey = "events";
-    private const string CreatingKey = "creating";
+    internal const string CreatingKey = "creating";
 
     private readonly BotConnection _connection;
     private readonly BotMemory _memory;
     private readonly ScreenSender _screens;
     private readonly SettingsStore _settings;
     private readonly ChatCheckRetrier _retrier;
+    private readonly TopicFlow _topics;
     private readonly DestinationChecker _checker;
     private readonly DestinationCreator _creator;
     private readonly HealthService _health;
@@ -60,6 +61,7 @@ public sealed class OnboardingFlow
     /// <param name="screens">Shows screens.</param>
     /// <param name="settings">The settings store.</param>
     /// <param name="retrier">Checks a picked chat, trying again while the bot's membership settles.</param>
+    /// <param name="topics">The forum topic step.</param>
     /// <param name="checker">Re-checks the chat, with its topic, right before creating.</param>
     /// <param name="creator">Adds the destination.</param>
     /// <param name="health">The health service, to re-check an existing destination.</param>
@@ -69,13 +71,14 @@ public sealed class OnboardingFlow
     /// <param name="formatter">The formatter, for escaping.</param>
     /// <param name="time">The clock.</param>
     /// <param name="logger">The logger.</param>
-    public OnboardingFlow(BotConnection connection, BotMemory memory, ScreenSender screens, SettingsStore settings, ChatCheckRetrier retrier, DestinationChecker checker, DestinationCreator creator, HealthService health, DestinationScreens destinations, MenuScreens menus, StringTable strings, Formatter formatter, TimeProvider time, ILogger<OnboardingFlow> logger)
+    public OnboardingFlow(BotConnection connection, BotMemory memory, ScreenSender screens, SettingsStore settings, ChatCheckRetrier retrier, TopicFlow topics, DestinationChecker checker, DestinationCreator creator, HealthService health, DestinationScreens destinations, MenuScreens menus, StringTable strings, Formatter formatter, TimeProvider time, ILogger<OnboardingFlow> logger)
     {
         _connection = connection;
         _memory = memory;
         _screens = screens;
         _settings = settings;
         _retrier = retrier;
+        _topics = topics;
         _checker = checker;
         _creator = creator;
         _health = health;
@@ -146,6 +149,12 @@ public sealed class OnboardingFlow
         if (IsRepeat(flow, message))
         {
             _logger.LogDebug("TgJelly ignored a chat_shared it already handled");
+            return;
+        }
+
+        if (flow is not null && TopicFlow.IsPromotionRequest(flow, shared.RequestId))
+        {
+            await ContinueWithTopicAsync(chatId, await _topics.OnPromotionSharedAsync(chatId, flow, message, ct).ConfigureAwait(false), ct).ConfigureAwait(false);
             return;
         }
 
@@ -307,8 +316,55 @@ public sealed class OnboardingFlow
     }
 
     /// <summary>
+    /// Handles a button on the topic wizard: General (<c>tg</c>), Create a "Jellyfin" topic (<c>tc</c>) or Use an
+    /// existing topic (<c>te</c>) (spec §6.2 step 3).
+    /// </summary>
+    /// <param name="query">The button press.</param>
+    /// <param name="action">The pressed action.</param>
+    /// <param name="ct">Cancels the work.</param>
+    /// <returns>A task.</returns>
+    public async Task OnTopicAsync(CallbackQuery query, string action, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+        if (_topics.Wizard(query) is not { } flow)
+        {
+            await MenuExpiredAsync(query, ct).ConfigureAwait(false);
+            return;
+        }
+
+        var chatId = query.Message!.Chat.Id;
+        var choice = action switch
+        {
+            "tg" => await _topics.OnGeneralAsync(chatId, flow, ct).ConfigureAwait(false),
+            "tc" => await _topics.OnCreateAsync(chatId, flow, ct).ConfigureAwait(false),
+            _ => await _topics.OnExistingAsync(chatId, flow, ct).ConfigureAwait(false),
+        };
+        await ContinueWithTopicAsync(chatId, choice, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Handles typed text while a topic link is awaited (spec §6.5, "Use an existing topic").
+    /// </summary>
+    /// <param name="chatId">The private chat.</param>
+    /// <param name="text">The text.</param>
+    /// <param name="ct">Cancels the work.</param>
+    /// <returns><c>true</c> when the text was the awaited link (right or wrong); <c>false</c> when no link was awaited.</returns>
+    public async Task<bool> OnTextAsync(long chatId, string text, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(text);
+        if (_memory.GetFlow(chatId) is not { } flow || !TopicFlow.AwaitsLink(flow))
+        {
+            return false;
+        }
+
+        await ContinueWithTopicAsync(chatId, await _topics.OnLinkAsync(chatId, flow, text, ct).ConfigureAwait(false), ct).ConfigureAwait(false);
+        return true;
+    }
+
+    /// <summary>
     /// Continues after a chat was checked: a failure is explained with <c>[Try again] [Advanced options]</c>; a forum
-    /// whose topic isn't chosen yet goes to the topic step; anything else meets the duplicate rule, then the preset
+    /// whose topic isn't chosen yet goes to the topic question (the topic's answers continue through
+    /// <see cref="OnTopicAsync"/>, not through here, so General doesn't loop back); anything else meets the duplicate rule, then the preset
     /// step (spec §6.2 steps 2–4). The "Checking…" message, if the flow has one, is deleted.
     /// </summary>
     /// <param name="privateChatId">The private chat.</param>
@@ -328,7 +384,7 @@ public sealed class OnboardingFlow
 
         if (check.IsForum && threadId == 0)
         {
-            await ContinueForForumAsync(privateChatId, check, wizardMessageId, ct).ConfigureAwait(false);
+            await _topics.AskAsync(privateChatId, check, wizardMessageId, ct).ConfigureAwait(false);
             return;
         }
 
@@ -389,10 +445,11 @@ public sealed class OnboardingFlow
         => flow is not null && flow.Params.TryGetValue(AnswerKey, out var answer) && answer == Text(message.MessageId);
 
     /// <summary>
-    /// The forum step. Topics are not offered yet: a forum is set up like any other chat, in its General topic.
+    /// After the topic step: a chosen topic (General is thread 0) meets the duplicate rule, then the preset step. Nothing
+    /// to do when the step is still waiting or has ended with its own message.
     /// </summary>
-    private Task ContinueForForumAsync(long privateChatId, ChatCheckResult check, int? wizardMessageId, CancellationToken ct)
-        => ContinueWithChatAsync(privateChatId, check, 0, wizardMessageId, ct);
+    private Task ContinueWithTopicAsync(long chatId, TopicChoice? choice, CancellationToken ct)
+        => choice is null ? Task.CompletedTask : ContinueWithChatAsync(chatId, choice.Check, choice.ThreadId, choice.WizardMessageId, ct);
 
     /// <summary>The duplicate rule, then the preset step.</summary>
     private async Task ContinueWithChatAsync(long chatId, ChatCheckResult check, int threadId, int? wizardMessageId, CancellationToken ct)
