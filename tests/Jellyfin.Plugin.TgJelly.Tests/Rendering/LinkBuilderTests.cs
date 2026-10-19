@@ -14,8 +14,8 @@ public class LinkBuilderTests
     public void NoDotHost_IsRejected() => Assert.Null(new LinkBuilder(_server).OpenInJellyfin("http://jellyfin:8096", Id));
 
     [Fact]
-    public void Ipv6_IsAccepted()
-        => Assert.Equal($"http://[2001:db8::1]:8096/web/#/details?id={Id:N}&serverId=a1b2c3", new LinkBuilder(_server).OpenInJellyfin("http://[2001:db8::1]:8096", Id));
+    public void Ipv6_IsRejected()
+        => Assert.Null(new LinkBuilder(_server).OpenInJellyfin("http://[2001:db8::1]:8096", Id));
 
     [Theory]
     [InlineData("https://x.example.com", "https://x.example.com/jf")]

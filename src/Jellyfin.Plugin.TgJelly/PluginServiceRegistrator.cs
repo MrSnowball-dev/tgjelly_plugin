@@ -97,6 +97,7 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<Bot.Screens.MenuScreens>();
         serviceCollection.AddSingleton<Bot.Screens.StatusScreen>();
         serviceCollection.AddSingleton<Bot.Screens.DestinationScreens>();
+        serviceCollection.AddSingleton<Bot.Screens.SettingsScreens>();
         serviceCollection.AddSingleton<IBotFlows, Bot.Screens.FlowEngine>();
         serviceCollection.AddSingleton<IUpdateHandler, UpdateRouter>();
         serviceCollection.AddSingleton<BotWorker>();

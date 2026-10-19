@@ -38,7 +38,9 @@ public sealed class BotRig
         Library = new FakeLibrary();
         var tester = new DestinationTester(h.Connection, Health, h.Strings, NullLogger<DestinationTester>.Instance);
         var destinations = new DestinationScreens(h.Settings, Health, tester, Library, Outbox, h.Connection, h.Strings, formatter, NullLogger<DestinationScreens>.Instance);
-        Flow = new FlowEngine(h.Connection, Memory, new ScreenSender(h.Connection), h.Settings, h.Strings, menus, Status, destinations, NullLogger<FlowEngine>.Instance);
+        Server = new FakeServerInfo();
+        var settingsScreens = new SettingsScreens(h.Settings, new LinkBuilder(Server), Memory, h.Connection, h.Strings, formatter);
+        Flow = new FlowEngine(h.Connection, Memory, new ScreenSender(h.Connection), h.Settings, h.Strings, menus, Status, destinations, settingsScreens, NullLogger<FlowEngine>.Instance);
         Queue = new BotWorkQueue(NullLogger<BotWorkQueue>.Instance);
         _router = new UpdateRouter(Queue, Flow, h.Connection, Health, new DestinationMigration(h.Settings, Outbox, Health), NullLogger<UpdateRouter>.Instance);
     }
@@ -53,6 +55,8 @@ public sealed class BotRig
     public BotTestHarness Harness { get; }
 
     public FakeLibrary Library { get; }
+
+    public FakeServerInfo Server { get; }
 
     public StatusScreen Status { get; }
 

@@ -24,6 +24,7 @@ public sealed class FlowEngine : IBotFlows
     private readonly MenuScreens _menus;
     private readonly StatusScreen _status;
     private readonly DestinationScreens _destinations;
+    private readonly SettingsScreens _settingsScreens;
     private readonly ILogger<FlowEngine> _logger;
 
     /// <summary>
@@ -37,8 +38,9 @@ public sealed class FlowEngine : IBotFlows
     /// <param name="menus">The menu screens.</param>
     /// <param name="status">The status screen.</param>
     /// <param name="destinations">The destination screens.</param>
+    /// <param name="settingsScreens">The settings screens.</param>
     /// <param name="logger">The logger.</param>
-    public FlowEngine(BotConnection connection, BotMemory memory, ScreenSender screens, SettingsStore settings, StringTable strings, MenuScreens menus, StatusScreen status, DestinationScreens destinations, ILogger<FlowEngine> logger)
+    public FlowEngine(BotConnection connection, BotMemory memory, ScreenSender screens, SettingsStore settings, StringTable strings, MenuScreens menus, StatusScreen status, DestinationScreens destinations, SettingsScreens settingsScreens, ILogger<FlowEngine> logger)
     {
         _connection = connection;
         _memory = memory;
@@ -48,6 +50,7 @@ public sealed class FlowEngine : IBotFlows
         _menus = menus;
         _status = status;
         _destinations = destinations;
+        _settingsScreens = settingsScreens;
         _logger = logger;
     }
 
@@ -68,6 +71,20 @@ public sealed class FlowEngine : IBotFlows
         var chatId = message.Chat.Id;
         _memory.TouchManager(chatId);
         var command = ParseCommand(message.Text);
+        if (command.Length > 0)
+        {
+            _settingsScreens.CancelInput(chatId);
+        }
+        else if (message.Text is { Length: > 0 } text && await _settingsScreens.OnTextAsync(chatId, text, ct).ConfigureAwait(false) is { Handled: true } typed)
+        {
+            if (typed.Screen is { } done)
+            {
+                await ShowAsync(chatId, done, null, ct).ConfigureAwait(false);
+            }
+
+            return;
+        }
+
         switch (command)
         {
             case "/menu":
@@ -105,6 +122,11 @@ public sealed class FlowEngine : IBotFlows
             return;
         }
 
+        if (action != "spt")
+        {
+            _settingsScreens.CancelInput(chatId);
+        }
+
         switch (action)
         {
             case "noop":
@@ -116,7 +138,9 @@ public sealed class FlowEngine : IBotFlows
                 await ShowAsync(chatId, _status.Build(), message.MessageId, ct).ConfigureAwait(false);
                 break;
             default:
-                if (await _destinations.HandleAsync(action, args, ct).ConfigureAwait(false) is { } screen)
+                var screen = await _destinations.HandleAsync(action, args, ct).ConfigureAwait(false)
+                    ?? await _settingsScreens.HandleAsync(action, args, chatId, ct).ConfigureAwait(false);
+                if (screen is not null)
                 {
                     await ShowAsync(chatId, screen, message.MessageId, ct).ConfigureAwait(false);
                     break;
