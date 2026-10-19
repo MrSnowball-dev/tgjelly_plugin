@@ -76,6 +76,35 @@ class StubTests(unittest.TestCase):
             self.assertNotEqual("close", (response.getheader("Connection") or "").lower())
         conn.close()
 
+    def test_records_multipart_send_photo(self):
+        boundary = "tgjelly-boundary"
+        body = (
+            f"--{boundary}\r\nContent-Disposition: form-data; name=chat_id\r\n\r\n-1001234567890\r\n"
+            f"--{boundary}\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Disposition: form-data; name=caption\r\n\r\n<b>Smoke Movie</b>\r\n"
+            f"--{boundary}\r\nContent-Disposition: form-data; name=photo; filename=poster.jpg\r\nContent-Type: application/octet-stream\r\n\r\n"
+        ).encode() + b"\xff\xd8\xff\x00binary" + f"\r\n--{boundary}--\r\n".encode()
+        req = urllib.request.Request(f"http://127.0.0.1:{self.port}/bot{TOKEN}/sendPhoto", data=body,
+                                     headers={"Content-Type": f'multipart/form-data; boundary="{boundary}"'})
+        with urllib.request.urlopen(req, timeout=5) as r:
+            reply = json.loads(r.read())
+
+        call = next(c for c in self.stub.calls() if c["method"] == "sendPhoto")
+        self.assertEqual(-1001234567890, call["body"]["chat_id"])
+        self.assertEqual("<b>Smoke Movie</b>", call["body"]["caption"])
+        self.assertNotIn("photo", call["body"])
+        self.assertTrue(reply["ok"])
+        self.assertEqual([{"file_id": "f1", "file_unique_id": "u1", "width": 1, "height": 1}], reply["result"]["photo"])
+        self.assertEqual(("<b>Smoke Movie</b>", -1001234567890), (reply["result"]["caption"], reply["result"]["chat"]["id"]))
+
+    def test_messages_filters_by_chat(self):
+        self.call("sendMessage", {"chat_id": -1001, "text": "one"})
+        self.call("sendMessage", {"chat_id": -1002, "text": "two"})
+        self.call("getChat", {"chat_id": -1001})
+        self.call("sendPhoto", {"chat_id": -1001, "caption": "three"})
+
+        self.assertEqual([{"chat_id": -1001, "text": "one"}, {"chat_id": -1001, "caption": "three"}], self.stub.messages(-1001))
+        self.assertEqual("two", self.call("sendMessage", {"chat_id": -1002, "text": "two"})[1]["result"]["text"])
+
 
 if __name__ == "__main__":
     unittest.main()

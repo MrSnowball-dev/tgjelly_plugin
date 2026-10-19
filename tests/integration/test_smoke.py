@@ -18,6 +18,12 @@ class HelperTests(unittest.TestCase):
             smoke.stub_docker_args(8081),
             ["--add-host=host.docker.internal:host-gateway", "-e", "TGJELLY_BOT_API_BASE_URL=http://host.docker.internal:8081"])
 
+    def test_sample_movie_command(self):
+        command = smoke.sample_movie_command()
+        self.assertEqual("/usr/lib/jellyfin-ffmpeg/ffmpeg", command[0])
+        self.assertIn("lavfi", command[command.index("-f") + 1])
+        self.assertEqual("/media/movies/Smoke Movie (2024)/Smoke Movie (2024).mkv", command[-1])
+
 
 if __name__ == "__main__":
     unittest.main()

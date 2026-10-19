@@ -12,6 +12,8 @@ import itertools
 import json
 import threading
 import time
+from email import policy
+from email.parser import BytesParser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 TRUE_METHODS = {
@@ -58,6 +60,10 @@ class StubBotApi:
         with self._lock:
             return list(self._calls)
 
+    def messages(self, chat_id):
+        """The bodies of the sendMessage and sendPhoto calls to one chat, in order."""
+        return [c["body"] for c in self.calls() if c["method"] in ("sendMessage", "sendPhoto") and c["body"].get("chat_id") == chat_id]
+
     def _handle(self, request):
         parts = request.path.split("?")[0].strip("/").split("/")
         if len(parts) != 2 or not parts[0].startswith("bot"):
@@ -65,11 +71,14 @@ class StubBotApi:
         token, method = parts[0][3:], parts[1]
         raw = self._read_body(request)
         body = {}
-        if raw and "json" in (request.headers.get("Content-Type") or ""):
+        content_type = request.headers.get("Content-Type") or ""
+        if raw and "json" in content_type:
             try:
                 body = json.loads(raw)
             except ValueError:
                 body = {}
+        elif raw and content_type.startswith("multipart/form-data"):
+            body = self._parse_multipart(content_type, raw)
         with self._lock:
             self._calls.append({"method": method, "body": body})
 
@@ -100,11 +109,29 @@ class StubBotApi:
                     "is_anonymous": False, "can_post_stories": False, "can_edit_stories": False, "can_delete_stories": False}
         if method in ("sendMessage", "sendPhoto", "editMessageText", "editMessageCaption"):
             chat_type = "private" if isinstance(chat_id, int) and chat_id > 0 else "supergroup"
-            return {"message_id": next(self._ids), "date": int(time.time()), "chat": {"id": chat_id, "type": chat_type},
-                    "text": body.get("text", "")}
+            message = {"message_id": next(self._ids), "date": int(time.time()), "chat": {"id": chat_id, "type": chat_type}}
+            if method in ("sendPhoto", "editMessageCaption"):
+                message["caption"] = body.get("caption", "")
+                message["photo"] = [{"file_id": "f1", "file_unique_id": "u1", "width": 1, "height": 1}]
+            else:
+                message["text"] = body.get("text", "")
+            return message
         if method in TRUE_METHODS:
             return True
         return None
+
+    @staticmethod
+    def _parse_multipart(content_type, raw):
+        """Reads the form fields of a multipart body (Telegram.Bot uploads photos this way); file parts are skipped."""
+        message = BytesParser(policy=policy.HTTP).parsebytes(b"Content-Type: " + content_type.encode("latin-1") + b"\r\n\r\n" + raw)
+        body = {}
+        for part in message.iter_parts():
+            name = part.get_param("name", header="content-disposition")
+            if not name or part.get_filename():
+                continue
+            value = (part.get_payload(decode=True) or b"").decode("utf-8", "replace")
+            body[name] = int(value) if name == "chat_id" and value.lstrip("-").isdigit() else value
+        return body
 
     @staticmethod
     def _read_body(request):
