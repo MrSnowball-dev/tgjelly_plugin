@@ -50,4 +50,24 @@ public sealed class ChatCheckRetrier
 
         return result;
     }
+
+    /// <summary>
+    /// Runs an attempt on the same <see cref="Schedule"/>, stopping at the first success: a bot's rights may settle
+    /// after the update that changed them.
+    /// </summary>
+    /// <param name="attempt">The attempt; <c>true</c> when it succeeded.</param>
+    /// <param name="ct">Cancels the wait.</param>
+    /// <returns><c>true</c> when an attempt succeeded.</returns>
+    public async Task<bool> UntilAsync(Func<Task<bool>> attempt, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(attempt);
+        var done = await attempt().ConfigureAwait(false);
+        for (var i = 1; i < Schedule.Length && !done; i++)
+        {
+            await Delay(Schedule[i] - Schedule[i - 1], ct).ConfigureAwait(false);
+            done = await attempt().ConfigureAwait(false);
+        }
+
+        return done;
+    }
 }

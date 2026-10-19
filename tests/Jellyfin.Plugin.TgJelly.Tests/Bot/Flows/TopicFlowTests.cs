@@ -183,6 +183,49 @@ public sealed class TopicFlowTests : IDisposable, IAsyncLifetime
     }
 
     [Fact]
+    public async Task AbandonedPromotion_DoesNotBlockCreate()
+    {
+        AddForum(topics: false);
+        await AskWhere();
+        var wizard = WizardId();
+        await Click("1|tc", wizard);
+        await Click("1|te", wizard);
+
+        await Click("1|tc", wizard);
+
+        Assert.Equal(2, Sent().Count(c => c.Body["reply_markup"]?["keyboard"]?.ToString().Contains("Allow topic creation", StringComparison.Ordinal) == true));
+    }
+
+    [Fact]
+    public async Task Promotion_WhoseRightsArriveLate_RetriesThenCreates()
+    {
+        AddForum(topics: false);
+        await AskWhere();
+        await Click("1|tc", WizardId());
+        var request = _rig.Memory.GetFlow(Manager)!.PickerRequestIds.Single();
+        _h.Api.OnSequence("getChatMember", FakeBotApi.Ok(TelegramFixtures.Json("get_chat_member_admin_no_topics")), FakeBotApi.Ok(TelegramFixtures.Json("get_chat_member_admin_no_topics")), FakeBotApi.Ok(TopicRights()));
+
+        await Shared(request);
+
+        Assert.Single(_h.Api.CallsTo("createForumTopic"));
+        Assert.Equal([TimeSpan.FromSeconds(1.5)], _rig.Delays);
+        Assert.False(_rig.Memory.HasRecentFailure());
+    }
+
+    [Fact]
+    public async Task PresetButton_OnTheTopicWizard_IsExpired_AndCreatesNothing()
+    {
+        AddForum();
+        await AskWhere();
+
+        await Click("1|op|Everything", WizardId());
+
+        Assert.Contains(_h.Strings.Get("menu.expired"), (string)Sent().First(c => c.Body["text"]!.ToString().Contains(_h.Strings.Get("menu.expired"), StringComparison.Ordinal)).Body["text"]!, StringComparison.Ordinal);
+        Assert.Empty(_h.Api.CallsTo("createForumTopic"));
+        Assert.Empty(_h.Settings.Current.Destinations);
+    }
+
+    [Fact]
     public async Task Existing_RecordsTopicNotPickable_AndAsksForTheLink()
     {
         AddForum();

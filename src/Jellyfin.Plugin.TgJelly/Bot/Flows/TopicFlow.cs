@@ -202,8 +202,20 @@ public sealed class TopicFlow
 
         var requestId = _memory.NextRequestId();
         var keyboard = new ReplyKeyboardMarkup([[OnboardingFlow.PickerButton(PickerKind.TopicPromotion, requestId, _strings.Get("topic.allow"))]]) { ResizeKeyboard = true };
-        var prompt = await _connection.RequireSender()
-            .SendPromptAsync(new OutgoingPrompt(chatId, _formatter.Escape(_strings.Get("topic.allowPrompt")), keyboard), ct).ConfigureAwait(false);
+        Message prompt;
+        try
+        {
+            prompt = await _connection.RequireSender()
+                .SendPromptAsync(new OutgoingPrompt(chatId, _formatter.Escape(_strings.Get("topic.allowPrompt")), keyboard), ct).ConfigureAwait(false);
+        }
+        catch
+        {
+            // Nothing is awaited, so Create must stay available.
+            flow.Params.Remove(OnboardingFlow.CreatingKey);
+            _memory.SaveFlow(chatId, flow);
+            throw;
+        }
+
         flow.PromptMessageId = prompt.MessageId;
         flow.PromptSentAt = _time.GetUtcNow();
         flow.PickerRequestIds = [requestId];
@@ -249,7 +261,7 @@ public sealed class TopicFlow
         try
         {
             fresh = await _retrier.CheckAsync(check.ChatId, retry: true, ct).ConfigureAwait(false);
-            if (fresh.Passed && !await CanManageTopicsAsync(check.ChatId, ct).ConfigureAwait(false))
+            if (fresh.Passed && !await _retrier.UntilAsync(() => CanManageTopicsAsync(check.ChatId, ct), ct).ConfigureAwait(false))
             {
                 return await FailAsync(chatId, flow, null, ct).ConfigureAwait(false);
             }
@@ -384,6 +396,7 @@ public sealed class TopicFlow
         var prompt = flow.PromptMessageId;
         ClearPrompt(flow);
         flow.Params.Remove(InputKey);
+        flow.Params.Remove(OnboardingFlow.CreatingKey);
         _memory.SaveFlow(chatId, flow);
         await DeleteAsync(chatId, prompt, ct).ConfigureAwait(false);
     }
