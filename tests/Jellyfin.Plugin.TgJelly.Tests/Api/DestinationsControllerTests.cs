@@ -396,5 +396,5 @@ public sealed class DestinationsControllerTests : IAsyncLifetime
     }
 
     private DestinationsController NewController(Jellyfin.Plugin.TgJelly.Bot.BotConnection connection, InstanceGate gate)
-        => new(_h.Settings, connection, _checker, _health, _tester, _outbox, _h.Strings, gate, _h.State, NullLogger<DestinationsController>.Instance, _library);
+        => new(_h.Settings, connection, _checker, _health, _tester, _outbox, _h.Strings, gate, _h.State, NullLogger<DestinationsController>.Instance, _library, new DestinationCreator(_h.Settings, _health, _tester, NullLogger<DestinationCreator>.Instance));
 }

@@ -34,7 +34,7 @@ public sealed class OutboxDeliveryTests : IDisposable
         _health = new HealthService(gate, _h.Connection, new DestinationChecker(_h.Connection, _h.Strings), _h.Settings, _h.State, _h.Time, NullLogger<HealthService>.Instance);
         _h.Track(_health);
         _formatter = new Formatter(_h.Strings);
-        _delivery = new OutboxDelivery(_h.Connection, _outbox, _health, _h.Settings, _h.State, _pacing, _formatter, _h.Time, NullLogger<OutboxDelivery>.Instance)
+        _delivery = new OutboxDelivery(_h.Connection, _outbox, _health, _h.Settings, _h.State, _pacing, _formatter, _h.Time, new DestinationMigration(_h.Settings, _outbox, _health), NullLogger<OutboxDelivery>.Instance)
         {
             Random = () => 0.5,
         };

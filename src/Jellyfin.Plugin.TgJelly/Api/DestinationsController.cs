@@ -44,6 +44,7 @@ public class DestinationsController : ControllerBase
     private readonly InstanceGate _gate;
     private readonly StateStore _state;
     private readonly ILibraryAccess _library;
+    private readonly DestinationCreator _creator;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="DestinationsController"/> class.
@@ -59,8 +60,10 @@ public class DestinationsController : ControllerBase
     /// <param name="state">The state store.</param>
     /// <param name="logger">The logger.</param>
     /// <param name="library">The library, for removed-library flags.</param>
-    public DestinationsController(SettingsStore settings, BotConnection connection, DestinationChecker checker, HealthService health, DestinationTester tester, Outbox outbox, StringTable strings, InstanceGate gate, StateStore state, ILogger<DestinationsController> logger, ILibraryAccess library)
+    /// <param name="creator">The destination creator.</param>
+    public DestinationsController(SettingsStore settings, BotConnection connection, DestinationChecker checker, HealthService health, DestinationTester tester, Outbox outbox, StringTable strings, InstanceGate gate, StateStore state, ILogger<DestinationsController> logger, ILibraryAccess library, DestinationCreator creator)
     {
+        _creator = creator;
         _library = library;
         _gate = gate;
         _state = state;
@@ -153,63 +156,18 @@ public class DestinationsController : ControllerBase
             return Error("TopicLink", _strings.Get("destination.notForum"));
         }
 
-        // The duplicate rule (spec §6.2): an existing destination for this chat and topic is re-checked, not added.
-        if (Find(_settings.Current, check.ChatId, threadId) is { } existing)
+        var created = await _creator.CreateAsync(check, threadId, EventCatalog.Expand(preset), preset, request.ExpectedRevision, cancellationToken).ConfigureAwait(false);
+        switch (created.Outcome)
         {
-            try
-            {
-                await _health.CheckNowAsync(existing.Id, cancellationToken).ConfigureAwait(false);
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                _logger.LogWarning(ex, "TgJelly could not re-check destination {Destination}", existing.Title);
-            }
-
-            return new AddDestinationResponse { Outcome = "AlreadyExists", Destination = ToDto(existing) };
+            case CreateOutcome.Conflict:
+                return Conflict(new ConflictDto<DestinationsDto> { Current = List(created.Configuration) });
+            case CreateOutcome.Invalid:
+                return BadRequest(new ErrorsDto { Errors = created.Errors });
+            case CreateOutcome.AlreadyExists:
+                return new AddDestinationResponse { Outcome = "AlreadyExists", Destination = ToDto(created.Destination!) };
+            default:
+                return new AddDestinationResponse { Outcome = "Added", Destination = ToDto(created.Destination!), TestSent = created.Test!.Sent, TestError = created.Test.Error };
         }
-
-        string? newId = null;
-        var result = _settings.UpdateIf(request.ExpectedRevision, c =>
-        {
-            if (Find(c, check.ChatId, threadId) is not null)
-            {
-                return false;
-            }
-
-            newId = DestinationIds.New(c.Destinations.Select(d => d.Id));
-            c.Destinations =
-            [
-                .. c.Destinations,
-                new Destination
-                {
-                    Id = newId,
-                    ChatId = check.ChatId,
-                    ThreadId = threadId,
-                    Title = check.Title,
-                    Kind = check.Kind,
-                    Preset = preset,
-                    Events = EventCatalog.Expand(preset),
-                },
-            ];
-            return true;
-        });
-
-        switch (result.Status)
-        {
-            case SettingsUpdateStatus.Unchanged:
-            case SettingsUpdateStatus.Conflict when Find(result.Configuration, check.ChatId, threadId) is not null:
-                // Another request added the same chat between our check and our save.
-                return new AddDestinationResponse { Outcome = "AlreadyExists", Destination = ToDto(Find(result.Configuration, check.ChatId, threadId)!) };
-            case SettingsUpdateStatus.Conflict:
-                return Conflict(new ConflictDto<DestinationsDto> { Current = List(result.Configuration) });
-            case SettingsUpdateStatus.Invalid:
-                return BadRequest(new ErrorsDto { Errors = result.Errors });
-        }
-
-        var added = result.Configuration.Destinations.First(d => d.Id == newId);
-        _health.SetChecked(added.Id, check);
-        var test = await _tester.SendTestAsync(added, cancellationToken).ConfigureAwait(false);
-        return new AddDestinationResponse { Outcome = "Added", Destination = ToDto(added), TestSent = test.Sent, TestError = test.Error };
     }
 
     /// <summary>
@@ -452,9 +410,6 @@ public class DestinationsController : ControllerBase
 
     private static bool TryPreset(string? text, out PresetKind preset)
         => Enum.TryParse(text, ignoreCase: true, out preset) && Enum.IsDefined(preset);
-
-    private static Destination? Find(PluginConfiguration c, long chatId, int threadId)
-        => c.Destinations.FirstOrDefault(d => d.ChatId == chatId && d.ThreadId == threadId);
 
     private static HealthDto ToDto(DestinationHealth h)
         => new() { Status = h.Status.ToString(), PhotosBlocked = h.PhotosBlocked, LastError = h.LastError, At = h.At };

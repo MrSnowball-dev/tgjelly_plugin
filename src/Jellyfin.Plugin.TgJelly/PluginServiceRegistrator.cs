@@ -51,6 +51,7 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddRedactedLogger<BotSupervisor>();
         serviceCollection.AddRedactedLogger<BotTokenService>();
         serviceCollection.AddRedactedLogger<DestinationTester>();
+        serviceCollection.AddRedactedLogger<Destinations.DestinationCreator>();
         serviceCollection.AddRedactedLogger<Api.DestinationsController>();
         serviceCollection.AddRedactedLogger<JellyfinLibrary>();
         serviceCollection.AddRedactedLogger<LibraryWatcher>();
@@ -94,6 +95,8 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<BotMemory>();
         serviceCollection.AddSingleton<BotTokenService>();
         serviceCollection.AddSingleton<DestinationTester>();
+        serviceCollection.AddSingleton<Destinations.DestinationCreator>();
+        serviceCollection.AddSingleton<Destinations.DestinationMigration>();
         serviceCollection.AddSingleton<ILibraryAccess, JellyfinLibrary>();
         serviceCollection.AddSingleton<IServerInfo, JellyfinServerInfo>();
         serviceCollection.AddSingleton<Rendering.Formatter>();
