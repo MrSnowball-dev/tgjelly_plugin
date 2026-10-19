@@ -61,7 +61,7 @@ public sealed class UpdateRouter : IUpdateHandler
                 _queue.Enqueue("chat-member", token => _flows.OnChatMemberAsync(member, token));
             }
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
         {
             _logger.LogError(ex, "TgJelly could not route update {UpdateId}", update.Id);
         }
@@ -78,6 +78,11 @@ public sealed class UpdateRouter : IUpdateHandler
             catch (ApiRequestException ex) when (ex.Message.Contains("query is too old", StringComparison.OrdinalIgnoreCase))
             {
                 _logger.LogDebug("TgJelly ignored an expired callback query");
+            }
+            catch (Exception ex) when (!ct.IsCancellationRequested)
+            {
+                // A failed answer must not drop the click: the work is queued below regardless.
+                _logger.LogWarning(ex, "TgJelly could not answer a callback query");
             }
         }
 

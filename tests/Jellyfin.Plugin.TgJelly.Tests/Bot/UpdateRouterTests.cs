@@ -129,17 +129,41 @@ public sealed class UpdateRouterTests : IDisposable
     }
 
     [Fact]
+    public async Task FailedAnswer_StillQueuesTheCallback()
+    {
+        _h.Api.On("answerCallbackQuery", _ => FakeBotApi.Error(500, "Internal Server Error"));
+
+        await _router.HandleAsync(TelegramFixtures.Update("callback_query"), TestContext.Current.CancellationToken);
+        await _queue.RunPendingAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(["callback:1|m"], _flows.Calls);
+        Assert.Equal(1, _log.Count(LogLevel.Warning));
+    }
+
+    [Fact]
+    public async Task TimedOutAnswer_StillQueuesTheCallback()
+    {
+        _h.Api.OnAsync("answerCallbackQuery", (_, _) => throw new TaskCanceledException("HttpClient.Timeout"));
+
+        await _router.HandleAsync(TelegramFixtures.Update("callback_query"), TestContext.Current.CancellationToken);
+        await _queue.RunPendingAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(["callback:1|m"], _flows.Calls);
+    }
+
+    [Fact]
     public async Task ThrowingFlows_NeverEscapeTheRouter()
     {
         _flows.Throw = new InvalidOperationException("boom");
-        _h.Api.On("answerCallbackQuery", _ => FakeBotApi.Error(500, "Internal Server Error"));
+        var failures = new System.Collections.Generic.List<string>();
 
         await _router.HandleAsync(TelegramFixtures.Update("callback_query"), TestContext.Current.CancellationToken);
         await _router.HandleAsync(TelegramFixtures.Update("private_text"), TestContext.Current.CancellationToken);
         await _router.HandleAsync(TelegramFixtures.Update("my_chat_member_kicked"), TestContext.Current.CancellationToken);
-        await _queue.RunPendingAsync(TestContext.Current.CancellationToken);
+        await _queue.RunPendingAsync(TestContext.Current.CancellationToken, (name, _) => failures.Add(name));
 
-        Assert.True(_log.Count(LogLevel.Error) + _log.Count(LogLevel.Warning) >= 1);
+        Assert.Equal(3, _flows.Calls.Length);
+        Assert.Equal(["callback", "private-message", "chat-member"], failures);
     }
 
     [Fact]
