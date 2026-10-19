@@ -69,6 +69,13 @@ public sealed class HealthService : BackgroundService
     public event EventHandler? Recovered;
 
     /// <summary>
+    /// Raised, with the destination ID, when a destination's status changes to Lost, NeedsPermissions or TopicMissing.
+    /// Subscribers must be quick; one that throws is logged and ignored.
+    /// </summary>
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Design", "CA1003:Use generic event handler instances", Justification = "The plan 4 contract passes the destination ID itself.")]
+    public event EventHandler<string>? ProblemFound;
+
+    /// <summary>
     /// Returns a copy of a destination's health; OK when nothing is recorded.
     /// </summary>
     /// <param name="destinationId">The destination.</param>
@@ -93,10 +100,12 @@ public sealed class HealthService : BackgroundService
     public void MarkProblem(string destinationId, HealthStatus status, string error)
     {
         var now = _time.GetUtcNow();
+        var changed = false;
         _state.Update(s =>
         {
             var h = Entry(s, destinationId);
-            if (h.Status != status)
+            changed = h.Status != status;
+            if (changed)
             {
                 h.Notified = false;
             }
@@ -106,6 +115,11 @@ public sealed class HealthService : BackgroundService
             h.At = now;
             h.NextCheckAt = now + RecheckInterval;
         });
+
+        if (changed && status is HealthStatus.Lost or HealthStatus.NeedsPermissions or HealthStatus.TopicMissing)
+        {
+            RaiseProblemFound(destinationId);
+        }
     }
 
     /// <summary>
@@ -231,6 +245,18 @@ public sealed class HealthService : BackgroundService
         }
 
         return h;
+    }
+
+    private void RaiseProblemFound(string destinationId)
+    {
+        try
+        {
+            ProblemFound?.Invoke(this, destinationId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "A TgJelly problem subscriber failed for destination {Destination}", destinationId);
+        }
     }
 
     private void OnConnectionChanged(object? sender, EventArgs e) => _wake.Set();

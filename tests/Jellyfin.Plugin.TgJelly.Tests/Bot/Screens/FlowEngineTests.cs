@@ -1,5 +1,6 @@
 using System;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.TgJelly.State.Documents;
 using Jellyfin.Plugin.TgJelly.Tests.Fakes;
@@ -18,6 +19,46 @@ public sealed class FlowEngineTests : IDisposable, IAsyncLifetime
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 
     public void Dispose() => _h.Dispose();
+
+    [Fact]
+    public async Task ProblemFound_QueuesTheManagerNotification()
+    {
+        var d = _h.AddDestination(-1001);
+        _rig.Memory.TouchManager(Manager);
+
+        _rig.Health.MarkProblem(d.Id, HealthStatus.Lost, "kicked");
+        Assert.Empty(_h.Api.CallsTo("sendMessage"));
+        await _rig.Queue.RunPendingAsync(CancellationToken.None, (name, ex) => throw new InvalidOperationException(name, ex));
+
+        var call = Assert.Single(_h.Api.CallsTo("sendMessage"));
+        Assert.Equal(Manager, (long)call.Body["chat_id"]!);
+    }
+
+    [Fact]
+    public async Task Tick_RetriesUnreportedProblems()
+    {
+        var d = _h.AddDestination(-1001);
+        _rig.Memory.TouchManager(Manager);
+        _rig.Health.MarkProblem(d.Id, HealthStatus.Lost, "kicked");
+
+        await _rig.Flow.TickAsync(CancellationToken.None);
+
+        Assert.Single(_h.Api.CallsTo("sendMessage"));
+        Assert.True(_rig.Health.Get(d.Id).Notified);
+    }
+
+    [Fact]
+    public async Task Dispose_StopsListeningForProblems()
+    {
+        var d = _h.AddDestination(-1001);
+        _rig.Flow.Dispose();
+
+        _rig.Health.MarkProblem(d.Id, HealthStatus.Lost, "kicked");
+        await _rig.Queue.RunPendingAsync(CancellationToken.None);
+
+        Assert.Empty(_h.Api.CallsTo("sendMessage"));
+        Assert.False(_rig.Health.Get(d.Id).Notified);
+    }
 
     [Fact]
     public async Task Menu_SendsTheMainMenu_AndTouchesTheManager()

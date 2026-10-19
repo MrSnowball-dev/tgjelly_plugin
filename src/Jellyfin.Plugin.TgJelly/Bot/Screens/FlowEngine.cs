@@ -5,6 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.TgJelly.Bot.Flows;
 using Jellyfin.Plugin.TgJelly.Configuration;
+using Jellyfin.Plugin.TgJelly.Destinations;
 using Jellyfin.Plugin.TgJelly.Strings;
 using Microsoft.Extensions.Logging;
 using Telegram.Bot.Types;
@@ -16,7 +17,7 @@ namespace Jellyfin.Plugin.TgJelly.Bot.Screens;
 /// The bot's flow engine: routes private messages and button presses to screens. Runs on the <see cref="BotWorker"/>,
 /// one update at a time.
 /// </summary>
-public sealed class FlowEngine : IBotFlows
+public sealed class FlowEngine : IBotFlows, IDisposable
 {
     private readonly BotConnection _connection;
     private readonly BotMemory _memory;
@@ -30,6 +31,9 @@ public sealed class FlowEngine : IBotFlows
     private readonly SettingsScreens _settingsScreens;
     private readonly OnboardingFlow _onboarding;
     private readonly DetectedChatFlow _detected;
+    private readonly HealthService _health;
+    private readonly ManagerNotifier _notifier;
+    private readonly BotWorkQueue _queue;
     private readonly ILogger<FlowEngine> _logger;
 
     /// <summary>
@@ -47,8 +51,11 @@ public sealed class FlowEngine : IBotFlows
     /// <param name="settingsScreens">The settings screens.</param>
     /// <param name="onboarding">The onboarding flow.</param>
     /// <param name="detected">The detected chats flow.</param>
+    /// <param name="health">The destination health; its new problems are told to the managers.</param>
+    /// <param name="notifier">Tells the managers about destination problems.</param>
+    /// <param name="queue">The bot work queue the notifications run on.</param>
     /// <param name="logger">The logger.</param>
-    public FlowEngine(BotConnection connection, BotMemory memory, ScreenSender screens, SettingsStore settings, StringTable strings, MenuScreens menus, StatusScreen status, AdvancedScreen advanced, DestinationScreens destinations, SettingsScreens settingsScreens, OnboardingFlow onboarding, DetectedChatFlow detected, ILogger<FlowEngine> logger)
+    public FlowEngine(BotConnection connection, BotMemory memory, ScreenSender screens, SettingsStore settings, StringTable strings, MenuScreens menus, StatusScreen status, AdvancedScreen advanced, DestinationScreens destinations, SettingsScreens settingsScreens, OnboardingFlow onboarding, DetectedChatFlow detected, HealthService health, ManagerNotifier notifier, BotWorkQueue queue, ILogger<FlowEngine> logger)
     {
         _connection = connection;
         _memory = memory;
@@ -62,7 +69,11 @@ public sealed class FlowEngine : IBotFlows
         _settingsScreens = settingsScreens;
         _onboarding = onboarding;
         _detected = detected;
+        _health = health;
+        _notifier = notifier;
+        _queue = queue;
         _logger = logger;
+        _health.ProblemFound += OnProblemFound;
     }
 
     /// <summary>
@@ -230,8 +241,15 @@ public sealed class FlowEngine : IBotFlows
     public Task TickAsync(CancellationToken ct)
     {
         _memory.Prune();
-        return Task.CompletedTask;
+        return _notifier.NotifyAsync(ct);
     }
+
+    /// <inheritdoc />
+    public void Dispose() => _health.ProblemFound -= OnProblemFound;
+
+    /// <summary>Queues the managers' notification; runs on whichever thread found the problem, so it only enqueues.</summary>
+    private void OnProblemFound(object? sender, string destinationId)
+        => _queue.Enqueue("notify managers", _notifier.NotifyAsync);
 
     /// <summary>The command word of a message, without the <c>@bot</c> suffix and in lower case; empty for plain text.</summary>
     private static string ParseCommand(string? text)

@@ -142,6 +142,8 @@
   "status.errors": "Recent errors",
   "status.noErrors": "No recent errors.",
   "dest.gone": "This destination was removed.",
+  "notify.problem": "⚠️ <b>{title}</b>: {problem}",
+  "notify.btn.open": "Open",
   "dest.health.Ok": "✅ OK",
   "dest.health.PhotosBlocked": "⚠️ Photos blocked",
   "dest.health.NeedsPermissions": "⛔ Needs permissions",

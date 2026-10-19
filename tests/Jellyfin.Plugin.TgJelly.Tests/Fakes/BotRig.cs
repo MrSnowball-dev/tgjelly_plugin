@@ -57,8 +57,10 @@ public sealed class BotRig
         var topics = new TopicFlow(h.Connection, Memory, screens, Retrier, checker, h.Strings, formatter, h.Time, NullLogger<TopicFlow>.Instance);
         Onboarding = new OnboardingFlow(h.Connection, Memory, screens, h.Settings, Retrier, topics, checker, creator, Health, destinations, menus, h.Strings, formatter, h.Time, NullLogger<OnboardingFlow>.Instance);
         var detected = new DetectedChatFlow(Memory, h.Settings, checker, Onboarding, screens, menus, h.Strings, formatter, NullLogger<DetectedChatFlow>.Instance);
-        Flow = new FlowEngine(h.Connection, Memory, screens, h.Settings, h.Strings, menus, Status, advanced, destinations, settingsScreens, Onboarding, detected, NullLogger<FlowEngine>.Instance);
         Queue = new BotWorkQueue(NullLogger<BotWorkQueue>.Instance);
+        Notifier = new ManagerNotifier(Memory, Health, h.Settings, h.Connection, h.State, h.Strings, NullLogger<ManagerNotifier>.Instance);
+        Flow = new FlowEngine(h.Connection, Memory, screens, h.Settings, h.Strings, menus, Status, advanced, destinations, settingsScreens, Onboarding, detected, Health, Notifier, Queue, NullLogger<FlowEngine>.Instance);
+        h.Track(Flow);
         _router = new UpdateRouter(Queue, Flow, h.Connection, Health, new DestinationMigration(h.Settings, Outbox, Health), Memory, NullLogger<UpdateRouter>.Instance);
     }
 
@@ -95,6 +97,8 @@ public sealed class BotRig
     public MediaReadiness Readiness { get; }
 
     public BotWorkQueue Queue { get; }
+
+    public ManagerNotifier Notifier { get; }
 
     /// <summary>Routes an update and runs the work it queued.</summary>
     public async Task Deliver(Update update)
