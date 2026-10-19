@@ -20,5 +20,6 @@ public static class StringKeys
         "command.menu", "command.status", "command.test", "command.help",
         "destination.notForum",
         "time.utc", "delivery.delayed", "media.runtime.hours", "media.runtime.minutes", "media.more",
+        "media.heading", "media.headingYear", "media.rating", "media.library", "media.upgraded", "media.newSeries", "media.season", "media.specials", "media.episodes.heading", "media.episodes.count.one", "media.episodes.count.other", "media.episode", "media.episodeNoNumber", "media.album.heading", "media.album.headingYear", "media.album.tracks.one", "media.album.tracks.other", "media.audiobook.parts.one", "media.audiobook.parts.other", "digest.heading.one", "digest.heading.other", "digest.library", "digest.noLibrary", "digest.titleYear", "digest.season", "digest.episodes.one", "digest.episodes.other", "digest.episode", "digest.album", "digest.more.one", "digest.more.other", "button.open", "button.imdb", "button.tmdb",
     ];
 }
