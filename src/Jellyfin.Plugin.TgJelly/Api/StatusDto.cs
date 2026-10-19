@@ -76,4 +76,13 @@ public sealed class StatusDto
     /// Gets the number of destinations whose health isn't OK.
     /// </summary>
     public int UnhealthyDestinations { get; init; }
+
+    /// <summary>Gets the number of items waiting for their metadata (spec §7.4 step 2).</summary>
+    public int PendingMedia { get; init; }
+
+    /// <summary>Gets the update check problem after 3 failures in a row, or <c>null</c> (spec §7.6).</summary>
+    public string? UpdateCheckFailing { get; init; }
+
+    /// <summary>Gets the number of destinations whose library filter names only removed libraries (spec §7.3).</summary>
+    public int RemovedLibraryFilters { get; init; }
 }

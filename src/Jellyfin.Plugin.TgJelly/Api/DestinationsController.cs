@@ -8,6 +8,8 @@ using Jellyfin.Plugin.TgJelly.Bot;
 using Jellyfin.Plugin.TgJelly.Configuration;
 using Jellyfin.Plugin.TgJelly.Delivery;
 using Jellyfin.Plugin.TgJelly.Destinations;
+using Jellyfin.Plugin.TgJelly.Library;
+using Jellyfin.Plugin.TgJelly.Pipeline;
 using Jellyfin.Plugin.TgJelly.State;
 using Jellyfin.Plugin.TgJelly.State.Documents;
 using Jellyfin.Plugin.TgJelly.Strings;
@@ -41,6 +43,7 @@ public class DestinationsController : ControllerBase
     private readonly ILogger<DestinationsController> _logger;
     private readonly InstanceGate _gate;
     private readonly StateStore _state;
+    private readonly ILibraryAccess _library;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="DestinationsController"/> class.
@@ -55,8 +58,10 @@ public class DestinationsController : ControllerBase
     /// <param name="gate">The instance gate; changes wait until this instance owns the data folder.</param>
     /// <param name="state">The state store.</param>
     /// <param name="logger">The logger.</param>
-    public DestinationsController(SettingsStore settings, BotConnection connection, DestinationChecker checker, HealthService health, DestinationTester tester, Outbox outbox, StringTable strings, InstanceGate gate, StateStore state, ILogger<DestinationsController> logger)
+    /// <param name="library">The library, for removed-library flags.</param>
+    public DestinationsController(SettingsStore settings, BotConnection connection, DestinationChecker checker, HealthService health, DestinationTester tester, Outbox outbox, StringTable strings, InstanceGate gate, StateStore state, ILogger<DestinationsController> logger, ILibraryAccess library)
     {
+        _library = library;
         _gate = gate;
         _state = state;
         _settings = settings;
@@ -464,7 +469,9 @@ public class DestinationsController : ControllerBase
     private BadRequestObjectResult Error(string field, string message)
         => BadRequest(new ErrorsDto { Errors = [new SettingsError(field, message)] });
 
-    private DestinationDto ToDto(Destination d) => new()
+    private DestinationDto ToDto(Destination d) => ToDto(d, _library.GetVirtualFolders().Select(l => l.Id).ToHashSet());
+
+    private DestinationDto ToDto(Destination d, IReadOnlyCollection<Guid> existing) => new()
     {
         Id = d.Id,
         ChatId = d.ChatId,
@@ -477,7 +484,13 @@ public class DestinationsController : ControllerBase
         LibraryIds = d.LibraryIds,
         SilentGroups = d.SilentGroups,
         Health = ToDto(_health.Get(d.Id)),
+        RemovedLibraryIds = LibraryFilter.Removed(d, existing),
+        LibraryFilterBroken = LibraryFilter.RefersOnlyToRemoved(d, existing),
     };
 
-    private DestinationsDto List(PluginConfiguration c) => new() { Revision = c.Revision, Items = [.. c.Destinations.Select(ToDto)] };
+    private DestinationsDto List(PluginConfiguration c)
+    {
+        var existing = _library.GetVirtualFolders().Select(l => l.Id).ToHashSet();
+        return new() { Revision = c.Revision, Items = [.. c.Destinations.Select(d => ToDto(d, existing))] };
+    }
 }

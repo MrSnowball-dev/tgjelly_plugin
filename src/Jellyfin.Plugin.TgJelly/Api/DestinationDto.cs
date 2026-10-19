@@ -37,6 +37,12 @@ public sealed class DestinationDto
     /// <summary>Gets the silent groups.</summary>
     public IReadOnlyList<string> SilentGroups { get; init; } = [];
 
+    /// <summary>Gets the IDs in the library filter that name removed libraries (spec §7.3).</summary>
+    public IReadOnlyList<string> RemovedLibraryIds { get; init; } = [];
+
+    /// <summary>Gets a value indicating whether the library filter names only removed libraries, so it matches nothing.</summary>
+    public bool LibraryFilterBroken { get; init; }
+
     /// <summary>Gets the health.</summary>
     public HealthDto Health { get; init; } = new();
 }

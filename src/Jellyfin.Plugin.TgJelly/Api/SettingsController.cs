@@ -2,6 +2,7 @@ using System;
 using System.Net.Mime;
 using Jellyfin.Plugin.TgJelly.Bot;
 using Jellyfin.Plugin.TgJelly.Configuration;
+using Jellyfin.Plugin.TgJelly.Rendering;
 using Jellyfin.Plugin.TgJelly.State;
 using MediaBrowser.Common.Api;
 using Microsoft.AspNetCore.Authorization;
@@ -24,6 +25,7 @@ public class SettingsController : ControllerBase
     private readonly StateStore _state;
     private readonly ISupervisorControl _supervisor;
     private readonly InstanceGate _gate;
+    private readonly LinkBuilder _links;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="SettingsController"/> class.
@@ -33,9 +35,11 @@ public class SettingsController : ControllerBase
     /// <param name="state">The state store, for the public URL flag.</param>
     /// <param name="supervisor">Restarts the bot session after a proxy change.</param>
     /// <param name="gate">The instance gate; changes wait until this instance owns the data folder.</param>
-    public SettingsController(SettingsStore settings, SecretsStore secrets, StateStore state, ISupervisorControl supervisor, InstanceGate gate)
+    /// <param name="links">The link builder, for the public URL suggestion.</param>
+    public SettingsController(SettingsStore settings, SecretsStore secrets, StateStore state, ISupervisorControl supervisor, InstanceGate gate, LinkBuilder links)
     {
         _gate = gate;
+        _links = links;
         _settings = settings;
         _secrets = secrets;
         _state = state;
@@ -175,6 +179,7 @@ public class SettingsController : ControllerBase
             Revision = c.Revision,
             PublicUrl = c.PublicUrl,
             PublicUrlValid = PublicUrlRules.IsValid(c.PublicUrl),
+            PublicUrlSuggestion = _links.Suggest(),
             Message = c.Message,
             Batching = c.Batching,
             UpdateCheck = c.UpdateCheck,

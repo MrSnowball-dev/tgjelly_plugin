@@ -8,6 +8,9 @@ using Jellyfin.Plugin.TgJelly.Compat;
 using Jellyfin.Plugin.TgJelly.Configuration;
 using Jellyfin.Plugin.TgJelly.Delivery;
 using Jellyfin.Plugin.TgJelly.Destinations;
+using Jellyfin.Plugin.TgJelly.Intake;
+using Jellyfin.Plugin.TgJelly.Library;
+using Jellyfin.Plugin.TgJelly.Pipeline;
 using Jellyfin.Plugin.TgJelly.State.Documents;
 using Jellyfin.Plugin.TgJelly.State;
 using Jellyfin.Plugin.TgJelly.Strings;
@@ -125,7 +128,9 @@ public class TgJellyControllerTests
         outbox.Enqueue(new OutboxEntry { EntryId = "e1", DestinationId = d.Id, EventKey = "media.movie", QueuedAt = h.Time.GetUtcNow() });
         using var health = new HealthService(gate, h.Connection, new DestinationChecker(h.Connection, h.Strings), h.Settings, h.State, h.Time, NullLogger<HealthService>.Instance);
         health.MarkProblem(d.Id, HealthStatus.Lost, "kicked");
-        var controller = new TgJellyController(CompatGuard.Evaluate(new Version(BuildInfo.TargetJellyfinMajor, 0, 0, 0)), gate, h.Settings, h.State, h.Secrets, h.Connection, outbox, health, h.Strings);
+        var library = new FakeLibrary();
+        var readiness = new MediaReadiness(h.State, h.Settings, library, new PendingIdSet(), h.Time, NullLogger<MediaReadiness>.Instance);
+        var controller = new TgJellyController(CompatGuard.Evaluate(new Version(BuildInfo.TargetJellyfinMajor, 0, 0, 0)), gate, h.Settings, h.State, h.Secrets, h.Connection, outbox, health, h.Strings, readiness, library);
 
         var status = controller.GetStatus().Value!;
 
@@ -163,11 +168,68 @@ public class TgJellyControllerTests
         Assert.DoesNotContain(FakeBotApi.Token, JsonSerializer.Serialize(status), StringComparison.Ordinal);
     }
 
-    private static TgJellyController NewController(CompatResult compat, InstanceGate gate, SettingsStore settings, StateStore state, SecretsStore secrets)
+    [Fact]
+    public void Status_PendingMedia()
+    {
+        using var h = new BotTestHarness();
+        var library = new FakeLibrary();
+        var readiness = new MediaReadiness(h.State, h.Settings, library, new PendingIdSet(), h.Time, NullLogger<MediaReadiness>.Instance);
+        readiness.Process(new MediaIntake(MediaIntakeKind.Added, PipelineRig.Facts(new MediaItem { Id = Guid.NewGuid(), Kind = MediaKind.Movie }, refreshed: false), h.Time.GetUtcNow()));
+        readiness.Process(new MediaIntake(MediaIntakeKind.Added, PipelineRig.Facts(new MediaItem { Id = Guid.NewGuid(), Kind = MediaKind.Movie }, refreshed: false), h.Time.GetUtcNow()));
+        using var gate = new InstanceGate(h.Paths, h.Time, NullLogger<InstanceGate>.Instance);
+
+        var status = NewController(Compatible, gate, h.Settings, h.State, h.Secrets, readiness, library).GetStatus().Value!;
+
+        Assert.Equal(2, status.PendingMedia);
+    }
+
+    [Fact]
+    public void Status_UpdateCheckFailing_After3()
+    {
+        using var h = new BotTestHarness();
+        using var gate = new InstanceGate(h.Paths, h.Time, NullLogger<InstanceGate>.Instance);
+        h.State.Update(s =>
+        {
+            s.UpdateCheck.ConsecutiveFailures = 2;
+            s.UpdateCheck.LastError = "GitHub answered 403 Forbidden";
+        });
+        Assert.Null(NewController(Compatible, gate, h.Settings, h.State, h.Secrets).GetStatus().Value!.UpdateCheckFailing);
+
+        h.State.Update(s => s.UpdateCheck.ConsecutiveFailures = 3);
+
+        Assert.Equal("Update check failing: GitHub answered 403 Forbidden", NewController(Compatible, gate, h.Settings, h.State, h.Secrets).GetStatus().Value!.UpdateCheckFailing);
+    }
+
+    [Fact]
+    public void Status_RemovedLibraryFilters()
+    {
+        using var h = new BotTestHarness();
+        using var gate = new InstanceGate(h.Paths, h.Time, NullLogger<InstanceGate>.Instance);
+        var library = new FakeLibrary();
+        var existing = Guid.NewGuid();
+        library.VirtualFolders.Add(new LibraryRef(existing, "Movies", "movies"));
+        var gone = Guid.NewGuid().ToString("N");
+        h.AddDestination(-1001);
+        h.AddDestination(-1002);
+        h.AddDestination(-1003);
+        h.Settings.Update(null, c =>
+        {
+            c.Destinations[0].LibraryIds = [existing.ToString("N"), gone];
+            c.Destinations[1].LibraryIds = [gone];
+        });
+
+        Assert.Equal(1, NewController(Compatible, gate, h.Settings, h.State, h.Secrets, library: library).GetStatus().Value!.RemovedLibraryFilters);
+    }
+
+    private static CompatResult Compatible => CompatGuard.Evaluate(new Version(BuildInfo.TargetJellyfinMajor, 0, 0, 0));
+
+    private static TgJellyController NewController(CompatResult compat, InstanceGate gate, SettingsStore settings, StateStore state, SecretsStore secrets, MediaReadiness? readiness = null, ILibraryAccess? library = null)
     {
         var connection = new BotConnection();
         var strings = StringTable.LoadEmbedded();
         var health = new HealthService(gate, connection, new DestinationChecker(connection, strings), settings, state, TimeProvider.System, NullLogger<HealthService>.Instance);
-        return new TgJellyController(compat, gate, settings, state, secrets, connection, new Outbox(state, strings, TimeProvider.System), health, strings);
+        library ??= new FakeLibrary();
+        readiness ??= new MediaReadiness(state, settings, library, new PendingIdSet(), TimeProvider.System, NullLogger<MediaReadiness>.Instance);
+        return new TgJellyController(compat, gate, settings, state, secrets, connection, new Outbox(state, strings, TimeProvider.System), health, strings, readiness, library);
     }
 }

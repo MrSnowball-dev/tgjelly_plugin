@@ -1,6 +1,7 @@
 using System;
 using Jellyfin.Plugin.TgJelly.Api;
 using Jellyfin.Plugin.TgJelly.Configuration;
+using Jellyfin.Plugin.TgJelly.Rendering;
 using Jellyfin.Plugin.TgJelly.State;
 using Jellyfin.Plugin.TgJelly.State.Documents;
 using Jellyfin.Plugin.TgJelly.Tests.Fakes;
@@ -14,10 +15,29 @@ public sealed class SettingsControllerTests : IAsyncLifetime
 {
     private readonly BotTestHarness _h = new();
     private readonly FakeSupervisorControl _supervisor = new();
+    private readonly FakeServerInfo _server = new();
     private SettingsController _controller = null!;
 
     public async ValueTask InitializeAsync()
-        => _controller = new SettingsController(_h.Settings, _h.Secrets, _h.State, _supervisor, await _h.StartOwnedGateAsync());
+        => _controller = new SettingsController(_h.Settings, _h.Secrets, _h.State, _supervisor, await _h.StartOwnedGateAsync(), new LinkBuilder(_server));
+
+    [Fact]
+    public void Get_IncludesTheNormalizedSuggestion()
+    {
+        _server.Suggestion = "http://192.168.1.5:8096/";
+
+        Assert.Equal("http://192.168.1.5:8096", _controller.GetSettings().Value!.PublicUrlSuggestion);
+    }
+
+    [Theory]
+    [InlineData("http://jellyfin:8096")]
+    [InlineData(null)]
+    public void Get_InvalidSuggestion_IsNull(string? suggestion)
+    {
+        _server.Suggestion = suggestion;
+
+        Assert.Null(_controller.GetSettings().Value!.PublicUrlSuggestion);
+    }
 
     [Fact]
     public void Get_ReturnsSettings_ProxyForDisplay_AndPublicUrlValidity()
@@ -157,7 +177,7 @@ public sealed class SettingsControllerTests : IAsyncLifetime
     public void Mutations_BeforeOwnership_Are503()
     {
         using var gate = new InstanceGate(_h.Paths, _h.Time, Microsoft.Extensions.Logging.Abstractions.NullLogger<InstanceGate>.Instance);
-        var controller = new SettingsController(_h.Settings, _h.Secrets, _h.State, _supervisor, gate);
+        var controller = new SettingsController(_h.Settings, _h.Secrets, _h.State, _supervisor, gate, new LinkBuilder(_server));
 
         Assert.Equal(503, Assert.IsType<ObjectResult>(controller.PutProxy(new ProxyRequest { ExpectedRevision = 0, Mode = "None" }).Result).StatusCode);
         Assert.Equal(503, Assert.IsType<ObjectResult>(controller.PutSettings(Request(0)).Result).StatusCode);

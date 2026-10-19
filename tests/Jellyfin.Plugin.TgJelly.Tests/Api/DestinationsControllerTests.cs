@@ -23,6 +23,7 @@ public sealed class DestinationsControllerTests : IAsyncLifetime
     private readonly HealthService _health;
     private readonly Outbox _outbox;
     private DestinationsController _controller = null!;
+    private readonly FakeLibrary _library = new();
     private readonly DestinationChecker _checker;
     private readonly DestinationTester _tester;
 
@@ -42,6 +43,31 @@ public sealed class DestinationsControllerTests : IAsyncLifetime
     public async ValueTask InitializeAsync() => _controller = NewController(_h.Connection, await _h.StartOwnedGateAsync());
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
+
+    [Fact]
+    public void Get_FlagsRemovedLibraries()
+    {
+        var existing = Guid.NewGuid();
+        var gone = Guid.NewGuid().ToString("N");
+        _library.VirtualFolders.Add(new Jellyfin.Plugin.TgJelly.Library.LibraryRef(existing, "Movies", "movies"));
+        _h.AddDestination(-1001);
+        _h.AddDestination(-1002);
+        _h.AddDestination(-1003);
+        Assert.Equal(SettingsUpdateStatus.Saved, _h.Settings.Update(null, c =>
+        {
+            c.Destinations[0].LibraryIds = [existing.ToString("N"), gone];
+            c.Destinations[1].LibraryIds = [gone];
+        }).Status);
+
+        var items = _controller.Get().Value!.Items;
+
+        Assert.Equal([gone], items[0].RemovedLibraryIds);
+        Assert.False(items[0].LibraryFilterBroken);
+        Assert.Equal([gone], items[1].RemovedLibraryIds);
+        Assert.True(items[1].LibraryFilterBroken);
+        Assert.Empty(items[2].RemovedLibraryIds);
+        Assert.False(items[2].LibraryFilterBroken);
+    }
 
     [Fact]
     public async Task AddByChatId_ChecksSavesAndSendsTheTestMessage()
@@ -370,5 +396,5 @@ public sealed class DestinationsControllerTests : IAsyncLifetime
     }
 
     private DestinationsController NewController(Jellyfin.Plugin.TgJelly.Bot.BotConnection connection, InstanceGate gate)
-        => new(_h.Settings, connection, _checker, _health, _tester, _outbox, _h.Strings, gate, _h.State, NullLogger<DestinationsController>.Instance);
+        => new(_h.Settings, connection, _checker, _health, _tester, _outbox, _h.Strings, gate, _h.State, NullLogger<DestinationsController>.Instance, _library);
 }
