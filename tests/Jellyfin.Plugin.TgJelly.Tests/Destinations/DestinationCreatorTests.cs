@@ -17,6 +17,7 @@ public sealed class DestinationCreatorTests : IAsyncLifetime
     private HealthService _health = null!;
     private DestinationChecker _checker = null!;
     private DestinationCreator _creator = null!;
+    private Jellyfin.Plugin.TgJelly.Bot.BotMemory _memory = null!;
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
@@ -28,7 +29,8 @@ public sealed class DestinationCreatorTests : IAsyncLifetime
         _health = new HealthService(gate, _h.Connection, _checker, _h.Settings, _h.State, _h.Time, NullLogger<HealthService>.Instance);
         _h.Track(_health);
         var tester = new DestinationTester(_h.Connection, _health, _h.Strings, NullLogger<DestinationTester>.Instance);
-        _creator = new DestinationCreator(_h.Settings, _health, tester, NullLogger<DestinationCreator>.Instance);
+        _memory = new Jellyfin.Plugin.TgJelly.Bot.BotMemory(_h.State, _h.Time);
+        _creator = new DestinationCreator(_h.Settings, _health, tester, _memory, NullLogger<DestinationCreator>.Instance);
     }
 
     public ValueTask DisposeAsync()
@@ -44,6 +46,27 @@ public sealed class DestinationCreatorTests : IAsyncLifetime
         var check = await _checker.CheckAsync(chatId, 0, Ct);
         Assert.True(check.Passed);
         return check;
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task AddedOrAlreadyThere_ForgetsTheDetectedChat(bool existing)
+    {
+        var check = await CheckAsync(-1001);
+        if (existing)
+        {
+            _h.AddDestination(-1001);
+        }
+
+        _memory.RecordDetected(-1001, "Movie night", ChatKind.Supergroup);
+        _memory.RecordDetected(-1002, "Other", ChatKind.Supergroup);
+
+        var result = await _creator.CreateAsync(check, 0, EventCatalog.Expand(PresetKind.Everything), PresetKind.Everything, null, Ct);
+
+        Assert.Equal(existing ? CreateOutcome.AlreadyExists : CreateOutcome.Added, result.Outcome);
+        _h.Time.Advance(System.TimeSpan.FromMinutes(1));
+        Assert.Equal([-1002L], _memory.VisibleDetected([]).Select(d => d.ChatId));
     }
 
     [Fact]

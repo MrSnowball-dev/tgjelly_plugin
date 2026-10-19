@@ -691,7 +691,7 @@ public sealed class OnboardingFlow
         }
     }
 
-    private Screen MainMenu() => _menus.Main(_settings.Current.Destinations.Length, 0);
+    private Screen MainMenu() => _menus.Main(_settings.Current.Destinations.Length, _memory.VisibleDetected(_settings.Current).Count);
 
     private InlineKeyboardButton Button(string textKey, string action, params string[] args)
         => InlineKeyboardButton.WithCallbackData(_strings.Get(textKey), CallbackData.Format(action, args));

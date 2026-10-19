@@ -51,11 +51,12 @@ public sealed class BotRig
                 return Task.CompletedTask;
             },
         };
-        var creator = new DestinationCreator(h.Settings, Health, tester, NullLogger<DestinationCreator>.Instance);
+        var creator = new DestinationCreator(h.Settings, Health, tester, Memory, NullLogger<DestinationCreator>.Instance);
         var screens = new ScreenSender(h.Connection);
         var topics = new TopicFlow(h.Connection, Memory, screens, Retrier, checker, h.Strings, formatter, h.Time, NullLogger<TopicFlow>.Instance);
         Onboarding = new OnboardingFlow(h.Connection, Memory, screens, h.Settings, Retrier, topics, checker, creator, Health, destinations, menus, h.Strings, formatter, h.Time, NullLogger<OnboardingFlow>.Instance);
-        Flow = new FlowEngine(h.Connection, Memory, screens, h.Settings, h.Strings, menus, Status, destinations, settingsScreens, Onboarding, NullLogger<FlowEngine>.Instance);
+        var detected = new DetectedChatFlow(Memory, h.Settings, checker, Onboarding, screens, menus, h.Strings, formatter, NullLogger<DetectedChatFlow>.Instance);
+        Flow = new FlowEngine(h.Connection, Memory, screens, h.Settings, h.Strings, menus, Status, destinations, settingsScreens, Onboarding, detected, NullLogger<FlowEngine>.Instance);
         Queue = new BotWorkQueue(NullLogger<BotWorkQueue>.Instance);
         _router = new UpdateRouter(Queue, Flow, h.Connection, Health, new DestinationMigration(h.Settings, Outbox, Health), Memory, NullLogger<UpdateRouter>.Instance);
     }

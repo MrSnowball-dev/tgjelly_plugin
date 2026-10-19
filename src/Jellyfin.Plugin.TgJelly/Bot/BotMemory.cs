@@ -238,6 +238,24 @@ public sealed class BotMemory
     }
 
     /// <summary>
+    /// Lists the detected chats worth offering, given the configured destinations.
+    /// </summary>
+    /// <param name="configuration">The current configuration.</param>
+    /// <returns>Copies, oldest first.</returns>
+    public IReadOnlyList<DetectedChat> VisibleDetected(PluginConfiguration configuration)
+    {
+        ArgumentNullException.ThrowIfNull(configuration);
+        return VisibleDetected([.. configuration.Destinations.Select(d => d.ChatId)]);
+    }
+
+    /// <summary>
+    /// Tells whether a chat is recorded as detected, shown yet or not.
+    /// </summary>
+    /// <param name="chatId">The chat ID.</param>
+    /// <returns>True when it is.</returns>
+    public bool IsDetected(long chatId) => _state.Read(s => s.DetectedChats.Any(d => d.ChatId == chatId));
+
+    /// <summary>
     /// Records a setup failure.
     /// </summary>
     /// <param name="kind">What went wrong.</param>

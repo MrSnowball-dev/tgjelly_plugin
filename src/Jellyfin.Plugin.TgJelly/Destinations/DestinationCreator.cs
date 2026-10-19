@@ -2,6 +2,7 @@ using System;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Jellyfin.Plugin.TgJelly.Bot;
 using Jellyfin.Plugin.TgJelly.Configuration;
 using Jellyfin.Plugin.TgJelly.State.Documents;
 using Microsoft.Extensions.Logging;
@@ -17,6 +18,7 @@ public sealed class DestinationCreator
     private readonly SettingsStore _settings;
     private readonly HealthService _health;
     private readonly DestinationTester _tester;
+    private readonly BotMemory _memory;
     private readonly ILogger<DestinationCreator> _logger;
 
     /// <summary>
@@ -25,12 +27,14 @@ public sealed class DestinationCreator
     /// <param name="settings">The settings store.</param>
     /// <param name="health">The health service.</param>
     /// <param name="tester">The test sender.</param>
+    /// <param name="memory">The bot's memory; a chat that becomes a destination stops being a detected chat.</param>
     /// <param name="logger">The logger.</param>
-    public DestinationCreator(SettingsStore settings, HealthService health, DestinationTester tester, ILogger<DestinationCreator> logger)
+    public DestinationCreator(SettingsStore settings, HealthService health, DestinationTester tester, BotMemory memory, ILogger<DestinationCreator> logger)
     {
         _settings = settings;
         _health = health;
         _tester = tester;
+        _memory = memory;
         _logger = logger;
     }
 
@@ -74,6 +78,7 @@ public sealed class DestinationCreator
                 _logger.LogWarning(ex, "TgJelly could not re-check destination {Destination}", existing.Title);
             }
 
+            _memory.RemoveDetected(check.ChatId);
             return new CreateResult(CreateOutcome.AlreadyExists, existing, null, [], _settings.Current);
         }
 
@@ -108,6 +113,7 @@ public sealed class DestinationCreator
             case SettingsUpdateStatus.Unchanged:
             case SettingsUpdateStatus.Conflict when Find(result.Configuration, check.ChatId, threadId) is not null:
                 // Another request added the same chat between our check and our save.
+                _memory.RemoveDetected(check.ChatId);
                 return new CreateResult(CreateOutcome.AlreadyExists, Find(result.Configuration, check.ChatId, threadId)!, null, [], result.Configuration);
             case SettingsUpdateStatus.Conflict:
                 return new CreateResult(CreateOutcome.Conflict, null, null, [], result.Configuration);
@@ -116,6 +122,7 @@ public sealed class DestinationCreator
         }
 
         var added = result.Configuration.Destinations.First(d => d.Id == newId);
+        _memory.RemoveDetected(check.ChatId);
         _health.SetChecked(added.Id, check);
         var test = await _tester.SendTestAsync(added, ct).ConfigureAwait(false);
         return new CreateResult(CreateOutcome.Added, added, test, [], result.Configuration);

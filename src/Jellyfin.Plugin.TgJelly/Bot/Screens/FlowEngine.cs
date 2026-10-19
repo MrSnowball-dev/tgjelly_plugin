@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.TgJelly.Bot.Flows;
@@ -27,6 +28,7 @@ public sealed class FlowEngine : IBotFlows
     private readonly DestinationScreens _destinations;
     private readonly SettingsScreens _settingsScreens;
     private readonly OnboardingFlow _onboarding;
+    private readonly DetectedChatFlow _detected;
     private readonly ILogger<FlowEngine> _logger;
 
     /// <summary>
@@ -42,8 +44,9 @@ public sealed class FlowEngine : IBotFlows
     /// <param name="destinations">The destination screens.</param>
     /// <param name="settingsScreens">The settings screens.</param>
     /// <param name="onboarding">The onboarding flow.</param>
+    /// <param name="detected">The detected chats flow.</param>
     /// <param name="logger">The logger.</param>
-    public FlowEngine(BotConnection connection, BotMemory memory, ScreenSender screens, SettingsStore settings, StringTable strings, MenuScreens menus, StatusScreen status, DestinationScreens destinations, SettingsScreens settingsScreens, OnboardingFlow onboarding, ILogger<FlowEngine> logger)
+    public FlowEngine(BotConnection connection, BotMemory memory, ScreenSender screens, SettingsStore settings, StringTable strings, MenuScreens menus, StatusScreen status, DestinationScreens destinations, SettingsScreens settingsScreens, OnboardingFlow onboarding, DetectedChatFlow detected, ILogger<FlowEngine> logger)
     {
         _connection = connection;
         _memory = memory;
@@ -55,6 +58,7 @@ public sealed class FlowEngine : IBotFlows
         _destinations = destinations;
         _settingsScreens = settingsScreens;
         _onboarding = onboarding;
+        _detected = detected;
         _logger = logger;
     }
 
@@ -178,6 +182,19 @@ public sealed class FlowEngine : IBotFlows
             case "ocd":
                 await _onboarding.OnCustomDoneAsync(query, ct).ConfigureAwait(false);
                 break;
+            case "xl":
+                await ShowAsync(chatId, _detected.List(PageOf(args)), message.MessageId, ct).ConfigureAwait(false);
+                break;
+            case "xd" when TryChatId(args, out var dismissed):
+                await ShowAsync(chatId, _detected.Dismiss(dismissed), message.MessageId, ct).ConfigureAwait(false);
+                break;
+            case "xs" when TryChatId(args, out var detected):
+                if (!await _detected.SetUpAsync(chatId, detected, message.MessageId, ct).ConfigureAwait(false))
+                {
+                    await ExpiredAsync(chatId, ct).ConfigureAwait(false);
+                }
+
+                break;
             default:
                 var screen = await _destinations.HandleAsync(action, args, ct).ConfigureAwait(false)
                     ?? await _settingsScreens.HandleAsync(action, args, chatId, ct).ConfigureAwait(false);
@@ -194,7 +211,11 @@ public sealed class FlowEngine : IBotFlows
     }
 
     /// <inheritdoc />
-    public Task OnChatMemberAsync(ChatMemberUpdated update, CancellationToken ct) => Task.CompletedTask;
+    public Task OnChatMemberAsync(ChatMemberUpdated update, CancellationToken ct)
+    {
+        _detected.OnChatMember(update);
+        return Task.CompletedTask;
+    }
 
     /// <inheritdoc />
     public Task TickAsync(CancellationToken ct)
@@ -251,11 +272,20 @@ public sealed class FlowEngine : IBotFlows
     private Task ShowAsync(long chatId, Screen screen, int? editMessageId, CancellationToken ct)
         => _screens.ShowAsync(chatId, screen, editMessageId, ct);
 
-    private Screen MainMenu() => _menus.Main(_settings.Current.Destinations.Length, 0);
+    private static int PageOf(IReadOnlyList<string> args)
+        => args.Count > 0 && int.TryParse(args[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out var page) ? page : 0;
+
+    private static bool TryChatId(IReadOnlyList<string> args, out long chatId)
+    {
+        chatId = 0;
+        return args.Count > 0 && long.TryParse(args[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out chatId);
+    }
+
+    private Screen MainMenu() => _menus.Main(_settings.Current.Destinations.Length, _memory.VisibleDetected(_settings.Current).Count);
 
     /// <summary>The "set up: N" menu; with no destinations there is nothing set up yet, so the plain menu.</summary>
     private Screen SetUpMenu()
-        => _settings.Current.Destinations.Length == 0 ? MainMenu() : _menus.SetUp(_settings.Current.Destinations.Length, 0);
+        => _settings.Current.Destinations.Length == 0 ? MainMenu() : _menus.SetUp(_settings.Current.Destinations.Length, _memory.VisibleDetected(_settings.Current).Count);
 
     private async Task ExpiredAsync(long chatId, CancellationToken ct)
     {

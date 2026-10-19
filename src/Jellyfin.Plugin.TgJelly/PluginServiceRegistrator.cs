@@ -50,6 +50,7 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddRedactedLogger<Bot.Screens.FlowEngine>();
         serviceCollection.AddRedactedLogger<Bot.Flows.OnboardingFlow>();
         serviceCollection.AddRedactedLogger<Bot.Flows.TopicFlow>();
+        serviceCollection.AddRedactedLogger<Bot.Flows.DetectedChatFlow>();
         serviceCollection.AddRedactedLogger<Bot.Screens.DestinationScreens>();
         serviceCollection.AddRedactedLogger<BotWorkQueue>();
         serviceCollection.AddRedactedLogger<BotWorker>();
@@ -59,6 +60,7 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddRedactedLogger<DestinationTester>();
         serviceCollection.AddRedactedLogger<Destinations.DestinationCreator>();
         serviceCollection.AddRedactedLogger<Api.DestinationsController>();
+        serviceCollection.AddRedactedLogger<Api.DetectedChatsController>();
         serviceCollection.AddRedactedLogger<JellyfinLibrary>();
         serviceCollection.AddRedactedLogger<LibraryWatcher>();
         serviceCollection.AddRedactedLogger<TaskWatcher>();
@@ -103,6 +105,7 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<Bot.Flows.ChatCheckRetrier>();
         serviceCollection.AddSingleton<Bot.Flows.TopicFlow>();
         serviceCollection.AddSingleton<Bot.Flows.OnboardingFlow>();
+        serviceCollection.AddSingleton<Bot.Flows.DetectedChatFlow>();
         serviceCollection.AddSingleton<IBotFlows, Bot.Screens.FlowEngine>();
         serviceCollection.AddSingleton<IUpdateHandler, UpdateRouter>();
         serviceCollection.AddSingleton<BotWorker>();
@@ -114,6 +117,7 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<DestinationTester>();
         serviceCollection.AddSingleton<Destinations.DestinationCreator>();
         serviceCollection.AddSingleton<Destinations.DestinationMigration>();
+        serviceCollection.AddSingleton<Api.DestinationDtoMapper>();
         serviceCollection.AddSingleton<ILibraryAccess, JellyfinLibrary>();
         serviceCollection.AddSingleton<IServerInfo, JellyfinServerInfo>();
         serviceCollection.AddSingleton<Rendering.Formatter>();
