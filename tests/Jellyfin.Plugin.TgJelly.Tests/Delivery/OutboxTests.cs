@@ -301,7 +301,7 @@ public sealed class OutboxTests : IDisposable
         send.SentKey = "g1";
         send.Model = Model("1");
         _outbox.Enqueue(send);
-        _outbox.Complete(send, new SentMessage { MessageId = 7, SentAt = Now, Model = send.Model });
+        _outbox.Complete(send, new SentMessage { MessageId = 7, SentAt = Now });
         Assert.True(_outbox.TryGetSent("d1", "g1", out var sent));
         Assert.Equal("1", sent.Model!.Values["attempts"]);
 

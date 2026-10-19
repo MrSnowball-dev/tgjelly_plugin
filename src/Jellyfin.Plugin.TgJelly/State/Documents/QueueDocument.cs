@@ -29,4 +29,10 @@ public sealed class QueueDocument
 
     /// <summary>Gets or sets recently added series, keyed by ID (<c>N</c>), with when they were added (24 h).</summary>
     public Dictionary<string, DateTimeOffset> NewSeries { get; set; } = new(StringComparer.Ordinal);
+
+    /// <summary>Gets or sets the media groups still collecting items (spec §7.4 step 4).</summary>
+    public List<MediaGroupState> OpenGroups { get; set; } = [];
+
+    /// <summary>Gets or sets the closed groups waiting for release, keyed by destination ID (spec §7.4 step 5).</summary>
+    public Dictionary<string, ReleaseBuffer> ReleaseBuffers { get; set; } = new(StringComparer.Ordinal);
 }

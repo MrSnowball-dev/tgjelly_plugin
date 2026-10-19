@@ -263,6 +263,7 @@ public sealed class Outbox
             q.Outbox.RemoveAll(e => e.EntryId == entry.EntryId);
             if (sent is not null && entry.SentKey is not null)
             {
+                sent.Model = entry.Model;
                 q.SentMessages[SentKey(entry.DestinationId, entry.SentKey)] = sent;
                 evicted = EvictOldest(q.SentMessages, SentMessagesCap, m => m.SentAt);
             }
