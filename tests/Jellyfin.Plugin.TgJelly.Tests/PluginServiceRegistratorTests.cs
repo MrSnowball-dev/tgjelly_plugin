@@ -56,11 +56,19 @@ public class PluginServiceRegistratorTests
 
         var hosted = provider.GetServices<IHostedService>().ToList();
         Assert.Same(provider.GetRequiredService<InstanceGate>(), hosted[0]);
-        Assert.IsType<PersistenceService>(hosted[1]);
-        Assert.Same(provider.GetRequiredService<Jellyfin.Plugin.TgJelly.Bot.BotSupervisor>(), hosted[2]);
-        Assert.Same(provider.GetRequiredService<Jellyfin.Plugin.TgJelly.Destinations.HealthService>(), hosted[3]);
-        Assert.IsType<Jellyfin.Plugin.TgJelly.Delivery.OutboxService>(hosted[4]);
-        Assert.Equal(5, hosted.Count);
+        Assert.Equal(
+            [
+                typeof(InstanceGate), typeof(PersistenceService), typeof(Jellyfin.Plugin.TgJelly.Pipeline.PipelineService),
+                typeof(Jellyfin.Plugin.TgJelly.Intake.LibraryWatcher), typeof(Jellyfin.Plugin.TgJelly.Intake.TaskWatcher),
+                typeof(Jellyfin.Plugin.TgJelly.Intake.RestartWatcher), typeof(Jellyfin.Plugin.TgJelly.Intake.StartupWatcher),
+                typeof(Jellyfin.Plugin.TgJelly.Bot.BotSupervisor), typeof(Jellyfin.Plugin.TgJelly.Destinations.HealthService),
+                typeof(Jellyfin.Plugin.TgJelly.Delivery.OutboxService),
+            ],
+            hosted.Select(h => h.GetType()));
+        Assert.Same(provider.GetRequiredService<Jellyfin.Plugin.TgJelly.Pipeline.PipelineService>(), hosted[2]);
+        Assert.Same(provider.GetRequiredService<Jellyfin.Plugin.TgJelly.Intake.LibraryWatcher>(), hosted[3]);
+        Assert.Same(provider.GetRequiredService<Jellyfin.Plugin.TgJelly.Bot.BotSupervisor>(), hosted[7]);
+        Assert.Same(provider.GetRequiredService<Jellyfin.Plugin.TgJelly.Destinations.HealthService>(), hosted[8]);
     }
 
     [Fact]

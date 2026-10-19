@@ -58,6 +58,8 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddRedactedLogger<RestartWatcher>();
         serviceCollection.AddRedactedLogger<StartupWatcher>();
         serviceCollection.AddRedactedLogger<Pipeline.MediaReadiness>();
+        serviceCollection.AddRedactedLogger<Pipeline.NotificationPipeline>();
+        serviceCollection.AddRedactedLogger<Pipeline.PipelineService>();
         serviceCollection.AddRedactedLogger<LoginFailedConsumer>();
         serviceCollection.AddRedactedLogger<LoginSucceededConsumer>();
         serviceCollection.AddRedactedLogger<LockoutConsumer>();
@@ -104,6 +106,11 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<TaskWatcher>();
         serviceCollection.AddSingleton<RestartWatcher>();
         serviceCollection.AddSingleton<StartupWatcher>();
+        serviceCollection.AddSingleton<Pipeline.MediaReadiness>();
+        serviceCollection.AddSingleton<Pipeline.MediaAggregator>();
+        serviceCollection.AddSingleton<Pipeline.AlertCoalescer>();
+        serviceCollection.AddSingleton<Pipeline.NotificationPipeline>();
+        serviceCollection.AddSingleton<Pipeline.PipelineService>();
 
         // Consumers are scoped, like Jellyfin's own and the Webhook plugin's; they take only the queue and a logger (F6).
         serviceCollection.AddScoped<IEventConsumer<AuthenticationRequestEventArgs>, LoginFailedConsumer>();
@@ -117,11 +124,18 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddScoped<IEventConsumer<PluginUninstalledEventArgs>, PluginUninstalledConsumer>();
         serviceCollection.AddScoped<IEventConsumer<InstallationFailedEventArgs>, PluginInstallFailedConsumer>();
 
-        // Hosted services stop in reverse order: the Outbox and health loops first, then the bot (confirming the
-        // last update batch), then persistence flushes, and the gate releases state.lock last.
+        // Hosted services stop in reverse order (spec §12): the Outbox and health loops first, then the bot (confirming
+        // the last update batch), then the watchers unsubscribe so nothing new arrives, then the pipeline drains the
+        // intake queues and sends held lockouts to the Outbox, then persistence flushes, and the gate releases
+        // state.lock last.
         serviceCollection.AddSingleton<InstanceGate>();
         serviceCollection.AddHostedService(sp => sp.GetRequiredService<InstanceGate>());
         serviceCollection.AddHostedService<PersistenceService>();
+        serviceCollection.AddHostedService(sp => sp.GetRequiredService<Pipeline.PipelineService>());
+        serviceCollection.AddHostedService(sp => sp.GetRequiredService<LibraryWatcher>());
+        serviceCollection.AddHostedService(sp => sp.GetRequiredService<TaskWatcher>());
+        serviceCollection.AddHostedService(sp => sp.GetRequiredService<RestartWatcher>());
+        serviceCollection.AddHostedService(sp => sp.GetRequiredService<StartupWatcher>());
         serviceCollection.AddHostedService(sp => sp.GetRequiredService<BotSupervisor>());
         serviceCollection.AddHostedService(sp => sp.GetRequiredService<HealthService>());
         serviceCollection.AddHostedService<OutboxService>();
