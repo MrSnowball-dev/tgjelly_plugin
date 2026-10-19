@@ -47,6 +47,7 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddRedactedLogger<OutboxDelivery>();
         serviceCollection.AddRedactedLogger<OutboxService>();
         serviceCollection.AddRedactedLogger<UpdateRouter>();
+        serviceCollection.AddRedactedLogger<Bot.Screens.FlowEngine>();
         serviceCollection.AddRedactedLogger<BotWorkQueue>();
         serviceCollection.AddRedactedLogger<BotWorker>();
         serviceCollection.AddRedactedLogger<ProfileCalls>();
@@ -91,6 +92,9 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<OutboxDelivery>();
         serviceCollection.AddSingleton<IServerStartup, ServerStartup>();
         serviceCollection.AddSingleton<BotWorkQueue>();
+        serviceCollection.AddSingleton<Bot.Screens.ScreenSender>();
+        serviceCollection.AddSingleton<Bot.Screens.MenuScreens>();
+        serviceCollection.AddSingleton<Bot.Screens.StatusScreen>();
         serviceCollection.AddSingleton<IBotFlows, Bot.Screens.FlowEngine>();
         serviceCollection.AddSingleton<IUpdateHandler, UpdateRouter>();
         serviceCollection.AddSingleton<BotWorker>();
