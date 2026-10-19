@@ -27,13 +27,16 @@ public sealed class DestinationScreensTests : IDisposable, IAsyncLifetime
         var ok = _h.AddDestination(-1001);
         var lost = _h.AddDestination(-1002);
         var paused = _h.AddDestination(-1003);
+        var pausedLost = _h.AddDestination(-1004);
         _h.Settings.Update(null, c => c.Destinations.First(d => d.Id == paused.Id).Enabled = false);
+        _h.Settings.Update(null, c => c.Destinations.First(d => d.Id == pausedLost.Id).Enabled = false);
         _rig.Health.MarkProblem(lost.Id, HealthStatus.Lost, "kicked");
+        _rig.Health.MarkProblem(pausedLost.Id, HealthStatus.Lost, "kicked");
 
         await Click("1|dl|0");
 
         var labels = Labels(LastEdit());
-        Assert.Equal(["✅ " + ok.Title, "⛔ " + lost.Title, "⏸ " + paused.Title, "‹ Back"], labels);
+        Assert.Equal(["✅ " + ok.Title, "⛔ " + lost.Title, "✅⏸ " + paused.Title, "⛔⏸ " + pausedLost.Title, "‹ Back"], labels);
     }
 
     [Fact]

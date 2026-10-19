@@ -403,15 +403,11 @@ public sealed class DestinationScreens
     private string HealthText(DestinationHealth health)
         => _strings.Get("dest.health." + (health.Status == HealthStatus.Ok && health.PhotosBlocked ? "PhotosBlocked" : health.Status.ToString()));
 
-    /// <summary>The list badge: paused, healthy, photos blocked or a problem.</summary>
+    /// <summary>The list badge: the health glyph, followed by ⏸ when the user paused the destination (the two are separate).</summary>
     private string Badge(Destination d)
     {
-        if (!d.Enabled)
-        {
-            return "⏸";
-        }
-
         var health = _health.Get(d.Id);
-        return health.Status != HealthStatus.Ok ? "⛔" : health.PhotosBlocked ? "⚠️" : "✅";
+        var glyph = health.Status != HealthStatus.Ok ? "⛔" : health.PhotosBlocked ? "⚠️" : "✅";
+        return d.Enabled ? glyph : glyph + "⏸";
     }
 }
