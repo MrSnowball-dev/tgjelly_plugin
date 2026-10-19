@@ -129,7 +129,7 @@ public sealed class OutboxServiceTests : IDisposable
         var gate = await _h.StartOwnedGateAsync();
         _health = new HealthService(gate, _h.Connection, new DestinationChecker(_h.Connection, _h.Strings), _h.Settings, _h.State, _h.Time, NullLogger<HealthService>.Instance);
         _h.Track(_health);
-        var delivery = new OutboxDelivery(_h.Connection, _outbox, _health, _h.Settings, _h.State, _pacing, _h.Time, NullLogger<OutboxDelivery>.Instance);
+        var delivery = new OutboxDelivery(_h.Connection, _outbox, _health, _h.Settings, _h.State, _pacing, new Jellyfin.Plugin.TgJelly.Rendering.Formatter(_h.Strings), _h.Time, NullLogger<OutboxDelivery>.Instance);
         var compat = compatible ? CompatGuard.Evaluate(new Version(BuildInfo.TargetJellyfinMajor, 0, 0, 0)) : CompatGuard.Evaluate(new Version(BuildInfo.TargetJellyfinMajor + 1, 0, 0, 0));
         var service = new OutboxService(gate, compat, _h.Connection, _outbox, delivery, _health, _h.Settings, _pacing, _h.Time, NullLogger<OutboxService>.Instance);
         await service.StartAsync(CancellationToken.None);
@@ -155,6 +155,21 @@ public sealed class OutboxServiceTests : IDisposable
         using var service = await StartAsync();
 
         await Eventually.TrueAsync(() => _h.Api.CallsTo("sendMessage").Any(), "sending works while another app owns the webhook");
+        await service.StopAsync(CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task Loop_PrunesSentMessages()
+    {
+        _h.Connect();
+        var d = _h.AddDestination(-1001);
+        var old = Entry(d, "media.movie", "movie");
+        old.SentKey = "movie:1";
+        _outbox.Enqueue(old);
+        _outbox.Complete(old, new SentMessage { MessageId = 1, SentAt = Now - TimeSpan.FromHours(7) });
+        using var service = await StartAsync();
+
+        await Eventually.AdvanceUntilAsync(_h.Time, TimeSpan.FromSeconds(1), () => !_outbox.TryGetSent(d.Id, "movie:1", out _), "pruned");
         await service.StopAsync(CancellationToken.None);
     }
 }

@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using Jellyfin.Plugin.TgJelly.Bot;
 using Jellyfin.Plugin.TgJelly.Configuration;
 using Jellyfin.Plugin.TgJelly.Destinations;
+using Jellyfin.Plugin.TgJelly.Rendering;
 using Jellyfin.Plugin.TgJelly.State;
 using Jellyfin.Plugin.TgJelly.State.Documents;
 using Microsoft.Extensions.Logging;
@@ -22,6 +23,9 @@ namespace Jellyfin.Plugin.TgJelly.Delivery;
 /// </summary>
 public sealed class OutboxDelivery
 {
+    /// <summary>A send that leaves the Outbox later than this after it was queued gets the ⏱ line (spec §8.1).</summary>
+    public static readonly TimeSpan DelayedAfter = TimeSpan.FromMinutes(5);
+
     private const int MaxResends = 4;
     private const int CaptionLimit = 1024;
     private const int TextLimit = 4096;
@@ -32,6 +36,7 @@ public sealed class OutboxDelivery
     private readonly SettingsStore _settings;
     private readonly StateStore _state;
     private readonly PacingGate _pacing;
+    private readonly Formatter _formatter;
     private readonly TimeProvider _time;
     private readonly ILogger<OutboxDelivery> _logger;
 
@@ -44,9 +49,10 @@ public sealed class OutboxDelivery
     /// <param name="settings">The settings, for migrations and the public URL.</param>
     /// <param name="state">The state store, for errors and flags.</param>
     /// <param name="pacing">The pacing gate.</param>
+    /// <param name="formatter">The formatter, for the ⏱ line.</param>
     /// <param name="time">The clock.</param>
     /// <param name="logger">The logger.</param>
-    public OutboxDelivery(BotConnection connection, Outbox outbox, HealthService health, SettingsStore settings, StateStore state, PacingGate pacing, TimeProvider time, ILogger<OutboxDelivery> logger)
+    public OutboxDelivery(BotConnection connection, Outbox outbox, HealthService health, SettingsStore settings, StateStore state, PacingGate pacing, Formatter formatter, TimeProvider time, ILogger<OutboxDelivery> logger)
     {
         _connection = connection;
         _outbox = outbox;
@@ -54,6 +60,7 @@ public sealed class OutboxDelivery
         _settings = settings;
         _state = state;
         _pacing = pacing;
+        _formatter = formatter;
         _time = time;
         _logger = logger;
     }
@@ -152,6 +159,8 @@ public sealed class OutboxDelivery
         var message = entry.Message;
         var parseMode = message.PlainText ? ParseMode.None : ParseMode.Html;
         var buttons = Markup(message);
+        var now = _time.GetUtcNow();
+        var delayed = attempt.EditTarget is null && now - entry.QueuedAt > DelayedAfter ? "\n\n" + _formatter.DelayedLine(entry.QueuedAt, now) : string.Empty;
         if (attempt.EditTarget is { } target)
         {
             var edit = new MessageEdit(destination.ChatId, target.MessageId, Body(message, attempt.Photo ? message.Caption : message.Text), parseMode, buttons);
@@ -170,14 +179,14 @@ public sealed class OutboxDelivery
         if (!attempt.Photo)
         {
             return await sender.SendTextAsync(
-                new OutgoingText(destination.ChatId, destination.ThreadId, Body(message, message.Text), parseMode, buttons, attempt.ReplyTo, message.Silent),
+                new OutgoingText(destination.ChatId, destination.ThreadId, Body(message, message.Text + delayed), parseMode, buttons, attempt.ReplyTo, message.Silent),
                 ct).ConfigureAwait(false);
         }
 
         if (attempt.FileId is { } fileId)
         {
             return await sender.SendPhotoAsync(
-                new OutgoingPhoto(destination.ChatId, destination.ThreadId, InputFile.FromFileId(fileId), Body(message, message.Caption), parseMode, buttons, attempt.ReplyTo, message.Silent),
+                new OutgoingPhoto(destination.ChatId, destination.ThreadId, InputFile.FromFileId(fileId), Body(message, message.Caption + delayed), parseMode, buttons, attempt.ReplyTo, message.Silent),
                 ct).ConfigureAwait(false);
         }
 
@@ -186,7 +195,7 @@ public sealed class OutboxDelivery
         {
             var photo = InputFile.FromStream(stream, "poster" + Path.GetExtension(attempt.UploadPath));
             return await sender.SendPhotoAsync(
-                new OutgoingPhoto(destination.ChatId, destination.ThreadId, photo, Body(message, message.Caption), parseMode, buttons, attempt.ReplyTo, message.Silent),
+                new OutgoingPhoto(destination.ChatId, destination.ThreadId, photo, Body(message, message.Caption + delayed), parseMode, buttons, attempt.ReplyTo, message.Silent),
                 ct).ConfigureAwait(false);
         }
     }
@@ -201,7 +210,7 @@ public sealed class OutboxDelivery
         }
         else
         {
-            _outbox.Complete(entry, new SentMessage { MessageId = sent.Id, Kind = attempt.Photo ? SentKind.Photo : SentKind.Text, SentAt = now, EventKey = entry.EventKey });
+            _outbox.Complete(entry, new SentMessage { MessageId = sent.Id, Kind = attempt.Photo ? SentKind.Photo : SentKind.Text, SentAt = now, EventKey = entry.EventKey, Model = entry.Model });
             if (attempt.UploadPath is not null && entry.Message.PosterCacheKey is { } cacheKey && sent.Photo is { Length: > 0 } sizes)
             {
                 _outbox.CacheFileId(cacheKey, sizes[^1].FileId, now);
