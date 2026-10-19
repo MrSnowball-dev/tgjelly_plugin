@@ -6,6 +6,7 @@ using Jellyfin.Plugin.TgJelly.Tests.Fakes;
 using Telegram.Bot.Exceptions;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
+using Telegram.Bot.Types.ReplyMarkups;
 using Xunit;
 
 namespace Jellyfin.Plugin.TgJelly.Tests.Bot;
@@ -108,6 +109,52 @@ public sealed class TelegramSenderTests : System.IDisposable
 
         var body = Assert.Single(_api.CallsTo("deleteWebhook")).Body;
         Assert.False(body.ContainsKey("drop_pending_updates") && (bool)body["drop_pending_updates"]!);
+    }
+
+    [Fact]
+    public async Task SendPrompt_SendsTheReplyKeyboard()
+    {
+        var keyboard = new ReplyKeyboardMarkup(
+            KeyboardButton.WithRequestChat("Pick a channel", new KeyboardButtonRequestChat { RequestId = 7, ChatIsChannel = true, RequestTitle = true }))
+        {
+            ResizeKeyboard = true,
+            OneTimeKeyboard = true,
+        };
+
+        await Sender.SendPromptAsync(new OutgoingPrompt(42, "<b>Pick</b>", keyboard), TestContext.Current.CancellationToken);
+
+        var body = Assert.Single(_api.CallsTo("sendMessage")).Body;
+        Assert.Equal("html", ((string)body["parse_mode"]!).ToLowerInvariant()); // the Bot API ignores case
+        Assert.Equal(7, (int)body["reply_markup"]!["keyboard"]![0]![0]!["request_chat"]!["request_id"]!);
+    }
+
+    [Fact]
+    public async Task DeleteMessage_TreatsNotFoundAsFalse()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        _api.On("deleteMessage", _ => FakeBotApi.Error(400, "Bad Request: message to delete not found"));
+        Assert.False(await Sender.DeleteMessageAsync(42, 5, ct));
+
+        _api.On("deleteMessage", _ => FakeBotApi.Error(400, "Bad Request: chat not found"));
+        await Assert.ThrowsAsync<ApiRequestException>(() => Sender.DeleteMessageAsync(42, 5, ct));
+    }
+
+    [Fact]
+    public async Task DeleteMessage_ReturnsTrueWhenDeleted()
+    {
+        Assert.True(await Sender.DeleteMessageAsync(42, 5, TestContext.Current.CancellationToken));
+
+        var body = Assert.Single(_api.CallsTo("deleteMessage")).Body;
+        Assert.Equal(5, (int)body["message_id"]!);
+    }
+
+    [Fact]
+    public async Task CreateForumTopic_ReturnsTheThreadId()
+    {
+        var threadId = await Sender.CreateForumTopicAsync(-1001, "Jellyfin", TestContext.Current.CancellationToken);
+
+        Assert.Equal(101, threadId);
+        Assert.Equal("Jellyfin", (string)Assert.Single(_api.CallsTo("createForumTopic")).Body["name"]!);
     }
 
     public void Dispose() => _api.Dispose();

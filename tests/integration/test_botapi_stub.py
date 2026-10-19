@@ -105,6 +105,16 @@ class StubTests(unittest.TestCase):
         self.assertEqual([{"chat_id": -1001, "text": "one"}, {"chat_id": -1001, "caption": "three"}], self.stub.messages(-1001))
         self.assertEqual("two", self.call("sendMessage", {"chat_id": -1002, "text": "two"})[1]["result"]["text"])
 
+    def test_delete_message_is_true(self):
+        status, body = self.call("deleteMessage", {"chat_id": 5, "message_id": 1})
+        self.assertEqual((200, True), (status, body["result"]))
+
+    def test_create_forum_topic_returns_a_thread(self):
+        first = self.call("createForumTopic", {"chat_id": -1001, "name": "Jellyfin"})[1]["result"]
+        second = self.call("createForumTopic", {"chat_id": -1001, "name": "Other"})[1]["result"]
+        self.assertEqual(("Jellyfin", 7322096), (first["name"], first["icon_color"]))
+        self.assertEqual(first["message_thread_id"] + 1, second["message_thread_id"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -18,7 +18,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 TRUE_METHODS = {
     "deleteWebhook", "setMyCommands", "deleteMyCommands", "setMyDescription", "setMyShortDescription",
-    "setMyDefaultAdministratorRights", "sendChatAction", "leaveChat", "answerCallbackQuery",
+    "setMyDefaultAdministratorRights", "sendChatAction", "leaveChat", "answerCallbackQuery", "deleteMessage",
 }
 
 
@@ -27,6 +27,7 @@ class StubBotApi:
         self._calls = []
         self._lock = threading.Lock()
         self._ids = itertools.count(1)
+        self._topic_ids = itertools.count(1)
         self._server = None
 
     def start(self, host="0.0.0.0", port=0):
@@ -116,6 +117,8 @@ class StubBotApi:
             else:
                 message["text"] = body.get("text", "")
             return message
+        if method == "createForumTopic":
+            return {"message_thread_id": 100 + next(self._topic_ids), "name": body.get("name", ""), "icon_color": 7322096}
         if method in TRUE_METHODS:
             return True
         return None
