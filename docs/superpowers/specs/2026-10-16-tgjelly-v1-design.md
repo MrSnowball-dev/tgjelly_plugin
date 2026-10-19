@@ -1022,6 +1022,7 @@ Implementation follows test-driven development: write a failing test first for e
    - **net10.0:** `bin` gets neither of these, and `System.Text.Json.dll` doesn't appear in either build.
    - **Effect on the zip:** none. The zip ships only the whitelist (`Jellyfin.Plugin.TgJelly.dll`, `Telegram.Bot.dll`). At runtime the plugin's load context falls back to the host's newer copies, which the smoke tests confirm on 10.11 and 12.
 8. Is there a server-side time limit for bots editing their own messages (F38)? `LateEditHours` ≤ 24 keeps the exposure small.
+   **Answered (owner, from experience running bots):** there is no age limit; a bot can edit its own messages at any time. The 0–24 range of `LateEditHours` stays as a product choice (a late edit is silent, so very old messages shouldn't change unnoticed), not a Telegram constraint.
 9. The exact Bot API descriptions of an HTML parse error and of "can't initiate conversation", recorded into Appendix A and the fixtures. The classifier already matches several variants.
 
 ---
