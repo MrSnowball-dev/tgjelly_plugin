@@ -26,6 +26,7 @@ public static class BotStateReset
         queue.SentMessages.Clear();
         queue.FileIdCache.Clear();
         state.Telegram.Profile = new ProfileState();
+        ClearBotSections(state);
         foreach (var id in destinationIds)
         {
             state.Health[id] = new DestinationHealth { Status = HealthStatus.Lost, LastError = lostMessage, At = now };
@@ -47,5 +48,14 @@ public static class BotStateReset
         queue.Outbox.Clear();
         queue.FileIdCache.Clear();
         state.Telegram.Profile = new ProfileState();
+        ClearBotSections(state);
+    }
+
+    private static void ClearBotSections(StateDocument state)
+    {
+        state.Flows.Clear();
+        state.Managers.Clear();
+        state.DetectedChats.Clear();
+        state.SetupFailures.Clear();
     }
 }

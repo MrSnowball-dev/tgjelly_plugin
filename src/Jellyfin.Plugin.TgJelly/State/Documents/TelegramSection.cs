@@ -13,4 +13,7 @@ public sealed class TelegramSection
 
     /// <summary>Gets or sets the profile setup state.</summary>
     public ProfileState Profile { get; set; } = new();
+
+    /// <summary>Gets or sets the last request ID handed to a chat picker button.</summary>
+    public int LastRequestId { get; set; }
 }

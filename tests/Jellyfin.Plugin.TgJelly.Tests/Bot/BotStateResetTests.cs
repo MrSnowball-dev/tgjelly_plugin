@@ -44,12 +44,35 @@ public class BotStateResetTests
         Assert.Equal((999L, "old_bot"), (state.Telegram.BotId!.Value, state.Telegram.BotUsername));
     }
 
+    [Fact]
+    public void BothResets_ClearTheBotSections()
+    {
+        foreach (var reset in new Action<StateDocument, QueueDocument>[]
+        {
+            (s, q) => BotStateReset.ForDifferentBot(s, q, [], "x", Now),
+            BotStateReset.ForDisconnect,
+        })
+        {
+            var (state, queue) = Seeded();
+            reset(state, queue);
+
+            Assert.Empty(state.Flows);
+            Assert.Empty(state.Managers);
+            Assert.Empty(state.DetectedChats);
+            Assert.Empty(state.SetupFailures);
+        }
+    }
+
     private static (StateDocument State, QueueDocument Queue) Seeded()
     {
         var state = new StateDocument();
         state.Telegram.BotId = 999;
         state.Telegram.BotUsername = "old_bot";
         state.Telegram.Profile = new ProfileState { SetProfile = true, PendingCalls = ["commands"] };
+        state.Flows["1"] = new FlowState { Screen = "home" };
+        state.Managers["1"] = Now;
+        state.DetectedChats.Add(new DetectedChat { ChatId = -1, Title = "t" });
+        state.SetupFailures.Add(new SetupFailure { Kind = SetupFailureKind.CheckFailed, At = Now });
         state.Health["d1"] = new DestinationHealth { Status = HealthStatus.Ok, PhotosBlocked = true, Notified = true };
         var queue = new QueueDocument();
         queue.SentMessages["d1|g"] = new SentMessage { MessageId = 1 };

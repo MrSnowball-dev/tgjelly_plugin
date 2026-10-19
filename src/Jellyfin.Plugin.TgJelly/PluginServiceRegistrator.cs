@@ -91,6 +91,7 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<ProfileCalls>();
         serviceCollection.AddSingleton<BotSupervisor>();
         serviceCollection.AddSingleton<ISupervisorControl>(sp => sp.GetRequiredService<BotSupervisor>());
+        serviceCollection.AddSingleton<BotMemory>();
         serviceCollection.AddSingleton<BotTokenService>();
         serviceCollection.AddSingleton<DestinationTester>();
         serviceCollection.AddSingleton<ILibraryAccess, JellyfinLibrary>();
