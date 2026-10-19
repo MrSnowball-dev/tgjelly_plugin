@@ -46,7 +46,9 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddRedactedLogger<HealthService>();
         serviceCollection.AddRedactedLogger<OutboxDelivery>();
         serviceCollection.AddRedactedLogger<OutboxService>();
-        serviceCollection.AddRedactedLogger<BasicUpdateHandler>();
+        serviceCollection.AddRedactedLogger<UpdateRouter>();
+        serviceCollection.AddRedactedLogger<BotWorkQueue>();
+        serviceCollection.AddRedactedLogger<BotWorker>();
         serviceCollection.AddRedactedLogger<ProfileCalls>();
         serviceCollection.AddRedactedLogger<BotSupervisor>();
         serviceCollection.AddRedactedLogger<BotTokenService>();
@@ -88,7 +90,10 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<PacingGate>();
         serviceCollection.AddSingleton<OutboxDelivery>();
         serviceCollection.AddSingleton<IServerStartup, ServerStartup>();
-        serviceCollection.AddSingleton<IUpdateHandler, BasicUpdateHandler>();
+        serviceCollection.AddSingleton<BotWorkQueue>();
+        serviceCollection.AddSingleton<IBotFlows, Bot.Screens.FlowEngine>();
+        serviceCollection.AddSingleton<IUpdateHandler, UpdateRouter>();
+        serviceCollection.AddSingleton<BotWorker>();
         serviceCollection.AddSingleton<ProfileCalls>();
         serviceCollection.AddSingleton<BotSupervisor>();
         serviceCollection.AddSingleton<ISupervisorControl>(sp => sp.GetRequiredService<BotSupervisor>());
@@ -144,6 +149,7 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddHostedService(sp => sp.GetRequiredService<RestartWatcher>());
         serviceCollection.AddHostedService(sp => sp.GetRequiredService<StartupWatcher>());
         serviceCollection.AddHostedService(sp => sp.GetRequiredService<Updates.UpdateChecker>());
+        serviceCollection.AddHostedService(sp => sp.GetRequiredService<BotWorker>());
         serviceCollection.AddHostedService(sp => sp.GetRequiredService<BotSupervisor>());
         serviceCollection.AddHostedService(sp => sp.GetRequiredService<HealthService>());
         serviceCollection.AddHostedService<OutboxService>();
