@@ -277,5 +277,15 @@
   "advanced.dashboard": "Open dashboard",
   "advanced.dashboardPath": "Dashboard → Plugins → Telegram → Advanced → Add chat by ID",
   "templates.willShorten": "will be shortened when sent with a poster",
-  "templates.tooLong": "The message is {length} characters; Telegram allows at most {limit}."
+  "templates.tooLong": "The message is {length} characters; Telegram allows at most {limit}.",
+  "web.advanced": "Advanced",
+  "web.requestFailed": "Request failed: {reason}",
+  "web.status.title": "Status",
+  "web.status.counts": "Waiting for metadata: {pending} · Queued to send: {outbox} · Dropped: {dropped}",
+  "web.status.takeOver": "Take over",
+  "web.status.dismiss": "Dismiss",
+  "web.status.errors": "Recent errors",
+  "web.status.error": "{time} · {source}: {message}",
+  "web.status.failed": "Could not load the status.",
+  "web.status.version": "TgJelly {version}, built for Jellyfin {target}"
 }

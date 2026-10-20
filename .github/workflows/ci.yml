@@ -28,6 +28,15 @@ jobs:
       - name: Unit tests (both frameworks)
         run: dotnet test --solution Jellyfin.Plugin.TgJelly.slnx -c Release --no-build
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Dashboard page tests
+        run: |
+          node --check src/Jellyfin.Plugin.TgJelly/Web/tgjelly.js
+          node --test 'tests/web/*.test.mjs'
+
       - name: Script tests
         run: |
           python3 -m unittest discover -s build -p 'test_*.py' -v

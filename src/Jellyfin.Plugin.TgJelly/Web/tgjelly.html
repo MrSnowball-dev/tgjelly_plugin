@@ -1,12 +1,66 @@
 <div data-role="page" id="tgjConfigPage" class="page type-interior pluginConfigurationPage" data-controller="__plugin/tgjelly.js">
+    <style>
+        #tgjConfigPage .tgj-badge {
+            display: inline-block;
+            padding: 0.1em 0.6em;
+            border: 1px solid currentColor;
+            border-radius: 1em;
+            font-size: 0.85em;
+            white-space: nowrap;
+        }
+
+        #tgjConfigPage .tgj-changed {
+            outline: 2px solid var(--jf-palette-warning-main);
+            outline-offset: 2px;
+        }
+
+        #tgjConfigPage .tgj-error {
+            color: var(--jf-palette-error-main);
+        }
+
+        #tgjConfigPage .tgj-notice {
+            display: flex;
+            align-items: center;
+            gap: 1em;
+            margin: 0.5em 0;
+            padding: 0.5em 0.8em;
+            border-left: 3px solid var(--jf-palette-warning-main);
+        }
+
+        #tgjConfigPage .tgj-notice-text {
+            flex: 1;
+        }
+
+        #tgjConfigPage .tgj-errors {
+            margin: 0.3em 0;
+            padding-left: 1.2em;
+        }
+
+        #tgjConfigPage .tgj-advanced > summary {
+            cursor: pointer;
+            margin: 1em 0;
+        }
+
+        #tgjConfigPage .tgj-advanced > summary > .sectionTitle {
+            display: inline;
+        }
+    </style>
     <div data-role="content">
         <div class="content-primary">
-            <h2 class="sectionTitle">Telegram</h2>
-            <div class="tgj-status verticalSection">
-                <p class="tgj-status-compat" id="tgj-status-compat">Loading…</p>
-                <p class="fieldDescription tgj-status-instance" id="tgj-status-instance"></p>
-                <p class="fieldDescription tgj-status-version" id="tgj-status-version"></p>
-            </div>
+            <div id="tgj-status"></div>
+            <div id="tgj-connect"></div>
+            <div id="tgj-bot"></div>
+            <div id="tgj-destinations"></div>
+            <div id="tgj-messages"></div>
+            <details id="tgj-advanced" class="tgj-advanced" hidden>
+                <summary><h2 class="sectionTitle"><span id="tgj-advanced-title"></span></h2></summary>
+                <div id="tgj-proxy"></div>
+                <div id="tgj-batching"></div>
+                <div id="tgj-updates"></div>
+                <div id="tgj-templates"></div>
+                <div id="tgj-manual"></div>
+                <div id="tgj-diagnostics"></div>
+            </details>
         </div>
     </div>
 </div>

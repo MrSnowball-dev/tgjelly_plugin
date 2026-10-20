@@ -33,5 +33,7 @@ public static class StringKeys
         "topic.ask", "topic.general", "topic.create", "topic.existing", "topic.allow", "topic.allowPrompt", "topic.linkPrompt", "topic.badLink", "topic.wrongChat", "topic.failed",
         "advanced.title", "advanced.group", "advanced.channel", "advanced.topic", "advanced.dashboard", "advanced.dashboardPath",
         "templates.willShorten", "templates.tooLong",
+        "web.advanced", "web.requestFailed", "web.status.title", "web.status.counts", "web.status.takeOver", "web.status.dismiss",
+        "web.status.errors", "web.status.error", "web.status.failed", "web.status.version",
     ];
 }

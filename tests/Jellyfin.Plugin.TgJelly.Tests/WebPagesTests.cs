@@ -57,6 +57,24 @@ public class WebPagesTests
         Assert.DoesNotContain("api_key", js, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void Html_HasEverySectionContainer_InOrder()
+    {
+        var html = ReadResource("Jellyfin.Plugin.TgJelly.Web.tgjelly.html");
+        string[] ids =
+        [
+            "tgj-status", "tgj-connect", "tgj-bot", "tgj-destinations", "tgj-messages", "tgj-advanced", "tgj-advanced-title",
+            "tgj-proxy", "tgj-batching", "tgj-updates", "tgj-templates", "tgj-manual", "tgj-diagnostics",
+        ];
+
+        var positions = ids.Select(id => html.IndexOf("id=\"" + id + "\"", StringComparison.Ordinal)).ToList();
+
+        Assert.All(ids.Zip(positions), p => Assert.True(p.Second >= 0, p.First + " is missing"));
+        Assert.Equal(positions.Order(), positions);
+        Assert.Contains("<details id=\"tgj-advanced\"", html, StringComparison.Ordinal);
+        Assert.Contains("<style>", html, StringComparison.Ordinal);
+    }
+
     private static string ReadResource(string name)
     {
         using var stream = typeof(Plugin).Assembly.GetManifestResourceStream(name)!;
