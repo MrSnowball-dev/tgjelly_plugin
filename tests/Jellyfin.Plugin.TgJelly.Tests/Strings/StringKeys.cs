@@ -32,6 +32,6 @@ public static class StringKeys
         "onboard.prompt", "onboard.channel", "onboard.group", "onboard.here", "onboard.cancel", "onboard.checking", "onboard.preset", "onboard.preset.everything", "onboard.preset.newMedia", "onboard.preset.adminAlerts", "onboard.preset.custom", "onboard.customDone", "onboard.done", "onboard.addAnother", "onboard.menu", "onboard.tryAgain", "onboard.advanced", "onboard.expired", "onboard.hereChosen", "onboard.cancelled",
         "topic.ask", "topic.general", "topic.create", "topic.existing", "topic.allow", "topic.allowPrompt", "topic.linkPrompt", "topic.badLink", "topic.wrongChat", "topic.failed",
         "advanced.title", "advanced.group", "advanced.channel", "advanced.topic", "advanced.dashboard", "advanced.dashboardPath",
-        "templates.willShorten",
+        "templates.willShorten", "templates.tooLong",
     ];
 }

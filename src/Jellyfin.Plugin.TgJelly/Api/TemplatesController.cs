@@ -185,7 +185,7 @@ public class TemplatesController : ControllerBase
             errors.AddRange(TelegramHtmlValidator.Validate(preview).Select(p => new TemplateErrorDto { Message = p }));
             if (length > MessageLimit)
             {
-                errors.Add(new TemplateErrorDto { Message = $"The message is {length} characters; Telegram allows at most {MessageLimit}." });
+                errors.Add(new TemplateErrorDto { Message = _strings.Get("templates.tooLong", ("length", length), ("limit", MessageLimit)) });
             }
             else if (length > limit)
             {

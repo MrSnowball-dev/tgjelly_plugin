@@ -142,7 +142,7 @@ public sealed class TemplatesControllerTests : IAsyncLifetime
 
     [Fact]
     public void Validate_ForbiddenTag()
-        => Assert.NotEmpty(Validate("media.movie", "<script>x</script>").Errors);
+        => Assert.Contains(Validate("media.movie", "<script>x</script>").Errors, e => e.Message.Contains("script", System.StringComparison.OrdinalIgnoreCase));
 
     [Fact]
     public void Validate_MediaOver1024_Warns()
@@ -159,9 +159,21 @@ public sealed class TemplatesControllerTests : IAsyncLifetime
     {
         Assert.NotEmpty(Validate("media.movie", new string('a', 4100)).Errors);
         var dto = Validate("server.started", new string('a', 4100));
-        Assert.NotEmpty(dto.Errors);
+        Assert.Equal(_h.Strings.Get("templates.tooLong", ("length", 4100), ("limit", 4096)), Assert.Single(dto.Errors).Message);
         Assert.Empty(dto.Warnings);
         Assert.Equal(4096, dto.Limit);
+    }
+
+    [Fact]
+    public void Validate_ExactLimits_AreClean()
+    {
+        var media = Validate("media.movie", new string('a', 1024));
+        var plain = Validate("server.started", new string('a', 4096));
+
+        Assert.Empty(media.Errors);
+        Assert.Empty(media.Warnings);
+        Assert.Empty(plain.Errors);
+        Assert.Empty(plain.Warnings);
     }
 
     [Fact]

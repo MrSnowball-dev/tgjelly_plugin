@@ -276,5 +276,6 @@
   "advanced.topic": "Use an existing topic",
   "advanced.dashboard": "Open dashboard",
   "advanced.dashboardPath": "Dashboard → Plugins → Telegram → Advanced → Add chat by ID",
-  "templates.willShorten": "will be shortened when sent with a poster"
+  "templates.willShorten": "will be shortened when sent with a poster",
+  "templates.tooLong": "The message is {length} characters; Telegram allows at most {limit}."
 }
