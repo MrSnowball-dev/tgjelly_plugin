@@ -1348,7 +1348,8 @@ test('range error shown next to its field', async () => {
     });
     await show(view);
     batchInput(view, 'QuietWindowSeconds', '2');
-    await click(view, 'saveSettings');
+    clickOn(view, { 'data-tgj-act': 'saveSettings', 'data-tgj-id': 'batching' });
+    await flush();
     const html = el('tgj-batching').innerHTML;
     assert.match(html, /data-tgj-field="Batching\.QuietWindowSeconds"[\s\S]*?Must be 5 to &lt;3600&gt;\./);
     assert.ok(html.includes('min="5"') && html.includes('max="3600"'));
@@ -1373,6 +1374,49 @@ test('settings 409 keeps typed batching value', async () => {
     assert.equal(hooks.state.forms.settings.dirty, true);
 });
 
+test('Save messages sends the saved batching values, and the batching edit stays dirty', async () => {
+    const saved = settings({ Revision: 6, Message: { ...settings().Message, ShowProviderLinks: true } });
+    const { view, api, hooks } = mount({ 'PUT TgJelly/Settings': saved });
+    await show(view);
+    batchInput(view, 'QuietWindowSeconds', '9999');
+    msgChange(view, 'ShowProviderLinks', true);
+    await click(view, 'saveSettings');
+    const [body] = putSettings(api);
+    assert.equal(body.Batching.QuietWindowSeconds, 120);
+    assert.equal(body.Message.ShowProviderLinks, true);
+    assert.equal(hooks.state.forms.settings.local.Batching.QuietWindowSeconds, 9999);
+    assert.equal(hooks.state.forms.settings.dirty, true);
+    assert.equal(hooks.state.forms.settings.base.Message.ShowProviderLinks, true);
+});
+
+test('an error for a field in another section shows under the pressed Save', async () => {
+    const { view, el } = mount({
+        'PUT TgJelly/Settings': { status: 400, body: { Errors: [{ Field: 'Batching.MaxHoldMinutes', Message: 'Too <long>.' }] } },
+    });
+    await show(view);
+    await click(view, 'saveSettings');
+    assert.ok(el('tgj-messages').innerHTML.includes('Too &lt;long&gt;.'));
+});
+
+test('a field typed into while its section saves stays an edit', async () => {
+    let view;
+    const route = () => {
+        batchInput(view, 'DigestThreshold', '33');
+        return settings({ Revision: 6, Batching: { ...settings().Batching, QuietWindowSeconds: 300 } });
+    };
+    const mounted = mount({ 'PUT TgJelly/Settings': route });
+    view = mounted.view;
+    await show(view);
+    batchInput(view, 'QuietWindowSeconds', '300');
+    clickOn(view, { 'data-tgj-act': 'saveSettings', 'data-tgj-id': 'batching' });
+    await flush();
+    const form = mounted.hooks.state.forms.settings;
+    assert.equal(form.local.Batching.DigestThreshold, 33);
+    assert.equal(form.dirty, true);
+    assert.equal(form.local.Batching.QuietWindowSeconds, 300);
+    assert.ok(mounted.el('tgj-batching').innerHTML.includes('value="33"'));
+});
+
 test('a proxy save keeps unsaved settings edits, and a settings save keeps the proxy edit', async () => {
     const { view, el, hooks } = mount({ 'PUT TgJelly/Proxy': settings({ Revision: 6, ProxyMode: 'Http', ProxyUrl: 'h:1' }) });
     await show(view);
@@ -1391,7 +1435,8 @@ test('updates form sends enabled and mode', async () => {
     assert.match(el('tgj-updates').innerHTML, /<option value="SameMajor" selected>/);
     dispatchOn(view, 'change', { 'data-tgj-input': 'updEnabled' }, { checked: false });
     dispatchOn(view, 'change', { 'data-tgj-input': 'updMode' }, { value: 'AnyNewer' });
-    await click(view, 'saveSettings');
+    clickOn(view, { 'data-tgj-act': 'saveSettings', 'data-tgj-id': 'updates' });
+    await flush();
     assert.deepEqual(putSettings(api)[0].UpdateCheck, { Enabled: false, Mode: 'AnyNewer' });
 });
 
@@ -1399,7 +1444,8 @@ test('a non-number batching value is not sent', async () => {
     const { view, api, el } = mount();
     await show(view);
     batchInput(view, 'MaxHoldMinutes', 'abc');
-    await click(view, 'saveSettings');
+    clickOn(view, { 'data-tgj-act': 'saveSettings', 'data-tgj-id': 'batching' });
+    await flush();
     assert.equal(putSettings(api).length, 0);
     assert.match(el('tgj-batching').innerHTML, /data-tgj-field="Batching\.MaxHoldMinutes"[\s\S]*?tgj-error/);
 });

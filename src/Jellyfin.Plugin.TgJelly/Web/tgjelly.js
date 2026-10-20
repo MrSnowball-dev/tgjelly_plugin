@@ -761,24 +761,41 @@ export function settingsFormData(settings) {
     };
 }
 
+/** The top-level settings fields each section owns (spec §6.6): the paths its Save sends from the form. */
+const SECTION_FIELDS = { messages: ['PublicUrl', 'Message'], batching: ['Batching'], updates: ['UpdateCheck'] };
+
+/** Copies the fields one section owns from source onto a copy of target (both settings form data). */
+function overlaySection(target, source, section) {
+    const out = structuredClone(target);
+    for (const field of SECTION_FIELDS[section]) {
+        out[field] = structuredClone(source[field]);
+    }
+
+    return out;
+}
+
 /**
- * The PUT Settings body from the settings form, or the client-side errors that stop it (a batching value that isn't a
- * whole number). Ranges are checked by the server.
+ * The PUT Settings body for one section's Save: that section's fields from the form's values laid over the saved ones
+ * (the form's base), so edits waiting in the other sections are not sent. Also the client-side errors that stop it
+ * (a batching value that isn't a whole number). Ranges are checked by the server.
+ * @param {{ base: object, local: object }} form
+ * @param {string} section messages | batching | updates
  * @returns {{ body: object | null, errors: { Field: string, Html: string }[] }}
  */
-export function settingsRequest(local, revision, S) {
-    const errors = BATCHING_FIELDS
-        .filter(f => !Number.isInteger(local.Batching[f.key]))
+export function settingsRequest(form, section, revision, S) {
+    const data = overlaySection(form.base, form.local, section);
+    const errors = section !== 'batching' ? [] : BATCHING_FIELDS
+        .filter(f => !Number.isInteger(data.Batching[f.key]))
         .map(f => ({ Field: `Batching.${f.key}`, Html: t(S, 'web.settings.notNumber') }));
     return errors.length > 0
         ? { body: null, errors }
         : {
             body: {
                 ExpectedRevision: revision,
-                PublicUrl: String(local.PublicUrl ?? '').trim(),
-                Message: local.Message,
-                Batching: local.Batching,
-                UpdateCheck: local.UpdateCheck,
+                PublicUrl: String(data.PublicUrl ?? '').trim(),
+                Message: data.Message,
+                Batching: data.Batching,
+                UpdateCheck: data.UpdateCheck,
             },
             errors: [],
         };
@@ -791,8 +808,8 @@ function settingsHelpers(ui, section) {
     return {
         changed: path => ((ui.form.changed ?? []).includes(path) ? ' tgj-changed' : ''),
         fieldErrors: path => errors.filter(e => e.Field === path).map(line).join(''),
-        // Errors for a field none of the sections shows go under the Save the user pressed.
-        general: () => (ui.section === section ? errors.filter(e => settingsSectionOf(e.Field) === '').map(line).join('') : ''),
+        // An error for a field this section doesn't show goes under the Save the user pressed.
+        general: () => (ui.section === section ? errors.filter(e => settingsSectionOf(e.Field) !== section).map(line).join('') : ''),
         save: S => button(t(S, SAVE_LABELS[section]), 'saveSettings', { primary: true, disabled: ui.saving, id: section }),
     };
 }
@@ -1446,7 +1463,7 @@ export default function TgJellyPage(view, params) {
         }
 
         const S = state.strings;
-        const request = settingsRequest(form.local, state.settings.Revision, S);
+        const request = settingsRequest(form, section, state.settings.Revision, S);
         ui.settingsSection = section;
         ui.settingsErrors = request.errors;
         if (!request.body) {
@@ -1465,7 +1482,13 @@ export default function TgJellyPage(view, params) {
 
         let failed;
         if (result.status === 200 && result.body) {
-            state.forms.settings = syncFormData(null, settingsFormData(result.body));
+            // This section's fields are saved: the rest of the form keeps its edits, and so does a field of this section
+            // that was typed into while the request ran (its base is what was sent, so a later value counts as an edit).
+            const now = state.forms.settings;
+            const sent = overlaySection(form.base, form.local, section);
+            const others = Object.keys(SECTION_FIELDS).filter(name => name !== section).flatMap(name => SECTION_FIELDS[name]);
+            const kept = (now.changed ?? []).filter(path => others.includes(path.split('.')[0]));
+            state.forms.settings = syncFormData({ base: overlaySection(now.base, sent, section), local: now.local, dirty: true, changed: kept }, settingsFormData(result.body));
             takeSettings(result.body);
         } else if (result.status === 409 && result.body && result.body.Current) {
             takeSettings(result.body.Current);
@@ -1741,7 +1764,10 @@ export default function TgJellyPage(view, params) {
             await reloadSection('destinations', { fresh: true });
             return undefined;
         }),
-        saveSettings: el => runAction(SETTINGS_SECTIONS.includes(idOf(el)) ? idOf(el) : 'messages', () => saveSettings(idOf(el))),
+        saveSettings: el => {
+            const section = SETTINGS_SECTIONS.includes(idOf(el)) ? idOf(el) : 'messages';
+            return runAction(section, () => saveSettings(section));
+        },
         useSuggested: () => {
             if (state.settings && state.settings.PublicUrlSuggestion) {
                 markDirty('settings', 'PublicUrl', state.settings.PublicUrlSuggestion);
