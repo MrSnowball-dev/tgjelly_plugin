@@ -325,7 +325,7 @@ def onboarding_checks(base: str, token: str, stub) -> None:
         if code != 200:
             return False
         items = json.loads(body)
-        items = items.get("Destinations", items) if isinstance(items, dict) else items
+        items = items.get("Items", []) if isinstance(items, dict) else items
         return any(d.get("ChatId") == SMOKE_CHAT_3 and d.get("Preset") == "NewMedia" for d in items)
 
     wait_until(destination_added, "the picked channel is a NewMedia destination", 30)
