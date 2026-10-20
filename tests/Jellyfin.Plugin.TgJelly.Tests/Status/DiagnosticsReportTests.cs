@@ -142,7 +142,7 @@ public class DiagnosticsReportTests
         Assert.DoesNotContain("SECRET-TEMPLATE-TEXT", text, StringComparison.Ordinal);
     }
 
-    private static async System.Threading.Tasks.Task<DiagnosticsReport> NewReportAsync(BotTestHarness h, string? baseUrl = null)
+    internal static async System.Threading.Tasks.Task<DiagnosticsReport> NewReportAsync(BotTestHarness h, string? baseUrl = null)
         => (await NewReportWithHealthAsync(h, baseUrl)).Report;
 
     private static async System.Threading.Tasks.Task<(DiagnosticsReport Report, HealthService Health)> NewReportWithHealthAsync(BotTestHarness h, string? baseUrl = null)

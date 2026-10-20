@@ -121,6 +121,28 @@ public class TgJellyControllerTests
     }
 
     [Fact]
+    public void Status_ShowsLiveDestinationTitlesInLastErrors()
+    {
+        using var dir = new TempDir();
+        var paths = new DataPaths(dir.Path);
+        var time = new FakeTimeProvider();
+        var state = new StateStore(paths, time, NullLogger<StateStore>.Instance);
+        state.Load();
+        using var settings = new SettingsStore(new FakeConfigurationHost(), paths, state, time, NullLogger<SettingsStore>.Instance);
+        using var gate = new InstanceGate(paths, time, NullLogger<InstanceGate>.Instance);
+        var id = DestinationIds.New([]);
+        var saved = settings.Update(null, c => c.Destinations = [new Destination { Id = id, ChatId = -100111, Title = "Family", Kind = ChatKind.Supergroup, Events = EventCatalog.Expand(PresetKind.Everything) }]);
+        Assert.Equal(SettingsUpdateStatus.Saved, saved.Status);
+        state.RecordError("outbox", "<dest:" + id + ">: Forbidden");
+        state.RecordError("outbox", "<dest:gone>: Forbidden");
+
+        var status = NewController(CompatGuard.Evaluate(new Version(BuildInfo.TargetJellyfinMajor, 0, 0, 0)), gate, settings, state, new SecretsStore(paths, time, NullLogger<SecretsStore>.Instance)).GetStatus().Value!;
+
+        Assert.Equal(["Family: Forbidden", "<dest:gone>: Forbidden"], status.LastErrors.Select(e => e.Message));
+        Assert.Equal("<dest:" + id + ">: Forbidden", state.LastErrorsSnapshot()[0].Message);
+    }
+
+    [Fact]
     public async Task Status_ShowsConnectionState_BotUsername_AndCounts()
     {
         using var h = new BotTestHarness();

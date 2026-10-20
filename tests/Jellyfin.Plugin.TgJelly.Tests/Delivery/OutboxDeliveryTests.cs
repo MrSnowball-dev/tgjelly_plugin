@@ -263,6 +263,24 @@ public sealed class OutboxDeliveryTests : IDisposable
     }
 
     [Fact]
+    public async Task ADroppedMessage_RecordsTheDestinationId_SoDiagnosticsNeverShowARemovedChat()
+    {
+        var d = _h.AddDestination(-1001234567890);
+        _h.Settings.Update(null, c => c.Destinations[0].Title = "Secret Group");
+        _h.Api.On("sendMessage", _ => FakeBotApi.Error(400, "Bad Request: message text is empty"));
+
+        await Deliver(Entry(d, "x"), d);
+        _h.Settings.Update(null, c => c.Destinations = []);
+        var text = (await Jellyfin.Plugin.TgJelly.Tests.Status.DiagnosticsReportTests.NewReportAsync(_h)).Build();
+
+        var error = Assert.Single(_h.State.LastErrorsSnapshot(), e => e.Source == "outbox");
+        Assert.Equal("<dest:" + d.Id + ">: Bad Request: message text is empty", error.Message);
+        Assert.Contains("<dest:" + d.Id + ">", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("Secret Group", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("1234567890", text, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task RateLimited_PausesTheChat_WithoutCountingAnAttempt()
     {
         var d = _h.AddDestination(-1001);

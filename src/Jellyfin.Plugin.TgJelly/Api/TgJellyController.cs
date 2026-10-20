@@ -103,7 +103,7 @@ public class TgJellyController : ControllerBase
             Revision = settings.Revision,
             BackupRestoredAt = _state.Read(s => s.Status.BackupRestoredAt),
             LoadWarnings = [.. _state.Read(s => s.Status.LoadWarnings.ToArray()), .. _secrets.LoadWarning is { } w ? new[] { w } : []],
-            LastErrors = _state.LastErrorsSnapshot(),
+            LastErrors = [.. _state.LastErrorsSnapshot().Select(e => new StatusError { At = e.At, Source = e.Source, Message = DestinationRef.WithTitles(e.Message, settings.Destinations) })],
             ConnectionState = state.ToString(),
             ConnectionMessage = message,
             BotUsername = username,

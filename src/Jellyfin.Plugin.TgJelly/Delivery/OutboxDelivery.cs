@@ -339,7 +339,8 @@ public sealed class OutboxDelivery
     {
         _logger.LogWarning("TgJelly dropped a message to {Destination}: {Reason}", destination.Title, reason);
         _outbox.Drop(entry.EntryId);
-        _state.RecordError("outbox", destination.Title + ": " + reason);
+        // The ID, not the title: last errors outlive the destination, and diagnostics must never show its title (§12).
+        _state.RecordError("outbox", DestinationRef.Of(destination) + ": " + reason);
     }
 
     private sealed record Attempt(SentMessage? EditTarget, int? ReplyTo, bool Photo, string? FileId, string? UploadPath);
