@@ -10,8 +10,8 @@ import package
 
 
 class TrackVersionTests(unittest.TestCase):
-    def test_whitelist_includes_telegram_bot(self):
-        self.assertEqual(package.ASSEMBLIES, ["Jellyfin.Plugin.TgJelly.dll", "Telegram.Bot.dll"])
+    def test_whitelist_includes_telegram_bot_and_scriban(self):
+        self.assertEqual(package.ASSEMBLIES, ["Jellyfin.Plugin.TgJelly.dll", "Telegram.Bot.dll", "Scriban.dll"])
 
     def test_maps_release_to_both_tracks(self):
         self.assertEqual(package.track_version(1, "0.3"), "1.0.3.0")
@@ -68,6 +68,15 @@ class ZipTests(unittest.TestCase):
                     archive.writestr(name, "x")
             with self.assertRaises(ValueError):
                 package.verify_zip(zip_path)
+
+    def test_verify_zip_accepts_the_three_dlls_plus_meta(self):
+        self.assertIn("Scriban.dll", package.ASSEMBLIES)
+        with tempfile.TemporaryDirectory() as tmp:
+            zip_path = Path(tmp) / "ok.zip"
+            with zipfile.ZipFile(zip_path, "w") as archive:
+                for name in ["Jellyfin.Plugin.TgJelly.dll", "Telegram.Bot.dll", "Scriban.dll", "meta.json"]:
+                    archive.writestr(name, "x")
+            package.verify_zip(zip_path)
 
     def test_stage_fails_when_a_dll_is_missing(self):
         with tempfile.TemporaryDirectory() as tmp:
