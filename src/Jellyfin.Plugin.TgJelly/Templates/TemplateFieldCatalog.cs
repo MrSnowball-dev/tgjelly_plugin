@@ -40,7 +40,7 @@ public static class TemplateFieldCatalog
     /// <param name="eventKey">The event key.</param>
     /// <returns>The model.</returns>
     public static IReadOnlyDictionary<string, object?> SampleFull(string eventKey)
-        => For(eventKey).ToDictionary(f => f.Name, f => f.Sample, StringComparer.Ordinal);
+        => For(eventKey).ToDictionary(f => f.Name, f => Copy(f.Sample), StringComparer.Ordinal);
 
     /// <summary>
     /// Returns a model as it looks when data is missing: optional fields are <c>null</c> and arrays are empty.
@@ -50,7 +50,7 @@ public static class TemplateFieldCatalog
     public static IReadOnlyDictionary<string, object?> SampleSparse(string eventKey)
         => For(eventKey).ToDictionary(
             f => f.Name,
-            f => f.Type.EndsWith("[]", StringComparison.Ordinal) ? new List<object?>() : f.Optional ? null : f.Sample,
+            f => f.Type.EndsWith("[]", StringComparison.Ordinal) ? new List<object?>() : f.Optional ? null : Copy(f.Sample),
             StringComparer.Ordinal);
 
     private static Dictionary<string, IReadOnlyList<TemplateField>> Build()
@@ -85,7 +85,7 @@ public static class TemplateFieldCatalog
             new TemplateField(
                 "episodes",
                 "episode[]",
-                "The episodes, in number order. Each has a number and a title.",
+                "The episodes, in number order. Each has a number (empty for an episode without one) and a title.",
                 new List<object?> { Episode(1, "Hello, Ms. Cobel"), Episode(2, "Goodbye, Mrs. Selvig"), Episode(3, "Who Is Alive?") },
                 false),
             Bool("new_series", "True when the series is new to the library.", false),
@@ -161,6 +161,13 @@ public static class TemplateFieldCatalog
 
         return fields.ToDictionary(p => p.Key, p => (IReadOnlyList<TemplateField>)[.. Common(p.Key), .. p.Value], StringComparer.Ordinal);
     }
+
+    private static object? Copy(object? value) => value switch
+    {
+        IReadOnlyDictionary<string, object?> d => d.ToDictionary(p => p.Key, p => Copy(p.Value), StringComparer.Ordinal),
+        IReadOnlyList<object?> l => l.Select(Copy).ToList(),
+        _ => value,
+    };
 
     private static TemplateField[] Media(params TemplateField[] fields) => fields;
 

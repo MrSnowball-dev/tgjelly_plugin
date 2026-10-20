@@ -196,6 +196,6 @@ public sealed class TemplateModelBuilder
         values["last_attempt_unix"] = model.At.ToUnixTimeSeconds();
         values["last_attempt_text"] = Text(model.At);
         values["locked"] = string.Equals(Get("locked"), "true", StringComparison.OrdinalIgnoreCase);
-        values["reasons"] = model.Lines.Select(l => (object?)HtmlText.ToPlain(l)).ToList();
+        values["reasons"] = model.Lines.Cast<object?>().ToList();
     }
 }

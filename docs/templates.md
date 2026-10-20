@@ -49,6 +49,7 @@ A flag clears when you change the template's text or turn it on or off.
 
 A field marked optional is empty when the data is missing. Use `{{ if year }}` to test for it.
 Times come as two fields. `<name>_unix` is Unix seconds and `<name>_text` is text in UTC.
+
 ## Events
 
 ### `media.movie`
@@ -88,7 +89,7 @@ Example:
 | `series` | `string` | yes | The series name. |
 | `season` | `number` | yes | The season number. Specials are 0. |
 | `count` | `number` | no | How many episodes the message covers. |
-| `episodes` | `episode[]` | no | The episodes, in number order. Each has a number and a title. |
+| `episodes` | `episode[]` | no | The episodes, in number order. Each has a number (empty for an episode without one) and a title. |
 | `new_series` | `bool` | no | True when the series is new to the library. |
 | `library` | `string` | yes | The library name. |
 | `imdb_id` | `string` | yes | The IMDb ID. |

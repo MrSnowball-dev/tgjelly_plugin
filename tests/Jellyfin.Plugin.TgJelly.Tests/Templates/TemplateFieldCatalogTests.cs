@@ -90,4 +90,19 @@ public sealed class TemplateFieldCatalogTests
             }
         }
     }
+
+    [Fact]
+    public void Samples_AreFreshCopies()
+    {
+        var full = TemplateFieldCatalog.SampleFull("media.episodes");
+        var list = Assert.IsAssignableFrom<IList<object?>>(full["episodes"]);
+        ((IDictionary<string, object?>)list[0]!)["title"] = "changed";
+        list.Clear();
+        Assert.IsAssignableFrom<IList<object?>>(TemplateFieldCatalog.SampleSparse("media.episodes")["episodes"]).Add("x");
+
+        var next = Assert.IsAssignableFrom<IReadOnlyList<object?>>(TemplateFieldCatalog.SampleFull("media.episodes")["episodes"]);
+        Assert.Equal(3, next.Count);
+        Assert.Equal("Hello, Ms. Cobel", ((IReadOnlyDictionary<string, object?>)next[0]!)["title"]);
+        Assert.Empty(Assert.IsAssignableFrom<IReadOnlyList<object?>>(TemplateFieldCatalog.SampleSparse("media.episodes")["episodes"]));
+    }
 }

@@ -158,14 +158,14 @@ public sealed class TemplateModelBuilderTests : IDisposable
     }
 
     [Fact]
-    public void RestartPending_ReasonsArePlainText()
+    public void RestartPending_ReasonsAreLinesAsIs()
     {
         var alert = Alert("server.restart_pending");
-        alert.Lines = ["Plugin <b>Foo</b> installed", "A &amp; B"];
+        alert.Lines = ["Plugin A&B <beta> installed", "A &amp; B"];
 
         var model = _builder.Build(alert);
 
-        Assert.Equal(new object?[] { "Plugin Foo installed", "A & B" }, Assert.IsAssignableFrom<IReadOnlyList<object?>>(model["reasons"]));
+        Assert.Equal(new object?[] { "Plugin A&B <beta> installed", "A &amp; B" }, Assert.IsAssignableFrom<IReadOnlyList<object?>>(model["reasons"]));
     }
 
     [Fact]

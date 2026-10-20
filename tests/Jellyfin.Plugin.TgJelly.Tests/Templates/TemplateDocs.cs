@@ -94,7 +94,7 @@ internal static class TemplateDocs
     public static string Render()
     {
         var text = new StringBuilder(Intro.ReplaceLineEndings("\n"));
-        text.Append("## Events\n\n");
+        text.Append("\n## Events\n\n");
         foreach (var key in EventCatalog.AllKeys)
         {
             text.Append(CultureInfo.InvariantCulture, $"### `{key}`\n\n");
