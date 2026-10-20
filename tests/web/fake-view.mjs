@@ -38,6 +38,12 @@ export function makeView(ids) {
         remove: name => classes.delete(name),
     };
     view.querySelector = selector => (selector.startsWith('#') ? elements.get(selector.slice(1)) ?? null : null);
+    // Inputs a test registers to stand for rendered form fields: querySelectorAll('[data-tgj-input="x"]') finds them by x.
+    view.fields = [];
+    view.querySelectorAll = selector => {
+        const name = /data-tgj-input="(\w+)"/.exec(selector)?.[1];
+        return view.fields.filter(field => field.name === name);
+    };
     view.elements = elements;
     return view;
 }

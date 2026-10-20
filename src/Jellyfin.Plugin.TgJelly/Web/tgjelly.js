@@ -351,7 +351,7 @@ function telegramLink(url, label) {
  * @param {object | null} settings the SettingsDto (null until it loads)
  * @param {Record<string, string>} S
  * @param {{ form?: { local: object, changed: string[] }, proxyErrors?: string[], saving?: boolean }} ui form is the
- *   editor state: local.Mode and local.Url, plus Username and Password only once the user typed in them.
+ *   editor state: local.Mode and local.Url. The proxy username and password are not part of it.
  * @returns {string} HTML
  */
 export function renderProxyForm(settings, S, ui) {
@@ -368,9 +368,11 @@ export function renderProxyForm(settings, S, ui) {
         ['Socks5', t(S, 'web.proxy.modeSocks5')],
     ];
     const options = modes.map(([value, label]) => `<option value="${value}"${local.Mode === value ? ' selected' : ''}>${label}</option>`);
-    const field = (name, path, label, saved, type) => `<div class="inputContainer${changed(path)}">`
+    // Username and password are never written into the HTML (spec §10.2): the controller puts typed text back into the
+    // inputs after a render.
+    const field = (name, path, label, saved, type, value) => `<div class="inputContainer${changed(path)}">`
         + `<input is="emby-input" type="${type}" label="${label}" autocomplete="off" data-tgj-input="${name}"`
-        + `${saved ? ` placeholder="${t(S, 'web.proxy.saved')}"` : ''} value="${esc(local[path] ?? '')}" /></div>`;
+        + `${saved ? ` placeholder="${t(S, 'web.proxy.saved')}"` : ''}${value === undefined ? '' : ` value="${esc(value)}"`} /></div>`;
     const withAddress = local.Mode === 'Http' || local.Mode === 'Socks5';
     const parts = [
         `<h3>${t(S, 'web.proxy.title')}</h3>`,
@@ -378,7 +380,7 @@ export function renderProxyForm(settings, S, ui) {
         + `label="${t(S, 'web.proxy.mode')}" data-tgj-input="proxyMode">${options.join('')}</select></div>`,
     ];
     if (withAddress) {
-        parts.push(field('proxyUrl', 'Url', t(S, 'web.proxy.url'), false, 'text'));
+        parts.push(field('proxyUrl', 'Url', t(S, 'web.proxy.url'), false, 'text', local.Url ?? ''));
     }
 
     parts.push(field('proxyUsername', 'Username', t(S, 'web.proxy.username'), settings.HasProxyUsername, 'text'));
@@ -552,7 +554,7 @@ export default function TgJellyPage(view, params) {
     let timer = null;
     let stringsLoad = null;
     // The token lives only here until it is sent: never in state, never rendered back into the page.
-    const typed = { token: '' };
+    const typed = { token: '', proxyUsername: undefined, proxyPassword: undefined };
     // Section load errors (set by reloadSection), so a later good load can clear them without touching action errors.
     const loadErrors = new Set();
 
@@ -656,10 +658,30 @@ export default function TgJellyPage(view, params) {
     const renderSection = name => {
         const section = sections[name];
         setHtml(section.id, section.render() + sectionError(name));
+        if (name === 'proxy' || name === 'connect') {
+            restoreSecrets();
+        }
+    };
+
+    /** Puts the typed proxy username and password back into the inputs after a render (never through HTML). */
+    const restoreSecrets = () => {
+        if (typeof view.querySelectorAll !== 'function') {
+            return;
+        }
+
+        for (const field of ['proxyUsername', 'proxyPassword']) {
+            for (const el of view.querySelectorAll(`[data-tgj-input="${field}"]`)) {
+                el.value = typed[field] ?? '';
+            }
+        }
     };
 
     /** Sections that show state derived from Status (whether a token is stored) render again after it changes. */
     const renderDependents = () => {
+        if (state.status && !state.status.HasToken) {
+            state.ui.confirmDisconnect = false;
+        }
+
         for (const [name, section] of Object.entries(sections)) {
             if (section.dependsOnStatus) {
                 try {
@@ -780,40 +802,48 @@ export default function TgJellyPage(view, params) {
         ui.saving = true;
         ui.result = null;
         renderSection('connect');
-        let result;
+        let keepToken = false;
         try {
-            result = await api.post('Token', { Token: typed.token, SetProfile: ui.setProfile, ConfirmSwitch: confirmSwitch });
-        } finally {
-            ui.saving = false;
-        }
+            let result;
+            try {
+                result = await api.post('Token', { Token: typed.token, SetProfile: ui.setProfile, ConfirmSwitch: confirmSwitch });
+            } finally {
+                ui.saving = false;
+            }
 
-        const reply = result.body;
-        if (result.status !== 200 || !reply) {
-            return result;
-        }
+            const reply = result.body;
+            if (result.status !== 200 || !reply) {
+                return result;
+            }
 
-        const message = reply.Message;
-        if (reply.Outcome === 'NeedsConfirm') {
-            ui.result = { kind: 'NeedsConfirm', message };
+            const message = reply.Message;
+            if (reply.Outcome === 'NeedsConfirm') {
+                keepToken = true;
+                ui.result = { kind: 'NeedsConfirm', message };
+                return undefined;
+            }
+
+            if (reply.Outcome === 'Connected') {
+                Object.assign(ui, {
+                    result: { kind: 'Connected', username: reply.BotUsername, webhookDeleted: Boolean(reply.WebhookDeleted) },
+                    mode: null,
+                    changingToken: false,
+                    unreachable: false,
+                });
+                // Links first: the Open button needs the new bot's link.
+                await Promise.all([reloadSection('status', { fresh: true }), reloadSection('bot', { fresh: true })]);
+            } else {
+                ui.result = { kind: 'Error', message };
+                ui.unreachable = ui.unreachable || reply.Outcome === 'Unreachable';
+            }
+
             return undefined;
+        } finally {
+            // The token is kept only for Switch bot: the re-render has emptied the input, so a stale one must not be resent.
+            if (!keepToken) {
+                typed.token = '';
+            }
         }
-
-        typed.token = '';
-        if (reply.Outcome === 'Connected') {
-            Object.assign(ui, {
-                result: { kind: 'Connected', username: reply.BotUsername, webhookDeleted: Boolean(reply.WebhookDeleted) },
-                mode: null,
-                changingToken: false,
-                unreachable: false,
-            });
-            // Links first: the Open button needs the new bot's link.
-            await Promise.all([reloadSection('status', { fresh: true }), reloadSection('bot', { fresh: true })]);
-        } else {
-            ui.result = { kind: 'Error', message };
-            ui.unreachable = ui.unreachable || reply.Outcome === 'Unreachable';
-        }
-
-        return undefined;
     };
 
     /** Saves the proxy form (spec §9.1, §10.4): an untouched username/password is omitted, a cleared one is "". */
@@ -827,10 +857,13 @@ export default function TgJellyPage(view, params) {
         const local = form.local;
         const withAddress = local.Mode === 'Http' || local.Mode === 'Socks5';
         const body = { ExpectedRevision: state.settings.Revision, Mode: local.Mode, Url: withAddress ? String(local.Url ?? '').trim() : '' };
-        for (const field of ['Username', 'Password']) {
-            if (typeof local[field] === 'string') {
-                body[field] = local[field];
-            }
+        // An untouched field is omitted (the server keeps the stored value); a cleared one is "".
+        if (typed.proxyUsername !== undefined) {
+            body.Username = typed.proxyUsername;
+        }
+
+        if (typed.proxyPassword !== undefined) {
+            body.Password = typed.proxyPassword;
         }
 
         ui.proxySaving = true;
@@ -847,6 +880,8 @@ export default function TgJellyPage(view, params) {
         if (result.status === 200 && result.body) {
             state.settings = result.body;
             resetForm('proxy', proxyFormData(result.body));
+            typed.proxyUsername = undefined;
+            typed.proxyPassword = undefined;
         } else if (result.status === 409 && result.body && result.body.Current) {
             takeSettings(result.body.Current);
             ui.proxyErrors = [t(S, 'web.proxy.conflict')];
@@ -926,8 +961,12 @@ export default function TgJellyPage(view, params) {
             }
         },
         proxyUrl: el => markDirty('proxy', 'Url', el.value),
-        proxyUsername: el => markDirty('proxy', 'Username', el.value),
-        proxyPassword: el => markDirty('proxy', 'Password', el.value),
+        proxyUsername: el => {
+            typed.proxyUsername = String(el.value ?? '');
+        },
+        proxyPassword: el => {
+            typed.proxyPassword = String(el.value ?? '');
+        },
         // Tasks 9-12: add input/change handlers here.
     };
 

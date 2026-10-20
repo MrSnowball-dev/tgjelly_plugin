@@ -839,6 +839,95 @@ test('proxy 400 shows the field errors, escaped', async () => {
     assert.ok(proxyEl(el).includes('value="nonsense"'));
 });
 
+// --- fix round 1: secrets stay out of the page and state ---
+
+test('a typed proxy password is never rendered or kept in state, and survives a re-render in the input', async () => {
+    const SECRET = 'hunter2-secret';
+    const answers = [
+        { status: 409, body: { Current: settings({ Revision: 9 }) } },
+        { status: 400, body: { Errors: [{ Field: 'Proxy.Url', Message: 'bad' }] } },
+    ];
+    const { view, hooks, el } = mount({ 'PUT TgJelly/Proxy': () => answers.shift() });
+    await show(view);
+    const field = { name: 'proxyPassword', value: '' };
+    view.fields.push(field);
+    dispatchOn(view, 'change', { 'data-tgj-input': 'proxyMode' }, { value: 'Http' });
+    input(view, 'proxyUrl', 'h:1');
+    input(view, 'proxyPassword', SECRET);
+    field.value = SECRET;
+
+    for (let i = 0; i < 2; i++) {
+        field.value = '';
+        await click(view, 'saveProxy');
+        assert.equal(field.value, SECRET, 'restored into the input after the re-render');
+        assert.ok(!el('tgj-proxy').innerHTML.includes(SECRET));
+        assert.ok(!JSON.stringify(hooks.state).includes(SECRET));
+    }
+
+    assert.ok(!m.renderProxyForm(settings(), EN, { form: { local: { Mode: 'Http', Url: 'x', Password: SECRET }, changed: [] } }).includes(SECRET));
+});
+
+test('the typed proxy password is dropped after a successful save', async () => {
+    const { view, api } = mount({ 'PUT TgJelly/Proxy': () => settings({ Revision: 6 }) });
+    await show(view);
+    const field = { name: 'proxyPassword', value: '' };
+    view.fields.push(field);
+    input(view, 'proxyPassword', 'pw');
+    await click(view, 'saveProxy');
+    assert.equal(field.value, '');
+    await click(view, 'saveProxy');
+    const puts = api.calls.filter(c => c.type === 'PUT').map(c => JSON.parse(c.data));
+    assert.equal(puts[0].Password, 'pw');
+    assert.ok(!('Password' in puts[1]));
+});
+
+test('a failed token request does not leave the token to be resent', async () => {
+    const { view, api } = mount({
+        'GET TgJelly/Status': noToken(),
+        'POST TgJelly/Token': { status: 500, body: { Message: 'boom' } },
+    });
+    await show(view);
+    await click(view, 'connectExisting');
+    input(view, 'token', '1:old');
+    await click(view, 'saveToken');
+    await click(view, 'saveToken');
+    assert.deepEqual(posted(api, 'Token').map(b => b.Token), ['1:old', '']);
+});
+
+test('a poll with a new message leaves the typed token and the open disconnect confirm alone', async () => {
+    let message = 'first';
+    const { view, timers, el } = mount({ 'GET TgJelly/Status': () => status({ ConnectionMessage: message }) });
+    await show(view);
+    await click(view, 'changeToken');
+    input(view, 'token', '1:a');
+    await click(view, 'disconnect');
+    const connectWrites = el('tgj-connect').writes;
+    const botWrites = el('tgj-bot').writes;
+
+    message = 'second';
+    timers.tick();
+    await flush();
+    assert.ok(el('tgj-status').innerHTML.includes('second'));
+    assert.equal(el('tgj-connect').writes, connectWrites);
+    assert.equal(el('tgj-bot').writes, botWrites);
+    assert.ok(el('tgj-bot').innerHTML.includes('disconnectYes'));
+});
+
+test('another admin disconnecting closes the disconnect confirm', async () => {
+    let connected = true;
+    const { view, timers, el } = mount({ 'GET TgJelly/Status': () => (connected ? status() : noToken()) });
+    await show(view);
+    await click(view, 'disconnect');
+    connected = false;
+    timers.tick();
+    await flush();
+    assert.equal(el('tgj-bot').innerHTML, '');
+    connected = true;
+    timers.tick();
+    await flush();
+    assert.ok(!el('tgj-bot').innerHTML.includes('disconnectYes'));
+});
+
 // --- createApi ---
 
 test('createApi resolves status and body, a 204 as null, and a 4xx as a value', async () => {
