@@ -115,6 +115,29 @@ class StubTests(unittest.TestCase):
         self.assertEqual(("Jellyfin", 7322096), (first["name"], first["icon_color"]))
         self.assertEqual(first["message_thread_id"] + 1, second["message_thread_id"])
 
+    def test_pushed_updates_are_returned_once_offset_confirms(self):
+        self.stub.push_update({"message": {"text": "a"}})
+        self.stub.push_update({"message": {"text": "b"}})
+        first = self.call("getUpdates")[1]["result"]
+        self.assertEqual(["a", "b"], [u["message"]["text"] for u in first])
+        self.assertEqual(first[0]["update_id"] + 1, first[1]["update_id"])
+        again = self.call("getUpdates", {"offset": first[1]["update_id"]})[1]["result"]
+        self.assertEqual(["b"], [u["message"]["text"] for u in again])
+        start = time.monotonic()
+        self.assertEqual([], self.call("getUpdates", {"offset": first[1]["update_id"] + 1})[1]["result"])
+        self.assertGreaterEqual(time.monotonic() - start, 0.9)
+
+    def test_last_reply_markup_parses_json(self):
+        self.assertIsNone(self.stub.last_reply_markup("sendMessage", 5))
+        self.call("sendMessage", {"chat_id": 5, "text": "a", "reply_markup": {"keyboard": [[{"text": "x"}]]}})
+        self.call("sendMessage", {"chat_id": 5, "text": "b", "reply_markup": json.dumps({"keyboard": [[{"text": "y"}]]})})
+        self.assertEqual({"keyboard": [[{"text": "y"}]]}, self.stub.last_reply_markup("sendMessage", 5))
+
+    def test_channel_ids_are_channels(self):
+        chat = self.call("getChat", {"chat_id": -1005555555555})[1]["result"]
+        member = self.call("getChatMember", {"chat_id": -1005555555555, "user_id": 123456789})[1]["result"]
+        self.assertEqual(("channel", "administrator", True), (chat["type"], member["status"], member["can_post_messages"]))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -30,6 +30,8 @@ USER = "smoke"
 SMOKE_TOKEN = "123456789:AAEhBP0av28KrBd9xL4Zq3Wm7Tn5Ys1Cv6QpZ"
 SMOKE_CHAT = -1001234567890
 SMOKE_CHAT_2 = -1009876543210
+SMOKE_CHAT_3 = -1005555555555
+SMOKE_ADMIN = 777000111
 MOVIE_DIR = "/media/movies/Smoke Movie (2024)"
 FFMPEG = "/usr/lib/jellyfin-ffmpeg/ffmpeg"
 FAST_BATCHING = {"QuietWindowSeconds": 5, "ReleaseQuietSeconds": 5, "MaxHoldMinutes": 1, "ReadyTimeoutMinutes": 1,
@@ -127,6 +129,7 @@ def run(image: str, zip_path: Path, use_stub: bool = False, expect_incompatible:
                 if stub is not None:
                     telegram_checks(base, token, stub)
                     media_and_restart_checks(base, token, stub, name)
+                    onboarding_checks(base, token, stub)
             except BaseException:
                 print("---- container logs (tail) ----")
                 print(docker("logs", "--tail", "200", name, check=False))
@@ -265,6 +268,72 @@ def media_and_restart_checks(base: str, token: str, stub, container: str) -> Non
     check(len(started_messages(SMOKE_CHAT_2)) == 1, f"exactly one server.started message (got {len(started_messages(SMOKE_CHAT_2))})")
     check(not started_messages(SMOKE_CHAT), "the NewMedia chat got no server.started message")
     check(all(SMOKE_TOKEN not in line for line in docker_logs_lines()), "the bot token never appears in Jellyfin's log (both runs)")
+
+
+def user_update(**fields) -> dict:
+    """A private-chat message update from the smoke admin; fields are merged into the message."""
+    user = {"id": SMOKE_ADMIN, "is_bot": False, "first_name": "Smoke"}
+    return {"message": {"message_id": int(time.time() * 1000) % 1000000, "date": int(time.time()),
+                        "chat": {"id": SMOKE_ADMIN, "type": "private", "first_name": "Smoke"}, "from": user, **fields}}
+
+
+def callback_update(data: str, message_id: int, text: str) -> dict:
+    """The admin pressing an inline button (callback_data) on a bot message in their private chat."""
+    user = {"id": SMOKE_ADMIN, "is_bot": False, "first_name": "Smoke"}
+    return {"callback_query": {"id": f"cb{message_id}", "from": user, "chat_instance": "1", "data": data,
+                               "message": {"message_id": message_id, "date": int(time.time()), "text": text,
+                                           "chat": {"id": SMOKE_ADMIN, "type": "private", "first_name": "Smoke"}}}}
+
+
+def button_with(markup, key: str, text_part: str = ""):
+    """The first button in an inline or reply keyboard that has `key` (and whose text contains text_part), or None."""
+    rows = (markup or {}).get("inline_keyboard") or (markup or {}).get("keyboard") or []
+    return next((b for row in rows for b in row if key in b and text_part in b.get("text", "")), None)
+
+
+def onboarding_checks(base: str, token: str, stub) -> None:
+    """The bot's picker onboarding: /start setup, share a channel, pick a preset, and the destination exists (plan 4)."""
+    def connected():
+        code, _, body = http("GET", f"{base}/TgJelly/Status", token=token)
+        return code == 200 and json.loads(body).get("ConnectionState") == "Connected"
+
+    wait_until(connected, "the bot is connected before onboarding", 60)
+
+    stub.push_update(user_update(text="/start setup", entities=[{"offset": 0, "length": 6, "type": "bot_command"}]))
+
+    def channel_picker():
+        button = button_with(stub.last_reply_markup("sendMessage", SMOKE_ADMIN), "request_chat")
+        return button if button and button["request_chat"].get("chat_is_channel") else None
+
+    wait_until(channel_picker, "/start setup shows the channel picker", 30)
+    request_id = channel_picker()["request_chat"]["request_id"]
+
+    stub.push_update(user_update(chat_shared={"request_id": request_id, "chat_id": SMOKE_CHAT_3, "title": "Smoke channel"}))
+
+    def wizard_button():
+        return button_with(stub.last_reply_markup("sendMessage", SMOKE_ADMIN), "callback_data", "New media")
+
+    wait_until(wizard_button, "sharing a channel shows the preset wizard", 30)
+    data = wizard_button()["callback_data"]
+    wizard_id = stub.sent_message_id(SMOKE_ADMIN, "What should I send there?")
+    check(wizard_id is not None, "the preset wizard is a new message")
+
+    stub.push_update(callback_update(data, wizard_id, "What should I send there?"))
+
+    def destination_added():
+        code, _, body = http("GET", f"{base}/TgJelly/Destinations", token=token)
+        if code != 200:
+            return False
+        items = json.loads(body)
+        items = items.get("Destinations", items) if isinstance(items, dict) else items
+        return any(d.get("ChatId") == SMOKE_CHAT_3 and d.get("Preset") == "NewMedia" for d in items)
+
+    wait_until(destination_added, "the picked channel is a NewMedia destination", 30)
+    wait_until(lambda: any("TgJelly test" in m.get("text", "") for m in stub.messages(SMOKE_CHAT_3)),
+               "the channel received the test message", 30)
+    wait_until(lambda: any(c["method"] == "editMessageText" and c["body"].get("chat_id") == SMOKE_ADMIN
+                           and "✅ Done" in c["body"].get("text", "") for c in stub.calls()),
+               "the wizard was edited to Done", 30)
 
 
 _CONTAINER = {"name": None}

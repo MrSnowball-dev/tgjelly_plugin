@@ -28,6 +28,9 @@ class StubBotApi:
         self._lock = threading.Lock()
         self._ids = itertools.count(1)
         self._topic_ids = itertools.count(1)
+        self._update_ids = itertools.count(1)
+        self._updates = []
+        self._sent = []  # (chat_id, text, message_id) of every sendMessage, for tests that must reply to a message
         self._server = None
 
     def start(self, host="0.0.0.0", port=0):
@@ -65,6 +68,32 @@ class StubBotApi:
         """The bodies of the sendMessage and sendPhoto calls to one chat, in order."""
         return [c["body"] for c in self.calls() if c["method"] in ("sendMessage", "sendPhoto") and c["body"].get("chat_id") == chat_id]
 
+    def push_update(self, update):
+        """Queues an update for getUpdates, giving it the next increasing update_id."""
+        with self._lock:
+            self._updates.append({"update_id": next(self._update_ids), **update})
+
+    def last_reply_markup(self, method, chat_id):
+        """The reply_markup (parsed) of the latest recorded call of this method to that chat, or None."""
+        for call in reversed(self.calls()):
+            body = call["body"]
+            if call["method"] == method and body.get("chat_id") == chat_id and body.get("reply_markup"):
+                markup = body["reply_markup"]
+                return json.loads(markup) if isinstance(markup, str) else markup
+        return None
+
+    def sent_message_id(self, chat_id, text_part):
+        """The message_id the stub gave the latest sendMessage to that chat whose text contains text_part, or None."""
+        with self._lock:
+            return next((i for c, t, i in reversed(self._sent) if c == chat_id and text_part in t), None)
+
+    def _take_updates(self, offset):
+        """Updates below the offset are confirmed and dropped; the rest are returned (all, when there is no offset)."""
+        with self._lock:
+            if offset is not None:
+                self._updates = [u for u in self._updates if u["update_id"] >= offset]
+            return list(self._updates)
+
     def _handle(self, request):
         parts = request.path.split("?")[0].strip("/").split("/")
         if len(parts) != 2 or not parts[0].startswith("bot"):
@@ -96,11 +125,16 @@ class StubBotApi:
         if method == "getWebhookInfo":
             return {"url": "", "has_custom_certificate": False, "pending_update_count": 0}
         if method == "getUpdates":
+            pending = self._take_updates(body.get("offset"))
+            if pending:
+                return pending
             time.sleep(1)  # spec §14.3: [] after 1 s, so TgJelly's poll loop doesn't spin
             return []
         if method == "getChat":
             if isinstance(chat_id, int) and chat_id > 0:
                 return {"id": chat_id, "type": "private", "first_name": "Smoke user", "accent_color_id": 0, "max_reaction_count": 11}
+            if isinstance(chat_id, int) and str(chat_id).startswith("-1005"):
+                return {"id": chat_id, "type": "channel", "title": "Smoke channel", "accent_color_id": 0, "max_reaction_count": 11}
             return {"id": chat_id, "type": "supergroup", "title": "Smoke group", "accent_color_id": 0, "max_reaction_count": 11}
         if method == "getChatMember":
             return {"status": "administrator", "user": {"id": bot_id, "is_bot": True, "first_name": "Smoke"},
@@ -109,13 +143,17 @@ class StubBotApi:
                     "can_restrict_members": False, "can_promote_members": False, "can_manage_video_chats": False,
                     "is_anonymous": False, "can_post_stories": False, "can_edit_stories": False, "can_delete_stories": False}
         if method in ("sendMessage", "sendPhoto", "editMessageText", "editMessageCaption"):
-            chat_type = "private" if isinstance(chat_id, int) and chat_id > 0 else "supergroup"
+            chat_type = "private" if isinstance(chat_id, int) and chat_id > 0 else (
+                "channel" if str(chat_id).startswith("-1005") else "supergroup")
             message = {"message_id": next(self._ids), "date": int(time.time()), "chat": {"id": chat_id, "type": chat_type}}
             if method in ("sendPhoto", "editMessageCaption"):
                 message["caption"] = body.get("caption", "")
                 message["photo"] = [{"file_id": "f1", "file_unique_id": "u1", "width": 1, "height": 1}]
             else:
                 message["text"] = body.get("text", "")
+            if method == "sendMessage":
+                with self._lock:
+                    self._sent.append((chat_id, message["text"], message["message_id"]))
             return message
         if method == "createForumTopic":
             return {"message_thread_id": 100 + next(self._topic_ids), "name": body.get("name", ""), "icon_color": 7322096}
