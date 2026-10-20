@@ -2,8 +2,10 @@
 """Docker smoke test: install a TgJelly zip into a real Jellyfin and check that it loads (spec §14.3).
 
 Usage:
-  python3 tests/integration/smoke.py --image jellyfin/jellyfin:12.2 --zip artifacts/tgjelly_2.0.0.0.zip [--stub] [--base-url /jf]
+  python3 tests/integration/smoke.py --image jellyfin/jellyfin:12.2 --track 2 --artifacts artifacts [--stub] [--base-url /jf]
   python3 tests/integration/smoke.py --image jellyfin/jellyfin:12.2 --zip artifacts/tgjelly_1.0.0.0.zip --expect-incompatible
+
+--track N --artifacts DIR picks the one tgjelly_N.*.zip in DIR, whatever release build/package.py packaged.
 
 --stub runs a stand-in Bot API (botapi_stub.py) and checks end to end: the token, destinations and test messages, a new
 movie's announcement, and a single server.started message after a restart.
@@ -260,6 +262,20 @@ def create_library(base: str, token: str, container: str) -> None:
     check(status in (200, 204), f"POST /Library/Refresh starts a scan (got {status} {text[:300]})")
 
 
+def find_track_zip(folder: Path, track: int) -> Path:
+    """The one zip of a track in folder (tgjelly_<track>.X.Y.0.zip from build/package.py), for any release X.Y."""
+    matches = sorted(folder.glob(f"tgjelly_{track}.*.zip"))
+    if len(matches) != 1:
+        raise SystemExit(f"expected exactly one tgjelly_{track}.*.zip in {folder}, found {[m.name for m in matches]}")
+    return matches[0]
+
+
+def announced_with_template(messages) -> bool:
+    """True when a message shows the smoke template rendered with the movie's title."""
+    expected = "TGJ-TPL Smoke Movie"
+    return any(m.get("text", "").startswith(expected) or m.get("caption", "").startswith(expected) for m in messages)
+
+
 def media_and_restart_checks(base: str, token: str, stub, container: str) -> None:
     """A new movie reaches the NewMedia chat; after a restart, server.started reaches only the AdminAlerts chat, once."""
     # A custom template proves Scriban.dll loads in the plugin's load context on this server.
@@ -270,11 +286,8 @@ def media_and_restart_checks(base: str, token: str, stub, container: str) -> Non
     check(status == 200, f"PUT /TgJelly/Templates/media.movie (got {status} {text[:300]})")
     create_library(base, token, container)
 
-    def movie_announced():
-        return any(m.get("text", "").startswith("TGJ-TPL") or m.get("caption", "").startswith("TGJ-TPL")
-                   for m in stub.messages(SMOKE_CHAT))
-
-    wait_until(movie_announced, "the new movie was announced with the custom template (TGJ-TPL)", 180)
+    wait_until(lambda: announced_with_template(stub.messages(SMOKE_CHAT)),
+               "the new movie was announced with the custom template (TGJ-TPL Smoke Movie)", 180)
 
     add_destination(base, token, SMOKE_CHAT_2, "AdminAlerts")
     status, _, text = http("POST", f"{base}/System/Restart", token=token, timeout=60)
@@ -373,15 +386,28 @@ def docker_logs_lines() -> list:
     return docker("logs", name, check=False).splitlines() if name else []
 
 
-def main(argv) -> int:
+def parse_args(argv) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--image", required=True, help="e.g. jellyfin/jellyfin:12.2")
-    parser.add_argument("--zip", required=True, type=Path, help="plugin zip built by build/package.py")
+    which = parser.add_mutually_exclusive_group(required=True)
+    which.add_argument("--zip", type=Path, help="plugin zip built by build/package.py")
+    which.add_argument("--track", type=int, choices=(1, 2), help="test this track's zip from --artifacts")
+    parser.add_argument("--artifacts", type=Path, default=Path("artifacts"), help="folder with the zips (for --track)")
     parser.add_argument("--stub", action="store_true", help="run the Bot API stub and the Telegram checks")
     parser.add_argument("--base-url", default="", help="run Jellyfin under this BaseUrl, e.g. /jf")
     parser.add_argument("--expect-incompatible", action="store_true", help="expect CompatGuard to report a mismatch")
-    args = parser.parse_args(argv)
-    run(args.image, args.zip, use_stub=args.stub, expect_incompatible=args.expect_incompatible, base_url=args.base_url)
+    return parser.parse_args(argv)
+
+
+def resolve_zip(args: argparse.Namespace) -> Path:
+    return args.zip if args.zip is not None else find_track_zip(args.artifacts, args.track)
+
+
+def main(argv) -> int:
+    args = parse_args(argv)
+    zip_path = resolve_zip(args)
+    print(f"testing {zip_path}")
+    run(args.image, zip_path, use_stub=args.stub, expect_incompatible=args.expect_incompatible, base_url=args.base_url)
     print("smoke test passed")
     return 0
 
