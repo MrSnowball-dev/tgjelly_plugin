@@ -108,14 +108,19 @@ public sealed class NotificationRenderer
             {
                 _flags.Flag(key, "truncated", string.Empty, hash);
             }
-            else
-            {
-                _flags.Clear(key);
-            }
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (Exception ex)
         {
-            _flags.Flag(key, "error", ex.Message, hash);
+            // Rendering must never fail the message: keep the default, and a failing flag write changes nothing.
+            try
+            {
+                message.TemplateKey = null;
+                _flags.Flag(key, "error", ex.Message, hash);
+            }
+            catch (Exception)
+            {
+                // Ignored on purpose.
+            }
         }
     }
 

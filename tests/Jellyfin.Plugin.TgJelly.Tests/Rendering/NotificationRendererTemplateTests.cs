@@ -164,6 +164,43 @@ public sealed class NotificationRendererTemplateTests : IDisposable
     }
 
     [Fact]
+    public void SuccessfulRender_KeepsAnExistingFlag()
+    {
+        Set("security.lockout", "ok");
+        _flags.Flag("security.lockout", "error", "Telegram said no", TemplateText.Hash("ok"));
+        var at = _flags.Current("security.lockout")!.At;
+        _h.Time.Advance(TimeSpan.FromMinutes(5));
+
+        var message = _renderer.Render(Lockout(), Dest())!;
+
+        Assert.Equal("ok", message.Text);
+        var flag = _flags.Current("security.lockout")!;
+        Assert.Equal("error", flag.Kind);
+        Assert.Equal(at, flag.At);
+    }
+
+    [Fact]
+    public void ThrowingModelBuilder_KeepsDefaultMessage()
+    {
+        var item = _library.Add(new MediaItem { Id = Guid.NewGuid(), Kind = MediaKind.Movie, Name = "Arrival" });
+        Set("media.movie", "custom {{ title }}");
+        var model = Media(item);
+        var calls = 0;
+        _library.GetItemOverride = id => { calls++; return _library.Items.GetValueOrDefault(id); };
+        Set("media.movie", "custom {{ title }}", enabled: false);
+        var baseline = _renderer.Render(model, Dest())!.Text;
+        var defaultCalls = calls;
+        Set("media.movie", "custom {{ title }}");
+        calls = 0;
+        _library.GetItemOverride = id => ++calls > defaultCalls ? throw new InvalidOperationException("boom") : _library.Items.GetValueOrDefault(id);
+
+        var message = _renderer.Render(model, Dest())!;
+
+        Assert.Equal(baseline, message.Text);
+        Assert.Null(message.TemplateKey);
+    }
+
+    [Fact]
     public void Silent_StillApplied()
     {
         Set("security.lockout", "hi");
