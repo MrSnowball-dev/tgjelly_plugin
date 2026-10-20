@@ -7,6 +7,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 jobs:
   meta:
     name: Read the tag
@@ -16,8 +20,6 @@ jobs:
       changelog: ${{ steps.tag.outputs.changelog }}
     steps:
       - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
 
       - name: Release number and annotated-tag message
         id: tag
@@ -26,13 +28,17 @@ jobs:
         run: |
           # actions/checkout turns an annotated tag into a lightweight ref, so fetch the tag object again.
           git fetch --force origin "refs/tags/$TAG:refs/tags/$TAG"
-          message="$(git tag -l --format='%(contents)' "$TAG")"
+          message=""
+          if [ "$(git cat-file -t "refs/tags/$TAG")" = "tag" ]; then
+            # Annotated tag only; a lightweight tag would print the commit message. The subject/body split
+            # also keeps a signed tag's PGP block out.
+            message="$(git tag -l --format='%(contents:subject)%0a%0a%(contents:body)' "$TAG")"
+          fi
           if [ -z "${message//[[:space:]]/}" ]; then message="Release $TAG"; fi
+          delimiter="EOF_$(openssl rand -hex 8)"
           {
-            echo "release=${TAG#v}"
-            echo "changelog<<TGJ_EOF"
-            echo "$message"
-            echo "TGJ_EOF"
+            printf 'release=%s\n' "${TAG#v}"
+            printf 'changelog<<%s\n%s\n%s\n' "$delimiter" "$message" "$delimiter"
           } >> "$GITHUB_OUTPUT"
 
   ci:
@@ -62,7 +68,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
           CHANGELOG: ${{ needs.meta.outputs.changelog }}
-        run: gh release create "$TAG" artifacts/*.zip --title "$TAG" --notes "$CHANGELOG"
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" artifacts/*.zip --clobber
+          else
+            gh release create "$TAG" artifacts/*.zip --title "$TAG" --notes "$CHANGELOG"
+          fi
 
       - name: Check out gh-pages (an orphan branch when there is none yet)
         run: |

@@ -48,6 +48,22 @@ class PublishPagesTests(unittest.TestCase):
             publish_pages.prepare(self.pages, self.manifest, self.logo)
         self.assertFalse((self.pages / "manifest.json").exists())
 
+    def test_refuses_to_drop_existing_versions(self):
+        old = [{"guid": package.GUID, "versions": [{"version": "1.0.1.0"}, {"version": "2.0.1.0"}]}]
+        new = [{"guid": package.GUID, "versions": [{"version": "2.0.2.0"}]}]
+        (self.pages / "manifest.json").write_text(json.dumps(old), encoding="utf-8")
+        self.manifest.write_text(json.dumps(new), encoding="utf-8")
+        with self.assertRaises(ValueError):
+            publish_pages.prepare(self.pages, self.manifest, None)
+        self.assertEqual(json.loads((self.pages / "manifest.json").read_text(encoding="utf-8")), old)
+
+    def test_accepts_manifest_that_keeps_existing_versions(self):
+        old = [{"guid": package.GUID, "versions": [{"version": "2.0.1.0"}]}]
+        new = [{"guid": package.GUID, "versions": [{"version": "2.0.2.0"}, {"version": "2.0.1.0"}]}]
+        (self.pages / "manifest.json").write_text(json.dumps(old), encoding="utf-8")
+        self.manifest.write_text(json.dumps(new), encoding="utf-8")
+        self.assertEqual(publish_pages.prepare(self.pages, self.manifest, None), ["manifest.json"])
+
 
 if __name__ == "__main__":
     unittest.main()

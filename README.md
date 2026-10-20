@@ -46,7 +46,7 @@ Each destination has event switches. A preset sets them for you:
 | Admin alerts | All security events except successful logins, plus all server events. |
 | Custom | Only the switches you turn on. |
 
-You can also limit a destination to some libraries, send silently in groups, pause a destination, and send a test message.
+You can also limit a destination to some libraries, send media, security or server events silently, pause a destination, and send a test message.
 
 <!-- screenshot: the destination editor with the event switches -->
 
@@ -82,6 +82,8 @@ python3 build/package.py --release 0.0 --output artifacts
 ```
 
 The last command writes both zips and `manifest.json` to `artifacts/`.
+
+Maintainers: after the first release, enable GitHub Pages from the `gh-pages` branch (Settings, Pages), or the install URL above will not work.
 
 ## License
 

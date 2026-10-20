@@ -14,11 +14,27 @@ from pathlib import Path
 import package
 
 
+def _versions(entries: list) -> set:
+    """All version strings of the TgJelly entry."""
+    return {
+        v["version"]
+        for e in entries
+        if isinstance(e, dict) and e.get("guid") == package.GUID
+        for v in e.get("versions", [])
+    }
+
+
 def prepare(pages_dir: Path, manifest: Path, logo: Path | None) -> list[str]:
-    """Copy the manifest (always) and the logo (only when the folder has none); return the changed files."""
+    """Copy the manifest (refusing to drop versions the pages already list) and the logo (only when the folder has none); return the changed files."""
     entries = json.loads(manifest.read_text(encoding="utf-8"))
     if not any(isinstance(e, dict) and e.get("guid") == package.GUID for e in entries):
         raise ValueError(f"{manifest} has no TgJelly entry with guid {package.GUID}")
+
+    existing = pages_dir / "manifest.json"
+    if existing.is_file():
+        lost = _versions(json.loads(existing.read_text(encoding="utf-8"))) - _versions(entries)
+        if lost:
+            raise ValueError(f"the new manifest would drop published versions: {sorted(lost)}")
 
     pages_dir.mkdir(parents=True, exist_ok=True)
     changed = []
