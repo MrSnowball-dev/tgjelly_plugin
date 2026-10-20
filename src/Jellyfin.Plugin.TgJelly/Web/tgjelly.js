@@ -174,6 +174,48 @@ export function mergeConflict(base, local, server) {
     return { merged, changed: changed.sort() };
 }
 
+/**
+ * A fresh form state for an editor (spec §10.4): base is the server data the edits start from, local the values shown.
+ * Given an existing dirty form, it keeps the user's edits on top of the fresh data instead (see mergeConflict()); base
+ * becomes fresh, and changed collects the paths the server also changed, to highlight. Data is a plain object.
+ * @param {{ base: object, local: object, dirty: boolean, changed: string[] } | null} form the current form, if any
+ * @param {object} fresh the server's data
+ * @returns {{ base: object, local: object, dirty: boolean, changed: string[] }}
+ */
+export function syncFormData(form, fresh) {
+    if (!form || !form.dirty) {
+        return { base: fresh, local: structuredClone(fresh), dirty: false, changed: [] };
+    }
+
+    const server = flatten(fresh);
+    const { merged, changed } = mergeConflict(flatten(form.base), flatten(form.local), server);
+    const dirty = Object.keys({ ...merged, ...server }).some(path => !sameValue(merged[path], server[path]));
+    return {
+        base: fresh,
+        local: unflatten(merged),
+        dirty,
+        changed: dirty ? [...new Set([...form.changed, ...changed])].sort() : [],
+    };
+}
+
+/**
+ * Returns a copy of the form with one local value set and marked dirty.
+ * @param {{ base: object, local: object, dirty: boolean, changed: string[] }} form
+ * @param {string} path a dotted path, e.g. 'Batch.Seconds'
+ * @param {unknown} value
+ */
+export function editForm(form, path, value) {
+    const local = structuredClone(form.local);
+    const parts = path.split('.');
+    let node = local;
+    for (const part of parts.slice(0, -1)) {
+        node = node[part] = isPlainObject(node[part]) ? node[part] : {};
+    }
+
+    node[parts.at(-1)] = value;
+    return { ...form, local, dirty: true };
+}
+
 async function readBody(response) {
     if (response.status === 204 || typeof response.text !== 'function') {
         return null;
@@ -289,8 +331,17 @@ export function renderStatus(status, S, lang = 'en') {
     return `<div class="verticalSection">${parts.join('')}</div>`;
 }
 
+
 /**
  * The page controller (spec §11.1). Listeners are bound once, here; viewshow is idempotent.
+ *
+ * Extension points for the page sections (Tasks 8-12 add their entries in the marked places below):
+ * - sections: name → { id, load, render }. load() fetches into state (forms through syncForm); render() returns the
+ *   section's HTML from state. The framework renders each section into #id with its own error line appended.
+ * - actions: data-tgj-act → (el, event), for clicks. Wrap the work in runAction(section, fn) so a failure shows in
+ *   that section.
+ * - inputs: data-tgj-input → (el, event), for both input and change events (check event.type when it matters).
+ * Returns these, so tests can register sections; Jellyfin ignores the return value.
  * @param {HTMLElement} view
  * @param {object} params
  */
@@ -304,76 +355,154 @@ export default function TgJellyPage(view, params) {
         libraries: null,
         links: null,
         templates: null,
-        // statusError is HTML (escaped) shown under the status, e.g. a failed take over; statusFailed: the last GET Status failed.
-        ui: { statusError: '', statusFailed: false },
+        // Editor forms by name: { base, local, dirty, changed } (see syncFormData).
+        forms: {},
+        // errors: section name → HTML (escaped) shown under that section; statusFailed: the last GET Status failed.
+        ui: { errors: {}, statusFailed: false },
     };
     const lang = () => document.documentElement.lang || 'en';
     const byId = id => view.querySelector('#' + id);
+    const rendered = new Map();
+    const inFlight = new Map();
     let visible = false;
     let timer = null;
-    let polling = false;
     let stringsLoad = null;
 
-    /** Sets a container's HTML, skipping identical HTML so a poll doesn't steal focus or flicker. */
+    /**
+     * Sets a container's HTML unless it's the HTML last written there. It compares with its own copy, not with
+     * el.innerHTML, which the browser serializes differently (&#39; reads back as '), so an unchanged poll doesn't
+     * replace a button the user is about to click.
+     */
     const setHtml = (id, html) => {
         const el = byId(id);
-        if (el && el.innerHTML !== html) {
+        if (el && rendered.get(id) !== html) {
             el.innerHTML = html;
+            rendered.set(id, html);
         }
     };
 
-    const renderStatusSection = () => {
+    /** The error line for a section, or ''. */
+    const sectionError = name => (state.ui.errors[name] ? `<p class="tgj-error">${state.ui.errors[name]}</p>` : '');
+
+    const sections = {
+        status: {
+            id: 'tgj-status',
+            load: async () => {
+                let failure = null;
+                try {
+                    const result = await api.get('Status');
+                    if (result.status === 200 && result.body) {
+                        state.status = result.body;
+                    } else {
+                        failure = 'HTTP ' + result.status;
+                    }
+                } catch (err) {
+                    failure = err;
+                }
+
+                if (failure && !state.ui.statusFailed) {
+                    console.error('TgJelly: could not load the status', failure);
+                }
+
+                state.ui.statusFailed = failure !== null;
+            },
+            render: () => {
+                const S = state.strings;
+                const html = state.status ? renderStatus(state.status, S, lang()) : '';
+                return state.ui.statusFailed ? html + `<p class="tgj-error">${t(S, 'web.status.failed')}</p>` : html;
+            },
+        },
+        // Tasks 8-12: add sections here, in page order.
+    };
+
+    const renderSection = name => {
+        const section = sections[name];
+        setHtml(section.id, section.render() + sectionError(name));
+    };
+
+    /**
+     * Re-runs one section's load, then renders it. Calls while a load runs share it (so polls can't overlap); pass
+     * { fresh: true } after a change, to wait for a load that started before it and load again.
+     */
+    const reloadSection = async (name, { fresh = false } = {}) => {
+        if (fresh) {
+            await inFlight.get(name);
+        }
+
+        let pending = inFlight.get(name);
+        if (!pending) {
+            pending = (async () => {
+                try {
+                    await sections[name].load();
+                } catch (err) {
+                    console.error(`TgJelly: the ${name} section failed to load`, err);
+                    const S = state.strings;
+                    state.ui.errors[name] = t(S, 'web.requestFailed', { reason: err && err.message });
+                }
+
+                renderSection(name);
+            })().finally(() => inFlight.delete(name));
+            inFlight.set(name, pending);
+        }
+
+        return pending;
+    };
+
+    /**
+     * Runs an action for a section: clears the section's error, then records a thrown error, or a returned API result
+     * with a 3xx-5xx status (the server's Message when it sent one), and re-renders the section.
+     * @param {string} name the section
+     * @param {() => Promise<unknown>} fn
+     */
+    const runAction = async (name, fn) => {
         const S = state.strings;
-        let html = state.status ? renderStatus(state.status, S, lang()) : '';
-        if (state.ui.statusFailed) {
-            html += `<p class="tgj-error">${t(S, 'web.status.failed')}</p>`;
-        }
-
-        if (state.ui.statusError) {
-            html += `<p class="tgj-error">${state.ui.statusError}</p>`;
-        }
-
-        setHtml('tgj-status', html);
-    };
-
-    const loadStatus = async () => {
-        let failure = null;
+        delete state.ui.errors[name];
         try {
-            const result = await api.get('Status');
-            if (result.status === 200 && result.body) {
-                state.status = result.body;
-            } else {
-                failure = 'HTTP ' + result.status;
+            const result = await fn();
+            if (result && typeof result.status === 'number' && result.status >= 300) {
+                state.ui.errors[name] = requestError(S, result);
             }
         } catch (err) {
-            failure = err;
+            console.error('TgJelly: action failed', err);
+            state.ui.errors[name] = t(S, 'web.requestFailed', { reason: err && err.message });
         }
 
-        if (failure && !state.ui.statusFailed) {
-            console.error('TgJelly: could not load the status', failure);
-        }
-
-        state.ui.statusFailed = failure !== null;
-        renderStatusSection();
+        renderSection(name);
     };
 
-    // Section loaders, run after Status on every viewshow. Each is `async () => {}`: fetch into state, then render its
-    // container. Tasks 8-12 add theirs here. A loader that throws is logged and doesn't stop the others.
-    const loaders = [];
+    /** Takes fresh server data into a form, keeping unsaved edits (spec §10.4). Call it from a section's load. */
+    const syncForm = (name, data) => {
+        state.forms[name] = syncFormData(state.forms[name], data);
+        return state.forms[name];
+    };
 
-    // Click actions, keyed by data-tgj-act. Each is `async (el, event) => {}`; el is the [data-tgj-act] element.
-    // Tasks 8-12 add theirs here. A thrown error is logged and shown under the status.
+    /** Records an edit: sets path in the form's local values (when given) and marks the form dirty. */
+    const markDirty = (name, path, value) => {
+        const form = state.forms[name];
+        state.forms[name] = path === undefined ? { ...form, dirty: true } : editForm(form, path, value);
+    };
+
+    /** Drops unsaved edits, e.g. after a save: the form starts over from data (default: its current values). */
+    const resetForm = (name, data = state.forms[name].local) => {
+        state.forms[name] = syncFormData(null, data);
+    };
+
     const actions = {
-        dismiss: async el => {
+        dismiss: el => runAction('status', async () => {
             const result = await api.post('Status/Dismiss', { NoticeId: el.getAttribute('data-tgj-id') });
-            state.ui.statusError = result.status < 300 ? '' : requestError(state.strings, result);
-            await loadStatus();
-        },
-        takeover: async () => {
+            await reloadSection('status', { fresh: true });
+            return result;
+        }),
+        takeover: () => runAction('status', async () => {
             const result = await api.post('Webhook/TakeOver');
-            state.ui.statusError = result.status < 300 ? '' : requestError(state.strings, result);
-            await loadStatus();
-        },
+            await reloadSection('status', { fresh: true });
+            return result;
+        }),
+        // Tasks 8-12: add click actions here.
+    };
+
+    const inputs = {
+        // Tasks 8-12: add input/change handlers here.
     };
 
     const stopPolling = () => {
@@ -389,14 +518,9 @@ export default function TgJellyPage(view, params) {
             return;
         }
 
-        if (document.hidden || polling) {
-            return;
+        if (!document.hidden && !inFlight.has('status')) {
+            reloadSection('status');
         }
-
-        polling = true;
-        loadStatus().finally(() => {
-            polling = false;
-        });
     };
 
     const startPolling = () => {
@@ -428,6 +552,7 @@ export default function TgJellyPage(view, params) {
             const el = byId('tgj-status');
             if (el) {
                 el.textContent = 'Could not load TgJelly.';
+                rendered.delete('tgj-status');
             }
 
             return false;
@@ -451,8 +576,8 @@ export default function TgJellyPage(view, params) {
         }
 
         startPolling();
-        await loadStatus();
-        await Promise.all(loaders.map(load => load().catch(err => console.error('TgJelly: a section failed to load', err))));
+        await reloadSection('status');
+        await Promise.all(Object.keys(sections).filter(name => name !== 'status').map(name => reloadSection(name)));
     };
 
     const hide = () => {
@@ -460,34 +585,45 @@ export default function TgJellyPage(view, params) {
         stopPolling();
     };
 
+    /** Finds the handler for an event through the target's closest [attribute]; null when there is none. */
+    const findHandler = (event, attribute, handlers) => {
+        const el = event.target && event.target.closest ? event.target.closest(`[${attribute}]`) : null;
+        const handler = el ? handlers[el.getAttribute(attribute)] : null;
+        return handler && state.strings ? { el, run: () => Promise.resolve().then(() => handler(el, event)) } : null;
+    };
+
+    const logFailure = err => console.error('TgJelly: handler failed', err);
+
     view.addEventListener('viewshow', show);
     view.addEventListener('viewbeforehide', hide);
     view.addEventListener('viewhide', hide);
     view.addEventListener('viewdestroy', hide);
 
     view.addEventListener('click', event => {
-        const el = event.target && event.target.closest ? event.target.closest('[data-tgj-act]') : null;
-        const action = el ? actions[el.getAttribute('data-tgj-act')] : null;
-        if (!action || !state.strings) {
+        const found = findHandler(event, 'data-tgj-act', actions);
+        if (!found) {
             return;
         }
 
         event.preventDefault();
-        if (el.disabled) {
+        if (found.el.disabled) {
             return;
         }
 
-        el.disabled = true;
-        Promise.resolve()
-            .then(() => action(el, event))
-            .catch(err => {
-                console.error('TgJelly: action failed', err);
-                const S = state.strings;
-                state.ui.statusError = t(S, 'web.requestFailed', { reason: err && err.message });
-                renderStatusSection();
-            })
-            .finally(() => {
-                el.disabled = false;
-            });
+        found.el.disabled = true;
+        found.run().catch(logFailure).finally(() => {
+            found.el.disabled = false;
+        });
     });
+
+    const onInput = event => {
+        const found = findHandler(event, 'data-tgj-input', inputs);
+        if (found) {
+            found.run().catch(logFailure);
+        }
+    };
+    view.addEventListener('change', onInput);
+    view.addEventListener('input', onInput);
+
+    return { api, state, sections, actions, inputs, reloadSection, runAction, syncForm, markDirty, resetForm };
 }

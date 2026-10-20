@@ -1,9 +1,9 @@
-// Dashboard page tests (spec §11.1). Run: node --test tests/web/
+// Dashboard page tests (spec §11.1). Run: node --test 'tests/web/*.test.mjs'
 import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import page, * as m from '../../src/Jellyfin.Plugin.TgJelly/Web/tgjelly.js';
-import { makeView, makeApiClient, fakeTimers, flush, clickOn } from './fake-view.mjs';
+import { makeView, makeApiClient, fakeTimers, flush, clickOn, dispatchOn } from './fake-view.mjs';
 
 const SOURCE = readFileSync(new URL('../../src/Jellyfin.Plugin.TgJelly/Web/tgjelly.js', import.meta.url), 'utf8');
 const EN = JSON.parse(readFileSync(new URL('../../src/Jellyfin.Plugin.TgJelly/Strings/en.json', import.meta.url), 'utf8'));
@@ -71,8 +71,8 @@ function mount(routes = {}) {
 
     const view = makeView(IDS);
     view.elements.get('tgj-advanced').hidden = true; // as in the HTML, until the strings load
-    page(view, {});
-    return { view, api, timers, doc, el: id => view.elements.get(id) };
+    const hooks = page(view, {});
+    return { view, api, timers, doc, hooks, el: id => view.elements.get(id) };
 }
 
 async function show(view) {
@@ -232,18 +232,134 @@ test('polling stops on viewhide and when hidden', async () => {
 });
 
 test('a poll re-renders only the status', async () => {
-    const { view, timers, el } = mount({ 'GET TgJelly/Status': status({ ConnectionMessage: 'first' }) });
+    const { view, timers, el, hooks, api } = mount({ 'GET TgJelly/Status': status({ ConnectionMessage: 'first' }) });
+    let loads = 0;
+    let renders = 0;
+    hooks.sections.demo = { id: 'tgj-connect', load: async () => { loads++; }, render: () => `demo ${++renders}` };
     await show(view);
-    globalThis.window.ApiClient.calls.length = 0;
-    el('tgj-connect').innerHTML = 'untouched';
+    assert.equal(el('tgj-connect').innerHTML, 'demo 1');
 
-    const api = makeApiClient({ 'GET TgJelly/Status': status({ ConnectionMessage: 'second' }) });
-    globalThis.window.ApiClient.fetch = api.fetch;
+    api.fetch = makeApiClient({ 'GET TgJelly/Status': status({ ConnectionMessage: 'second' }) }).fetch;
     timers.tick();
     await flush();
 
     assert.ok(el('tgj-status').innerHTML.includes('second'));
-    assert.equal(el('tgj-connect').innerHTML, 'untouched');
+    assert.equal(loads, 1);
+    assert.equal(renders, 1);
+    assert.equal(el('tgj-connect').innerHTML, 'demo 1');
+});
+
+test('an identical poll does not rewrite the status, even with an apostrophe the browser serializes differently', async () => {
+    const { view, timers, el } = mount({
+        'GET TgJelly/Status': status({ Notices: [{ Id: 'n1', Kind: 'X', Text: "The bot's chat is gone" }] }),
+    });
+    await show(view);
+    assert.equal(el('tgj-status').writes, 1);
+
+    timers.tick();
+    await flush();
+    timers.tick();
+    await flush();
+    assert.equal(el('tgj-status').writes, 1);
+});
+
+test('a poll does not overlap the initial status load', async () => {
+    let release;
+    const gate = new Promise(resolve => { release = resolve; });
+    const { view, timers, api } = mount();
+    const fetch = api.fetch;
+    api.fetch = async request => (request.url.endsWith('/Status') ? gate.then(() => fetch(request)) : fetch(request));
+
+    view.dispatchEvent(new Event('viewshow'));
+    await flush();
+    timers.tick();
+    timers.tick();
+    release();
+    await flush();
+
+    assert.equal(api.calls.filter(c => c.url.endsWith('/Status')).length, 1);
+});
+
+test('change and input events reach the inputs map', async () => {
+    const { view, hooks } = mount();
+    const seen = [];
+    hooks.inputs.demo = (el, event) => seen.push([event.type, el.value]);
+    await show(view);
+
+    dispatchOn(view, 'change', { 'data-tgj-input': 'demo' }, { value: 'a' });
+    dispatchOn(view, 'input', { 'data-tgj-input': 'demo' }, { value: 'ab' });
+    dispatchOn(view, 'change', { 'data-tgj-input': 'other' }, { value: 'x' });
+    dispatchOn(view, 'change', {}, { value: 'y' });
+    await flush();
+
+    assert.deepEqual(seen, [['change', 'a'], ['input', 'ab']]);
+});
+
+test('an action error lands in its own section', async () => {
+    const { view, hooks, el } = mount({ 'POST TgJelly/Boom': { status: 400, body: { Message: 'bad <x>' } } });
+    hooks.sections.demo = { id: 'tgj-messages', load: async () => {}, render: () => '<p>demo</p>' };
+    hooks.actions.boom = () => hooks.runAction('demo', () => hooks.api.post('Boom'));
+    hooks.actions.crash = () => hooks.runAction('demo', async () => { throw new Error('kaput'); });
+    await show(view);
+
+    clickOn(view, { 'data-tgj-act': 'boom' });
+    await flush();
+    assert.ok(el('tgj-messages').innerHTML.includes('<p class="tgj-error">bad &lt;x&gt;</p>'));
+    assert.ok(el('tgj-messages').innerHTML.includes('<p>demo</p>'));
+    assert.ok(!el('tgj-status').innerHTML.includes('bad'));
+
+    clickOn(view, { 'data-tgj-act': 'crash' });
+    await flush();
+    assert.ok(el('tgj-messages').innerHTML.includes(m.t(EN, 'web.requestFailed', { reason: 'kaput' })));
+    assert.ok(!el('tgj-messages').innerHTML.includes('bad'));
+});
+
+test('a dirty form survives a re-show and a poll, merged onto fresh data', async () => {
+    let server = { PublicUrl: 'https://a', Batch: { Seconds: 30 } };
+    const { view, hooks, el, timers } = mount({ 'GET TgJelly/Settings': () => server });
+    hooks.sections.demo = {
+        id: 'tgj-messages',
+        load: async () => hooks.syncForm('demo', (await hooks.api.get('Settings')).body),
+        render: () => `${hooks.state.forms.demo.local.PublicUrl} ${hooks.state.forms.demo.local.Batch.Seconds}`,
+    };
+    await show(view);
+    assert.equal(el('tgj-messages').innerHTML, 'https://a 30');
+
+    hooks.markDirty('demo', 'PublicUrl', 'https://mine');
+    server = { PublicUrl: 'https://theirs', Batch: { Seconds: 60 } };
+    await show(view);
+    timers.tick();
+    await flush();
+
+    const form = hooks.state.forms.demo;
+    assert.equal(el('tgj-messages').innerHTML, 'https://mine 60');
+    assert.deepEqual(form.local, { PublicUrl: 'https://mine', Batch: { Seconds: 60 } });
+    assert.deepEqual(form.base, server);
+    assert.equal(form.dirty, true);
+    assert.deepEqual(form.changed, ['PublicUrl']);
+
+    hooks.resetForm('demo', server);
+    await hooks.reloadSection('demo');
+    assert.equal(el('tgj-messages').innerHTML, 'https://theirs 60');
+    assert.equal(hooks.state.forms.demo.dirty, false);
+});
+
+test('syncFormData replaces a clean form and merges a dirty one', () => {
+    const clean = m.syncFormData(null, { a: 1, b: { c: 2 } });
+    assert.deepEqual(clean, { base: { a: 1, b: { c: 2 } }, local: { a: 1, b: { c: 2 } }, dirty: false, changed: [] });
+    assert.notEqual(clean.local.b, clean.base.b, 'local is a copy');
+
+    const edited = m.editForm(clean, 'b.c', 5);
+    assert.equal(edited.dirty, true);
+    assert.deepEqual(edited.local, { a: 1, b: { c: 5 } });
+    assert.deepEqual(clean.local, { a: 1, b: { c: 2 } }, 'editForm does not mutate');
+
+    const synced = m.syncFormData(edited, { a: 9, b: { c: 7 } });
+    assert.deepEqual(synced.local, { a: 9, b: { c: 5 } });
+    assert.deepEqual(synced.changed, ['b.c']);
+    assert.equal(synced.dirty, true);
+
+    assert.equal(m.syncFormData(m.editForm(clean, 'a', 4), { a: 4, b: { c: 2 } }).dirty, false, 'nothing left to save');
 });
 
 test('all requests go through getUrl', async () => {

@@ -1,11 +1,25 @@
 // Test doubles for the dashboard page (tests/web). No dependencies: Node 22's built-ins only.
 
 /**
- * A fake page element that records what the controller writes to it.
+ * A fake page element that records what the controller writes to it. Like a browser, reading innerHTML gives the
+ * serialized markup, which differs from what was written (&#39; comes back as '); writes counts innerHTML assignments.
  * @param {string} id
  */
 export function makeElement(id) {
-    return { id, innerHTML: '', textContent: '', hidden: false };
+    let html = '';
+    return {
+        id,
+        textContent: '',
+        hidden: false,
+        writes: 0,
+        get innerHTML() {
+            return html;
+        },
+        set innerHTML(value) {
+            this.writes++;
+            html = String(value).replaceAll('&#39;', "'");
+        },
+    };
 }
 
 /**
@@ -109,19 +123,30 @@ export async function flush() {
 }
 
 /**
- * Dispatches a click on the view whose target is a fake element carrying the given attributes,
- * the way a click on a rendered [data-tgj-act] button reaches the delegated listener.
+ * Dispatches an event on the view whose target is a fake element carrying the given attributes, the way an event on a
+ * rendered element bubbles to the view's delegated listeners. closest('[attr]') finds the element when it has attr.
  * @param {EventTarget} view
+ * @param {string} type e.g. 'click', 'change', 'input'
  * @param {Record<string, string>} attributes
+ * @param {object} [extra] more properties for the target, e.g. { value: 'x' }
  */
-export function clickOn(view, attributes) {
+export function dispatchOn(view, type, attributes, extra = {}) {
     const target = {
         disabled: false,
+        ...extra,
         getAttribute: name => attributes[name] ?? null,
-        closest: selector => (selector === '[data-tgj-act]' && 'data-tgj-act' in attributes ? target : null),
+        closest: selector => {
+            const match = /^\[([\w-]+)\]$/.exec(selector);
+            return match && match[1] in attributes ? target : null;
+        },
     };
-    const event = new Event('click', { cancelable: true });
+    const event = new Event(type, { cancelable: true });
     Object.defineProperty(event, 'target', { value: target });
     view.dispatchEvent(event);
     return { event, target };
+}
+
+/** A click on a rendered [data-tgj-act] element; see dispatchOn. */
+export function clickOn(view, attributes) {
+    return dispatchOn(view, 'click', attributes);
 }
