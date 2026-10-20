@@ -5,6 +5,16 @@ on:
     branches: ['**']
   pull_request:
   workflow_dispatch:
+  workflow_call:
+    inputs:
+      release:
+        description: Release number X.Y (the tag without v); release.yml passes it
+        type: string
+        default: '0.0'
+      changelog:
+        description: Changelog text for the manifest and the zips
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -42,8 +52,26 @@ jobs:
           python3 -m unittest discover -s build -p 'test_*.py' -v
           python3 -m unittest discover -s tests/integration -p 'test_*.py' -v
 
+      # Only release.yml calls this workflow with a real release; push and PR runs package 0.0 as before.
+      - name: Check out the plugin repository manifest (release only)
+        if: inputs.release != '' && inputs.release != '0.0'
+        continue-on-error: true
+        uses: actions/checkout@v7
+        with:
+          ref: gh-pages
+          path: pages
+
       - name: Package both tracks
-        run: python3 build/package.py --release 0.0 --changelog "CI build ${{ github.sha }}" --output artifacts
+        env:
+          RELEASE: ${{ inputs.release || '0.0' }}
+          CHANGELOG: ${{ inputs.changelog || format('CI build {0}', github.sha) }}
+        run: |
+          args=(--release "$RELEASE" --changelog "$CHANGELOG" --output artifacts)
+          if [ "$RELEASE" != "0.0" ]; then
+            args+=(--source-url-base "https://github.com/MrSnowball-dev/tgjelly_plugin/releases/download/v$RELEASE")
+            if [ -f pages/manifest.json ]; then args+=(--manifest-in pages/manifest.json); fi
+          fi
+          python3 build/package.py "${args[@]}"
 
       - name: List publish output (spec §15 Q7)
         run: ls -1 artifacts/publish/net9.0 artifacts/publish/net10.0
