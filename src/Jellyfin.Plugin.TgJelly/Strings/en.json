@@ -275,5 +275,6 @@
   "advanced.channel": "Add to a channel",
   "advanced.topic": "Use an existing topic",
   "advanced.dashboard": "Open dashboard",
-  "advanced.dashboardPath": "Dashboard → Plugins → Telegram → Advanced → Add chat by ID"
+  "advanced.dashboardPath": "Dashboard → Plugins → Telegram → Advanced → Add chat by ID",
+  "templates.willShorten": "will be shortened when sent with a poster"
 }
