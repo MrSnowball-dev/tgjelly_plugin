@@ -95,7 +95,11 @@ public sealed class DiagnosticsReport
 
         Section(sb, "Proxy");
         Line(sb, "mode", settings.Proxy.Mode.ToString());
-        if (Uri.TryCreate(settings.Proxy.Url, UriKind.Absolute, out var proxy))
+        if (settings.Proxy.Url.Length > 0 && !(Uri.TryCreate(settings.Proxy.Url, UriKind.Absolute, out var parsed) && parsed.Host.Length > 0))
+        {
+            Line(sb, "proxy", "set (unparsed)");
+        }
+        else if (Uri.TryCreate(settings.Proxy.Url, UriKind.Absolute, out var proxy))
         {
             Line(sb, "scheme", proxy.Scheme);
             Line(sb, "host", proxy.Host);
@@ -127,9 +131,10 @@ public sealed class DiagnosticsReport
 
         Section(sb, "Last errors");
         var errors = _state.LastErrorsSnapshot();
+        var scrub = ScrubberFor(settings.Destinations);
         foreach (var e in errors)
         {
-            sb.Append(CultureInfo.InvariantCulture, $"{e.At.UtcDateTime:yyyy-MM-dd HH:mm:ss}Z [{e.Source}] {e.Message}\n");
+            sb.Append(CultureInfo.InvariantCulture, $"{e.At.UtcDateTime:yyyy-MM-dd HH:mm:ss}Z [{e.Source}] {scrub(e.Message)}\n");
         }
 
         if (errors.Count == 0)
@@ -141,7 +146,7 @@ public sealed class DiagnosticsReport
         var warnings = _state.Read(s => s.Status.LoadWarnings.ToArray()).Concat(_secrets.LoadWarning is { } w ? new[] { w } : []).ToArray();
         foreach (var warning in warnings)
         {
-            sb.Append(warning).Append('\n');
+            sb.Append(scrub(warning)).Append('\n');
         }
 
         if (warnings.Length == 0)
@@ -150,6 +155,31 @@ public sealed class DiagnosticsReport
         }
 
         return SecretRedactor.Redact(sb.ToString());
+    }
+
+    /// <summary>Replaces destination titles with <c>&lt;dest:ID&gt;</c> and chat IDs with <c>&lt;chat&gt;</c>.</summary>
+    private static Func<string, string> ScrubberFor(Destination[] destinations)
+    {
+        var titles = destinations.Where(d => d.Title.Length > 0).OrderByDescending(d => d.Title.Length).ToArray();
+        var chats = destinations.Select(d => d.ChatId.ToString(CultureInfo.InvariantCulture)).Distinct(StringComparer.Ordinal).OrderByDescending(c => c.Length).ToArray();
+        return text =>
+        {
+            foreach (var d in titles)
+            {
+                text = text.Replace(d.Title, "<dest:" + d.Id + ">", StringComparison.Ordinal);
+            }
+
+            foreach (var chat in chats)
+            {
+                text = text.Replace(chat, "<chat>", StringComparison.Ordinal);
+                if (chat.StartsWith('-'))
+                {
+                    text = text.Replace(chat[1..], "<chat>", StringComparison.Ordinal);
+                }
+            }
+
+            return text;
+        };
     }
 
     private static string YesNo(bool value) => value ? "yes" : "no";

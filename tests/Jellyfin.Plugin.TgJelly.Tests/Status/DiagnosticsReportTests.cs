@@ -92,6 +92,27 @@ public class DiagnosticsReportTests
     }
 
     [Fact]
+    public async System.Threading.Tasks.Task Diagnostics_ScrubsTitlesAndChatIdsFromErrors()
+    {
+        using var h = new BotTestHarness();
+        var d = h.AddDestination(-1001234567890);
+        h.Settings.Update(null, c => c.Destinations[0].Title = "Secret Group");
+        h.State.Update(s =>
+        {
+            s.Status.LastErrors.Add(new StatusError { At = h.Time.GetUtcNow(), Source = "outbox", Message = "Secret Group: Forbidden: bot was kicked" });
+            s.Status.LastErrors.Add(new StatusError { At = h.Time.GetUtcNow(), Source = "bot", Message = "chat -1001234567890 not found (1001234567890)" });
+            s.Status.LoadWarnings.Add("warning for Secret Group");
+        });
+
+        var text = (await NewReportAsync(h)).Build();
+
+        Assert.DoesNotContain("Secret Group", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("1001234567890", text, StringComparison.Ordinal);
+        Assert.Contains("<dest:" + d.Id + ">", text, StringComparison.Ordinal);
+        Assert.Contains("<chat>", text, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async System.Threading.Tasks.Task Diagnostics_ReportsBaseUrlOverrideOnlyAsYesOrNo()
     {
         using var h = new BotTestHarness();
