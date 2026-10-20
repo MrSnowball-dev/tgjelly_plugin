@@ -23,6 +23,7 @@ public sealed class TemplateEngine
     private static readonly TimeSpan DefaultTimeout = TimeSpan.FromSeconds(2);
 
     private readonly ConcurrentDictionary<(string EventKey, string Hash), Template> _cache = new();
+    private readonly TimeProvider _time;
     private readonly TimeSpan _timeout;
 
     /// <summary>
@@ -42,6 +43,7 @@ public sealed class TemplateEngine
     internal TemplateEngine(TimeProvider time, TimeSpan timeout)
     {
         ArgumentNullException.ThrowIfNull(time);
+        _time = time;
         _timeout = timeout;
     }
 
@@ -84,7 +86,7 @@ public sealed class TemplateEngine
                 return new TemplateRenderResult(null, ToError(first.Message, first.Span));
             }
 
-            using var cts = new CancellationTokenSource(_timeout);
+            using var cts = new CancellationTokenSource(_timeout, _time);
             var context = new TelegramTemplateContext
             {
                 LoopLimit = Limit,
@@ -101,11 +103,13 @@ public sealed class TemplateEngine
             };
 
             var globals = new ScriptObject();
-            globals.Import("raw", new Func<object?, RawHtml>(value => new RawHtml(Convert.ToString(value, CultureInfo.InvariantCulture) ?? string.Empty)));
             foreach (var (key, value) in model)
             {
                 globals[key] = ToScript(value);
             }
+
+            // Imported last, so a model key named raw can never replace the function.
+            globals.Import("raw", new Func<object?, RawHtml>(value => new RawHtml(Convert.ToString(value, CultureInfo.InvariantCulture) ?? string.Empty)));
 
             context.PushGlobal(globals);
             return new TemplateRenderResult(template.Render(context), null);

@@ -54,6 +54,7 @@ public sealed class TemplateEngineTests
     {
         var result = Engine().Render("k", "{{ for i in 1..100000 }}x{{ end }}", Empty, strict: false);
         Assert.False(result.Ok);
+        Assert.Contains("LoopLimit", result.Error!.Message, StringComparison.OrdinalIgnoreCase);
         Assert.Null(result.Output);
     }
 
@@ -62,6 +63,8 @@ public sealed class TemplateEngineTests
     {
         var result = Engine().Render("k", "{{ for i in 1..900 }}{{ \"x\" | string.pad_right 100 }}{{ end }}", Empty, strict: false);
         Assert.False(result.Ok);
+        Assert.Null(result.Output);
+        Assert.Contains("OutputLimit", result.Error!.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -69,6 +72,8 @@ public sealed class TemplateEngineTests
     {
         var result = Engine().Render("k", "{{ func f; f; end; f }}", Empty, strict: false);
         Assert.False(result.Ok);
+        Assert.Null(result.Output);
+        Assert.Contains("recursive depth limit", result.Error!.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -80,6 +85,13 @@ public sealed class TemplateEngineTests
         var result = engine.Render("k", Text, Empty, strict: false);
         Assert.False(result.Ok);
         Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(3), $"took {stopwatch.Elapsed}");
+    }
+
+    [Fact]
+    public void ModelKeyNamedRaw_DoesNotReplaceTheFunction()
+    {
+        var result = Engine().Render("k", "{{ raw x }}", new Dictionary<string, object?> { ["raw"] = "no", ["x"] = "<b>" }, strict: false);
+        Assert.Equal("<b>", result.Output);
     }
 
     [Fact]

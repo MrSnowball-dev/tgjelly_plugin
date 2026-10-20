@@ -27,6 +27,8 @@ public sealed class TelegramHtmlValidatorTests
     [InlineData("<b><i>x</b></i>")]
     [InlineData("<b>x")]
     [InlineData("x</b>")]
+    [InlineData("x</div>")]
+    [InlineData("</script>")]
     public void Forbidden_HasOneProblem(string html) => Assert.Single(TelegramHtmlValidator.Validate(html));
 
     [Fact]

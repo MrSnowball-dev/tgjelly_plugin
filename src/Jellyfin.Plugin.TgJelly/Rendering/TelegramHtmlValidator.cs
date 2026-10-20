@@ -25,6 +25,7 @@ public static partial class TelegramHtmlValidator
     {
         var problems = new List<string>();
         var open = new Stack<string>();
+        var rejected = new Dictionary<string, int>(StringComparer.Ordinal);
         foreach (Match match in TagPattern().Matches(html ?? string.Empty))
         {
             var closing = match.Groups["close"].Success;
@@ -32,9 +33,18 @@ public static partial class TelegramHtmlValidator
             var attributes = match.Groups["attrs"].Value.Trim();
             if (!Allowed.Contains(name))
             {
-                if (!closing)
+                // A closing tag is reported only when no reported opening tag of that name is still pending.
+                if (closing && rejected.TryGetValue(name, out var pending) && pending > 0)
+                {
+                    rejected[name] = pending - 1;
+                }
+                else
                 {
                     problems.Add(string.Create(CultureInfo.InvariantCulture, $"Tag <{name}> is not allowed"));
+                    if (!closing)
+                    {
+                        rejected[name] = rejected.GetValueOrDefault(name) + 1;
+                    }
                 }
 
                 continue;
