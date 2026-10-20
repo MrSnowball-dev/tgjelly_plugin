@@ -110,6 +110,8 @@
   "update.failing": "Update check failing: {reason}",
   "notice.backupRestored": "The configuration was restored from the backup at {time} UTC.",
   "notice.publicUrlFlagged": "Telegram rejected the button link {url}. Check the public URL in the settings.",
+  "notice.templateError": "The custom template for {event} failed, so the default message is used: {error}",
+  "notice.templateTruncated": "The custom template for {event} is too long for Telegram, so its message is shortened.",
   "notice.removedLibraries.one": "{count} destination filters on libraries that were removed, so it receives nothing.",
   "notice.removedLibraries.other": "{count} destinations filter on libraries that were removed, so they receive nothing.",
   "menu.title": "🏠 Menu",

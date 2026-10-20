@@ -3,7 +3,9 @@ using System.Linq;
 using Jellyfin.Plugin.TgJelly.Tests.Fakes;
 using Jellyfin.Plugin.TgJelly.Library;
 using Jellyfin.Plugin.TgJelly.State.Documents;
+using Jellyfin.Plugin.TgJelly.Configuration;
 using Jellyfin.Plugin.TgJelly.Status;
+using Jellyfin.Plugin.TgJelly.Templates;
 using Xunit;
 
 namespace Jellyfin.Plugin.TgJelly.Tests.Status;
@@ -56,6 +58,30 @@ public class NoticeBuilderTests
         Assert.Contains("2026-10-20 12:30", notices[0].Text, StringComparison.Ordinal);
         Assert.Equal($"publicUrl:{at.ToUnixTimeSeconds()}", notices[1].Id);
         Assert.Contains("https://jf.example.com", notices[1].Text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void TemplateFlag_GivesNotice_UntilTextChanges()
+    {
+        using var h = new BotTestHarness();
+        h.Settings.Update(null, c => c.Templates = [new TemplateOverride { EventKey = "security.lockout", Enabled = true, Text = "a" }]);
+        var flags = new TemplateFlags(h.State, h.Settings, h.Time);
+        flags.Flag("security.lockout", "error", "line 1, column 2: bad", TemplateText.Hash("a"));
+        flags.Flag("media.movie", "truncated", string.Empty, TemplateText.Hash("b"));
+        h.Settings.Update(null, c => c.Templates = [.. c.Templates, new TemplateOverride { EventKey = "media.movie", Enabled = true, Text = "b" }]);
+
+        var notices = NewBuilder(h).Active();
+
+        Assert.Equal(2, notices.Count);
+        var error = notices.Single(n => n.Id.StartsWith("template:security.lockout:", StringComparison.Ordinal));
+        Assert.Equal("TemplateFlagged", error.Kind);
+        Assert.Contains("Security: Lockouts", error.Text, StringComparison.Ordinal);
+        Assert.Contains("line 1, column 2: bad", error.Text, StringComparison.Ordinal);
+        Assert.Contains("Media: Movies", notices.Single(n => n.Id.StartsWith("template:media.movie:", StringComparison.Ordinal)).Text, StringComparison.Ordinal);
+
+        h.Settings.Update(null, c => c.Templates = [new TemplateOverride { EventKey = "security.lockout", Enabled = true, Text = "changed" }]);
+
+        Assert.Empty(NewBuilder(h).Active());
     }
 
     [Fact]
@@ -139,7 +165,7 @@ public class NoticeBuilderTests
     }
 
     private static NoticeBuilder NewBuilder(BotTestHarness h, FakeLibrary? library = null) =>
-        new(h.State, h.Secrets, h.Settings, library ?? new FakeLibrary(), h.Strings, h.Time);
+        new(h.State, h.Secrets, h.Settings, library ?? new FakeLibrary(), h.Strings, h.Time, new TemplateFlags(h.State, h.Settings, h.Time));
 
     private static void Raise(BotTestHarness h, string kind)
     {

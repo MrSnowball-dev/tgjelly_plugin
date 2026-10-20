@@ -129,7 +129,7 @@ public sealed class OutboxServiceTests : IDisposable
         var gate = await _h.StartOwnedGateAsync();
         _health = new HealthService(gate, _h.Connection, new DestinationChecker(_h.Connection, _h.Strings), _h.Settings, _h.State, _h.Time, NullLogger<HealthService>.Instance);
         _h.Track(_health);
-        var delivery = new OutboxDelivery(_h.Connection, _outbox, _health, _h.Settings, _h.State, _pacing, new Jellyfin.Plugin.TgJelly.Rendering.Formatter(_h.Strings), _h.Time, new Jellyfin.Plugin.TgJelly.Destinations.DestinationMigration(_h.Settings, _outbox, _health), NullLogger<OutboxDelivery>.Instance);
+        var delivery = new OutboxDelivery(_h.Connection, _outbox, _health, _h.Settings, _h.State, _pacing, new Jellyfin.Plugin.TgJelly.Rendering.Formatter(_h.Strings), _h.Time, new Jellyfin.Plugin.TgJelly.Destinations.DestinationMigration(_h.Settings, _outbox, _health), new Jellyfin.Plugin.TgJelly.Templates.TemplateFlags(_h.State, _h.Settings, _h.Time), NullLogger<OutboxDelivery>.Instance);
         var compat = compatible ? CompatGuard.Evaluate(new Version(BuildInfo.TargetJellyfinMajor, 0, 0, 0)) : CompatGuard.Evaluate(new Version(BuildInfo.TargetJellyfinMajor + 1, 0, 0, 0));
         var service = new OutboxService(gate, compat, _h.Connection, _outbox, delivery, _health, _h.Settings, _pacing, _h.Time, NullLogger<OutboxService>.Instance);
         await service.StartAsync(CancellationToken.None);

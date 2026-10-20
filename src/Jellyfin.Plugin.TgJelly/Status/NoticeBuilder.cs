@@ -9,6 +9,7 @@ using Jellyfin.Plugin.TgJelly.Library;
 using Jellyfin.Plugin.TgJelly.Pipeline;
 using Jellyfin.Plugin.TgJelly.State;
 using Jellyfin.Plugin.TgJelly.Strings;
+using Jellyfin.Plugin.TgJelly.Templates;
 
 namespace Jellyfin.Plugin.TgJelly.Status;
 
@@ -26,6 +27,7 @@ public sealed class NoticeBuilder
     private readonly ILibraryAccess _library;
     private readonly StringTable _strings;
     private readonly TimeProvider _time;
+    private readonly TemplateFlags _templates;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="NoticeBuilder"/> class.
@@ -36,8 +38,10 @@ public sealed class NoticeBuilder
     /// <param name="library">The library, for removed-library filters.</param>
     /// <param name="strings">The string table.</param>
     /// <param name="time">The clock.</param>
-    public NoticeBuilder(StateStore state, SecretsStore secrets, SettingsStore settings, ILibraryAccess library, StringTable strings, TimeProvider time)
+    /// <param name="templates">The template flags.</param>
+    public NoticeBuilder(StateStore state, SecretsStore secrets, SettingsStore settings, ILibraryAccess library, StringTable strings, TimeProvider time, TemplateFlags templates)
     {
+        _templates = templates;
         _state = state;
         _secrets = secrets;
         _settings = settings;
@@ -88,7 +92,21 @@ public sealed class NoticeBuilder
             notices.Add(new Notice("libraries:" + Hash(string.Join(',', affected)), "RemovedLibraries", _strings.Plural("notice.removedLibraries", affected.Length)));
         }
 
-        // Task 5 adds template flags
+        foreach (var key in _templates.Keys())
+        {
+            if (_templates.Current(key) is not { } templateFlag)
+            {
+                continue;
+            }
+
+            var id = "template:" + key + ":" + templateFlag.At.ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture);
+            var label = _strings.Get("dest.event." + key);
+            var text = templateFlag.Kind == "error"
+                ? _strings.Get("notice.templateError", ("event", label), ("error", templateFlag.Error))
+                : _strings.Get("notice.templateTruncated", ("event", label));
+            notices.Add(new Notice(id, "TemplateFlagged", text));
+        }
+
         return notices;
     }
 

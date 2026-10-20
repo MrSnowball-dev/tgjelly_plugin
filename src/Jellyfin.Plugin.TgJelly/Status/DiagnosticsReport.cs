@@ -12,6 +12,7 @@ using Jellyfin.Plugin.TgJelly.Library;
 using Jellyfin.Plugin.TgJelly.Logging;
 using Jellyfin.Plugin.TgJelly.Pipeline;
 using Jellyfin.Plugin.TgJelly.State;
+using Jellyfin.Plugin.TgJelly.Templates;
 
 namespace Jellyfin.Plugin.TgJelly.Status;
 
@@ -34,6 +35,7 @@ public sealed class DiagnosticsReport
     private readonly HealthService _health;
     private readonly IServerInfo _server;
     private readonly NoticeBuilder _notices;
+    private readonly TemplateFlags _templates;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="DiagnosticsReport"/> class.
@@ -49,9 +51,11 @@ public sealed class DiagnosticsReport
     /// <param name="readiness">Media readiness, for the pending count.</param>
     /// <param name="health">The health service.</param>
     /// <param name="server">The Jellyfin server info.</param>
+    /// <param name="templates">The template flags.</param>
     /// <param name="notices">The notice builder.</param>
-    public DiagnosticsReport(CompatResult compat, InstanceGate gate, SettingsStore settings, StateStore state, SecretsStore secrets, BotConnection connection, BotApiEnvironment environment, Outbox outbox, MediaReadiness readiness, HealthService health, IServerInfo server, NoticeBuilder notices)
+    public DiagnosticsReport(CompatResult compat, InstanceGate gate, SettingsStore settings, StateStore state, SecretsStore secrets, BotConnection connection, BotApiEnvironment environment, Outbox outbox, MediaReadiness readiness, HealthService health, IServerInfo server, TemplateFlags templates, NoticeBuilder notices)
     {
+        _templates = templates;
         _compat = compat;
         _gate = gate;
         _settings = settings;
@@ -123,7 +127,12 @@ public sealed class DiagnosticsReport
             sb.Append(CultureInfo.InvariantCulture, $"{d.Id}: kind {d.Kind}, preset {d.Preset}, enabled: {YesNo(d.Enabled)}, health: {health.Status}, photos blocked: {YesNo(health.PhotosBlocked)}, topic set: {YesNo(d.ThreadId != 0)}, events: {d.Events.Length}, libraries: {d.LibraryIds.Length}\n");
         }
 
-        // Task 5 adds the Templates section here.
+        Section(sb, "Templates");
+        foreach (var template in settings.Templates.Where(t => t.Enabled && !string.IsNullOrWhiteSpace(t.Text)).OrderBy(t => t.EventKey, StringComparer.Ordinal))
+        {
+            Line(sb, template.EventKey, _templates.Current(template.EventKey)?.Kind ?? "ok");
+        }
+
         Section(sb, "Counters");
         Line(sb, "outbox", _outbox.Count.ToString(CultureInfo.InvariantCulture));
         Line(sb, "pending media", (_state.IsLoaded ? _readiness.PendingCount : 0).ToString(CultureInfo.InvariantCulture));

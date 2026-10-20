@@ -34,7 +34,7 @@ public sealed class OutboxDeliveryTests : IDisposable
         _health = new HealthService(gate, _h.Connection, new DestinationChecker(_h.Connection, _h.Strings), _h.Settings, _h.State, _h.Time, NullLogger<HealthService>.Instance);
         _h.Track(_health);
         _formatter = new Formatter(_h.Strings);
-        _delivery = new OutboxDelivery(_h.Connection, _outbox, _health, _h.Settings, _h.State, _pacing, _formatter, _h.Time, new DestinationMigration(_h.Settings, _outbox, _health), NullLogger<OutboxDelivery>.Instance)
+        _delivery = new OutboxDelivery(_h.Connection, _outbox, _health, _h.Settings, _h.State, _pacing, _formatter, _h.Time, new DestinationMigration(_h.Settings, _outbox, _health), new Jellyfin.Plugin.TgJelly.Templates.TemplateFlags(_h.State, _h.Settings, _h.Time), NullLogger<OutboxDelivery>.Instance)
         {
             Random = () => 0.5,
         };
@@ -202,6 +202,23 @@ public sealed class OutboxDeliveryTests : IDisposable
         var retry = _h.Api.CallsTo("sendMessage").ElementAt(1).Body;
         Assert.Equal("bold & more", (string)retry["text"]!);
         Assert.False(retry.ContainsKey("parse_mode"));
+    }
+
+    [Fact]
+    public async Task ParseError_WithTemplate_FlagsIt()
+    {
+        var d = _h.AddDestination(-1001);
+        _h.Settings.Update(null, c => c.Templates = [new TemplateOverride { EventKey = "media.movie", Enabled = true, Text = "<b>x" }]);
+        _h.Api.OnSequence("sendMessage", FakeBotApi.Error(400, "Bad Request: can't parse entities: Unsupported start tag \"x\" at byte offset 0"), FakeBotApi.Ok("""{"message_id":5,"date":1790000000,"chat":{"id":-1001,"type":"supergroup"},"text":"x"}"""));
+        var entry = Entry(d, "<x>");
+        entry.Message.TemplateKey = "media.movie";
+
+        await Deliver(entry, d);
+
+        var flag = new Jellyfin.Plugin.TgJelly.Templates.TemplateFlags(_h.State, _h.Settings, _h.Time).Current("media.movie")!;
+        Assert.Equal("error", flag.Kind);
+        Assert.Contains("can't parse entities", flag.Error, StringComparison.Ordinal);
+        Assert.False(_h.Api.CallsTo("sendMessage").ElementAt(1).Body.ContainsKey("parse_mode"));
     }
 
     [Fact]

@@ -1,28 +1,43 @@
 using System;
+using System.Globalization;
 using System.Linq;
 using Jellyfin.Plugin.TgJelly.Configuration;
 using Jellyfin.Plugin.TgJelly.State.Documents;
+using Jellyfin.Plugin.TgJelly.Templates;
+using Telegram.Bot.Extensions;
 
 namespace Jellyfin.Plugin.TgJelly.Rendering;
 
 /// <summary>
 /// Renders a model for one destination (spec §8): picks the layout by <see cref="RenderModel.Kind"/> and applies the
-/// destination's silent groups (§8.4).
+/// destination's silent groups (§8.4). A custom template (§8.5) replaces the caption and text when it renders cleanly.
 /// </summary>
 public sealed class NotificationRenderer
 {
     private readonly MediaLayouts _media;
     private readonly AlertLayouts _alerts;
+    private readonly TemplateEngine _engine;
+    private readonly TemplateModelBuilder _models;
+    private readonly TemplateFlags _flags;
+    private readonly SettingsStore _settings;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="NotificationRenderer"/> class.
     /// </summary>
     /// <param name="media">The media layouts.</param>
     /// <param name="alerts">The security and server layouts.</param>
-    public NotificationRenderer(MediaLayouts media, AlertLayouts alerts)
+    /// <param name="engine">The template engine.</param>
+    /// <param name="models">The template model builder.</param>
+    /// <param name="flags">The template flags.</param>
+    /// <param name="settings">The settings, for the template overrides.</param>
+    public NotificationRenderer(MediaLayouts media, AlertLayouts alerts, TemplateEngine engine, TemplateModelBuilder models, TemplateFlags flags, SettingsStore settings)
     {
         _media = media;
         _alerts = alerts;
+        _engine = engine;
+        _models = models;
+        _flags = flags;
+        _settings = settings;
     }
 
     /// <summary>
@@ -43,9 +58,69 @@ public sealed class NotificationRenderer
         };
         if (message is not null)
         {
+            if (model.Kind != RenderKind.Digest)
+            {
+                ApplyTemplate(model, message);
+            }
+
             message.Silent = destination.SilentGroups.Contains(EventCatalog.GroupOf(model.EventKey), StringComparer.Ordinal);
         }
 
         return message;
     }
+
+    private static string Fit(string html, int budget)
+        => HtmlText.PlainLength(html) > budget ? HtmlText.Truncate(html, budget, "…") : html;
+
+    private void ApplyTemplate(RenderModel model, OutboxMessage message)
+    {
+        var key = model.EventKey;
+        var template = _settings.Current.Templates.FirstOrDefault(t => string.Equals(t.EventKey, key, StringComparison.Ordinal));
+        if (template is not { Enabled: true } || string.IsNullOrWhiteSpace(template.Text))
+        {
+            return;
+        }
+
+        var hash = TemplateText.Hash(template.Text);
+        try
+        {
+            var result = _engine.Render(key, template.Text, _models.Build(model), strict: false);
+            if (!result.Ok)
+            {
+                _flags.Flag(key, "error", Describe(result.Error!), hash);
+                return;
+            }
+
+            var output = result.Output!;
+            if (TelegramHtmlValidator.Validate(output) is { Count: > 0 } problems)
+            {
+                _flags.Flag(key, "error", problems[0], hash);
+                return;
+            }
+
+            var captionBudget = MessageFitter.CaptionLimit - MessageFitter.DelayedReserve;
+            var textBudget = MessageFitter.TextLimit - MessageFitter.DelayedReserve;
+            message.Caption = Fit(output, captionBudget);
+            message.Text = Fit(output, textBudget);
+            message.TemplateKey = key;
+            var budget = message.PosterPath is null ? textBudget : captionBudget;
+            if (HtmlText.PlainLength(output) > budget)
+            {
+                _flags.Flag(key, "truncated", string.Empty, hash);
+            }
+            else
+            {
+                _flags.Clear(key);
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _flags.Flag(key, "error", ex.Message, hash);
+        }
+    }
+
+    private static string Describe(TemplateError error)
+        => error.Line is { } line && error.Column is { } column
+            ? string.Create(CultureInfo.InvariantCulture, $"line {line}, column {column}: {error.Message}")
+            : error.Message;
 }

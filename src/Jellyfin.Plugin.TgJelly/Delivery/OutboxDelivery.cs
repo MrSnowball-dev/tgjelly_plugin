@@ -9,6 +9,7 @@ using Jellyfin.Plugin.TgJelly.Destinations;
 using Jellyfin.Plugin.TgJelly.Rendering;
 using Jellyfin.Plugin.TgJelly.State;
 using Jellyfin.Plugin.TgJelly.State.Documents;
+using Jellyfin.Plugin.TgJelly.Templates;
 using Microsoft.Extensions.Logging;
 using Telegram.Bot.Extensions;
 using Telegram.Bot.Types;
@@ -39,6 +40,7 @@ public sealed class OutboxDelivery
     private readonly Formatter _formatter;
     private readonly TimeProvider _time;
     private readonly DestinationMigration _migration;
+    private readonly TemplateFlags _templateFlags;
     private readonly ILogger<OutboxDelivery> _logger;
 
     /// <summary>
@@ -53,9 +55,11 @@ public sealed class OutboxDelivery
     /// <param name="formatter">The formatter, for the ⏱ line.</param>
     /// <param name="time">The clock.</param>
     /// <param name="migration">The chat migration.</param>
+    /// <param name="templateFlags">The template flags.</param>
     /// <param name="logger">The logger.</param>
-    public OutboxDelivery(BotConnection connection, Outbox outbox, HealthService health, SettingsStore settings, StateStore state, PacingGate pacing, Formatter formatter, TimeProvider time, DestinationMigration migration, ILogger<OutboxDelivery> logger)
+    public OutboxDelivery(BotConnection connection, Outbox outbox, HealthService health, SettingsStore settings, StateStore state, PacingGate pacing, Formatter formatter, TimeProvider time, DestinationMigration migration, TemplateFlags templateFlags, ILogger<OutboxDelivery> logger)
     {
+        _templateFlags = templateFlags;
         _migration = migration;
         _connection = connection;
         _outbox = outbox;
@@ -266,6 +270,12 @@ public sealed class OutboxDelivery
                 entry.DestinationId = migrated.Id;
                 return (entry, migrated);
             case DeliveryErrorKind.ParseError when !message.PlainText:
+                if (message.TemplateKey is { } templateKey
+                    && _settings.Current.Templates.FirstOrDefault(t => t.EventKey == templateKey) is { Enabled: true } template)
+                {
+                    _templateFlags.Flag(templateKey, "error", error.Description, TemplateText.Hash(template.Text));
+                }
+
                 message.PlainText = true;
                 return (entry, destination);
             case DeliveryErrorKind.BadButton when !message.NoButtons:

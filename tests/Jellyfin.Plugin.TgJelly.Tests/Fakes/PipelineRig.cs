@@ -30,7 +30,11 @@ public sealed class PipelineRig
         var formatter = new Formatter(h.Strings);
         Renderer = new NotificationRenderer(
             new MediaLayouts(formatter, new LinkBuilder(new FakeServerInfo()), library, h.Settings),
-            new AlertLayouts(formatter, h.Time));
+            new AlertLayouts(formatter, h.Time),
+            new Jellyfin.Plugin.TgJelly.Templates.TemplateEngine(TimeProvider.System),
+            new Jellyfin.Plugin.TgJelly.Templates.TemplateModelBuilder(library, new LinkBuilder(new FakeServerInfo()), h.Settings, formatter, h.Time),
+            new Jellyfin.Plugin.TgJelly.Templates.TemplateFlags(State, h.Settings, h.Time),
+            h.Settings);
         Logger = new ListLogger<NotificationPipeline>();
         Pipeline = new NotificationPipeline(Queues, Readiness, Aggregator, Alerts, Renderer, Outbox, h.Settings, State, h.Time, Logger);
     }

@@ -123,6 +123,25 @@ public class DiagnosticsReportTests
         Assert.DoesNotContain("secret-host", text, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async System.Threading.Tasks.Task Templates_ListEnabledKeysAndFlags_NeverText()
+    {
+        using var h = new BotTestHarness();
+        h.Settings.Update(null, c => c.Templates =
+        [
+            new TemplateOverride { EventKey = "security.lockout", Enabled = true, Text = "SECRET-TEMPLATE-TEXT" },
+            new TemplateOverride { EventKey = "media.movie", Enabled = false, Text = "off" },
+        ]);
+        new Jellyfin.Plugin.TgJelly.Templates.TemplateFlags(h.State, h.Settings, h.Time).Flag("security.lockout", "error", "line 1, column 3: bad", Jellyfin.Plugin.TgJelly.Templates.TemplateText.Hash("SECRET-TEMPLATE-TEXT"));
+
+        var text = (await NewReportAsync(h)).Build();
+
+        Assert.Contains("Templates", text, StringComparison.Ordinal);
+        Assert.Contains("security.lockout: error", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("media.movie", text.Split("Templates")[1].Split("Counters")[0], StringComparison.Ordinal);
+        Assert.DoesNotContain("SECRET-TEMPLATE-TEXT", text, StringComparison.Ordinal);
+    }
+
     private static async System.Threading.Tasks.Task<DiagnosticsReport> NewReportAsync(BotTestHarness h, string? baseUrl = null)
         => (await NewReportWithHealthAsync(h, baseUrl)).Report;
 
@@ -136,7 +155,8 @@ public class DiagnosticsReportTests
         var report = new DiagnosticsReport(
             compat, gate, h.Settings, h.State, h.Secrets, h.Connection, BotApiEnvironment.FromValue(baseUrl),
             new Outbox(h.State, h.Strings, h.Time), readiness, health, new FakeServerInfo(),
-            new NoticeBuilder(h.State, h.Secrets, h.Settings, library, h.Strings, h.Time));
+            new Jellyfin.Plugin.TgJelly.Templates.TemplateFlags(h.State, h.Settings, h.Time),
+            new NoticeBuilder(h.State, h.Secrets, h.Settings, library, h.Strings, h.Time, new Jellyfin.Plugin.TgJelly.Templates.TemplateFlags(h.State, h.Settings, h.Time)));
         return (report, health);
     }
 }
