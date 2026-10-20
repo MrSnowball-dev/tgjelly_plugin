@@ -1646,3 +1646,92 @@ test('every web.* key in en.json is used by tgjelly.js', () => {
         assert.ok(SOURCE.includes(`'${base}'`), key);
     }
 });
+
+// --- one revision across the sections (final review I1, spec §10.4) ---
+
+/** A server with one Revision for every section, like PluginConfiguration.Revision; each save moves it on. */
+function oneRevisionServer() {
+    const server = { revision: 5, items: [dest()], tplText: '' };
+    const conflictOr = (request, ok, current) => {
+        if (JSON.parse(request.data).ExpectedRevision !== server.revision) {
+            return { status: 409, body: { Current: current() } };
+        }
+
+        server.revision++;
+        return ok();
+    };
+    const tpl = () => templates({ Revision: server.revision });
+    server.routes = {
+        'GET TgJelly/Status': () => status({ Revision: server.revision }),
+        'GET TgJelly/Settings': () => settings({ Revision: server.revision }),
+        'GET TgJelly/Destinations': () => destinations({ Revision: server.revision, Items: server.items }),
+        'GET TgJelly/Templates': tpl,
+        'PUT TgJelly/Settings': r => conflictOr(r, () => settings({ Revision: server.revision }), () => settings({ Revision: server.revision })),
+        'PUT TgJelly/Destinations/d1': r => conflictOr(r, () => dest({ Enabled: false }), () => destinations({ Revision: server.revision, Items: server.items })),
+        'PUT TgJelly/Templates/movie.added': r => conflictOr(r, tpl, tpl),
+    };
+    return server;
+}
+
+test('save Messages, then toggle Sending: the PUT carries the new revision, no 409', async () => {
+    const server = oneRevisionServer();
+    const { view, api, el } = mount(server.routes);
+    await show(view);
+    msgChange(view, 'ShowPoster', false);
+    await click(view, 'saveSettings');
+    assert.equal(server.revision, 6);
+
+    await destAct(view, 'enabled', { 'data-tgj-id': 'd1' });
+
+    assert.deepEqual(putBodies(api), [{ ExpectedRevision: 6, Enabled: false }]);
+    assert.equal(server.revision, 7);
+    assert.ok(!destEl(el).includes(m.t(EN, 'web.dest.conflictPlain')));
+});
+
+test('a destination change, then a template save and a settings save: each sends the current revision', async () => {
+    const server = oneRevisionServer();
+    const { view, api, el } = mount(server.routes);
+    await show(view);
+    await destAct(view, 'enabled', { 'data-tgj-id': 'd1' });
+    tplInput(view, 'tplText', { value: 'New {{ title }}' });
+    await click(view, 'tplSave');
+    msgChange(view, 'ShowPoster', false);
+    await click(view, 'saveSettings');
+
+    const revisions = api.calls.filter(c => c.type === 'PUT').map(c => JSON.parse(c.data).ExpectedRevision);
+    assert.deepEqual(revisions, [5, 6, 7]);
+    assert.equal(server.revision, 8);
+    assert.ok(!el('tgj-templates').innerHTML.includes(m.t(EN, 'web.templates.conflict')));
+    assert.ok(!el('tgj-messages').innerHTML.includes(m.t(EN, 'web.settings.conflict')));
+});
+
+test('a status poll with a higher revision reloads the sections, keeping unsaved edits', async () => {
+    const server = oneRevisionServer();
+    const { view, api, el, hooks, timers } = mount(server.routes);
+    await show(view);
+    await destAct(view, 'edit', { 'data-tgj-id': 'd1' });
+    await destInput(view, 'destPreset', { 'data-tgj-id': 'd1' }, { value: 'NewMedia' });
+    input(view, 'publicUrl', 'https://typed.example.com');
+    await flush();
+
+    // The admin adds a destination through the bot's picker in another tab.
+    server.revision = 6;
+    server.items = [dest(), dest({ Id: 'd2', Title: 'Added in the bot' })];
+    timers.tick();
+    await flush();
+
+    assert.ok(destEl(el).includes('Added in the bot'));
+    assert.equal(hooks.state.destinations.Revision, 6);
+    assert.equal(hooks.state.settings.Revision, 6);
+    assert.equal(hooks.state.templates.Revision, 6);
+    assert.equal(hooks.state.forms['dest:d1'].local.Preset, 'NewMedia');
+    assert.equal(hooks.state.forms['dest:d1'].dirty, true);
+    assert.equal(hooks.state.forms.settings.local.PublicUrl, 'https://typed.example.com');
+
+    // A poll at the same revision loads nothing else.
+    const gets = () => api.calls.filter(c => c.type === 'GET' && c.url !== '/jf/TgJelly/Status').length;
+    const before = gets();
+    timers.tick();
+    await flush();
+    assert.equal(gets(), before);
+});

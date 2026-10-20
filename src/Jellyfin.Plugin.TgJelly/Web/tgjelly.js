@@ -1399,12 +1399,38 @@ export default function TgJellyPage(view, params) {
 
                 if (name === 'status') {
                     renderDependents();
+                    await syncRevisions();
                 }
             })().finally(() => inFlight.delete(name));
             inFlight.set(name, pending);
         }
 
         return pending;
+    };
+
+    // The sections that hold a copy of the one settings Revision (spec §10.4), by the state their load fills.
+    const REVISION_SECTIONS = { settings: ['proxy', 'messages', 'batching', 'updates'], destinations: ['destinations'], templates: ['templates'] };
+    // The newest Revision the page has caught up with: the sections were loaded at it, or reloaded after it.
+    let syncedRevision = 0;
+    const newestRevision = () => Math.max(0, ...['status', ...Object.keys(REVISION_SECTIONS)]
+        .map(key => (state[key] && typeof state[key].Revision === 'number' ? state[key].Revision : 0)));
+
+    /**
+     * When a save or the Status poll shows a newer Revision than the page has caught up with, reloads every section still
+     * holding an older one. Every section checks ExpectedRevision against the same Revision, so without this a save in
+     * one section would make the next save in another conflict with the page's own change, and a destination added in
+     * the bot would never show. Unsaved edits survive: the loads go through syncForm.
+     */
+    const syncRevisions = async () => {
+        const newest = newestRevision();
+        if (newest <= syncedRevision) {
+            return;
+        }
+
+        syncedRevision = newest;
+        await Promise.all(Object.entries(REVISION_SECTIONS)
+            .filter(([key]) => state[key] && state[key].Revision < newest)
+            .flatMap(([, names]) => names.map(name => reloadSection(name, { fresh: true }))));
     };
 
     /**
@@ -1426,6 +1452,7 @@ export default function TgJellyPage(view, params) {
             state.ui.errors[name] = t(S, 'web.requestFailed', { reason: err && err.message });
         }
 
+        await syncRevisions();
         renderSection(name);
     };
 
@@ -2170,6 +2197,7 @@ export default function TgJellyPage(view, params) {
         startPolling();
         await reloadSection('status');
         await Promise.all(Object.keys(sections).filter(name => name !== 'status').map(name => reloadSection(name)));
+        syncedRevision = Math.max(syncedRevision, newestRevision());
     };
 
     const hide = () => {
