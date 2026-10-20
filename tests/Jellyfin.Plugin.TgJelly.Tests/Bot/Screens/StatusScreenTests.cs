@@ -30,6 +30,18 @@ public sealed class StatusScreenTests : IDisposable
     }
 
     [Fact]
+    public async Task Build_ShowsALiveDestinationsTitleInItsErrors()
+    {
+        var rig = await BotRig.CreateAsync(_h);
+        var d = _h.AddDestination(-100111);
+        _h.State.RecordError("outbox", "<dest:" + d.Id + ">: Forbidden");
+
+        var html = rig.Status.Build().Html;
+
+        Assert.Contains(d.Title + ": Forbidden", html, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Build_WithManyDestinationsAndLongErrors_StaysUnderTelegramsLimit_AndPointsToTheDashboard()
     {
         var rig = await BotRig.CreateAsync(_h);

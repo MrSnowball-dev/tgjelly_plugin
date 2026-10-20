@@ -1,8 +1,14 @@
 """Tests for the smoke-test helpers. Run: python3 -m unittest discover -s tests/integration -p 'test_*.py' -v"""
 
+import sys
+import tempfile
 import unittest
+from pathlib import Path
 
 import smoke
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "build"))
+import package  # noqa: E402  (build/package.py names the zips)
 
 
 class HelperTests(unittest.TestCase):
@@ -23,6 +29,64 @@ class HelperTests(unittest.TestCase):
         self.assertEqual("/usr/lib/jellyfin-ffmpeg/ffmpeg", command[0])
         self.assertIn("lavfi", command[command.index("-f") + 1])
         self.assertEqual("/media/movies/Smoke Movie (2024)/Smoke Movie (2024).mkv", command[-1])
+
+    def test_with_base_prefixes_the_path(self):
+        self.assertEqual("/jf/System/Info", smoke.with_base("/jf", "/System/Info"))
+        self.assertEqual("/x", smoke.with_base("", "/x"))
+        self.assertEqual("/jf", smoke.with_base("/jf/", ""))
+
+    def test_network_xml_sets_base_url(self):
+        self.assertIn("<BaseUrl>/jf</BaseUrl>", smoke.network_xml("/jf"))
+
+
+class TrackZipTests(unittest.TestCase):
+    """The smoke jobs name a track, not a file, so a release run (any X.Y) finds its zips (final review C1)."""
+
+    def _artifacts(self, release):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        folder = Path(temp.name)
+        for track in (1, 2):
+            (folder / f"tgjelly_{package.track_version(track, release)}.zip").write_bytes(b"")
+        (folder / "manifest.json").write_text("[]")
+        return folder
+
+    def test_finds_each_tracks_zip_for_a_release(self):
+        folder = self._artifacts("0.3")
+        self.assertEqual(folder / "tgjelly_1.0.3.0.zip", smoke.find_track_zip(folder, 1))
+        self.assertEqual(folder / "tgjelly_2.0.3.0.zip", smoke.find_track_zip(folder, 2))
+
+    def test_finds_the_push_build_too(self):
+        folder = self._artifacts("0.0")
+        self.assertEqual(folder / "tgjelly_1.0.0.0.zip", smoke.find_track_zip(folder, 1))
+
+    def test_track_10_is_not_track_1(self):
+        folder = self._artifacts("0.3")
+        (folder / "tgjelly_10.0.3.0.zip").write_bytes(b"")
+        self.assertEqual(folder / "tgjelly_1.0.3.0.zip", smoke.find_track_zip(folder, 1))
+
+    def test_missing_or_ambiguous_fails(self):
+        folder = self._artifacts("0.3")
+        with self.assertRaises(SystemExit):
+            smoke.find_track_zip(folder, 3)
+        (folder / "tgjelly_1.0.4.0.zip").write_bytes(b"")
+        with self.assertRaises(SystemExit):
+            smoke.find_track_zip(folder, 1)
+
+    def test_command_line_takes_a_track_and_the_artifacts_folder(self):
+        folder = self._artifacts("0.3")
+        args = smoke.parse_args(["--image", "jellyfin/jellyfin:12.2", "--track", "2", "--artifacts", str(folder), "--stub"])
+        self.assertEqual(folder / "tgjelly_2.0.3.0.zip", smoke.resolve_zip(args))
+        args = smoke.parse_args(["--image", "x", "--zip", "some.zip"])
+        self.assertEqual(Path("some.zip"), smoke.resolve_zip(args))
+
+
+class AnnouncementTests(unittest.TestCase):
+    def test_the_template_announcement_needs_the_title(self):
+        self.assertTrue(smoke.announced_with_template([{"text": "TGJ-TPL Smoke Movie"}]))
+        self.assertTrue(smoke.announced_with_template([{"caption": "TGJ-TPL Smoke Movie"}]))
+        self.assertFalse(smoke.announced_with_template([{"text": "TGJ-TPL "}]))
+        self.assertFalse(smoke.announced_with_template([{"text": "Smoke Movie"}]))
 
 
 if __name__ == "__main__":

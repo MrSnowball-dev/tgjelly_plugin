@@ -34,7 +34,7 @@ public sealed class OutboxDeliveryTests : IDisposable
         _health = new HealthService(gate, _h.Connection, new DestinationChecker(_h.Connection, _h.Strings), _h.Settings, _h.State, _h.Time, NullLogger<HealthService>.Instance);
         _h.Track(_health);
         _formatter = new Formatter(_h.Strings);
-        _delivery = new OutboxDelivery(_h.Connection, _outbox, _health, _h.Settings, _h.State, _pacing, _formatter, _h.Time, new DestinationMigration(_h.Settings, _outbox, _health), NullLogger<OutboxDelivery>.Instance)
+        _delivery = new OutboxDelivery(_h.Connection, _outbox, _health, _h.Settings, _h.State, _pacing, _formatter, _h.Time, new DestinationMigration(_h.Settings, _outbox, _health), new Jellyfin.Plugin.TgJelly.Templates.TemplateFlags(_h.State, _h.Settings, _h.Time), NullLogger<OutboxDelivery>.Instance)
         {
             Random = () => 0.5,
         };
@@ -205,6 +205,23 @@ public sealed class OutboxDeliveryTests : IDisposable
     }
 
     [Fact]
+    public async Task ParseError_WithTemplate_FlagsIt()
+    {
+        var d = _h.AddDestination(-1001);
+        _h.Settings.Update(null, c => c.Templates = [new TemplateOverride { EventKey = "media.movie", Enabled = true, Text = "<b>x" }]);
+        _h.Api.OnSequence("sendMessage", FakeBotApi.Error(400, "Bad Request: can't parse entities: Unsupported start tag \"x\" at byte offset 0"), FakeBotApi.Ok("""{"message_id":5,"date":1790000000,"chat":{"id":-1001,"type":"supergroup"},"text":"x"}"""));
+        var entry = Entry(d, "<x>");
+        entry.Message.TemplateKey = "media.movie";
+
+        await Deliver(entry, d);
+
+        var flag = new Jellyfin.Plugin.TgJelly.Templates.TemplateFlags(_h.State, _h.Settings, _h.Time).Current("media.movie")!;
+        Assert.Equal("error", flag.Kind);
+        Assert.Contains("can't parse entities", flag.Error, StringComparison.Ordinal);
+        Assert.False(_h.Api.CallsTo("sendMessage").ElementAt(1).Body.ContainsKey("parse_mode"));
+    }
+
+    [Fact]
     public async Task BadButton_ResendsWithoutButtons_AndFlagsThePublicUrl()
     {
         var d = _h.AddDestination(-1001);
@@ -243,6 +260,24 @@ public sealed class OutboxDeliveryTests : IDisposable
         Assert.True(((string)calls[1].Body["text"]!).Length <= 3686 + 1);
         Assert.Equal(0, _outbox.Count);
         Assert.Contains(_h.State.LastErrorsSnapshot(), e => e.Source == "outbox");
+    }
+
+    [Fact]
+    public async Task ADroppedMessage_RecordsTheDestinationId_SoDiagnosticsNeverShowARemovedChat()
+    {
+        var d = _h.AddDestination(-1001234567890);
+        _h.Settings.Update(null, c => c.Destinations[0].Title = "Secret Group");
+        _h.Api.On("sendMessage", _ => FakeBotApi.Error(400, "Bad Request: message text is empty"));
+
+        await Deliver(Entry(d, "x"), d);
+        _h.Settings.Update(null, c => c.Destinations = []);
+        var text = (await Jellyfin.Plugin.TgJelly.Tests.Status.DiagnosticsReportTests.NewReportAsync(_h)).Build();
+
+        var error = Assert.Single(_h.State.LastErrorsSnapshot(), e => e.Source == "outbox");
+        Assert.Equal("<dest:" + d.Id + ">: Bad Request: message text is empty", error.Message);
+        Assert.Contains("<dest:" + d.Id + ">", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("Secret Group", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("1234567890", text, StringComparison.Ordinal);
     }
 
     [Fact]

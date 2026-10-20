@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Linq;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 
@@ -15,6 +16,14 @@ public sealed partial class StringTable
 {
     private const string Fallback = "en";
 
+    private const string ResourcePrefix = "Jellyfin.Plugin.TgJelly.Strings.";
+    private const string ResourceSuffix = ".json";
+
+    private static readonly IReadOnlyList<string> Languages = [.. typeof(StringTable).Assembly.GetManifestResourceNames()
+        .Where(n => n.StartsWith(ResourcePrefix, StringComparison.Ordinal) && n.EndsWith(ResourceSuffix, StringComparison.Ordinal))
+        .Select(n => n[ResourcePrefix.Length..^ResourceSuffix.Length])
+        .Order(StringComparer.Ordinal)];
+
     private readonly IReadOnlyDictionary<string, string> _strings;
     private readonly IReadOnlyDictionary<string, string> _fallback;
     private readonly CultureInfo _culture;
@@ -24,6 +33,32 @@ public sealed partial class StringTable
         _strings = strings;
         _fallback = fallback;
         _culture = culture;
+    }
+
+    /// <summary>
+    /// Gets the languages that have an embedded table, derived from the resource names.
+    /// </summary>
+    public static IReadOnlyList<string> EmbeddedLanguages => Languages;
+
+    /// <summary>
+    /// Picks the embedded language that best matches <paramref name="lang"/>: an exact match (case-insensitive),
+    /// then its primary subtag (<c>pt-BR</c> to <c>pt</c>), then English.
+    /// </summary>
+    /// <param name="lang">A language tag such as <c>pt-BR</c>; may be null or empty.</param>
+    /// <returns>An embedded language code.</returns>
+    public static string BestMatch(string? lang)
+    {
+        var tag = lang?.Trim().Replace('_', '-') ?? string.Empty;
+        foreach (var candidate in new[] { tag, tag.Split('-')[0] })
+        {
+            var match = Languages.FirstOrDefault(l => string.Equals(l, candidate, StringComparison.OrdinalIgnoreCase));
+            if (match is not null)
+            {
+                return match;
+            }
+        }
+
+        return Fallback;
     }
 
     /// <summary>
@@ -39,6 +74,21 @@ public sealed partial class StringTable
         return own is null
             ? new StringTable(fallback, fallback, CultureInfo.GetCultureInfo("en-US"))
             : new StringTable(own, fallback, CultureFor(language));
+    }
+
+    /// <summary>
+    /// Returns every key of this table: the English table overlaid by the language's own.
+    /// </summary>
+    /// <returns>A copy of the merged table, with the <c>{placeholders}</c> unfilled.</returns>
+    public IReadOnlyDictionary<string, string> Snapshot()
+    {
+        var all = new Dictionary<string, string>(_fallback, StringComparer.Ordinal);
+        foreach (var (key, value) in _strings)
+        {
+            all[key] = value;
+        }
+
+        return all;
     }
 
     /// <summary>
@@ -102,7 +152,7 @@ public sealed partial class StringTable
 
     private static Dictionary<string, string>? Read(string language)
     {
-        using var stream = typeof(StringTable).Assembly.GetManifestResourceStream(typeof(StringTable).Namespace + "." + language + ".json");
+        using var stream = typeof(StringTable).Assembly.GetManifestResourceStream(ResourcePrefix + language + ResourceSuffix);
         if (stream is null)
         {
             return null;

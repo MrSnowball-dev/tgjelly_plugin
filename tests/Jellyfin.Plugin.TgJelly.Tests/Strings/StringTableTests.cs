@@ -1,3 +1,4 @@
+using System.Linq;
 using Jellyfin.Plugin.TgJelly.Strings;
 using Xunit;
 
@@ -36,5 +37,27 @@ public class StringTableTests
         {
             Assert.NotEqual(key, Strings.Get(key));
         }
+    }
+
+    [Theory]
+    [InlineData("en", "en")]
+    [InlineData("EN-us", "en")]
+    [InlineData("pt-BR", "en")]
+    [InlineData(null, "en")]
+    [InlineData("", "en")]
+    public void BestMatch_PicksExactThenPrimarySubtagThenEnglish(string? lang, string expected)
+        => Assert.Equal(expected, StringTable.BestMatch(lang));
+
+    [Fact]
+    public void EmbeddedLanguages_ListsEnglish() => Assert.Contains("en", StringTable.EmbeddedLanguages);
+
+    [Fact]
+    public void Snapshot_HasEveryEnglishKey()
+    {
+        var english = StringTable.LoadEmbedded("en").Snapshot();
+
+        Assert.NotEmpty(english);
+        Assert.Equal("Connected as @{bot}", english["connection.Connected"]);
+        Assert.Equal(english.Keys.Order(), StringTable.LoadEmbedded("xx").Snapshot().Keys.Order());
     }
 }

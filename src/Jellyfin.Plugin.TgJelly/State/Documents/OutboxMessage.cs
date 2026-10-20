@@ -25,6 +25,9 @@ public sealed class OutboxMessage
     /// <summary>Gets or sets a value indicating whether to send without a notification sound.</summary>
     public bool Silent { get; set; }
 
+    /// <summary>Gets or sets the event key whose custom template made this message, or <c>null</c>.</summary>
+    public string? TemplateKey { get; set; }
+
     /// <summary>Gets or sets a value indicating whether to skip the poster (a fallback).</summary>
     public bool ForceTextOnly { get; set; }
 

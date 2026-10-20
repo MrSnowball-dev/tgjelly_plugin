@@ -89,7 +89,7 @@ public sealed class StatusScreen
         var now = _time.GetUtcNow();
         foreach (var error in errors.TakeLast(ErrorsShown).Reverse())
         {
-            tail.Append(_formatter.Time(error.At, now)).Append(' ').Append(_formatter.Escape(error.Source)).Append(": ").Append(_formatter.Escape(Cut(error.Message))).Append('\n');
+            tail.Append(_formatter.Time(error.At, now)).Append(' ').Append(_formatter.Escape(error.Source)).Append(": ").Append(_formatter.Escape(Cut(DestinationRef.WithTitles(error.Message, _settings.Current.Destinations)))).Append('\n');
         }
 
         html.Append("<b>").Append(_strings.Get("status.destinations")).Append("</b>\n");

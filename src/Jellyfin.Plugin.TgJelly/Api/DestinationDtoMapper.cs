@@ -68,8 +68,21 @@ public sealed class DestinationDtoMapper
             Items = [.. configuration.Destinations.Select(d => ToDto(d, existing))],
             DetectedChats = [.. _memory.VisibleDetected(configuration).Select(c => new DetectedChatDto { ChatId = c.ChatId, Title = c.Title, Kind = c.Kind.ToString(), DetectedAt = c.DetectedAt })],
             ManualUnlocked = _gate.IsOpen(),
+            Catalog = BuildCatalog(),
         };
     }
+
+    private static CatalogDto BuildCatalog() => new()
+    {
+        EventKeys = EventCatalog.AllKeys,
+        Groups = EventCatalog.Groups,
+        Presets = new Dictionary<string, string[]>
+        {
+            [nameof(PresetKind.Everything)] = EventCatalog.Expand(PresetKind.Everything),
+            [nameof(PresetKind.NewMedia)] = EventCatalog.Expand(PresetKind.NewMedia),
+            [nameof(PresetKind.AdminAlerts)] = EventCatalog.Expand(PresetKind.AdminAlerts),
+        },
+    };
 
     private DestinationDto ToDto(Destination d, IReadOnlyCollection<Guid> existing) => new()
     {

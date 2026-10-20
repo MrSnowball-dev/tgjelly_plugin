@@ -1,0 +1,101 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  meta:
+    name: Read the tag
+    runs-on: ubuntu-latest
+    outputs:
+      release: ${{ steps.tag.outputs.release }}
+      changelog: ${{ steps.tag.outputs.changelog }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Release number and annotated-tag message
+        id: tag
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          # actions/checkout turns an annotated tag into a lightweight ref, so fetch the tag object again.
+          git fetch --force origin "refs/tags/$TAG:refs/tags/$TAG"
+          message=""
+          if [ "$(git cat-file -t "refs/tags/$TAG")" = "tag" ]; then
+            # Annotated tag only; a lightweight tag would print the commit message. The subject/body split
+            # also keeps a signed tag's PGP block out.
+            message="$(git tag -l --format='%(contents:subject)%0a%0a%(contents:body)' "$TAG")"
+          fi
+          if [ -z "${message//[[:space:]]/}" ]; then message="Release $TAG"; fi
+          delimiter="EOF_$(openssl rand -hex 8)"
+          {
+            printf 'release=%s\n' "${TAG#v}"
+            printf 'changelog<<%s\n%s\n%s\n' "$delimiter" "$message" "$delimiter"
+          } >> "$GITHUB_OUTPUT"
+
+  ci:
+    name: CI
+    needs: meta
+    permissions:
+      contents: read
+    uses: ./.github/workflows/ci.yml
+    with:
+      release: ${{ needs.meta.outputs.release }}
+      changelog: ${{ needs.meta.outputs.changelog }}
+
+  publish:
+    name: GitHub Release and gh-pages manifest
+    needs: [meta, ci]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: packages
+          path: artifacts
+
+      - name: Create the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          CHANGELOG: ${{ needs.meta.outputs.changelog }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" artifacts/*.zip --clobber
+          else
+            gh release create "$TAG" artifacts/*.zip --title "$TAG" --notes "$CHANGELOG"
+          fi
+
+      - name: Check out gh-pages (an orphan branch when there is none yet)
+        run: |
+          if git ls-remote --exit-code --heads origin gh-pages >/dev/null; then
+            git fetch origin gh-pages
+            git worktree add pages FETCH_HEAD
+            git -C pages checkout -B gh-pages
+          else
+            git worktree add --orphan -b gh-pages pages
+          fi
+
+      - name: Publish the manifest
+        run: python3 build/publish_pages.py --pages-dir pages --manifest artifacts/manifest.json --logo build/logo.png
+
+      - name: Commit and push gh-pages
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          cd pages
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          # A re-run with an identical manifest has nothing to commit.
+          git diff --cached --quiet || git commit -m "Plugin repository manifest for $TAG"
+          git push origin gh-pages

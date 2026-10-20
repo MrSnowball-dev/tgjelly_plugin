@@ -5,6 +5,16 @@ on:
     branches: ['**']
   pull_request:
   workflow_dispatch:
+  workflow_call:
+    inputs:
+      release:
+        description: Release number X.Y (the tag without v); release.yml passes it
+        type: string
+        default: '0.0'
+      changelog:
+        description: Changelog text for the manifest and the zips
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -28,13 +38,40 @@ jobs:
       - name: Unit tests (both frameworks)
         run: dotnet test --solution Jellyfin.Plugin.TgJelly.slnx -c Release --no-build
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Dashboard page tests
+        run: |
+          node --check src/Jellyfin.Plugin.TgJelly/Web/tgjelly.js
+          node --test 'tests/web/*.test.mjs'
+
       - name: Script tests
         run: |
           python3 -m unittest discover -s build -p 'test_*.py' -v
           python3 -m unittest discover -s tests/integration -p 'test_*.py' -v
 
+      # Only release.yml calls this workflow with a real release; push and PR runs package 0.0 as before.
+      - name: Check out the plugin repository manifest (release only)
+        if: inputs.release != '' && inputs.release != '0.0'
+        continue-on-error: true
+        uses: actions/checkout@v7
+        with:
+          ref: gh-pages
+          path: pages
+
       - name: Package both tracks
-        run: python3 build/package.py --release 0.0 --changelog "CI build ${{ github.sha }}" --output artifacts
+        env:
+          RELEASE: ${{ inputs.release || '0.0' }}
+          CHANGELOG: ${{ inputs.changelog || format('CI build {0}', github.sha) }}
+        run: |
+          args=(--release "$RELEASE" --changelog "$CHANGELOG" --output artifacts)
+          if [ "$RELEASE" != "0.0" ]; then
+            args+=(--source-url-base "https://github.com/MrSnowball-dev/tgjelly_plugin/releases/download/v$RELEASE")
+            if [ -f pages/manifest.json ]; then args+=(--manifest-in pages/manifest.json); fi
+          fi
+          python3 build/package.py "${args[@]}"
 
       - name: List publish output (spec §15 Q7)
         run: ls -1 artifacts/publish/net9.0 artifacts/publish/net10.0
@@ -47,28 +84,41 @@ jobs:
             artifacts/manifest.json
 
   smoke:
-    name: Smoke ${{ matrix.image }} ${{ matrix.zip }} ${{ matrix.args }}
+    name: Smoke ${{ matrix.image }} track ${{ matrix.track }} ${{ matrix.args }}
     needs: build
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
+      # A track, not a file name: a release run packages tgjelly_<track>.X.Y.0.zip, and smoke.py finds it (--track).
       matrix:
         include:
           - image: jellyfin/jellyfin:10.11.0
-            zip: tgjelly_1.0.0.0.zip
+            track: 1
+            args: --stub
+          - image: jellyfin/jellyfin:10.11.0
+            track: 1
+            args: --stub --base-url /jf
+          - image: jellyfin/jellyfin:10.11.11
+            track: 1
             args: --stub
           - image: jellyfin/jellyfin:10.11.11
-            zip: tgjelly_1.0.0.0.zip
+            track: 1
+            args: --stub --base-url /jf
+          - image: jellyfin/jellyfin:12.0
+            track: 2
             args: --stub
           - image: jellyfin/jellyfin:12.0
-            zip: tgjelly_2.0.0.0.zip
+            track: 2
+            args: --stub --base-url /jf
+          - image: jellyfin/jellyfin:12.2
+            track: 2
             args: --stub
           - image: jellyfin/jellyfin:12.2
-            zip: tgjelly_2.0.0.0.zip
-            args: --stub
+            track: 2
+            args: --stub --base-url /jf
           # Spec F8: after a 10.11 -> 12 upgrade the old build keeps loading until it is updated.
           - image: jellyfin/jellyfin:12.2
-            zip: tgjelly_1.0.0.0.zip
+            track: 1
             args: --expect-incompatible
     steps:
       - uses: actions/checkout@v7
@@ -79,4 +129,4 @@ jobs:
           path: artifacts
 
       - name: Install the plugin into a real Jellyfin and check it
-        run: python3 tests/integration/smoke.py --image ${{ matrix.image }} --zip artifacts/${{ matrix.zip }} ${{ matrix.args }}
+        run: python3 tests/integration/smoke.py --image ${{ matrix.image }} --track ${{ matrix.track }} --artifacts artifacts ${{ matrix.args }}

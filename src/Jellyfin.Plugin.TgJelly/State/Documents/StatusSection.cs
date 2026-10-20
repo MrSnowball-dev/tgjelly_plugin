@@ -28,4 +28,14 @@ public sealed class StatusSection
     /// Gets or sets the flag set when Telegram rejected a button URL (spec §9.4 row 7).
     /// </summary>
     public PublicUrlFlag? PublicUrlFlag { get; set; }
+
+    /// <summary>
+    /// Gets or sets the problems found in custom templates at send time, by event key (spec §8.5).
+    /// </summary>
+    public Dictionary<string, TemplateFlag> TemplateFlags { get; set; } = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Gets or sets the IDs of dismissed notices, oldest first (capped at 50). Resolved notices are pruned.
+    /// </summary>
+    public List<string> DismissedNotices { get; set; } = [];
 }

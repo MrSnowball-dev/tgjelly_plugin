@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using System.Linq;
 using System.Net.Mime;
 using Jellyfin.Plugin.TgJelly.Bot;
@@ -9,6 +10,7 @@ using Jellyfin.Plugin.TgJelly.Library;
 using Jellyfin.Plugin.TgJelly.Pipeline;
 using Jellyfin.Plugin.TgJelly.State;
 using Jellyfin.Plugin.TgJelly.State.Documents;
+using Jellyfin.Plugin.TgJelly.Status;
 using Jellyfin.Plugin.TgJelly.Strings;
 using MediaBrowser.Common.Api;
 using Microsoft.AspNetCore.Authorization;
@@ -37,6 +39,7 @@ public class TgJellyController : ControllerBase
     private readonly StringTable _strings;
     private readonly MediaReadiness _readiness;
     private readonly ILibraryAccess _library;
+    private readonly NoticeBuilder _notices;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="TgJellyController"/> class.
@@ -52,8 +55,10 @@ public class TgJellyController : ControllerBase
     /// <param name="strings">The string table.</param>
     /// <param name="readiness">Media readiness, for the pending count.</param>
     /// <param name="library">The library, for removed-library filters.</param>
-    public TgJellyController(CompatResult compat, InstanceGate gate, SettingsStore settings, StateStore state, SecretsStore secrets, BotConnection connection, Outbox outbox, HealthService health, StringTable strings, MediaReadiness readiness, ILibraryAccess library)
+    /// <param name="notices">The notice builder.</param>
+    public TgJellyController(CompatResult compat, InstanceGate gate, SettingsStore settings, StateStore state, SecretsStore secrets, BotConnection connection, Outbox outbox, HealthService health, StringTable strings, MediaReadiness readiness, ILibraryAccess library, NoticeBuilder notices)
     {
+        _notices = notices;
         _readiness = readiness;
         _library = library;
         _compat = compat;
@@ -98,7 +103,7 @@ public class TgJellyController : ControllerBase
             Revision = settings.Revision,
             BackupRestoredAt = _state.Read(s => s.Status.BackupRestoredAt),
             LoadWarnings = [.. _state.Read(s => s.Status.LoadWarnings.ToArray()), .. _secrets.LoadWarning is { } w ? new[] { w } : []],
-            LastErrors = _state.LastErrorsSnapshot(),
+            LastErrors = [.. _state.LastErrorsSnapshot().Select(e => new StatusError { At = e.At, Source = e.Source, Message = DestinationRef.WithTitles(e.Message, settings.Destinations) })],
             ConnectionState = state.ToString(),
             ConnectionMessage = message,
             BotUsername = username,
@@ -109,6 +114,25 @@ public class TgJellyController : ControllerBase
             PendingMedia = _state.IsLoaded ? _readiness.PendingCount : 0,
             UpdateCheckFailing = updateCheck.ConsecutiveFailures >= 3 ? _strings.Get("update.failing", ("reason", updateCheck.LastError)) : null,
             RemovedLibraryFilters = settings.Destinations.Count(d => LibraryFilter.RefersOnlyToRemoved(d, existing)),
+            Notices = [.. _notices.Visible().Select(n => new NoticeDto { Id = n.Id, Kind = n.Kind, Text = n.Text })],
         };
+    }
+
+    /// <summary>
+    /// Dismisses a Status notice. Answers 204 whether or not the notice is still active.
+    /// </summary>
+    /// <param name="request">The notice ID.</param>
+    /// <returns>No content.</returns>
+    [HttpPost("Status/Dismiss")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    public IActionResult Dismiss([FromBody, Required] DismissRequest request)
+    {
+        if (ApiGuard.Block(_gate, _state) is { } blocked)
+        {
+            return blocked;
+        }
+
+        _notices.Dismiss(request.NoticeId);
+        return NoContent();
     }
 }

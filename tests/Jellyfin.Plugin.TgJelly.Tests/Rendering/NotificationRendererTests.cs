@@ -22,7 +22,12 @@ public sealed class NotificationRendererTests : IDisposable
         var formatter = new Formatter(_h.Strings);
         _renderer = new NotificationRenderer(
             new MediaLayouts(formatter, new LinkBuilder(new FakeServerInfo()), _library, _h.Settings),
-            new AlertLayouts(formatter, new FakeTimeProvider(_h.Time.GetUtcNow())));
+            new AlertLayouts(formatter, new FakeTimeProvider(_h.Time.GetUtcNow())),
+            new Jellyfin.Plugin.TgJelly.Templates.TemplateEngine(TimeProvider.System),
+            new Jellyfin.Plugin.TgJelly.Templates.TemplateModelBuilder(_library, new LinkBuilder(new FakeServerInfo()), _h.Settings, formatter, _h.Time),
+            new Jellyfin.Plugin.TgJelly.Templates.TemplateFlags(_h.State, _h.Settings, _h.Time),
+            _h.Settings,
+            _h.Strings);
         _movie = _library.Add(new MediaItem { Id = Guid.NewGuid(), Kind = MediaKind.Movie, Name = "Arrival" });
     }
 

@@ -1017,6 +1017,7 @@ Implementation follows test-driven development: write a failing test first for e
 4. How should the General topic of a forum be targeted: no `message_thread_id` (current choice) or thread 1?
    **Answered (real bot, 2026-10-19):** no `message_thread_id`. A send without it lands in General; `message_thread_id: 1` fails with `Bad Request: message thread not found`. `ThreadId = 0` stays. Also observed: a bot that is only a plain member of a supergroup can delete its own messages there.
 5. Which exact `Content-Type` does 10.11 serve for embedded `.js`? (Checked by the smoke test.)
+   **Answered (CI smoke, 2026-10-20):** `application/javascript` on 10.11.0, 10.11.11, 12.0 and 12.2 (run 39492717054), with and without a `/jf` BaseUrl. The smoke check only requires that the type contains `javascript`.
 6. Are `emby-select`, `emby-textarea`, `emby-collapse` and `emby-toggle` registered on a deep link? (The page works either way.)
 7. Does a net9.0/net10.0 build put `Microsoft.Extensions.Options.dll` or `System.Text.Json.dll` in `bin`? (Irrelevant for the zip; the CI check shows it.)
    **Answered (plan 2, CI publish listing):**

@@ -405,6 +405,19 @@ public sealed class DestinationsControllerTests : IAsyncLifetime
     }
 
     [Fact]
+    public void Get_IncludesCatalog()
+    {
+        var catalog = _controller.Get().Value!.Catalog;
+
+        Assert.Equal(EventCatalog.AllKeys, catalog.EventKeys);
+        Assert.Equal(EventCatalog.Groups, catalog.Groups);
+        Assert.Equal(["Everything", "NewMedia", "AdminAlerts"], catalog.Presets.Keys);
+        Assert.Equal(EventCatalog.Expand(PresetKind.NewMedia), catalog.Presets["NewMedia"]);
+        Assert.Equal(EventCatalog.Expand(PresetKind.AdminAlerts), catalog.Presets["AdminAlerts"]);
+        Assert.Equal(EventCatalog.AllKeys, catalog.Presets["Everything"]);
+    }
+
+    [Fact]
     public async Task Mutations_BeforeOwnership_Are503_AndChangeNothing()
     {
         var d = _h.AddDestination(-1001);
