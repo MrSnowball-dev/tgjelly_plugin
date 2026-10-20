@@ -720,6 +720,200 @@ export function renderManual(dto, S, ui) {
 }
 
 
+const MESSAGE_TOGGLES = ['ShowPoster', 'ShowOverview', 'ShowRatingGenres', 'ShowOpenInJellyfin', 'ShowProviderLinks', 'AnnounceUpgrades'];
+const UPDATE_MODES = ['SameMajor', 'AnyNewer'];
+const SAVE_LABELS = { messages: 'web.messages.save', batching: 'web.batching.save', updates: 'web.updates.save' };
+const SETTINGS_SECTIONS = ['messages', 'batching', 'updates'];
+
+/** The batching fields with their allowed ranges (spec §10.1) and the strings that label and describe them. */
+const BATCHING_FIELDS = [
+    { key: 'QuietWindowSeconds', min: 5, max: 3600, label: 'web.batching.quiet.label', hint: 'web.batching.quiet.hint' },
+    { key: 'MaxHoldMinutes', min: 1, max: 240, label: 'web.batching.maxHold.label', hint: 'web.batching.maxHold.hint' },
+    { key: 'ReleaseQuietSeconds', min: 5, max: 600, label: 'web.batching.releaseQuiet.label', hint: 'web.batching.releaseQuiet.hint' },
+    { key: 'DigestThreshold', min: 2, max: 100, label: 'web.batching.digest.label', hint: 'web.batching.digest.hint' },
+    { key: 'LateEditHours', min: 0, max: 24, label: 'web.batching.lateEdit.label', hint: 'web.batching.lateEdit.hint' },
+    { key: 'ReadyTimeoutMinutes', min: 1, max: 120, label: 'web.batching.readyTimeout.label', hint: 'web.batching.readyTimeout.hint' },
+];
+
+/** Which section shows an error for a settings field path ('' when none of the three does). */
+function settingsSectionOf(field) {
+    if (field === 'PublicUrl' || String(field).startsWith('Message.')) {
+        return 'messages';
+    }
+
+    return String(field).startsWith('Batching.') ? 'batching' : String(field).startsWith('UpdateCheck.') ? 'updates' : '';
+}
+
+/**
+ * The settings editor's data from a SettingsDto: the fields PUT Settings takes. Mode may arrive as a name or a number.
+ * @param {object} settings
+ */
+export function settingsFormData(settings) {
+    const mode = settings.UpdateCheck ? settings.UpdateCheck.Mode : undefined;
+    return {
+        PublicUrl: settings.PublicUrl ?? '',
+        Message: { ...(settings.Message ?? {}) },
+        Batching: { ...(settings.Batching ?? {}) },
+        UpdateCheck: {
+            Enabled: Boolean(settings.UpdateCheck && settings.UpdateCheck.Enabled),
+            Mode: typeof mode === 'number' ? UPDATE_MODES[mode] ?? UPDATE_MODES[0] : mode ?? UPDATE_MODES[0],
+        },
+    };
+}
+
+/**
+ * The PUT Settings body from the settings form, or the client-side errors that stop it (a batching value that isn't a
+ * whole number). Ranges are checked by the server.
+ * @returns {{ body: object | null, errors: { Field: string, Html: string }[] }}
+ */
+export function settingsRequest(local, revision, S) {
+    const errors = BATCHING_FIELDS
+        .filter(f => !Number.isInteger(local.Batching[f.key]))
+        .map(f => ({ Field: `Batching.${f.key}`, Html: t(S, 'web.settings.notNumber') }));
+    return errors.length > 0
+        ? { body: null, errors }
+        : {
+            body: {
+                ExpectedRevision: revision,
+                PublicUrl: String(local.PublicUrl ?? '').trim(),
+                Message: local.Message,
+                Batching: local.Batching,
+                UpdateCheck: local.UpdateCheck,
+            },
+            errors: [],
+        };
+}
+
+/** The shared pieces of the three settings sections: highlight, error lines under a field, and the section's own errors. */
+function settingsHelpers(ui, section) {
+    const errors = ui.errors ?? [];
+    const line = e => `<p class="tgj-error">${e.Html ?? esc(e.Message)}</p>`;
+    return {
+        changed: path => ((ui.form.changed ?? []).includes(path) ? ' tgj-changed' : ''),
+        fieldErrors: path => errors.filter(e => e.Field === path).map(line).join(''),
+        // Errors for a field none of the sections shows go under the Save the user pressed.
+        general: () => (ui.section === section ? errors.filter(e => settingsSectionOf(e.Field) === '').map(line).join('') : ''),
+        save: S => button(t(S, SAVE_LABELS[section]), 'saveSettings', { primary: true, disabled: ui.saving, id: section }),
+    };
+}
+
+/**
+ * The Messages section (spec §6.6 item 4, §8.3, §8.4): the public URL and the six message toggles.
+ * @param {object | null} settings the SettingsDto
+ * @param {Record<string, string>} S
+ * @param {{ form?: { local: object, changed: string[] }, errors?: { Field: string, Message?: string, Html?: string }[],
+ *   saving?: boolean, section?: string }} ui form is state.forms.settings
+ * @returns {string} HTML
+ */
+export function renderMessages(settings, S, ui) {
+    if (!settings || !ui.form) {
+        return '';
+    }
+
+    const h = settingsHelpers(ui, 'messages');
+    const local = ui.form.local;
+    const url = String(local.PublicUrl ?? '');
+    const parts = [`<h2 class="sectionTitle">${t(S, 'web.messages.title')}</h2>`,
+        `<div class="inputContainer${h.changed('PublicUrl')}"><input is="emby-input" type="text" label="${t(S, 'web.messages.url')}" autocomplete="off" `
+        + `data-tgj-input="publicUrl" data-tgj-field="PublicUrl" value="${esc(url)}" />`
+        + `<div class="fieldDescription">${t(S, 'web.messages.urlHint')}</div></div>`,
+        h.fieldErrors('PublicUrl')];
+    const suggestion = settings.PublicUrlSuggestion;
+    if (suggestion && suggestion !== url) {
+        parts.push(`<p class="fieldDescription">${t(S, 'web.messages.suggested', { url: suggestion })} <strong>${t(S, 'web.messages.verify')}</strong> `
+            + `${button(t(S, 'web.messages.useSuggested'), 'useSuggested')}</p>`);
+    }
+
+    // The server judged the saved value; once the user types another one, that verdict no longer applies.
+    if (settings.PublicUrl && !settings.PublicUrlValid && url === settings.PublicUrl) {
+        parts.push(`<p class="tgj-error">${t(S, 'web.messages.urlInvalid')}</p>`);
+    }
+
+    for (const key of MESSAGE_TOGGLES) {
+        parts.push(`<label class="emby-checkbox-label${h.changed(`Message.${key}`)}"><input is="emby-checkbox" type="checkbox" data-tgj-input="msgToggle" `
+            + `data-tgj-key="${key}" data-tgj-field="Message.${key}"${local.Message && local.Message[key] ? ' checked' : ''} />`
+            + `<span>${t(S, `settings.msg.${key}`)}</span></label>${h.fieldErrors(`Message.${key}`)}`);
+    }
+
+    parts.push(h.general(), `<div>${h.save(S)}</div>`);
+    return `<div class="verticalSection">${parts.join('')}</div>`;
+}
+
+/**
+ * The batching form under Advanced (spec §10.1): six numeric fields, each with its range in the description.
+ * @param {object | null} settings
+ * @param {Record<string, string>} S
+ * @param {object} ui as for renderMessages
+ * @returns {string} HTML
+ */
+export function renderBatching(settings, S, ui) {
+    if (!settings || !ui.form) {
+        return '';
+    }
+
+    const h = settingsHelpers(ui, 'batching');
+    const parts = [`<h3>${t(S, 'web.batching.title')}</h3>`];
+    for (const f of BATCHING_FIELDS) {
+        const path = `Batching.${f.key}`;
+        parts.push(`<div class="inputContainer${h.changed(path)}"><input is="emby-input" type="number" label="${t(S, f.label)}" `
+            + `min="${f.min}" max="${f.max}" step="1" data-tgj-input="batching" data-tgj-key="${f.key}" data-tgj-field="${path}" `
+            + `value="${esc(ui.form.local.Batching[f.key])}" />`
+            + `<div class="fieldDescription">${t(S, f.hint, { min: f.min, max: f.max })}</div></div>${h.fieldErrors(path)}`);
+    }
+
+    parts.push(h.general(), `<div>${h.save(S)}</div>`);
+    return `<div class="verticalSection">${parts.join('')}</div>`;
+}
+
+/**
+ * The update-check form under Advanced (spec §7.6): the enabled checkbox and the mode.
+ * @param {object | null} settings
+ * @param {Record<string, string>} S
+ * @param {object} ui as for renderMessages
+ * @returns {string} HTML
+ */
+export function renderUpdates(settings, S, ui) {
+    if (!settings || !ui.form) {
+        return '';
+    }
+
+    const h = settingsHelpers(ui, 'updates');
+    const local = ui.form.local.UpdateCheck;
+    const options = UPDATE_MODES.map(mode => `<option value="${mode}"${local.Mode === mode ? ' selected' : ''}>${t(S, `settings.updates.mode.${mode}`)}</option>`);
+    const parts = [`<h3>${t(S, 'web.updates.title')}</h3>`,
+        `<p class="fieldDescription">${t(S, 'settings.updates.hint')}</p>`,
+        `<label class="emby-checkbox-label${h.changed('UpdateCheck.Enabled')}"><input is="emby-checkbox" type="checkbox" data-tgj-input="updEnabled" `
+        + `data-tgj-field="UpdateCheck.Enabled"${local.Enabled ? ' checked' : ''} /><span>${t(S, 'settings.updates.enabled')}</span></label>`,
+        h.fieldErrors('UpdateCheck.Enabled'),
+        `<div class="selectContainer${h.changed('UpdateCheck.Mode')}"><select is="emby-select" class="emby-select-withcolor emby-select" `
+        + `label="${t(S, 'web.updates.mode')}" data-tgj-input="updMode" data-tgj-field="UpdateCheck.Mode">${options.join('')}</select></div>`,
+        h.fieldErrors('UpdateCheck.Mode'),
+        h.general(),
+        `<div>${h.save(S)}</div>`];
+    return `<div class="verticalSection">${parts.join('')}</div>`;
+}
+
+/**
+ * The diagnostics block under Advanced (spec §12): Copy diagnostics, and the text itself when the clipboard refused it.
+ * @param {Record<string, string>} S
+ * @param {{ text?: string, copied?: boolean }} ui
+ * @returns {string} HTML
+ */
+export function renderDiagnostics(S, ui) {
+    const parts = [`<h3>${t(S, 'web.diag.title')}</h3>`, `<div>${button(t(S, 'web.diag.copy'), 'copyDiagnostics')}</div>`];
+    if (ui.copied) {
+        parts.push(`<p class="fieldDescription">${t(S, 'web.diag.copied')}</p>`);
+    }
+
+    if (ui.text) {
+        parts.push(`<p class="fieldDescription">${t(S, 'web.diag.manual')}</p>`
+            + `<textarea id="tgj-diagnostics-text" readonly rows="12" style="width:100%">${esc(ui.text)}</textarea>`);
+    }
+
+    return `<div class="verticalSection">${parts.join('')}</div>`;
+}
+
+
 /**
  * The page controller (spec §11.1). Listeners are bound once, here; viewshow is idempotent.
  *
@@ -770,6 +964,13 @@ export default function TgJellyPage(view, params) {
             manualPreset: 'Everything',
             manualResult: '',
             detectedPresets: {},
+            // The settings sections (§6.6.4-5): the last save's field errors, the section whose Save was pressed, in flight.
+            settingsErrors: [],
+            settingsSection: '',
+            settingsSaving: false,
+            // Diagnostics: the text when the clipboard refused it, and whether the last copy worked.
+            diagText: '',
+            diagCopied: false,
         },
     };
     const lang = () => document.documentElement.lang || 'en';
@@ -812,17 +1013,32 @@ export default function TgJellyPage(view, params) {
     const takeSettings = dto => {
         state.settings = dto;
         syncForm('proxy', proxyFormData(dto));
+        syncForm('settings', settingsFormData(dto));
     };
 
-    /** Loads GET Settings, the one settings model every settings section shares. */
-    async function loadSettings() {
-        const result = await api.get('Settings');
-        if (result.status !== 200 || !result.body) {
-            throw new Error('HTTP ' + result.status);
-        }
+    /** The settings sections' views of the state. */
+    const settingsUi = () => ({
+        form: state.forms.settings,
+        errors: state.ui.settingsErrors,
+        saving: state.ui.settingsSaving,
+        section: state.ui.settingsSection,
+    });
 
-        takeSettings(result.body);
-    }
+    // Every section that edits the settings model loads it together: one request while it runs.
+    let settingsLoad = null;
+    /** Loads GET Settings, the one settings model the proxy, messages, batching and update forms share. */
+    const loadSettings = () => {
+        settingsLoad ??= api.get('Settings').then(result => {
+            if (result.status !== 200 || !result.body) {
+                throw new Error('HTTP ' + result.status);
+            }
+
+            takeSettings(result.body);
+        }).finally(() => {
+            settingsLoad = null;
+        });
+        return settingsLoad;
+    };
 
     // Sections that need the links share one request while it runs.
     let linksLoad = null;
@@ -937,7 +1153,27 @@ export default function TgJellyPage(view, params) {
                 detectedPresets: state.ui.detectedPresets,
             }),
         },
-        // Tasks 11-12: add sections here, in page order.
+        messages: {
+            id: 'tgj-messages',
+            load: loadSettings,
+            render: () => renderMessages(state.settings, state.strings, settingsUi()),
+        },
+        batching: {
+            id: 'tgj-batching',
+            load: loadSettings,
+            render: () => renderBatching(state.settings, state.strings, settingsUi()),
+        },
+        updates: {
+            id: 'tgj-updates',
+            load: loadSettings,
+            render: () => renderUpdates(state.settings, state.strings, settingsUi()),
+        },
+        diagnostics: {
+            id: 'tgj-diagnostics',
+            load: async () => {},
+            render: () => renderDiagnostics(state.strings, { text: state.ui.diagText, copied: state.ui.diagCopied }),
+        },
+        // Task 12: add the templates section here, in page order.
     };
 
     const renderSection = name => {
@@ -950,6 +1186,20 @@ export default function TgJellyPage(view, params) {
 
         if (name === 'proxy' || name === 'connect') {
             restoreSecrets();
+        }
+
+        if (name === 'diagnostics' && state.ui.diagText) {
+            const text = byId('tgj-diagnostics-text');
+            if (text && typeof text.select === 'function') {
+                text.select();
+            }
+        }
+    };
+
+    /** The three sections that edit the settings form render together, so a save in one shows in the others. */
+    const renderSettingsSections = () => {
+        for (const name of ['messages', 'batching', 'updates']) {
+            renderSection(name);
         }
     };
 
@@ -1168,8 +1418,9 @@ export default function TgJellyPage(view, params) {
 
         const S = state.strings;
         if (result.status === 200 && result.body) {
-            state.settings = result.body;
+            // The proxy form starts over; the settings form keeps its unsaved edits on top of the fresh data.
             resetForm('proxy', proxyFormData(result.body));
+            takeSettings(result.body);
             typed.proxyUsername = undefined;
             typed.proxyPassword = undefined;
         } else if (result.status === 409 && result.body && result.body.Current) {
@@ -1182,7 +1433,51 @@ export default function TgJellyPage(view, params) {
         }
 
         renderProxyForms();
+        renderSettingsSections();
         return undefined;
+    };
+
+    /** Saves the settings form (spec §10.4): the one PUT Settings behind the Save of all three sections. */
+    const saveSettings = async section => {
+        const ui = state.ui;
+        const form = state.forms.settings;
+        if (!form || !state.settings) {
+            return undefined;
+        }
+
+        const S = state.strings;
+        const request = settingsRequest(form.local, state.settings.Revision, S);
+        ui.settingsSection = section;
+        ui.settingsErrors = request.errors;
+        if (!request.body) {
+            renderSettingsSections();
+            return undefined;
+        }
+
+        ui.settingsSaving = true;
+        renderSettingsSections();
+        let result;
+        try {
+            result = await api.put('Settings', request.body);
+        } finally {
+            ui.settingsSaving = false;
+        }
+
+        let failed;
+        if (result.status === 200 && result.body) {
+            state.forms.settings = syncFormData(null, settingsFormData(result.body));
+            takeSettings(result.body);
+        } else if (result.status === 409 && result.body && result.body.Current) {
+            takeSettings(result.body.Current);
+            ui.settingsErrors = [{ Field: '', Html: t(S, 'web.settings.conflict') }];
+        } else if (result.status === 400 && result.body && Array.isArray(result.body.Errors)) {
+            ui.settingsErrors = result.body.Errors;
+        } else {
+            failed = result;
+        }
+
+        renderSettingsSections();
+        return failed;
     };
 
     const destination = id => (state.destinations ? state.destinations.Items.find(d => d.Id === id) : undefined);
@@ -1446,7 +1741,32 @@ export default function TgJellyPage(view, params) {
             await reloadSection('destinations', { fresh: true });
             return undefined;
         }),
-        // Tasks 11-12: add click actions here.
+        saveSettings: el => runAction(SETTINGS_SECTIONS.includes(idOf(el)) ? idOf(el) : 'messages', () => saveSettings(idOf(el))),
+        useSuggested: () => {
+            if (state.settings && state.settings.PublicUrlSuggestion) {
+                markDirty('settings', 'PublicUrl', state.settings.PublicUrlSuggestion);
+            }
+
+            renderSection('messages');
+        },
+        copyDiagnostics: () => runAction('diagnostics', async () => {
+            Object.assign(state.ui, { diagText: '', diagCopied: false });
+            const result = await api.get('Diagnostics');
+            if (result.status !== 200 || !result.body) {
+                return result;
+            }
+
+            const text = String(result.body.Text ?? '');
+            try {
+                await navigator.clipboard.writeText(text);
+                state.ui.diagCopied = true;
+            } catch {
+                state.ui.diagText = text;
+            }
+
+            return undefined;
+        }),
+        // Task 12: add click actions here.
     };
 
     const inputs = {
@@ -1533,7 +1853,28 @@ export default function TgJellyPage(view, params) {
                 state.ui.detectedPresets[id] = el.value;
             }
         },
-        // Tasks 11-12: add input/change handlers here.
+        publicUrl: el => markDirty('settings', 'PublicUrl', String(el.value ?? '')),
+        msgToggle: el => {
+            const key = el.getAttribute('data-tgj-key');
+            if (MESSAGE_TOGGLES.includes(key)) {
+                markDirty('settings', `Message.${key}`, Boolean(el.checked));
+            }
+        },
+        batching: el => {
+            const key = el.getAttribute('data-tgj-key');
+            if (BATCHING_FIELDS.some(f => f.key === key)) {
+                const text = String(el.value ?? '').trim();
+                // A value that isn't a whole number stays text, so Save can say so instead of sending it.
+                markDirty('settings', `Batching.${key}`, /^-?\d+$/.test(text) ? Number(text) : text);
+            }
+        },
+        updEnabled: el => markDirty('settings', 'UpdateCheck.Enabled', Boolean(el.checked)),
+        updMode: el => {
+            if (UPDATE_MODES.includes(el.value)) {
+                markDirty('settings', 'UpdateCheck.Mode', el.value);
+            }
+        },
+        // Task 12: add input/change handlers here.
     };
 
     const stopPolling = () => {

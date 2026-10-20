@@ -9,7 +9,7 @@ const SOURCE = readFileSync(new URL('../../src/Jellyfin.Plugin.TgJelly/Web/tgjel
 const EN = JSON.parse(readFileSync(new URL('../../src/Jellyfin.Plugin.TgJelly/Strings/en.json', import.meta.url), 'utf8'));
 
 const IDS = [
-    'tgj-status', 'tgj-connect', 'tgj-bot', 'tgj-destinations', 'tgj-messages', 'tgj-advanced', 'tgj-advanced-title',
+    'tgj-status', 'tgj-connect', 'tgj-bot', 'tgj-destinations', 'tgj-messages', 'tgj-demo', 'tgj-advanced', 'tgj-advanced-title',
     'tgj-proxy', 'tgj-batching', 'tgj-updates', 'tgj-templates', 'tgj-manual', 'tgj-diagnostics',
 ];
 
@@ -46,7 +46,9 @@ function settings(overrides = {}) {
         PublicUrl: '',
         PublicUrlValid: true,
         PublicUrlSuggestion: '',
-        Message: null,
+        Message: { ShowPoster: true, ShowOverview: true, ShowRatingGenres: true, ShowOpenInJellyfin: true, ShowProviderLinks: false, AnnounceUpgrades: false },
+        Batching: { QuietWindowSeconds: 120, MaxHoldMinutes: 30, ReleaseQuietSeconds: 20, DigestThreshold: 10, LateEditHours: 6, ReadyTimeoutMinutes: 15 },
+        UpdateCheck: { Enabled: true, Mode: 'SameMajor' },
         ProxyMode: 'System',
         ProxyUrl: '',
         HasProxyUsername: false,
@@ -301,9 +303,9 @@ test('a poll re-renders only the status', async () => {
     const { view, timers, el, hooks, api } = mount({ 'GET TgJelly/Status': status({ ConnectionMessage: 'first' }) });
     let loads = 0;
     let renders = 0;
-    hooks.sections.demo = { id: 'tgj-messages', load: async () => { loads++; }, render: () => `demo ${++renders}` };
+    hooks.sections.demo = { id: 'tgj-demo', load: async () => { loads++; }, render: () => `demo ${++renders}` };
     await show(view);
-    assert.equal(el('tgj-messages').innerHTML, 'demo 1');
+    assert.equal(el('tgj-demo').innerHTML, 'demo 1');
 
     api.fetch = makeApiClient({ 'GET TgJelly/Status': status({ ConnectionMessage: 'second' }) }).fetch;
     timers.tick();
@@ -312,7 +314,7 @@ test('a poll re-renders only the status', async () => {
     assert.ok(el('tgj-status').innerHTML.includes('second'));
     assert.equal(loads, 1);
     assert.equal(renders, 1);
-    assert.equal(el('tgj-messages').innerHTML, 'demo 1');
+    assert.equal(el('tgj-demo').innerHTML, 'demo 1');
 });
 
 test('an identical poll does not rewrite the status, even with an apostrophe the browser serializes differently', async () => {
@@ -363,33 +365,33 @@ test('change and input events reach the inputs map', async () => {
 
 test('an action error lands in its own section', async () => {
     const { view, hooks, el } = mount({ 'POST TgJelly/Boom': { status: 400, body: { Message: 'bad <x>' } } });
-    hooks.sections.demo = { id: 'tgj-messages', load: async () => {}, render: () => '<p>demo</p>' };
+    hooks.sections.demo = { id: 'tgj-demo', load: async () => {}, render: () => '<p>demo</p>' };
     hooks.actions.boom = () => hooks.runAction('demo', () => hooks.api.post('Boom'));
     hooks.actions.crash = () => hooks.runAction('demo', async () => { throw new Error('kaput'); });
     await show(view);
 
     clickOn(view, { 'data-tgj-act': 'boom' });
     await flush();
-    assert.ok(el('tgj-messages').innerHTML.includes('<p class="tgj-error">bad &lt;x&gt;</p>'));
-    assert.ok(el('tgj-messages').innerHTML.includes('<p>demo</p>'));
+    assert.ok(el('tgj-demo').innerHTML.includes('<p class="tgj-error">bad &lt;x&gt;</p>'));
+    assert.ok(el('tgj-demo').innerHTML.includes('<p>demo</p>'));
     assert.ok(!el('tgj-status').innerHTML.includes('bad'));
 
     clickOn(view, { 'data-tgj-act': 'crash' });
     await flush();
-    assert.ok(el('tgj-messages').innerHTML.includes(m.t(EN, 'web.requestFailed', { reason: 'kaput' })));
-    assert.ok(!el('tgj-messages').innerHTML.includes('bad'));
+    assert.ok(el('tgj-demo').innerHTML.includes(m.t(EN, 'web.requestFailed', { reason: 'kaput' })));
+    assert.ok(!el('tgj-demo').innerHTML.includes('bad'));
 });
 
 test('a dirty form survives a re-show and a poll, merged onto fresh data', async () => {
     let server = { PublicUrl: 'https://a', Batch: { Seconds: 30 } };
     const { view, hooks, el, timers } = mount({ 'GET TgJelly/Settings': () => server });
     hooks.sections.demo = {
-        id: 'tgj-messages',
+        id: 'tgj-demo',
         load: async () => hooks.syncForm('demo', (await hooks.api.get('Settings')).body),
         render: () => `${hooks.state.forms.demo.local.PublicUrl} ${hooks.state.forms.demo.local.Batch.Seconds}`,
     };
     await show(view);
-    assert.equal(el('tgj-messages').innerHTML, 'https://a 30');
+    assert.equal(el('tgj-demo').innerHTML, 'https://a 30');
 
     hooks.markDirty('demo', 'PublicUrl', 'https://mine');
     server = { PublicUrl: 'https://theirs', Batch: { Seconds: 60 } };
@@ -398,7 +400,7 @@ test('a dirty form survives a re-show and a poll, merged onto fresh data', async
     await flush();
 
     const form = hooks.state.forms.demo;
-    assert.equal(el('tgj-messages').innerHTML, 'https://mine 60');
+    assert.equal(el('tgj-demo').innerHTML, 'https://mine 60');
     assert.deepEqual(form.local, { PublicUrl: 'https://mine', Batch: { Seconds: 60 } });
     assert.deepEqual(form.base, server);
     assert.equal(form.dirty, true);
@@ -406,7 +408,7 @@ test('a dirty form survives a re-show and a poll, merged onto fresh data', async
 
     hooks.resetForm('demo', server);
     await hooks.reloadSection('demo');
-    assert.equal(el('tgj-messages').innerHTML, 'https://theirs 60');
+    assert.equal(el('tgj-demo').innerHTML, 'https://theirs 60');
     assert.equal(hooks.state.forms.demo.dirty, false);
 });
 
@@ -529,7 +531,7 @@ test('a later successful reload clears a section load error', async t => {
     let fail = true;
     const { view, hooks, el } = mount();
     hooks.sections.demo = {
-        id: 'tgj-messages',
+        id: 'tgj-demo',
         load: async () => {
             if (fail) {
                 throw new Error('down');
@@ -538,12 +540,12 @@ test('a later successful reload clears a section load error', async t => {
         render: () => '<p>demo</p>',
     };
     await show(view);
-    assert.ok(el('tgj-messages').innerHTML.includes('class="tgj-error"'));
+    assert.ok(el('tgj-demo').innerHTML.includes('class="tgj-error"'));
 
     fail = false;
     await hooks.reloadSection('demo');
-    assert.ok(!el('tgj-messages').innerHTML.includes('tgj-error'));
-    assert.ok(el('tgj-messages').innerHTML.includes('<p>demo</p>'));
+    assert.ok(!el('tgj-demo').innerHTML.includes('tgj-error'));
+    assert.ok(el('tgj-demo').innerHTML.includes('<p>demo</p>'));
 });
 
 test('a throwing render is caught inside reloadSection', async t => {
@@ -551,7 +553,7 @@ test('a throwing render is caught inside reloadSection', async t => {
     t.mock.method(console, 'error', (...args) => errors.push(args));
     const { view, hooks } = mount();
     hooks.sections.demo = {
-        id: 'tgj-messages',
+        id: 'tgj-demo',
         load: async () => {},
         render: () => {
             throw new Error('bad render');
@@ -1293,6 +1295,136 @@ test('add errors are shown escaped', async () => {
     await destAct(view, 'manualAdd');
     assert.ok(manualEl(el).includes('bad &lt;img src=x&gt;'));
     assert.ok(!manualEl(el).includes('<img'));
+});
+
+// --- messages, batching, updates, diagnostics ---
+
+const putSettings = api => api.calls.filter(c => c.type === 'PUT' && c.url === '/jf/TgJelly/Settings').map(c => JSON.parse(c.data));
+const msgChange = (view, key, checked) => dispatchOn(view, 'change', { 'data-tgj-input': 'msgToggle', 'data-tgj-key': key }, { checked });
+const batchInput = (view, key, value) => dispatchOn(view, 'input', { 'data-tgj-input': 'batching', 'data-tgj-key': key }, { value });
+
+test('use suggested fills the field', async () => {
+    const { view, el } = mount({ 'GET TgJelly/Settings': settings({ PublicUrl: 'http://10.0.0.5:8096', PublicUrlValid: false, PublicUrlSuggestion: 'https://jf.example.com' }) });
+    await show(view);
+    const html = el('tgj-messages').innerHTML;
+    assert.ok(html.includes('https://jf.example.com'));
+    assert.ok(html.includes(m.t(EN, 'web.messages.verify')));
+    await click(view, 'useSuggested');
+    assert.match(el('tgj-messages').innerHTML, /data-tgj-field="PublicUrl"[^>]*value="https:\/\/jf\.example\.com"|value="https:\/\/jf\.example\.com"[^>]*data-tgj-field="PublicUrl"/);
+});
+
+test('invalid url explains', async () => {
+    const { view, el } = mount({ 'GET TgJelly/Settings': settings({ PublicUrl: 'http://localhost', PublicUrlValid: false }) });
+    await show(view);
+    assert.ok(el('tgj-messages').innerHTML.includes(m.t(EN, 'web.messages.urlInvalid').replaceAll('&#39;', "'")));
+    const ok = mount({ 'GET TgJelly/Settings': settings({ PublicUrl: 'https://jf.example.com', PublicUrlValid: true }) });
+    await show(ok.view);
+    assert.ok(!ok.el('tgj-messages').innerHTML.includes(m.t(EN, 'web.messages.urlInvalid').replaceAll('&#39;', "'")));
+});
+
+test('toggles saved in Message', async () => {
+    const saved = settings({ Revision: 6 });
+    const { view, api, el } = mount({ 'PUT TgJelly/Settings': saved });
+    await show(view);
+    const html = el('tgj-messages').innerHTML;
+    for (const key of ['ShowPoster', 'ShowOverview', 'ShowRatingGenres', 'ShowOpenInJellyfin', 'ShowProviderLinks', 'AnnounceUpgrades']) {
+        assert.ok(html.includes(`data-tgj-key="${key}"`), key);
+    }
+    msgChange(view, 'ShowProviderLinks', true);
+    msgChange(view, 'ShowPoster', false);
+    await click(view, 'saveSettings');
+    const [body] = putSettings(api);
+    assert.equal(body.ExpectedRevision, 5);
+    assert.equal(body.Message.ShowProviderLinks, true);
+    assert.equal(body.Message.ShowPoster, false);
+    assert.equal(body.PublicUrl, '');
+    assert.deepEqual(body.UpdateCheck, { Enabled: true, Mode: 'SameMajor' });
+    assert.equal(body.Batching.QuietWindowSeconds, 120);
+});
+
+test('range error shown next to its field', async () => {
+    const { view, el } = mount({
+        'PUT TgJelly/Settings': { status: 400, body: { Errors: [{ Field: 'Batching.QuietWindowSeconds', Message: 'Must be 5 to <3600>.' }] } },
+    });
+    await show(view);
+    batchInput(view, 'QuietWindowSeconds', '2');
+    await click(view, 'saveSettings');
+    const html = el('tgj-batching').innerHTML;
+    assert.match(html, /data-tgj-field="Batching\.QuietWindowSeconds"[\s\S]*?Must be 5 to &lt;3600&gt;\./);
+    assert.ok(html.includes('min="5"') && html.includes('max="3600"'));
+    assert.ok(html.includes('value="2"'));
+    assert.ok(!el('tgj-messages').innerHTML.includes('Must be 5'));
+});
+
+test('settings 409 keeps typed batching value', async () => {
+    const fresh = settings({ Revision: 9, Batching: { QuietWindowSeconds: 200, MaxHoldMinutes: 45, ReleaseQuietSeconds: 20, DigestThreshold: 10, LateEditHours: 6, ReadyTimeoutMinutes: 15 } });
+    const { view, el, hooks } = mount({ 'PUT TgJelly/Settings': { status: 409, body: { Current: fresh } } });
+    await show(view);
+    batchInput(view, 'QuietWindowSeconds', '300');
+    batchInput(view, 'DigestThreshold', '20');
+    clickOn(view, { 'data-tgj-act': 'saveSettings', 'data-tgj-id': 'batching' });
+    await flush();
+    const html = el('tgj-batching').innerHTML;
+    assert.ok(html.includes('value="300"'));
+    assert.ok(html.includes('value="45"'), 'the server change in an untouched field shows');
+    assert.ok(html.includes('tgj-changed'), 'the field both sides changed is highlighted');
+    assert.ok(html.includes(m.t(EN, 'web.settings.conflict')));
+    assert.equal(hooks.state.settings.Revision, 9);
+    assert.equal(hooks.state.forms.settings.dirty, true);
+});
+
+test('a proxy save keeps unsaved settings edits, and a settings save keeps the proxy edit', async () => {
+    const { view, el, hooks } = mount({ 'PUT TgJelly/Proxy': settings({ Revision: 6, ProxyMode: 'Http', ProxyUrl: 'h:1' }) });
+    await show(view);
+    batchInput(view, 'DigestThreshold', '20');
+    dispatchOn(view, 'change', { 'data-tgj-input': 'proxyMode' }, { value: 'Http' });
+    input(view, 'proxyUrl', 'h:1');
+    await click(view, 'saveProxy');
+    assert.equal(hooks.state.settings.Revision, 6);
+    assert.equal(hooks.state.forms.settings.local.Batching.DigestThreshold, 20);
+    assert.ok(el('tgj-batching').innerHTML.includes('value="20"'));
+});
+
+test('updates form sends enabled and mode', async () => {
+    const { view, api, el } = mount({ 'PUT TgJelly/Settings': settings({ Revision: 6 }) });
+    await show(view);
+    assert.match(el('tgj-updates').innerHTML, /<option value="SameMajor" selected>/);
+    dispatchOn(view, 'change', { 'data-tgj-input': 'updEnabled' }, { checked: false });
+    dispatchOn(view, 'change', { 'data-tgj-input': 'updMode' }, { value: 'AnyNewer' });
+    await click(view, 'saveSettings');
+    assert.deepEqual(putSettings(api)[0].UpdateCheck, { Enabled: false, Mode: 'AnyNewer' });
+});
+
+test('a non-number batching value is not sent', async () => {
+    const { view, api, el } = mount();
+    await show(view);
+    batchInput(view, 'MaxHoldMinutes', 'abc');
+    await click(view, 'saveSettings');
+    assert.equal(putSettings(api).length, 0);
+    assert.match(el('tgj-batching').innerHTML, /data-tgj-field="Batching\.MaxHoldMinutes"[\s\S]*?tgj-error/);
+});
+
+test('copy diagnostics writes to the clipboard', async () => {
+    const written = [];
+    Object.defineProperty(globalThis, 'navigator', { value: { clipboard: { writeText: async text => { written.push(text); } } }, configurable: true });
+    const { view, el } = mount({ 'GET TgJelly/Diagnostics': { Text: 'TgJelly 1.0 <diag>' } });
+    await show(view);
+    await click(view, 'copyDiagnostics');
+    assert.deepEqual(written, ['TgJelly 1.0 <diag>']);
+    assert.ok(el('tgj-diagnostics').innerHTML.includes(m.t(EN, 'web.diag.copied')));
+    assert.ok(!el('tgj-diagnostics').innerHTML.includes('<textarea'));
+});
+
+test('copy diagnostics falls back to a textarea when clipboard rejects', async () => {
+    Object.defineProperty(globalThis, 'navigator', { value: { clipboard: { writeText: async () => { throw new Error('denied'); } } }, configurable: true });
+    const { view, el } = mount({ 'GET TgJelly/Diagnostics': { Text: 'TgJelly 1.0 <diag>' } });
+    let selected = 0;
+    view.elements.set('tgj-diagnostics-text', { select: () => { selected++; } });
+    await show(view);
+    await click(view, 'copyDiagnostics');
+    const html = el('tgj-diagnostics').innerHTML;
+    assert.match(html, /<textarea[^>]*readonly[^>]*>TgJelly 1\.0 &lt;diag&gt;<\/textarea>/);
+    assert.equal(selected, 1);
 });
 
 // --- source checks ---
