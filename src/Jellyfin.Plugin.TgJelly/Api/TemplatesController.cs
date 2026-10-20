@@ -180,9 +180,15 @@ public class TemplatesController : ControllerBase
         var warnings = new List<string>();
         var preview = full.Output ?? string.Empty;
         var length = HtmlText.PlainLength(preview);
+        if ((full.Ok && IsEmpty(full.Output)) || (sparse.Ok && IsEmpty(sparse.Output)))
+        {
+            // At send time an empty result keeps the default layout and flags the template.
+            warnings.Add(_strings.Get("templates.emptyWarning"));
+        }
+
         if (full.Ok)
         {
-            errors.AddRange(TelegramHtmlValidator.Validate(preview).Select(p => new TemplateErrorDto { Message = p }));
+            errors.AddRange(TelegramHtmlValidator.Validate(preview).Select(p => new TemplateErrorDto { Message = p.Describe(_strings) }));
             if (length > MessageLimit)
             {
                 errors.Add(new TemplateErrorDto { Message = _strings.Get("templates.tooLong", ("length", length), ("limit", MessageLimit)) });
@@ -195,6 +201,8 @@ public class TemplatesController : ControllerBase
 
         return new TemplateValidationDto { Errors = errors, Warnings = warnings, Preview = preview, Length = length, Limit = limit };
     }
+
+    private static bool IsEmpty(string? output) => string.IsNullOrWhiteSpace(HtmlText.ToPlain(output ?? string.Empty));
 
     private static TemplateErrorDto ToDto(TemplateError e) => new() { Message = e.Message, Line = e.Line, Column = e.Column };
 

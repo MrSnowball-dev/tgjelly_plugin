@@ -1,4 +1,5 @@
 using Jellyfin.Plugin.TgJelly.Rendering;
+using Jellyfin.Plugin.TgJelly.Strings;
 using Xunit;
 
 namespace Jellyfin.Plugin.TgJelly.Tests.Rendering;
@@ -30,6 +31,24 @@ public sealed class TelegramHtmlValidatorTests
     [InlineData("x</div>")]
     [InlineData("</script>")]
     public void Forbidden_HasOneProblem(string html) => Assert.Single(TelegramHtmlValidator.Validate(html));
+
+    [Theory]
+    [InlineData("<div>x</div>", "templates.html.notAllowed", "div")]
+    [InlineData("<span>x</span>", "templates.html.span", "span")]
+    [InlineData("<blockquote foo>x</blockquote>", "templates.html.blockquote", "blockquote")]
+    [InlineData("<b><i>x</b></i>", "templates.html.outOfOrder", "b")]
+    [InlineData("<b>x", "templates.html.unclosed", "b")]
+    [InlineData("x</b>", "templates.html.stray", "b")]
+    public void Problems_AreStringKeys_WithTheTag(string html, string key, string tag)
+    {
+        var strings = StringTable.LoadEmbedded();
+
+        var problem = Assert.Single(TelegramHtmlValidator.Validate(html));
+
+        Assert.Equal((key, tag), (problem.Key, problem.Tag));
+        Assert.Equal(strings.Get(key, ("tag", tag)), problem.Describe(strings));
+        Assert.NotEqual(key, problem.Describe(strings));
+    }
 
     [Fact]
     public void Entities_Pass() => Assert.Empty(TelegramHtmlValidator.Validate("a &lt; b &amp; c &gt; d &quot;x&quot; &#39;"));

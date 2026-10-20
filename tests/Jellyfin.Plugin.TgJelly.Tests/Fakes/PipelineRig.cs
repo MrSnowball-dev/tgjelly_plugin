@@ -34,7 +34,8 @@ public sealed class PipelineRig
             new Jellyfin.Plugin.TgJelly.Templates.TemplateEngine(TimeProvider.System),
             new Jellyfin.Plugin.TgJelly.Templates.TemplateModelBuilder(library, new LinkBuilder(new FakeServerInfo()), h.Settings, formatter, h.Time),
             new Jellyfin.Plugin.TgJelly.Templates.TemplateFlags(State, h.Settings, h.Time),
-            h.Settings);
+            h.Settings,
+            h.Strings);
         Logger = new ListLogger<NotificationPipeline>();
         Pipeline = new NotificationPipeline(Queues, Readiness, Aggregator, Alerts, Renderer, Outbox, h.Settings, State, h.Time, Logger);
     }

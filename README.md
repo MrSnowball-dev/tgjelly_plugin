@@ -27,11 +27,11 @@ The repository has one build for Jellyfin 10.11 and one for Jellyfin 12. Jellyfi
 
 1. Open @BotFather in Telegram and send `/newbot`. Copy the token it gives you.
 2. Restrict access to your bot in BotFather's Mini App, so that only the people you want can use it.
-3. In Jellyfin, open Dashboard, TgJelly, Telegram. Paste the token.
+3. In Jellyfin, open the Dashboard and pick **Telegram** in its menu. Paste the token.
 4. Press **Open @bot**. Telegram opens the bot.
 5. In the bot, pick a chat, group or channel with Telegram's own picker. Then pick a preset.
 
-<!-- screenshot: the Telegram tab after the token is accepted -->
+<!-- screenshot: the Telegram page after the token is accepted -->
 
 You never type a chat ID. The Advanced section of the dashboard has manual options for the rare case where the main way fails.
 
@@ -65,9 +65,10 @@ You can replace the text of a message with your own template. Templates are opti
 
 ## Troubleshooting
 
-- **Telegram is blocked on your network.** Set a proxy under Dashboard, TgJelly, Advanced.
+- **Telegram is blocked on your network.** Set a proxy in the Advanced section of the **Telegram** page in the Dashboard.
 - **The dashboard page is blank or its buttons do nothing.** The page is an ES module. A strict Content Security Policy, or Cloudflare Rocket Loader, can break it. Disable Rocket Loader for the Jellyfin host and allow the page's scripts in your CSP.
-- **"Another app is polling" (409).** Something else is using the same bot token, such as another bot program. Stop it, or press **Take over** on the Status tab. The same button fixes a webhook that was set on the bot.
+- **"Another app is polling this bot".** Something else is using the same bot token, such as another bot program or a second Jellyfin server. Stop that app. TgJelly connects again by itself once it has stopped.
+- **"Another app set a webhook for this bot".** Press **Take over** on the **Telegram** page in the Dashboard. It removes the webhook, so TgJelly can receive updates again.
 - **"Another Jellyfin process is using TgJelly's data folder".** Two servers must not share one config folder. This is not supported. Give each server its own.
 - **A destination shows "Photos blocked" or "Needs permissions".** Give the bot the rights it needs in that chat, then press **Check again**.
 

@@ -668,7 +668,7 @@ export function renderDestinations(dto, libraries, links, S, ui) {
     parts.push(`<div>${telegramLink(links && links.StartAdd, t(S, 'web.dest.add'))}</div>`);
     if (dto.ManualUnlocked) {
         parts.push(`<p class="fieldDescription">${t(S, 'web.dest.manualHint')} `
-            + `<a href="#tgj-manual" is="emby-linkbutton" class="emby-button" data-tgj-act="open-manual"><strong>${t(S, 'web.dest.manualLink')}</strong></a></p>`);
+            + `<button is="emby-button" type="button" class="button-link" data-tgj-act="open-manual"><strong>${t(S, 'web.dest.manualLink')}</strong></button></p>`);
     }
 
     return `<div class="verticalSection">${parts.join('')}</div>`;
@@ -955,7 +955,10 @@ export function renderTemplates(dto, S, ui) {
         `<div class="selectContainer"><select is="emby-select" class="emby-select-withcolor emby-select" label="${t(S, 'web.templates.event')}" `
         + `data-tgj-input="tplEvent">${options.join('')}</select></div>`];
     if (item.Flag) {
-        parts.push(`<p class="tgj-error">${t(S, 'web.templates.flagged')} ${esc(item.Flag.Error)}</p>`);
+        // A truncated template was sent, only shortened; any other flag means the default message was sent instead.
+        parts.push(item.Flag.Kind === 'truncated'
+            ? `<p class="tgj-error">${t(S, 'web.templates.flagTruncated')}</p>`
+            : `<p class="tgj-error">${t(S, 'web.templates.flagError')} ${esc(item.Flag.Error)}</p>`);
     }
 
     if (item.Media) {

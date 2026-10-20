@@ -145,6 +145,29 @@ public sealed class TemplatesControllerTests : IAsyncLifetime
         => Assert.Contains(Validate("media.movie", "<script>x</script>").Errors, e => e.Message.Contains("script", System.StringComparison.OrdinalIgnoreCase));
 
     [Fact]
+    public void Validate_ForbiddenTag_MessageFromTheStringTable()
+        => Assert.Contains(Validate("server.started", "<div>x</div>").Errors, e => e.Message == _h.Strings.Get("templates.html.notAllowed", ("tag", "div")));
+
+    [Fact]
+    public void Validate_EmptyFullRender_Warns()
+    {
+        var dto = Validate("security.lockout", "{{ if false }}Locked: {{ user }}{{ end }}");
+
+        Assert.Empty(dto.Errors);
+        Assert.Equal([_h.Strings.Get("templates.emptyWarning")], dto.Warnings);
+    }
+
+    [Fact]
+    public void Validate_EmptySparseRender_Warns()
+    {
+        var dto = Validate("media.movie", "<i>{{ overview }}</i> ");
+
+        Assert.Empty(dto.Errors);
+        Assert.NotEmpty(dto.Preview);
+        Assert.Equal([_h.Strings.Get("templates.emptyWarning")], dto.Warnings);
+    }
+
+    [Fact]
     public void Validate_MediaOver1024_Warns()
     {
         var dto = Validate("media.movie", new string('a', 1500));

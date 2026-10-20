@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Linq;
 using Jellyfin.Plugin.TgJelly.Configuration;
 using Jellyfin.Plugin.TgJelly.State.Documents;
+using Jellyfin.Plugin.TgJelly.Strings;
 using Jellyfin.Plugin.TgJelly.Templates;
 using Telegram.Bot.Extensions;
 
@@ -10,7 +11,8 @@ namespace Jellyfin.Plugin.TgJelly.Rendering;
 
 /// <summary>
 /// Renders a model for one destination (spec §8): picks the layout by <see cref="RenderModel.Kind"/> and applies the
-/// destination's silent groups (§8.4). A custom template (§8.5) replaces the caption and text when it renders cleanly.
+/// destination's silent groups (§8.4). A custom template (§8.5) replaces the caption and text when it renders cleanly
+/// to some text; otherwise the default layout is kept and the template is flagged.
 /// </summary>
 public sealed class NotificationRenderer
 {
@@ -20,6 +22,7 @@ public sealed class NotificationRenderer
     private readonly TemplateModelBuilder _models;
     private readonly TemplateFlags _flags;
     private readonly SettingsStore _settings;
+    private readonly StringTable _strings;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="NotificationRenderer"/> class.
@@ -30,7 +33,8 @@ public sealed class NotificationRenderer
     /// <param name="models">The template model builder.</param>
     /// <param name="flags">The template flags.</param>
     /// <param name="settings">The settings, for the template overrides.</param>
-    public NotificationRenderer(MediaLayouts media, AlertLayouts alerts, TemplateEngine engine, TemplateModelBuilder models, TemplateFlags flags, SettingsStore settings)
+    /// <param name="strings">The string table, for the flag messages.</param>
+    public NotificationRenderer(MediaLayouts media, AlertLayouts alerts, TemplateEngine engine, TemplateModelBuilder models, TemplateFlags flags, SettingsStore settings, StringTable strings)
     {
         _media = media;
         _alerts = alerts;
@@ -38,6 +42,7 @@ public sealed class NotificationRenderer
         _models = models;
         _flags = flags;
         _settings = settings;
+        _strings = strings;
     }
 
     /// <summary>
@@ -94,7 +99,14 @@ public sealed class NotificationRenderer
             var output = result.Output!;
             if (TelegramHtmlValidator.Validate(output) is { Count: > 0 } problems)
             {
-                _flags.Flag(key, "error", problems[0], hash);
+                _flags.Flag(key, "error", problems[0].Describe(_strings), hash);
+                return;
+            }
+
+            // Telegram refuses an empty message, which would lose the notification: keep the default instead.
+            if (string.IsNullOrWhiteSpace(HtmlText.ToPlain(output)))
+            {
+                _flags.Flag(key, "error", _strings.Get("templates.empty"), hash);
                 return;
             }
 

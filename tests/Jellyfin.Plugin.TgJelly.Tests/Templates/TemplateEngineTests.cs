@@ -16,6 +16,18 @@ public sealed class TemplateEngineTests
         new Dictionary<string, object?> { [key] = value };
 
     [Fact]
+    public void Parse_NeverThrows()
+    {
+        var engine = new TemplateEngine(TimeProvider.System, TimeSpan.FromSeconds(2), _ => throw new InvalidOperationException("parser broke"));
+
+        var error = Assert.Single(engine.Parse("{{ x }}"));
+        var render = engine.Render("k", "{{ x }}", Empty, strict: true);
+
+        Assert.Equal(("parser broke", null, null), (error.Message, error.Line, error.Column));
+        Assert.Equal("parser broke", render.Error!.Message);
+    }
+
+    [Fact]
     public void Escapes_ExpressionResults()
     {
         var result = Engine().Render("k", "{{ x }}", Model("x", "<b>&"), strict: true);

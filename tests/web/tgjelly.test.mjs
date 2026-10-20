@@ -1196,6 +1196,9 @@ test('the set up manually link only shows when ManualUnlocked', async () => {
     const open = mount({ 'GET TgJelly/Destinations': destinations({ ManualUnlocked: true }) });
     await show(open.view);
     assert.ok(destEl(open.el).includes('data-tgj-act="open-manual"'));
+    // Jellyfin's dashboard routes on the hash, so the control must not carry an href="#…" (final review M1).
+    assert.match(destEl(open.el), /<button is="emby-button" type="button" class="button-link"[^>]*data-tgj-act="open-manual"/);
+    assert.ok(!destEl(open.el).includes('href="#'));
     open.el('tgj-manual').scrolled = 0;
     open.el('tgj-manual').scrollIntoView = () => { open.el('tgj-manual').scrolled++; };
     await destAct(open.view, 'open-manual');
@@ -1486,7 +1489,7 @@ function templates(overrides = {}) {
             },
             {
                 EventKey: 'media.digest', Label: 'Digest', Media: true, Enabled: true, Text: 'Hi {{ title }}', SampleFull: '', SampleSparse: '',
-                Flag: { Kind: 'BadHtml', Error: 'bad <tag>', At: '2026-10-20T10:00:00Z' },
+                Flag: { Kind: 'error', Error: 'bad <tag>', At: '2026-10-20T10:00:00Z' },
                 Fields: [{ Name: 'title', Type: 'string', Description: 'T', Optional: false }],
             },
         ],
@@ -1596,11 +1599,24 @@ test('flag shown for flagged key', async () => {
     tplInput(view, 'tplEvent', { value: 'media.digest' }, 'change');
     await flush();
     const html = el('tgj-templates').innerHTML;
-    assert.ok(html.includes(m.t(EN, 'web.templates.flagged')));
+    assert.ok(html.includes(m.t(EN, 'web.templates.flagError')));
+    assert.ok(!html.includes(m.t(EN, 'web.templates.flagTruncated')));
     assert.ok(html.includes('bad &lt;tag&gt;'));
     tplInput(view, 'tplEvent', { value: 'movie.added' }, 'change');
     await flush();
     assert.ok(!el('tgj-templates').innerHTML.includes('bad &lt;tag&gt;'));
+});
+
+test('a truncated flag says the message was shortened, not that the template failed', async () => {
+    const dto = templates();
+    dto.Items[1].Flag = { Kind: 'truncated', Error: '', At: '2026-10-20T10:00:00Z' };
+    const { view, el } = mount({ 'GET TgJelly/Templates': dto });
+    await show(view);
+    tplInput(view, 'tplEvent', { value: 'media.digest' }, 'change');
+    await flush();
+    const html = el('tgj-templates').innerHTML;
+    assert.ok(html.includes(m.t(EN, 'web.templates.flagTruncated')));
+    assert.ok(!html.includes(m.t(EN, 'web.templates.flagError')));
 });
 
 test('media keys mention digests', async () => {

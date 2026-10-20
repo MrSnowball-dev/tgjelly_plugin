@@ -31,7 +31,8 @@ public sealed class NotificationRendererTemplateTests : IDisposable
             new TemplateEngine(TimeProvider.System),
             new TemplateModelBuilder(_library, links, _h.Settings, formatter, _h.Time),
             _flags,
-            _h.Settings);
+            _h.Settings,
+            _h.Strings);
     }
 
     [Fact]
@@ -110,6 +111,34 @@ public sealed class NotificationRendererTemplateTests : IDisposable
 
         Assert.Null(message.TemplateKey);
         Assert.Equal("error", _flags.Current("security.lockout")!.Kind);
+    }
+
+    [Fact]
+    public void ForbiddenTag_FlagTextComesFromTheStringTable()
+    {
+        Set("security.lockout", "<h1>hi</h1>");
+
+        _renderer.Render(Lockout(), Dest());
+
+        Assert.Equal(_h.Strings.Get("templates.html.notAllowed", ("tag", "h1")), _flags.Current("security.lockout")!.Error);
+    }
+
+    [Theory]
+    [InlineData("{{ if false }}Locked: {{ user }}{{ end }}")]
+    [InlineData("{{ if false }}x{{ end }}  \n  ")]
+    [InlineData("<b> </b>")]
+    [InlineData("{{ nope }}")]
+    public void EmptyOutput_KeepsTheDefault_AndFlags(string text)
+    {
+        Set("security.lockout", text);
+
+        var message = _renderer.Render(Lockout(), Dest())!;
+
+        Assert.Null(message.TemplateKey);
+        Assert.StartsWith("🔒", message.Text, StringComparison.Ordinal);
+        var flag = _flags.Current("security.lockout")!;
+        Assert.Equal("error", flag.Kind);
+        Assert.Equal(_h.Strings.Get("templates.empty"), flag.Error);
     }
 
     [Fact]

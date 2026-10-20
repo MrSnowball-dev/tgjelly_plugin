@@ -25,6 +25,7 @@ public sealed class TemplateEngine
     private readonly ConcurrentDictionary<(string EventKey, string Hash), Template> _cache = new();
     private readonly TimeProvider _time;
     private readonly TimeSpan _timeout;
+    private readonly Func<string, Template> _parse;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="TemplateEngine"/> class.
@@ -41,30 +42,50 @@ public sealed class TemplateEngine
     /// <param name="time">The clock.</param>
     /// <param name="timeout">How long one render may run.</param>
     internal TemplateEngine(TimeProvider time, TimeSpan timeout)
+        : this(time, timeout, text => Template.Parse(text))
+    {
+    }
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="TemplateEngine"/> class with a render timeout and a parser (tests).
+    /// </summary>
+    /// <param name="time">The clock.</param>
+    /// <param name="timeout">How long one render may run.</param>
+    /// <param name="parse">Parses template text.</param>
+    internal TemplateEngine(TimeProvider time, TimeSpan timeout, Func<string, Template> parse)
     {
         ArgumentNullException.ThrowIfNull(time);
+        ArgumentNullException.ThrowIfNull(parse);
         _time = time;
         _timeout = timeout;
+        _parse = parse;
     }
 
     /// <summary>Gets the number of cached parsed templates.</summary>
     internal int CachedCount => _cache.Count;
 
     /// <summary>
-    /// Parses template text.
+    /// Parses template text. Never throws.
     /// </summary>
     /// <param name="text">The template text.</param>
     /// <returns>Every parse problem, 1-based; empty when the text parses.</returns>
     public IReadOnlyList<TemplateError> Parse(string text)
     {
-        var template = Template.Parse(text ?? string.Empty);
-        var errors = new List<TemplateError>();
-        foreach (var message in template.Messages)
+        try
         {
-            errors.Add(ToError(message.Message, message.Span));
-        }
+            var template = _parse(text ?? string.Empty);
+            var errors = new List<TemplateError>();
+            foreach (var message in template.Messages)
+            {
+                errors.Add(ToError(message.Message, message.Span));
+            }
 
-        return errors;
+            return errors;
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            return [new TemplateError(ex.Message, null, null)];
+        }
     }
 
     /// <summary>
@@ -162,7 +183,7 @@ public sealed class TemplateEngine
             return cached;
         }
 
-        var template = Template.Parse(text);
+        var template = _parse(text);
         if (_cache.Count >= CacheSize)
         {
             _cache.Clear();

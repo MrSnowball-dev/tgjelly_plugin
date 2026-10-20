@@ -33,9 +33,11 @@ A longer result is cut to fit.
 
 ### Checks, flags and fallbacks
 
-The dashboard checks a template when you save it.
-It renders the template twice, once with a full sample and once with missing data, and reports unknown fields.
+Press **Validate** in the dashboard to check a template. Saving does not check it.
+Validate renders the template twice, once with a full sample and once with missing data.
+It reports unknown fields, tags Telegram doesn't allow, and a result with no text.
 When a template fails while a message is sent, the default layout is sent instead, and the template is flagged with the error.
+A template that produces no text counts as failed.
 A template whose result is cut is flagged "truncated".
 A flag clears when you change the template's text or turn it on or off.
 
