@@ -644,13 +644,12 @@ export function renderDestinations(dto, libraries, links, S, ui) {
     }
 
     for (const dest of dto.Items) {
-        const paused = !dest.Enabled;
         parts.push('<div class="tgj-destination">'
             + `<div class="tgj-destination-row"><strong>${esc(dest.Title)}</strong> `
             + `<span class="fieldDescription">${t(S, `dest.kind.${dest.Kind}`)}</span> ${healthBadges(dest.Health, S)} `
             + '<label class="emby-checkbox-label">'
-            + `<input is="emby-checkbox" type="checkbox" data-tgj-act="enabled" data-tgj-id="${esc(dest.Id)}"${paused ? ' checked' : ''} />`
-            + `<span>${t(S, paused ? 'dest.btn.resume' : 'dest.btn.pause')}</span></label> `
+            + `<input is="emby-checkbox" type="checkbox" data-tgj-act="enabled" data-tgj-id="${esc(dest.Id)}"${dest.Enabled ? ' checked' : ''} />`
+            + `<span>${t(S, 'web.dest.enabled')}</span></label> `
             + `${button(t(S, ui.editing === dest.Id ? 'web.dest.close' : 'web.dest.edit'), 'edit', { id: dest.Id })}</div>`);
         if (ui.editing === dest.Id) {
             parts.push(renderEditor(dest, dto.Catalog, libraries ?? [], S, {
@@ -1128,11 +1127,12 @@ export default function TgJellyPage(view, params) {
      * Handles a destination change's reply (spec §10.4): a 409 takes the fresh data in and keeps the unsaved edits, a 400
      * shows the server's messages. Returns the result only for the other failures, which runAction shows.
      */
-    const destinationReply = result => {
+    const destinationReply = (result, id) => {
         const S = state.strings;
         if (result.status === 409 && result.body && result.body.Current) {
+            const pending = Boolean(state.forms[destKey(id)] && state.forms[destKey(id)].dirty);
             takeDestinations(result.body.Current);
-            state.ui.errors.destinations = t(S, 'web.dest.conflict');
+            state.ui.errors.destinations = t(S, pending ? 'web.dest.conflict' : 'web.dest.conflictPlain');
             return undefined;
         }
 
@@ -1156,7 +1156,7 @@ export default function TgJellyPage(view, params) {
             return undefined;
         }
 
-        return destinationReply(result);
+        return destinationReply(result, id);
     };
 
     const destinationOutcome = (id, html) => {
@@ -1308,7 +1308,7 @@ export default function TgJellyPage(view, params) {
                 return undefined;
             }
 
-            return destinationReply(result);
+            return destinationReply(result, id);
         }),
         'open-manual': openManual,
         // Tasks 10-12: add click actions here.
@@ -1362,12 +1362,15 @@ export default function TgJellyPage(view, params) {
                 renderSection('destinations');
             }
         },
-        destLibrary: el => {
+        destLibrary: (el, event) => {
             const id = idOf(el);
             const form = state.forms[destKey(id)];
             if (form) {
                 const lib = el.getAttribute('data-tgj-lib');
                 editDestination(id, { LibraryIds: toggled(form.local.LibraryIds, lib, Boolean(el.checked)) });
+                if (event.type === 'change') {
+                    renderSection('destinations');
+                }
             }
         },
         destSilent: el => {

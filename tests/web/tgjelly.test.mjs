@@ -1062,7 +1062,47 @@ test('the editor lists events by group, libraries and silent groups', async () =
     assert.ok(html.includes('Shows &lt;i&gt;'));
     assert.match(html, new RegExp(`data-tgj-lib="${LIB_A}"[^>]*checked`));
     assert.match(html, /data-tgj-group="media"[^>]*checked/);
-    assert.ok(!html.includes(m.t(EN, 'dest.libraries.all')) || html.includes(m.t(EN, 'dest.libraries.hint')));
+    assert.ok(html.includes(m.t(EN, 'dest.libraries.hint')));
+    assert.ok(!html.includes(m.t(EN, 'dest.libraries.all')));
+});
+
+test('the all-libraries line follows the library boxes', async () => {
+    const { view, el } = mount({ 'GET TgJelly/Destinations': destinations({ Items: [dest({ LibraryIds: [LIB_A] })] }) });
+    await show(view);
+    await destAct(view, 'edit', { 'data-tgj-id': 'd1' });
+    await destInput(view, 'destLibrary', { 'data-tgj-id': 'd1', 'data-tgj-lib': LIB_A }, { checked: false });
+    assert.ok(destEl(el).includes(m.t(EN, 'dest.libraries.all')));
+    assert.ok(!destEl(el).includes(m.t(EN, 'dest.libraries.hint')));
+});
+
+test('the sending switch is checked exactly when the destination is enabled', async () => {
+    for (const enabled of [true, false]) {
+        const { view, el } = mount({ 'GET TgJelly/Destinations': destinations({ Items: [dest({ Enabled: enabled })] }) });
+        await show(view);
+        const html = destEl(el);
+        assert.ok(html.includes(m.t(EN, 'web.dest.enabled')));
+        assert.equal(/data-tgj-act="enabled"[^>]*checked/.test(html), enabled);
+    }
+});
+
+test('picking Custom sends Preset Custom and keeps the events', async () => {
+    const { view, api, hooks } = mount({ 'PUT TgJelly/Destinations/d1': () => dest({ Preset: 'Custom' }) });
+    await show(view);
+    await destAct(view, 'edit', { 'data-tgj-id': 'd1' });
+    await destInput(view, 'destPreset', { 'data-tgj-id': 'd1' }, { value: 'Custom' });
+    assert.deepEqual(hooks.state.forms['dest:d1'].local.Events, KEYS);
+    await destAct(view, 'saveDest', { 'data-tgj-id': 'd1' });
+    assert.deepEqual(putBodies(api), [{ ExpectedRevision: 7, Preset: 'Custom' }]);
+});
+
+test('a 409 on a pause with nothing pending uses the neutral line', async () => {
+    const { view, el } = mount({
+        'PUT TgJelly/Destinations/d1': { status: 409, body: { Current: destinations({ Revision: 9 }) } },
+    });
+    await show(view);
+    await destAct(view, 'enabled', { 'data-tgj-id': 'd1' });
+    assert.ok(destEl(el).includes(m.t(EN, 'web.dest.conflictPlain')));
+    assert.ok(!destEl(el).includes(m.t(EN, 'web.dest.conflict')));
 });
 
 test('a removed library is listed and removable', async () => {

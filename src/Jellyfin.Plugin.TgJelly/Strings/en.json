@@ -336,7 +336,9 @@
   "web.dest.save": "Save",
   "web.dest.leave": "Bot leaves the chat",
   "web.dest.confirmRemove": "Remove {title}?",
-  "web.dest.librariesRemoved": "Every library this destination was limited to has been removed, so nothing is sent. Pick libraries or remove the leftovers.",
+  "web.dest.librariesRemoved": "Every library this destination was limited to has been removed, so nothing is sent. Remove the leftovers below and it receives all libraries again, or pick libraries.",
   "web.dest.removeLibrary": "Remove",
-  "web.dest.conflict": "This destination changed elsewhere. Your edits are kept; check the highlighted fields and save again."
+  "web.dest.conflict": "This destination changed elsewhere. Your edits are kept; check the highlighted fields and save again.",
+  "web.dest.conflictPlain": "This destination changed elsewhere. Its current state is shown; try again.",
+  "web.dest.enabled": "Sending"
 }
