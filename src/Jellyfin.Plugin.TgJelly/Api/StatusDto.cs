@@ -85,4 +85,7 @@ public sealed class StatusDto
 
     /// <summary>Gets the number of destinations whose library filter names only removed libraries (spec §7.3).</summary>
     public int RemovedLibraryFilters { get; init; }
+
+    /// <summary>Gets the notices the admin hasn't dismissed.</summary>
+    public IReadOnlyList<NoticeDto> Notices { get; init; } = [];
 }

@@ -1,3 +1,5 @@
+using System.Linq;
+using Microsoft.AspNetCore.Mvc;
 using System.Text.Json;
 using System.Threading.Tasks;
 using System.Threading;
@@ -13,6 +15,7 @@ using Jellyfin.Plugin.TgJelly.Library;
 using Jellyfin.Plugin.TgJelly.Pipeline;
 using Jellyfin.Plugin.TgJelly.State.Documents;
 using Jellyfin.Plugin.TgJelly.State;
+using Jellyfin.Plugin.TgJelly.Status;
 using Jellyfin.Plugin.TgJelly.Strings;
 using Jellyfin.Plugin.TgJelly.Tests.Fakes;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -130,7 +133,7 @@ public class TgJellyControllerTests
         health.MarkProblem(d.Id, HealthStatus.Lost, "kicked");
         var library = new FakeLibrary();
         var readiness = new MediaReadiness(h.State, h.Settings, library, new PendingIdSet(), h.Time, NullLogger<MediaReadiness>.Instance);
-        var controller = new TgJellyController(CompatGuard.Evaluate(new Version(BuildInfo.TargetJellyfinMajor, 0, 0, 0)), gate, h.Settings, h.State, h.Secrets, h.Connection, outbox, health, h.Strings, readiness, library);
+        var controller = new TgJellyController(CompatGuard.Evaluate(new Version(BuildInfo.TargetJellyfinMajor, 0, 0, 0)), gate, h.Settings, h.State, h.Secrets, h.Connection, outbox, health, h.Strings, readiness, library, new NoticeBuilder(h.State, h.Secrets, h.Settings, library, h.Strings, h.Time));
 
         var status = controller.GetStatus().Value!;
 
@@ -221,6 +224,34 @@ public class TgJellyControllerTests
         Assert.Equal(1, NewController(Compatible, gate, h.Settings, h.State, h.Secrets, library: library).GetStatus().Value!.RemovedLibraryFilters);
     }
 
+    [Fact]
+    public void Status_ListsVisibleNotices()
+    {
+        using var h = new BotTestHarness();
+        using var gate = new InstanceGate(h.Paths, h.Time, NullLogger<InstanceGate>.Instance);
+        h.State.Update(s => s.Status.LoadWarnings = ["state.json was quarantined"]);
+
+        var notice = Assert.Single(NewController(Compatible, gate, h.Settings, h.State, h.Secrets).GetStatus().Value!.Notices);
+
+        Assert.Equal(("LoadWarning", "state.json was quarantined"), (notice.Kind, notice.Text));
+        Assert.StartsWith("load:", notice.Id, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Dismiss_Returns204_AndHidesIt()
+    {
+        using var h = new BotTestHarness();
+        var gate = await h.StartOwnedGateAsync();
+        h.State.Update(s => s.Status.LoadWarnings = ["state.json was quarantined"]);
+        var controller = NewController(Compatible, gate, h.Settings, h.State, h.Secrets);
+        var id = controller.GetStatus().Value!.Notices.Single().Id;
+
+        Assert.IsType<NoContentResult>(controller.Dismiss(new DismissRequest { NoticeId = id }));
+        Assert.IsType<NoContentResult>(controller.Dismiss(new DismissRequest { NoticeId = "unknown:1" }));
+
+        Assert.Empty(controller.GetStatus().Value!.Notices);
+    }
+
     private static CompatResult Compatible => CompatGuard.Evaluate(new Version(BuildInfo.TargetJellyfinMajor, 0, 0, 0));
 
     private static TgJellyController NewController(CompatResult compat, InstanceGate gate, SettingsStore settings, StateStore state, SecretsStore secrets, MediaReadiness? readiness = null, ILibraryAccess? library = null)
@@ -230,6 +261,6 @@ public class TgJellyControllerTests
         var health = new HealthService(gate, connection, new DestinationChecker(connection, strings), settings, state, TimeProvider.System, NullLogger<HealthService>.Instance);
         library ??= new FakeLibrary();
         readiness ??= new MediaReadiness(state, settings, library, new PendingIdSet(), TimeProvider.System, NullLogger<MediaReadiness>.Instance);
-        return new TgJellyController(compat, gate, settings, state, secrets, connection, new Outbox(state, strings, TimeProvider.System), health, strings, readiness, library);
+        return new TgJellyController(compat, gate, settings, state, secrets, connection, new Outbox(state, strings, TimeProvider.System), health, strings, readiness, library, new NoticeBuilder(state, secrets, settings, library, strings, TimeProvider.System));
     }
 }

@@ -11,6 +11,7 @@ using Jellyfin.Plugin.TgJelly.Intake.Consumers;
 using Jellyfin.Plugin.TgJelly.Library;
 using Jellyfin.Plugin.TgJelly.Logging;
 using Jellyfin.Plugin.TgJelly.State;
+using Jellyfin.Plugin.TgJelly.Status;
 using Jellyfin.Plugin.TgJelly.Strings;
 using MediaBrowser.Common.Configuration;
 using MediaBrowser.Common.Updates;
@@ -94,6 +95,7 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<DestinationChecker>();
         serviceCollection.AddSingleton<HealthService>();
         serviceCollection.AddSingleton<Outbox>();
+        serviceCollection.AddSingleton<NoticeBuilder>();
         serviceCollection.AddSingleton<PacingGate>();
         serviceCollection.AddSingleton<OutboxDelivery>();
         serviceCollection.AddSingleton<IServerStartup, ServerStartup>();
