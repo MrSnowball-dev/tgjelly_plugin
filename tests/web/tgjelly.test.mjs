@@ -1200,6 +1200,101 @@ test('the set up manually link only shows when ManualUnlocked', async () => {
     assert.equal(open.el('tgj-manual').scrolled, 1);
 });
 
+// --- manual block and detected chats (spec §6.5) ---
+
+const manualEl = el => el('tgj-manual').innerHTML;
+const DETECTED = [{ ChatId: -100777, Title: 'Movie <b>club</b>', Kind: 'Supergroup', DetectedAt: '2026-10-20T10:00:00Z' }];
+const unlocked = overrides => ({ 'GET TgJelly/Destinations': destinations({ ManualUnlocked: true, DetectedChats: DETECTED, ...overrides }) });
+const added = (outcome = 'Added') => ({ Outcome: outcome, Destination: dest({ Id: 'd2' }), TestSent: true, TestError: null });
+const posts = (api, prefix) => api.calls.filter(c => c.type === 'POST' && c.url.startsWith(`/jf/TgJelly/${prefix}`));
+const typeManual = (view, value) => destInput(view, 'manualInput', {}, { value }, 'input');
+
+test('manual block hidden when locked', async () => {
+    const { view, el } = mount({ 'GET TgJelly/Destinations': destinations({ DetectedChats: DETECTED }) });
+    await show(view);
+    assert.equal(manualEl(el), '');
+    assert.equal(m.renderManual(destinations(), EN, {}), '');
+    const open = mount(unlocked());
+    await show(open.view);
+    assert.ok(manualEl(open.el).includes(m.t(EN, 'web.manual.title')));
+    assert.ok(manualEl(open.el).includes('data-tgj-act="manualAdd"'));
+});
+
+test('integer input sends ChatId, link sends TopicLink', async () => {
+    const { view, api } = mount({ ...unlocked(), 'POST TgJelly/Destinations': () => added() });
+    await show(view);
+    await typeManual(view, ' -100123456 ');
+    await destInput(view, 'manualPreset', {}, { value: 'NewMedia' });
+    await destAct(view, 'manualAdd');
+    await typeManual(view, 'https://t.me/c/123456/7');
+    await destAct(view, 'manualAdd');
+    await typeManual(view, 'https://t.me/club/9');
+    await destAct(view, 'manualAdd');
+    const bodies = posts(api, 'Destinations').map(c => JSON.parse(c.data));
+    assert.deepEqual(bodies, [
+        { ExpectedRevision: 7, ChatId: -100123456, Preset: 'NewMedia' },
+        { ExpectedRevision: 7, TopicLink: 'https://t.me/c/123456/7', Preset: 'NewMedia' },
+        { ExpectedRevision: 7, TopicLink: 'https://t.me/club/9', Preset: 'NewMedia' },
+    ]);
+});
+
+test('a successful add shows the outcome and reloads destinations', async () => {
+    const { view, api, el } = mount({ ...unlocked(), 'POST TgJelly/Destinations': () => ({ ...added(), TestSent: false, TestError: 'no <rights>' }) });
+    await show(view);
+    const before = api.calls.filter(c => c.type === 'GET' && c.url.endsWith('TgJelly/Destinations')).length;
+    await typeManual(view, '-100123');
+    await destAct(view, 'manualAdd');
+    assert.ok(manualEl(el).includes(m.t(EN, 'web.manual.Added')));
+    assert.ok(manualEl(el).includes('no &lt;rights&gt;'));
+    assert.equal(api.calls.filter(c => c.type === 'GET' && c.url.endsWith('TgJelly/Destinations')).length, before + 1);
+});
+
+test('detected title escaped', async () => {
+    const { view, el } = mount(unlocked());
+    await show(view);
+    assert.ok(manualEl(el).includes(m.t(EN, 'detected.line', { title: 'Movie <b>club</b>' })));
+    assert.ok(!manualEl(el).includes('<b>club'));
+    assert.ok(manualEl(el).includes('Movie &lt;b&gt;club&lt;/b&gt;'));
+});
+
+test('set up sends preset', async () => {
+    const { view, api } = mount({ ...unlocked(), 'POST TgJelly/DetectedChats/-100777': () => added() });
+    await show(view);
+    await destInput(view, 'detectedPreset', { 'data-tgj-id': '-100777' }, { value: 'AdminAlerts' });
+    await destAct(view, 'detectedSetUp', { 'data-tgj-id': '-100777' });
+    const calls = posts(api, 'DetectedChats/-100777');
+    assert.equal(calls.length, 1);
+    assert.deepEqual(JSON.parse(calls[0].data), { ExpectedRevision: 7, Preset: 'AdminAlerts' });
+});
+
+test('set up failure shows the error', async () => {
+    const { view, el } = mount({ ...unlocked(), 'POST TgJelly/DetectedChats/-100777': { status: 404, body: { Message: 'gone <x>' } } });
+    await show(view);
+    await destAct(view, 'detectedSetUp', { 'data-tgj-id': '-100777' });
+    assert.ok(manualEl(el).includes('gone &lt;x&gt;'));
+});
+
+test('dismiss sends DELETE', async () => {
+    const { view, api } = mount({ ...unlocked(), 'DELETE TgJelly/DetectedChats/-100777': { status: 204 } });
+    await show(view);
+    await destAct(view, 'detectedDismiss', { 'data-tgj-id': '-100777' });
+    const deletes = api.calls.filter(c => c.type === 'DELETE');
+    assert.equal(deletes.length, 1);
+    assert.equal(deletes[0].url, '/jf/TgJelly/DetectedChats/-100777');
+});
+
+test('add errors are shown escaped', async () => {
+    const { view, el } = mount({
+        ...unlocked(),
+        'POST TgJelly/Destinations': { status: 400, body: { Errors: [{ Field: 'ChatId', Message: 'bad <img src=x>' }] } },
+    });
+    await show(view);
+    await typeManual(view, '-100123');
+    await destAct(view, 'manualAdd');
+    assert.ok(manualEl(el).includes('bad &lt;img src=x&gt;'));
+    assert.ok(!manualEl(el).includes('<img'));
+});
+
 // --- source checks ---
 
 test('every t(…) key used in tgjelly.js exists in en.json', () => {

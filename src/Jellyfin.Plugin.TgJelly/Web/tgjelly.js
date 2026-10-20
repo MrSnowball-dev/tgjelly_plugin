@@ -675,6 +675,51 @@ export function renderDestinations(dto, libraries, links, S, ui) {
 }
 
 
+/** A preset select for the manual block; data is the extra attribute text that says which control it is. */
+function presetSelect(S, input, selected, extra = '') {
+    const options = PRESETS.filter(p => p !== 'Custom').map(p => `<option value="${p}"${selected === p ? ' selected' : ''}>${t(S, `dest.preset.${p}`)}</option>`);
+    return `<div class="selectContainer"><select is="emby-select" class="emby-select-withcolor emby-select" label="${t(S, 'web.dest.preset')}" `
+        + `data-tgj-input="${input}"${extra}>${options.join('')}</select></div>`;
+}
+
+/**
+ * The manual block under Advanced (spec §6.5): "Add chat by ID" and the detected chats. Only when the gate is unlocked.
+ * @param {object | null} dto the DestinationsDto
+ * @param {Record<string, string>} S
+ * @param {{ input?: string, preset?: string, result?: string, detectedPresets?: Record<string, string>, busy?: boolean }} ui
+ *   result is HTML from the last add
+ * @returns {string} HTML, or '' while locked
+ */
+export function renderManual(dto, S, ui) {
+    if (!dto || !dto.ManualUnlocked) {
+        return '';
+    }
+
+    const parts = [`<h2 class="sectionTitle">${t(S, 'web.manual.title')}</h2>`,
+        `<div class="inputContainer"><input is="emby-input" type="text" label="${t(S, 'web.manual.label')}" autocomplete="off" `
+        + `data-tgj-input="manualInput" value="${esc(ui.input ?? '')}" /></div>`,
+        presetSelect(S, 'manualPreset', ui.preset ?? 'Everything'),
+        `<div>${button(t(S, 'web.manual.add'), 'manualAdd', { primary: true })}</div>`];
+    if (ui.result) {
+        parts.push(`<div class="tgj-manual-result">${ui.result}</div>`);
+    }
+
+    const detected = dto.DetectedChats ?? [];
+    if (detected.length > 0) {
+        parts.push(`<h3>${t(S, 'detected.title')}</h3>`);
+        for (const chat of detected) {
+            const id = String(chat.ChatId);
+            parts.push(`<div class="tgj-detected"><p>${t(S, 'detected.line', { title: chat.Title })}</p>`
+                + presetSelect(S, 'detectedPreset', (ui.detectedPresets ?? {})[id] ?? 'Everything', ` data-tgj-id="${esc(id)}"`)
+                + `<div>${button(t(S, 'web.manual.setUp'), 'detectedSetUp', { primary: true, id })}`
+                + `${button(t(S, 'web.manual.dismiss'), 'detectedDismiss', { id })}</div></div>`);
+        }
+    }
+
+    return `<div class="verticalSection">${parts.join('')}</div>`;
+}
+
+
 /**
  * The page controller (spec §11.1). Listeners are bound once, here; viewshow is idempotent.
  *
@@ -720,6 +765,11 @@ export default function TgJellyPage(view, params) {
             destConfirm: null,
             destLeave: false,
             destResults: {},
+            // The manual block (§6.5): the typed chat ID or link, the presets, and the last add's outcome (HTML).
+            manualInput: '',
+            manualPreset: 'Everything',
+            manualResult: '',
+            detectedPresets: {},
         },
     };
     const lang = () => document.documentElement.lang || 'en';
@@ -876,12 +926,28 @@ export default function TgJellyPage(view, params) {
                 results: state.ui.destResults,
             }),
         },
-        // Tasks 10-12: add sections here, in page order.
+        // Reads the destinations state (same data as the Destinations section), so it has nothing to load itself.
+        manual: {
+            id: 'tgj-manual',
+            load: async () => {},
+            render: () => renderManual(state.destinations, state.strings, {
+                input: state.ui.manualInput,
+                preset: state.ui.manualPreset,
+                result: state.ui.manualResult,
+                detectedPresets: state.ui.detectedPresets,
+            }),
+        },
+        // Tasks 11-12: add sections here, in page order.
     };
 
     const renderSection = name => {
         const section = sections[name];
         setHtml(section.id, section.render() + sectionError(name));
+        if (name === 'destinations') {
+            // The manual block shows the same data (detected chats, the gate), so it follows every Destinations render.
+            renderSection('manual');
+        }
+
         if (name === 'proxy' || name === 'connect') {
             restoreSecrets();
         }
@@ -1182,6 +1248,40 @@ export default function TgJellyPage(view, params) {
         }
     };
 
+    /** The manual block's reply to an add or set-up (spec §6.5): shows the outcome and reloads; other failures go to runAction. */
+    const manualReply = async result => {
+        const S = state.strings;
+        const body = result.body;
+        if (result.status === 200 && body) {
+            const outcome = body.Outcome === 'AlreadyExists' ? t(S, 'web.manual.AlreadyExists') : t(S, 'web.manual.Added');
+            const test = body.Outcome === 'AlreadyExists' ? ''
+                : ' ' + (body.TestSent ? t(S, 'dest.test.ok') : t(S, 'dest.test.failed', { error: body.TestError }));
+            state.ui.manualResult = `<p>${outcome}${test}</p>`;
+            state.ui.manualInput = '';
+            await reloadSection('destinations', { fresh: true });
+            return undefined;
+        }
+
+        if (result.status === 400 && body && Array.isArray(body.Errors)) {
+            state.ui.manualResult = body.Errors.map(e => `<p class="tgj-error">${esc(e.Message)}</p>`).join('');
+            return undefined;
+        }
+
+        if (result.status === 409 && body && body.Current) {
+            takeDestinations(body.Current);
+            state.ui.manualResult = `<p class="tgj-error">${t(S, 'web.dest.conflictPlain')}</p>`;
+            renderSection('destinations');
+            return undefined;
+        }
+
+        return result;
+    };
+
+    const detectedId = el => {
+        const id = idOf(el);
+        return /^-?\d+$/.test(id) ? id : null;
+    };
+
     const toggled = (list, value, on) => (on ? [...new Set([...list, value])] : list.filter(x => x !== value));
 
     const actions = {
@@ -1311,7 +1411,42 @@ export default function TgJellyPage(view, params) {
             return destinationReply(result, id);
         }),
         'open-manual': openManual,
-        // Tasks 10-12: add click actions here.
+        manualAdd: () => runAction('manual', async () => {
+            const value = state.ui.manualInput.trim();
+            if (!value || !state.destinations) {
+                return undefined;
+            }
+
+            state.ui.manualResult = '';
+            const target = /^-?\d+$/.test(value) && Number.isSafeInteger(Number(value)) ? { ChatId: Number(value) } : { TopicLink: value };
+            return manualReply(await api.post('Destinations', { ExpectedRevision: state.destinations.Revision, ...target, Preset: state.ui.manualPreset }));
+        }),
+        detectedSetUp: el => runAction('manual', async () => {
+            const id = detectedId(el);
+            if (id === null || !state.destinations) {
+                return undefined;
+            }
+
+            state.ui.manualResult = '';
+            const preset = state.ui.detectedPresets[id] ?? 'Everything';
+            return manualReply(await api.post(`DetectedChats/${id}`, { ExpectedRevision: state.destinations.Revision, Preset: preset }));
+        }),
+        detectedDismiss: el => runAction('manual', async () => {
+            const id = detectedId(el);
+            if (id === null) {
+                return undefined;
+            }
+
+            state.ui.manualResult = '';
+            const result = await api.del(`DetectedChats/${id}`);
+            if (result.status !== 204 && result.status !== 200) {
+                return result;
+            }
+
+            await reloadSection('destinations', { fresh: true });
+            return undefined;
+        }),
+        // Tasks 11-12: add click actions here.
     };
 
     const inputs = {
@@ -1384,7 +1519,21 @@ export default function TgJellyPage(view, params) {
         destLeave: el => {
             state.ui.destLeave = Boolean(el.checked);
         },
-        // Tasks 10-12: add input/change handlers here.
+        manualInput: el => {
+            state.ui.manualInput = String(el.value ?? '');
+        },
+        manualPreset: el => {
+            if (PRESETS.includes(el.value)) {
+                state.ui.manualPreset = el.value;
+            }
+        },
+        detectedPreset: el => {
+            const id = detectedId(el);
+            if (id !== null && PRESETS.includes(el.value)) {
+                state.ui.detectedPresets[id] = el.value;
+            }
+        },
+        // Tasks 11-12: add input/change handlers here.
     };
 
     const stopPolling = () => {
