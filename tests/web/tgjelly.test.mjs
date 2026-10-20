@@ -40,6 +40,28 @@ function status(overrides = {}) {
     };
 }
 
+function settings(overrides = {}) {
+    return {
+        Revision: 5,
+        PublicUrl: '',
+        PublicUrlValid: true,
+        PublicUrlSuggestion: '',
+        Message: null,
+        ProxyMode: 'System',
+        ProxyUrl: '',
+        HasProxyUsername: false,
+        HasProxyPassword: false,
+        ...overrides,
+    };
+}
+
+const LINKS = {
+    OpenBot: 'https://t.me/jf_bot?start=setup',
+    StartAdd: 'https://t.me/jf_bot?start=add',
+    StartGroup: 'https://t.me/jf_bot?startgroup=add',
+    StartChannel: 'https://t.me/jf_bot?startchannel',
+};
+
 const saved = {};
 for (const name of ['window', 'document', 'setInterval', 'clearInterval']) {
     saved[name] = Object.getOwnPropertyDescriptor(globalThis, name);
@@ -61,6 +83,8 @@ function mount(routes = {}) {
     const api = makeApiClient({
         'GET TgJelly/Strings': EN,
         'GET TgJelly/Status': status(),
+        'GET TgJelly/Links': LINKS,
+        'GET TgJelly/Settings': settings(),
         ...routes,
     });
     const doc = { hidden: false, documentElement: { lang: 'en' } };
@@ -178,7 +202,12 @@ test('viewshow loads strings and status, and renders the status', async () => {
     const { view, api, el } = mount();
     await show(view);
 
-    assert.deepEqual(api.calls.map(c => `${c.type} ${c.url}`), ['GET /jf/TgJelly/Strings?lang=en', 'GET /jf/TgJelly/Status']);
+    assert.deepEqual(api.calls.map(c => `${c.type} ${c.url}`), [
+        'GET /jf/TgJelly/Strings?lang=en',
+        'GET /jf/TgJelly/Status',
+        'GET /jf/TgJelly/Links',
+        'GET /jf/TgJelly/Settings',
+    ]);
     assert.ok(el('tgj-status').innerHTML.includes('Connected as @jf_bot'));
     assert.equal(el('tgj-advanced-title').innerHTML, m.t(EN, 'web.advanced'));
     assert.equal(el('tgj-advanced').hidden, false);
@@ -235,9 +264,9 @@ test('a poll re-renders only the status', async () => {
     const { view, timers, el, hooks, api } = mount({ 'GET TgJelly/Status': status({ ConnectionMessage: 'first' }) });
     let loads = 0;
     let renders = 0;
-    hooks.sections.demo = { id: 'tgj-connect', load: async () => { loads++; }, render: () => `demo ${++renders}` };
+    hooks.sections.demo = { id: 'tgj-destinations', load: async () => { loads++; }, render: () => `demo ${++renders}` };
     await show(view);
-    assert.equal(el('tgj-connect').innerHTML, 'demo 1');
+    assert.equal(el('tgj-destinations').innerHTML, 'demo 1');
 
     api.fetch = makeApiClient({ 'GET TgJelly/Status': status({ ConnectionMessage: 'second' }) }).fetch;
     timers.tick();
@@ -246,7 +275,7 @@ test('a poll re-renders only the status', async () => {
     assert.ok(el('tgj-status').innerHTML.includes('second'));
     assert.equal(loads, 1);
     assert.equal(renders, 1);
-    assert.equal(el('tgj-connect').innerHTML, 'demo 1');
+    assert.equal(el('tgj-destinations').innerHTML, 'demo 1');
 });
 
 test('an identical poll does not rewrite the status, even with an apostrophe the browser serializes differently', async () => {
@@ -446,6 +475,368 @@ test('a failed status poll says so, escaped through the strings', async t => {
     const { view, el } = mount({ 'GET TgJelly/Status': { status: 500, body: { Message: 'x' } } });
     await show(view);
     assert.ok(el('tgj-status').innerHTML.includes(m.t(EN, 'web.status.failed')));
+});
+
+// --- core fixes from the Task 7 review ---
+
+test('markDirty on a form that does not exist yet does nothing', async () => {
+    const { view, hooks } = mount();
+    await show(view);
+    assert.doesNotThrow(() => hooks.markDirty('nope', 'A', 1));
+    assert.doesNotThrow(() => hooks.markDirty('nope'));
+    assert.equal('nope' in hooks.state.forms, false);
+});
+
+test('a later successful reload clears a section load error', async t => {
+    t.mock.method(console, 'error', () => {});
+    let fail = true;
+    const { view, hooks, el } = mount();
+    hooks.sections.demo = {
+        id: 'tgj-messages',
+        load: async () => {
+            if (fail) {
+                throw new Error('down');
+            }
+        },
+        render: () => '<p>demo</p>',
+    };
+    await show(view);
+    assert.ok(el('tgj-messages').innerHTML.includes('class="tgj-error"'));
+
+    fail = false;
+    await hooks.reloadSection('demo');
+    assert.ok(!el('tgj-messages').innerHTML.includes('tgj-error'));
+    assert.ok(el('tgj-messages').innerHTML.includes('<p>demo</p>'));
+});
+
+test('a throwing render is caught inside reloadSection', async t => {
+    const errors = [];
+    t.mock.method(console, 'error', (...args) => errors.push(args));
+    const { view, hooks } = mount();
+    hooks.sections.demo = {
+        id: 'tgj-messages',
+        load: async () => {},
+        render: () => {
+            throw new Error('bad render');
+        },
+    };
+    await show(view);
+    await assert.doesNotReject(hooks.reloadSection('demo'));
+    assert.ok(errors.length > 0);
+});
+
+// --- connecting a bot (spec §6.1, §6.4, §6.6) ---
+
+const noToken = () => status({ HasToken: false, BotUsername: null, ConnectionState: 'NoToken', ConnectionMessage: 'No bot connected' });
+const input = (view, name, value, extra = {}) => dispatchOn(view, 'input', { 'data-tgj-input': name }, { value, ...extra });
+const click = async (view, act) => {
+    clickOn(view, { 'data-tgj-act': act });
+    await flush();
+};
+const posted = (api, path) => api.calls.filter(c => c.type === 'POST' && c.url === `/jf/TgJelly/${path}`).map(c => JSON.parse(c.data));
+
+test('first run shows both choices', async () => {
+    const { view, el } = mount({ 'GET TgJelly/Status': noToken() });
+    await show(view);
+    const html = el('tgj-connect').innerHTML;
+    assert.ok(html.includes('Connect a Telegram bot'));
+    assert.ok(html.includes('Create a new bot'));
+    assert.ok(html.includes('I already have a bot'));
+    assert.ok(!html.includes('type="password"'), 'the form waits for a choice');
+    assert.equal(el('tgj-bot').innerHTML, '');
+});
+
+test('the card is hidden once a token is saved', async () => {
+    const { view, el } = mount();
+    await show(view);
+    assert.equal(el('tgj-connect').innerHTML, '');
+});
+
+test('create-new steps mention the Mini App', async () => {
+    const { view, el } = mount({ 'GET TgJelly/Status': noToken() });
+    await show(view);
+    await click(view, 'connectNew');
+    const html = el('tgj-connect').innerHTML;
+    assert.ok(html.includes('https://t.me/BotFather'));
+    assert.ok(html.includes('/newbot'));
+    assert.ok(html.includes("In BotFather's Mini App, restrict access to yourself and anyone else who should manage Jellyfin (up to 10 people)."));
+    assert.ok(html.includes('Copy the token and paste it below.'));
+    assert.ok(html.includes('type="password"'));
+    assert.ok(!html.includes("Don't use this bot in another program"), 'the existing-bot notes are not shown');
+});
+
+test('token input is type=password and never pre-filled', async () => {
+    const { view, el } = mount({ 'GET TgJelly/Status': noToken() });
+    await show(view);
+    await click(view, 'connectExisting');
+    const html = el('tgj-connect').innerHTML;
+    assert.match(html, /<input[^>]*type="password"[^>]*data-tgj-input="token"/);
+    assert.ok(!/data-tgj-input="token"[^>]*value=/.test(html) && !/value=[^>]*data-tgj-input="token"/.test(html));
+    assert.ok(html.includes("Restrict access in BotFather if you haven't, because anyone who can open the bot can manage notifications."));
+    assert.ok(html.includes("Don't use this bot in another program at the same time."));
+    assert.match(html, /data-tgj-input="setProfile"[^>]*checked/);
+    assert.ok(html.includes("Let TgJelly set up this bot's profile: description, command menu and default admin rights (replaces the current ones)"));
+});
+
+test('Connected shows open link from Links.OpenBot', async () => {
+    const { view, api, el } = mount({
+        'GET TgJelly/Status': noToken(),
+        'POST TgJelly/Token': { Outcome: 'Connected', Message: '', BotUsername: 'jf_bot', WebhookDeleted: false },
+    });
+    await show(view);
+    await click(view, 'connectExisting');
+    input(view, 'token', '123:secret');
+    await click(view, 'saveToken');
+
+    assert.deepEqual(posted(api, 'Token'), [{ Token: '123:secret', SetProfile: true, ConfirmSwitch: false }]);
+    const html = el('tgj-connect').innerHTML;
+    assert.ok(html.includes('Connected as @jf_bot'));
+    assert.ok(html.includes('href="https://t.me/jf_bot?start=setup"'));
+    assert.ok(html.includes('Open @jf_bot'));
+    assert.ok(!html.includes('removed'), 'no webhook note');
+    assert.ok(!html.includes('123:secret'));
+});
+
+test('a removed webhook is mentioned after Connected', async () => {
+    const { view, el } = mount({
+        'GET TgJelly/Status': noToken(),
+        'POST TgJelly/Token': { Outcome: 'Connected', Message: '', BotUsername: 'jf_bot', WebhookDeleted: true },
+    });
+    await show(view);
+    await click(view, 'connectNew');
+    input(view, 'token', '1:a');
+    await click(view, 'saveToken');
+    assert.ok(el('tgj-connect').innerHTML.includes(m.t(EN, 'web.connect.webhookRemoved')));
+});
+
+test('the profile checkbox is sent as chosen', async () => {
+    const { view, api } = mount({
+        'GET TgJelly/Status': noToken(),
+        'POST TgJelly/Token': { Outcome: 'Connected', Message: '', BotUsername: 'jf_bot', WebhookDeleted: false },
+    });
+    await show(view);
+    await click(view, 'connectExisting');
+    input(view, 'token', '1:a');
+    dispatchOn(view, 'change', { 'data-tgj-input': 'setProfile' }, { checked: false });
+    await click(view, 'saveToken');
+    assert.equal(posted(api, 'Token')[0].SetProfile, false);
+});
+
+test('buttons are disabled while a save is in flight', async () => {
+    let release;
+    const gate = new Promise(resolve => { release = resolve; });
+    const { view, el, api } = mount({
+        'GET TgJelly/Status': noToken(),
+        'POST TgJelly/Token': { Outcome: 'Rejected', Message: 'no', BotUsername: null, WebhookDeleted: false },
+    });
+    const fetch = api.fetch;
+    api.fetch = async request => {
+        if (request.type === 'POST') {
+            await gate;
+        }
+
+        return fetch(request);
+    };
+    await show(view);
+    await click(view, 'connectExisting');
+    input(view, 'token', '1:a');
+    clickOn(view, { 'data-tgj-act': 'saveToken' });
+    await flush();
+    const html = el('tgj-connect').innerHTML;
+    assert.ok((html.match(/<button/g) ?? []).length > 0);
+    assert.equal((html.match(/<button(?![^>]*disabled)/g) ?? []).length, 0, 'every button is disabled');
+    release();
+    await flush();
+    assert.ok(!/<button[^>]*disabled/.test(el('tgj-connect').innerHTML));
+});
+
+test('NeedsConfirm then Switch sends ConfirmSwitch', async () => {
+    const answers = [
+        { Outcome: 'NeedsConfirm', Message: '@new is a different bot. <b>x</b>', BotUsername: 'new', WebhookDeleted: false },
+        { Outcome: 'Connected', Message: '', BotUsername: 'new', WebhookDeleted: false },
+    ];
+    const { view, api, el } = mount({ 'GET TgJelly/Status': noToken(), 'POST TgJelly/Token': () => answers.shift() });
+    await show(view);
+    await click(view, 'connectExisting');
+    input(view, 'token', '9:z');
+    await click(view, 'saveToken');
+
+    const html = el('tgj-connect').innerHTML;
+    assert.ok(html.includes('@new is a different bot. &lt;b&gt;x&lt;/b&gt;'));
+    assert.ok(html.includes('Switch bot') && html.includes('Cancel'));
+
+    await click(view, 'switchBot');
+    assert.deepEqual(posted(api, 'Token'), [
+        { Token: '9:z', SetProfile: true, ConfirmSwitch: false },
+        { Token: '9:z', SetProfile: true, ConfirmSwitch: true },
+    ]);
+    assert.ok(el('tgj-connect').innerHTML.includes('Connected as @new'));
+});
+
+test('Cancel after NeedsConfirm forgets the token', async () => {
+    const { view, api, el } = mount({
+        'GET TgJelly/Status': noToken(),
+        'POST TgJelly/Token': { Outcome: 'NeedsConfirm', Message: 'different', BotUsername: 'new', WebhookDeleted: false },
+    });
+    await show(view);
+    await click(view, 'connectExisting');
+    input(view, 'token', '9:z');
+    await click(view, 'saveToken');
+    await click(view, 'cancelSwitch');
+    assert.ok(!el('tgj-connect').innerHTML.includes('different'));
+    await click(view, 'switchBot');
+    assert.equal(posted(api, 'Token').length, 1, 'nothing to switch with');
+});
+
+test('other outcomes show the message, escaped', async () => {
+    const { view, el } = mount({
+        'GET TgJelly/Status': noToken(),
+        'POST TgJelly/Token': { Outcome: 'Rejected', Message: 'Telegram <rejected> it', BotUsername: null, WebhookDeleted: false },
+    });
+    await show(view);
+    await click(view, 'connectExisting');
+    input(view, 'token', '1:a');
+    await click(view, 'saveToken');
+    assert.ok(el('tgj-connect').innerHTML.includes('Telegram &lt;rejected&gt; it'));
+});
+
+test('Unreachable opens the proxy panel', async () => {
+    const { view, el } = mount({
+        'GET TgJelly/Status': noToken(),
+        'POST TgJelly/Token': { Outcome: 'Unreachable', Message: 'Could not reach Telegram', BotUsername: null, WebhookDeleted: false },
+    });
+    await show(view);
+    await click(view, 'connectExisting');
+    input(view, 'token', '1:a');
+    await click(view, 'saveToken');
+    const html = el('tgj-connect').innerHTML;
+    assert.ok(html.includes("Can't reach Telegram?"));
+    assert.ok(html.includes('Could not reach Telegram'));
+    assert.ok(html.includes('data-tgj-input="proxyMode"'));
+    assert.ok(html.includes('data-tgj-act="saveProxy"'));
+});
+
+test('the Bot section shows the username, the access reminder and the buttons', async () => {
+    const { view, el } = mount();
+    await show(view);
+    const html = el('tgj-bot').innerHTML;
+    assert.ok(html.includes('@jf_bot'));
+    assert.ok(html.includes('Anyone who can open @jf_bot can manage notifications. Keep it restricted in BotFather.'));
+    assert.ok(html.includes('Change token') && html.includes('Disconnect bot'));
+});
+
+test('Change token reuses the token form', async () => {
+    const { view, el } = mount();
+    await show(view);
+    await click(view, 'changeToken');
+    assert.ok(el('tgj-connect').innerHTML.includes('type="password"'));
+    await click(view, 'cancelToken');
+    assert.equal(el('tgj-connect').innerHTML, '');
+});
+
+test('disconnect needs two clicks', async () => {
+    let connected = true;
+    const { view, api, el } = mount({
+        'GET TgJelly/Status': () => (connected ? status() : noToken()),
+        'DELETE TgJelly/Token': () => {
+            connected = false;
+            return { status: 204 };
+        },
+    });
+    await show(view);
+    await click(view, 'disconnect');
+    assert.equal(api.calls.filter(c => c.type === 'DELETE').length, 0);
+    assert.ok(el('tgj-bot').innerHTML.includes('data-tgj-act="disconnectYes"'));
+
+    await click(view, 'disconnectNo');
+    assert.ok(!el('tgj-bot').innerHTML.includes('disconnectYes'));
+
+    await click(view, 'disconnect');
+    await click(view, 'disconnectYes');
+    assert.equal(api.calls.filter(c => c.type === 'DELETE').length, 1);
+    assert.equal(el('tgj-bot').innerHTML, '');
+    assert.ok(el('tgj-connect').innerHTML.includes('Connect a Telegram bot'));
+});
+
+test('bot username is escaped', async () => {
+    const { view, el } = mount({ 'GET TgJelly/Status': status({ BotUsername: '<img src=x>' }) });
+    await show(view);
+    const html = el('tgj-bot').innerHTML;
+    assert.ok(html.includes('@&lt;img src=x&gt;'));
+    assert.ok(!html.includes('<img'));
+});
+
+// --- proxy form ---
+
+const proxyEl = el => el('tgj-proxy').innerHTML;
+
+test('the proxy form shows the stored mode, and hides the address for System', async () => {
+    const { view, el } = mount({ 'GET TgJelly/Settings': settings({ HasProxyPassword: true }) });
+    await show(view);
+    const html = proxyEl(el);
+    assert.match(html, /<option value="System" selected>/);
+    assert.ok(!html.includes('data-tgj-input="proxyUrl"'));
+    assert.match(html, /data-tgj-input="proxyPassword"[^>]*placeholder="\(saved\)"/);
+    assert.ok(!/data-tgj-input="proxyUsername"[^>]*placeholder=/.test(html));
+});
+
+test('choosing Socks5 shows the address field', async () => {
+    const { view, el } = mount();
+    await show(view);
+    dispatchOn(view, 'change', { 'data-tgj-input': 'proxyMode' }, { value: 'Socks5' });
+    await flush();
+    assert.ok(proxyEl(el).includes('data-tgj-input="proxyUrl"'));
+    assert.match(proxyEl(el), /<option value="Socks5" selected>/);
+});
+
+test('proxy untouched password is omitted, cleared sends empty', async () => {
+    const { view, api, el } = mount({
+        'GET TgJelly/Settings': settings({ ProxyMode: 'Http', ProxyUrl: 'p:8080', HasProxyUsername: true, HasProxyPassword: true }),
+        'PUT TgJelly/Proxy': () => settings({ Revision: 6, ProxyMode: 'Http', ProxyUrl: 'p:8080' }),
+    });
+    await show(view);
+    input(view, 'proxyUsername', 'bob');
+    await click(view, 'saveProxy');
+    const first = JSON.parse(api.calls.find(c => c.type === 'PUT').data);
+    assert.deepEqual(first, { ExpectedRevision: 5, Mode: 'Http', Url: 'p:8080', Username: 'bob' });
+    assert.ok(!('Password' in first));
+
+    input(view, 'proxyPassword', 'x');
+    input(view, 'proxyPassword', '');
+    await click(view, 'saveProxy');
+    const second = JSON.parse(api.calls.filter(c => c.type === 'PUT').at(-1).data);
+    assert.deepEqual(second, { ExpectedRevision: 6, Mode: 'Http', Url: 'p:8080', Password: '' });
+    assert.ok(!('Username' in second), 'the saved form starts untouched again');
+    assert.ok(!proxyEl(el).includes('tgj-error'));
+});
+
+test('proxy 409 keeps typed url', async () => {
+    const { view, hooks, el } = mount({
+        'GET TgJelly/Settings': settings({ ProxyMode: 'Http', ProxyUrl: 'old:1' }),
+        'PUT TgJelly/Proxy': { status: 409, body: { Current: settings({ Revision: 9, ProxyMode: 'Http', ProxyUrl: 'theirs:2' }) } },
+    });
+    await show(view);
+    input(view, 'proxyUrl', 'mine:3');
+    await click(view, 'saveProxy');
+
+    const html = proxyEl(el);
+    assert.ok(html.includes('value="mine:3"'));
+    assert.ok(html.includes('tgj-changed'));
+    assert.ok(html.includes(m.t(EN, 'web.proxy.conflict')));
+    assert.equal(hooks.state.settings.Revision, 9);
+    assert.equal(hooks.state.forms.proxy.dirty, true);
+});
+
+test('proxy 400 shows the field errors, escaped', async () => {
+    const { view, el } = mount({
+        'PUT TgJelly/Proxy': { status: 400, body: { Errors: [{ Field: 'Proxy.Url', Message: 'Must be <host:port>' }] } },
+    });
+    await show(view);
+    dispatchOn(view, 'change', { 'data-tgj-input': 'proxyMode' }, { value: 'Http' });
+    input(view, 'proxyUrl', 'nonsense');
+    await click(view, 'saveProxy');
+    assert.ok(proxyEl(el).includes('Must be &lt;host:port&gt;'));
+    assert.ok(proxyEl(el).includes('value="nonsense"'));
 });
 
 // --- createApi ---

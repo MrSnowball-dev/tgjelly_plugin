@@ -35,5 +35,6 @@ public static class StringKeys
         "templates.willShorten", "templates.tooLong",
         "web.advanced", "web.requestFailed", "web.status.title", "web.status.counts", "web.status.takeOver", "web.status.dismiss",
         "web.status.errors", "web.status.error", "web.status.failed", "web.status.version",
+        "web.connect.title", "web.connect.createNew", "web.connect.haveBot", "web.connect.step1", "web.connect.openBotFather", "web.connect.step2", "web.connect.step3", "web.connect.tokenLabel", "web.connect.noteRestrict", "web.connect.noteOther", "web.connect.setProfile", "web.connect.save", "web.connect.cancel", "web.connect.connected", "web.connect.open", "web.connect.webhookRemoved", "web.connect.switch", "web.connect.unreachableTitle", "web.connect.unreachableHint", "web.bot.title", "web.bot.access", "web.bot.change", "web.bot.disconnect", "web.bot.confirmDisconnect", "web.bot.confirmYes", "web.proxy.title", "web.proxy.mode", "web.proxy.modeSystem", "web.proxy.modeNone", "web.proxy.modeHttp", "web.proxy.modeSocks5", "web.proxy.url", "web.proxy.username", "web.proxy.password", "web.proxy.saved", "web.proxy.save", "web.proxy.conflict",
     ];
 }

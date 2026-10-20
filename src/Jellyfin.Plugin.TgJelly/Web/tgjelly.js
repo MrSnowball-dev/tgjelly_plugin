@@ -331,6 +331,176 @@ export function renderStatus(status, S, lang = 'en') {
     return `<div class="verticalSection">${parts.join('')}</div>`;
 }
 
+const BUTTON = 'is="emby-button" type="button"';
+
+/** A button for a data-tgj-act action; disabled while a request is in flight. */
+function button(label, act, { primary = false, disabled = false } = {}) {
+    return `<button ${BUTTON} class="raised${primary ? ' button-submit' : ''} emby-button" data-tgj-act="${act}"`
+        + `${disabled ? ' disabled' : ''}><span>${label}</span></button>`;
+}
+
+/** A link to Telegram, or '' when the URL isn't one the server should have sent. */
+function telegramLink(url, label) {
+    return typeof url === 'string' && url.startsWith('https://t.me/')
+        ? `<a is="emby-linkbutton" class="raised emby-button" href="${esc(url)}" target="_blank" rel="noopener noreferrer"><span>${label}</span></a>`
+        : '';
+}
+
+/**
+ * The proxy form (spec §6.6 item 5, §9.1): used under Advanced and in the "Can't reach Telegram?" panel.
+ * @param {object | null} settings the SettingsDto (null until it loads)
+ * @param {Record<string, string>} S
+ * @param {{ form?: { local: object, changed: string[] }, proxyErrors?: string[], saving?: boolean }} ui form is the
+ *   editor state: local.Mode and local.Url, plus Username and Password only once the user typed in them.
+ * @returns {string} HTML
+ */
+export function renderProxyForm(settings, S, ui) {
+    if (!settings || !ui.form) {
+        return '';
+    }
+
+    const local = ui.form.local;
+    const changed = path => (ui.form.changed.includes(path) ? ' tgj-changed' : '');
+    const modes = [
+        ['System', t(S, 'web.proxy.modeSystem')],
+        ['None', t(S, 'web.proxy.modeNone')],
+        ['Http', t(S, 'web.proxy.modeHttp')],
+        ['Socks5', t(S, 'web.proxy.modeSocks5')],
+    ];
+    const options = modes.map(([value, label]) => `<option value="${value}"${local.Mode === value ? ' selected' : ''}>${label}</option>`);
+    const field = (name, path, label, saved, type) => `<div class="inputContainer${changed(path)}">`
+        + `<input is="emby-input" type="${type}" label="${label}" autocomplete="off" data-tgj-input="${name}"`
+        + `${saved ? ` placeholder="${t(S, 'web.proxy.saved')}"` : ''} value="${esc(local[path] ?? '')}" /></div>`;
+    const withAddress = local.Mode === 'Http' || local.Mode === 'Socks5';
+    const parts = [
+        `<h3>${t(S, 'web.proxy.title')}</h3>`,
+        `<div class="selectContainer${changed('Mode')}"><select is="emby-select" class="emby-select-withcolor emby-select" `
+        + `label="${t(S, 'web.proxy.mode')}" data-tgj-input="proxyMode">${options.join('')}</select></div>`,
+    ];
+    if (withAddress) {
+        parts.push(field('proxyUrl', 'Url', t(S, 'web.proxy.url'), false, 'text'));
+    }
+
+    parts.push(field('proxyUsername', 'Username', t(S, 'web.proxy.username'), settings.HasProxyUsername, 'text'));
+    parts.push(field('proxyPassword', 'Password', t(S, 'web.proxy.password'), settings.HasProxyPassword, 'password'));
+
+    for (const message of ui.proxyErrors ?? []) {
+        parts.push(`<p class="tgj-error">${message}</p>`);
+    }
+
+    parts.push(button(t(S, 'web.proxy.save'), 'saveProxy', { primary: true, disabled: ui.saving }));
+    return `<div class="verticalSection tgj-proxy-form">${parts.join('')}</div>`;
+}
+
+/**
+ * The token form (spec §6.1): a password input that is never pre-filled, the two notes for an existing bot, the
+ * profile checkbox and Save.
+ */
+function renderTokenForm(ui, S) {
+    const busy = ui.saving ? ' disabled' : '';
+    const notes = ui.mode === 'existing'
+        ? `<p class="fieldDescription">${t(S, 'web.connect.noteRestrict')}</p><p class="fieldDescription">${t(S, 'web.connect.noteOther')}</p>`
+        : '';
+    return '<div class="tgj-token-form">'
+        + `<div class="inputContainer"><input is="emby-input" type="password" label="${t(S, 'web.connect.tokenLabel')}" `
+        + `autocomplete="off" data-tgj-input="token"${busy} /></div>`
+        + notes
+        + '<label class="emby-checkbox-label"><input is="emby-checkbox" type="checkbox" data-tgj-input="setProfile"'
+        + `${ui.setProfile ? ' checked' : ''}${busy} /><span>${t(S, 'web.connect.setProfile')}</span></label>`
+        + `<div>${button(t(S, 'web.connect.save'), 'saveToken', { primary: true, disabled: ui.saving })}`
+        + `${ui.hasToken ? button(t(S, 'web.connect.cancel'), 'cancelToken', { disabled: ui.saving }) : ''}</div></div>`;
+}
+
+/**
+ * The connect card (spec §6.1): shown without a token, or while changing it, and the outcome of the last save.
+ * @param {{ hasToken: boolean, changingToken?: boolean, mode?: string | null, saving?: boolean, setProfile?: boolean,
+ *   result?: object | null, unreachable?: boolean, proxy?: object }} ui hasToken comes from GET Status; result is
+ *   { kind: 'Connected' | 'NeedsConfirm' | 'Error', message, username, webhookDeleted }; proxy is the proxy form's ui
+ * @param {Record<string, string>} S
+ * @param {{ OpenBot?: string } | null} links
+ * @param {object | null} [settings] for the proxy panel
+ * @returns {string} HTML
+ */
+export function renderConnect(ui, S, links, settings = null) {
+    const result = ui.result;
+    const busy = ui.saving;
+    if (result && result.kind === 'Connected') {
+        return `<div class="verticalSection"><p>${t(S, 'web.connect.connected', { bot: result.username })}</p>`
+            + (result.webhookDeleted ? `<p class="fieldDescription">${t(S, 'web.connect.webhookRemoved')}</p>` : '')
+            + `${telegramLink(links && links.OpenBot, t(S, 'web.connect.open', { bot: result.username }))}</div>`;
+    }
+
+    if (ui.hasToken && !ui.changingToken) {
+        return '';
+    }
+
+    const parts = [`<h2 class="sectionTitle">${t(S, 'web.connect.title')}</h2>`];
+    if (result && result.kind === 'NeedsConfirm') {
+        parts.push(`<p>${esc(result.message)}</p>`
+            + `<div>${button(t(S, 'web.connect.switch'), 'switchBot', { primary: true, disabled: busy })}`
+            + `${button(t(S, 'web.connect.cancel'), 'cancelSwitch', { disabled: busy })}</div>`);
+        return `<div class="verticalSection">${parts.join('')}</div>`;
+    }
+
+    if (!ui.mode) {
+        parts.push(`<div>${button(t(S, 'web.connect.createNew'), 'connectNew', { primary: true, disabled: busy })}`
+            + `${button(t(S, 'web.connect.haveBot'), 'connectExisting', { disabled: busy })}`
+            + `${ui.hasToken ? button(t(S, 'web.connect.cancel'), 'cancelToken', { disabled: busy }) : ''}</div>`);
+    } else {
+        if (ui.mode === 'new') {
+            parts.push('<ol class="tgj-steps">'
+                + `<li>${t(S, 'web.connect.step1')} ${telegramLink('https://t.me/BotFather', t(S, 'web.connect.openBotFather'))}</li>`
+                + `<li>${t(S, 'web.connect.step2')}</li><li>${t(S, 'web.connect.step3')}</li></ol>`);
+        }
+
+        parts.push(renderTokenForm(ui, S));
+    }
+
+    if (result && result.kind === 'Error') {
+        parts.push(`<p class="tgj-error">${esc(result.message)}</p>`);
+    }
+
+    if (ui.unreachable) {
+        parts.push(`<div class="tgj-unreachable"><h3>${t(S, 'web.connect.unreachableTitle')}</h3>`
+            + `<p class="fieldDescription">${t(S, 'web.connect.unreachableHint')}</p>${renderProxyForm(settings, S, ui.proxy ?? {})}</div>`);
+    }
+
+    return `<div class="verticalSection">${parts.join('')}</div>`;
+}
+
+/**
+ * The Bot section (spec §6.6 item 2, §6.4): the username, the access reminder, Change token and Disconnect bot with
+ * its inline two-step confirm.
+ * @param {object} status the StatusDto
+ * @param {{ OpenBot?: string } | null} links
+ * @param {Record<string, string>} S
+ * @param {{ confirmDisconnect?: boolean, saving?: boolean }} ui
+ * @returns {string} HTML
+ */
+export function renderBot(status, links, S, ui) {
+    if (!status || !status.HasToken) {
+        return '';
+    }
+
+    const busy = ui.saving;
+    const bot = status.BotUsername;
+    const disconnect = ui.confirmDisconnect
+        ? `<p>${t(S, 'web.bot.confirmDisconnect')}</p>${button(t(S, 'web.bot.confirmYes'), 'disconnectYes', { primary: true, disabled: busy })}`
+            + button(t(S, 'web.connect.cancel'), 'disconnectNo', { disabled: busy })
+        : button(t(S, 'web.bot.disconnect'), 'disconnect', { disabled: busy });
+    return '<div class="verticalSection">'
+        + `<h2 class="sectionTitle">${t(S, 'web.bot.title')}</h2>`
+        + `<p>@${esc(bot)}</p>`
+        + `<p class="fieldDescription">${t(S, 'web.bot.access', { bot })}</p>`
+        + `<div>${telegramLink(links && links.OpenBot, t(S, 'web.connect.open', { bot }))}`
+        + `${button(t(S, 'web.bot.change'), 'changeToken', { disabled: busy })}${disconnect}</div></div>`;
+}
+
+/** The proxy editor's data from a SettingsDto. Username and Password are absent until the user types in them. */
+export function proxyFormData(settings) {
+    return { Mode: settings.ProxyMode, Url: settings.ProxyUrl };
+}
+
 
 /**
  * The page controller (spec §11.1). Listeners are bound once, here; viewshow is idempotent.
@@ -358,7 +528,21 @@ export default function TgJellyPage(view, params) {
         // Editor forms by name: { base, local, dirty, changed } (see syncFormData).
         forms: {},
         // errors: section name → HTML (escaped) shown under that section; statusFailed: the last GET Status failed.
-        ui: { errors: {}, statusFailed: false },
+        ui: {
+            errors: {},
+            statusFailed: false,
+            // The connect card (§6.1): mode is null | 'new' | 'existing'; result is the last save's outcome.
+            mode: null,
+            changingToken: false,
+            saving: false,
+            setProfile: true,
+            result: null,
+            unreachable: false,
+            confirmDisconnect: false,
+            // The proxy form (§9.1): its own messages and in-flight flag.
+            proxyErrors: [],
+            proxySaving: false,
+        },
     };
     const lang = () => document.documentElement.lang || 'en';
     const byId = id => view.querySelector('#' + id);
@@ -367,6 +551,10 @@ export default function TgJellyPage(view, params) {
     let visible = false;
     let timer = null;
     let stringsLoad = null;
+    // The token lives only here until it is sent: never in state, never rendered back into the page.
+    const typed = { token: '' };
+    // Section load errors (set by reloadSection), so a later good load can clear them without touching action errors.
+    const loadErrors = new Set();
 
     /**
      * Sets a container's HTML unless it's the HTML last written there. It compares with its own copy, not with
@@ -383,6 +571,39 @@ export default function TgJellyPage(view, params) {
 
     /** The error line for a section, or ''. */
     const sectionError = name => (state.ui.errors[name] ? `<p class="tgj-error">${state.ui.errors[name]}</p>` : '');
+
+    /** The connect card's view of the state: the ui flags, whether a token is stored, and the proxy form's ui. */
+    const connectUi = () => ({ ...state.ui, hasToken: Boolean(state.status && state.status.HasToken), proxy: proxyUi() });
+    const proxyUi = () => ({
+        form: state.forms.proxy,
+        proxyErrors: state.ui.proxyErrors,
+        saving: state.ui.proxySaving,
+    });
+
+    /** Takes a SettingsDto into the shared settings state and its editor forms (keeping unsaved edits). */
+    const takeSettings = dto => {
+        state.settings = dto;
+        syncForm('proxy', proxyFormData(dto));
+    };
+
+    /** Loads GET Settings, the one settings model every settings section shares. */
+    async function loadSettings() {
+        const result = await api.get('Settings');
+        if (result.status !== 200 || !result.body) {
+            throw new Error('HTTP ' + result.status);
+        }
+
+        takeSettings(result.body);
+    }
+
+    async function loadLinks() {
+        const result = await api.get('Links');
+        if (result.status !== 200 || !result.body) {
+            throw new Error('HTTP ' + result.status);
+        }
+
+        state.links = result.body;
+    }
 
     const sections = {
         status: {
@@ -412,12 +633,42 @@ export default function TgJellyPage(view, params) {
                 return state.ui.statusFailed ? html + `<p class="tgj-error">${t(S, 'web.status.failed')}</p>` : html;
             },
         },
-        // Tasks 8-12: add sections here, in page order.
+        connect: {
+            id: 'tgj-connect',
+            dependsOnStatus: true,
+            load: async () => {},
+            render: () => (state.status ? renderConnect(connectUi(), state.strings, state.links, state.settings) : ''),
+        },
+        bot: {
+            id: 'tgj-bot',
+            dependsOnStatus: true,
+            load: loadLinks,
+            render: () => renderBot(state.status, state.links, state.strings, state.ui),
+        },
+        proxy: {
+            id: 'tgj-proxy',
+            load: loadSettings,
+            render: () => renderProxyForm(state.settings, state.strings, proxyUi()),
+        },
+        // Tasks 9-12: add sections here, in page order.
     };
 
     const renderSection = name => {
         const section = sections[name];
         setHtml(section.id, section.render() + sectionError(name));
+    };
+
+    /** Sections that show state derived from Status (whether a token is stored) render again after it changes. */
+    const renderDependents = () => {
+        for (const [name, section] of Object.entries(sections)) {
+            if (section.dependsOnStatus) {
+                try {
+                    renderSection(name);
+                } catch (err) {
+                    console.error(`TgJelly: the ${name} section could not be rendered`, err);
+                }
+            }
+        }
     };
 
     /**
@@ -434,13 +685,26 @@ export default function TgJellyPage(view, params) {
             pending = (async () => {
                 try {
                     await sections[name].load();
+                    if (loadErrors.delete(name)) {
+                        delete state.ui.errors[name];
+                    }
+
+                    renderSection(name);
                 } catch (err) {
-                    console.error(`TgJelly: the ${name} section failed to load`, err);
+                    console.error(`TgJelly: the ${name} section failed to load or render`, err);
+                    loadErrors.add(name);
                     const S = state.strings;
                     state.ui.errors[name] = t(S, 'web.requestFailed', { reason: err && err.message });
+                    try {
+                        renderSection(name);
+                    } catch (renderErr) {
+                        console.error(`TgJelly: the ${name} section could not be rendered`, renderErr);
+                    }
                 }
 
-                renderSection(name);
+                if (name === 'status') {
+                    renderDependents();
+                }
             })().finally(() => inFlight.delete(name));
             inFlight.set(name, pending);
         }
@@ -479,12 +743,121 @@ export default function TgJellyPage(view, params) {
     /** Records an edit: sets path in the form's local values (when given) and marks the form dirty. */
     const markDirty = (name, path, value) => {
         const form = state.forms[name];
+        if (!form) {
+            return;
+        }
+
         state.forms[name] = path === undefined ? { ...form, dirty: true } : editForm(form, path, value);
     };
 
     /** Drops unsaved edits, e.g. after a save: the form starts over from data (default: its current values). */
     const resetForm = (name, data = state.forms[name].local) => {
         state.forms[name] = syncFormData(null, data);
+    };
+
+    /** Renders every place the proxy form appears: Advanced and the "Can't reach Telegram?" panel. */
+    const renderProxyForms = () => {
+        renderSection('proxy');
+        if (state.ui.unreachable) {
+            renderSection('connect');
+        }
+    };
+
+    const chooseMode = mode => {
+        state.ui.mode = mode;
+        state.ui.result = null;
+        renderSection('connect');
+    };
+
+    const setConfirmDisconnect = value => {
+        state.ui.confirmDisconnect = value;
+        renderSection('bot');
+    };
+
+    /** Sends the token (spec §6.1) and acts on the outcome. Returns the API result only when it failed. */
+    const postToken = async confirmSwitch => {
+        const ui = state.ui;
+        ui.saving = true;
+        ui.result = null;
+        renderSection('connect');
+        let result;
+        try {
+            result = await api.post('Token', { Token: typed.token, SetProfile: ui.setProfile, ConfirmSwitch: confirmSwitch });
+        } finally {
+            ui.saving = false;
+        }
+
+        const reply = result.body;
+        if (result.status !== 200 || !reply) {
+            return result;
+        }
+
+        const message = reply.Message;
+        if (reply.Outcome === 'NeedsConfirm') {
+            ui.result = { kind: 'NeedsConfirm', message };
+            return undefined;
+        }
+
+        typed.token = '';
+        if (reply.Outcome === 'Connected') {
+            Object.assign(ui, {
+                result: { kind: 'Connected', username: reply.BotUsername, webhookDeleted: Boolean(reply.WebhookDeleted) },
+                mode: null,
+                changingToken: false,
+                unreachable: false,
+            });
+            // Links first: the Open button needs the new bot's link.
+            await Promise.all([reloadSection('status', { fresh: true }), reloadSection('bot', { fresh: true })]);
+        } else {
+            ui.result = { kind: 'Error', message };
+            ui.unreachable = ui.unreachable || reply.Outcome === 'Unreachable';
+        }
+
+        return undefined;
+    };
+
+    /** Saves the proxy form (spec §9.1, §10.4): an untouched username/password is omitted, a cleared one is "". */
+    const saveProxy = async () => {
+        const ui = state.ui;
+        const form = state.forms.proxy;
+        if (!form || !state.settings) {
+            return undefined;
+        }
+
+        const local = form.local;
+        const withAddress = local.Mode === 'Http' || local.Mode === 'Socks5';
+        const body = { ExpectedRevision: state.settings.Revision, Mode: local.Mode, Url: withAddress ? String(local.Url ?? '').trim() : '' };
+        for (const field of ['Username', 'Password']) {
+            if (typeof local[field] === 'string') {
+                body[field] = local[field];
+            }
+        }
+
+        ui.proxySaving = true;
+        ui.proxyErrors = [];
+        renderProxyForms();
+        let result;
+        try {
+            result = await api.put('Proxy', body);
+        } finally {
+            ui.proxySaving = false;
+        }
+
+        const S = state.strings;
+        if (result.status === 200 && result.body) {
+            state.settings = result.body;
+            resetForm('proxy', proxyFormData(result.body));
+        } else if (result.status === 409 && result.body && result.body.Current) {
+            takeSettings(result.body.Current);
+            ui.proxyErrors = [t(S, 'web.proxy.conflict')];
+        } else if (result.status === 400 && result.body && Array.isArray(result.body.Errors)) {
+            ui.proxyErrors = result.body.Errors.map(e => esc(e.Message));
+        } else {
+            ui.proxyErrors = [requestError(S, result)];
+        }
+
+        renderProxyForms();
+        return undefined;
     };
 
     const actions = {
@@ -498,11 +871,64 @@ export default function TgJellyPage(view, params) {
             await reloadSection('status', { fresh: true });
             return result;
         }),
-        // Tasks 8-12: add click actions here.
+        connectNew: () => chooseMode('new'),
+        connectExisting: () => chooseMode('existing'),
+        changeToken: () => {
+            state.ui.changingToken = true;
+            state.ui.result = null;
+            chooseMode('existing');
+        },
+        cancelToken: () => {
+            typed.token = '';
+            Object.assign(state.ui, { changingToken: false, mode: null, result: null, unreachable: false });
+            renderSection('connect');
+        },
+        saveToken: () => runAction('connect', () => postToken(false)),
+        switchBot: () => (typed.token ? runAction('connect', () => postToken(true)) : undefined),
+        cancelSwitch: () => {
+            typed.token = '';
+            state.ui.result = null;
+            renderSection('connect');
+        },
+        disconnect: () => setConfirmDisconnect(true),
+        disconnectNo: () => setConfirmDisconnect(false),
+        disconnectYes: () => runAction('bot', async () => {
+            state.ui.saving = true;
+            renderSection('bot');
+            try {
+                const result = await api.del('Token');
+                if (result.status >= 300) {
+                    return result;
+                }
+
+                Object.assign(state.ui, { confirmDisconnect: false, result: null, mode: null, changingToken: false });
+                await Promise.all([reloadSection('status', { fresh: true }), reloadSection('bot', { fresh: true })]);
+                return result;
+            } finally {
+                state.ui.saving = false;
+            }
+        }),
+        saveProxy: () => runAction('proxy', saveProxy),
+        // Tasks 9-12: add click actions here.
     };
 
     const inputs = {
-        // Tasks 8-12: add input/change handlers here.
+        token: el => {
+            typed.token = String(el.value ?? '').trim();
+        },
+        setProfile: el => {
+            state.ui.setProfile = Boolean(el.checked);
+        },
+        proxyMode: (el, event) => {
+            markDirty('proxy', 'Mode', el.value);
+            if (event.type === 'change') {
+                renderProxyForms();
+            }
+        },
+        proxyUrl: el => markDirty('proxy', 'Url', el.value),
+        proxyUsername: el => markDirty('proxy', 'Username', el.value),
+        proxyPassword: el => markDirty('proxy', 'Password', el.value),
+        // Tasks 9-12: add input/change handlers here.
     };
 
     const stopPolling = () => {
