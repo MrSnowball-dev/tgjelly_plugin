@@ -24,6 +24,14 @@ class HelperTests(unittest.TestCase):
         self.assertIn("lavfi", command[command.index("-f") + 1])
         self.assertEqual("/media/movies/Smoke Movie (2024)/Smoke Movie (2024).mkv", command[-1])
 
+    def test_with_base_prefixes_the_path(self):
+        self.assertEqual("/jf/System/Info", smoke.with_base("/jf", "/System/Info"))
+        self.assertEqual("/x", smoke.with_base("", "/x"))
+        self.assertEqual("/jf", smoke.with_base("/jf/", ""))
+
+    def test_network_xml_sets_base_url(self):
+        self.assertIn("<BaseUrl>/jf</BaseUrl>", smoke.network_xml("/jf"))
+
 
 if __name__ == "__main__":
     unittest.main()
