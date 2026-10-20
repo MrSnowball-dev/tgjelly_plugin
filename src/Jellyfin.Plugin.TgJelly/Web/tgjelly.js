@@ -910,6 +910,82 @@ export function renderUpdates(settings, S, ui) {
     return `<div class="verticalSection">${parts.join('')}</div>`;
 }
 
+const TEMPLATES_DOCS = 'https://github.com/MrSnowball-dev/tgjelly_plugin/blob/main/docs/templates.md';
+
+/** The template form data for one item (what Save sends besides the revision). */
+export function templateFormData(item) {
+    return { Enabled: Boolean(item.Enabled), Text: String(item.Text ?? '') };
+}
+
+/**
+ * A one-line example template built from an event's field names: the first few required text and number fields.
+ * @param {{ Name: string, Type: string, Optional: boolean }[]} fields
+ * @returns {string}
+ */
+export function sampleTemplate(fields) {
+    const names = (fields ?? [])
+        .filter(f => !f.Optional && (f.Type === 'string' || f.Type === 'number') && f.Name !== 'event' && !f.Name.endsWith('_unix'))
+        .slice(0, 3)
+        .map(f => `{{ ${f.Name} }}`);
+    return names.join(' ');
+}
+
+/**
+ * The custom template editor under Advanced (spec §8.5, §6.6 item 5). The validation preview is Telegram HTML made from
+ * the admin's template, so it is shown only as escaped text.
+ * @param {object | null} dto the TemplatesDto
+ * @param {Record<string, string>} S
+ * @param {{ key?: string, forms?: Record<string, { local: object, changed: string[] }>, result?: object | null,
+ *   busy?: boolean, lang?: string }} ui key is the selected event; result is the last validation of that key
+ * @returns {string} HTML
+ */
+export function renderTemplates(dto, S, ui) {
+    if (!dto || !Array.isArray(dto.Items) || dto.Items.length === 0) {
+        return '';
+    }
+
+    const item = dto.Items.find(i => i.EventKey === ui.key) ?? dto.Items[0];
+    const form = (ui.forms ?? {})[`tpl:${item.EventKey}`];
+    const local = form ? form.local : templateFormData(item);
+    const changed = path => (form && (form.changed ?? []).includes(path) ? ' tgj-changed' : '');
+    const options = dto.Items.map(i => `<option value="${esc(i.EventKey)}"${i === item ? ' selected' : ''}>${i.Enabled ? '● ' : ''}${esc(i.Label)}</option>`);
+    const parts = [`<h3>${t(S, 'web.templates.title')}</h3>`,
+        `<p class="fieldDescription">${t(S, 'web.templates.intro')} `
+        + `<a is="emby-linkbutton" href="${TEMPLATES_DOCS}" target="_blank" rel="noopener noreferrer">${t(S, 'web.templates.docs')}</a></p>`,
+        `<div class="selectContainer"><select is="emby-select" class="emby-select-withcolor emby-select" label="${t(S, 'web.templates.event')}" `
+        + `data-tgj-input="tplEvent">${options.join('')}</select></div>`];
+    if (item.Flag) {
+        parts.push(`<p class="tgj-error">${t(S, 'web.templates.flagged')} ${esc(item.Flag.Error)}</p>`);
+    }
+
+    if (item.Media) {
+        parts.push(`<p class="fieldDescription">${t(S, 'web.templates.digestNote')}</p>`);
+    }
+
+    parts.push(`<label class="emby-checkbox-label${changed('Enabled')}"><input is="emby-checkbox" type="checkbox" data-tgj-input="tplEnabled"`
+        + `${local.Enabled ? ' checked' : ''} /><span>${t(S, 'web.templates.enabled')}</span></label>`,
+        `<div class="${changed('Text').trim()}"><textarea class="tgj-template-text" data-tgj-input="tplText" rows="8" spellcheck="false" style="width:100%">${esc(local.Text)}</textarea></div>`);
+    const rows = (item.Fields ?? []).map(f => `<tr><td><code>${esc(f.Name)}</code></td><td>${esc(f.Type)}</td>`
+        + `<td>${f.Optional ? t(S, 'web.templates.optional') : ''}</td><td>${esc(f.Description)}</td></tr>`);
+    parts.push(`<details><summary>${t(S, 'web.templates.fields')}</summary><table class="tgj-template-fields">${rows.join('')}</table></details>`,
+        `<div>${button(t(S, 'web.templates.sample'), 'tplSample')}${button(t(S, 'web.templates.validate'), 'tplValidate', { disabled: ui.busy })}`
+        + `${button(t(S, 'web.templates.save'), 'tplSave', { primary: true, disabled: ui.busy })}</div>`);
+
+    const result = ui.result;
+    if (result) {
+        const lang = ui.lang ?? 'en';
+        const lines = (result.Errors ?? []).map(e => `<p class="tgj-error">${e.Line
+            ? t(S, 'web.templates.errorAt', { line: e.Line, column: e.Column ?? 0, message: e.Message })
+            : esc(e.Message)}</p>`);
+        const warnings = (result.Warnings ?? []).map(w => `<p class="fieldDescription">${esc(w)}</p>`);
+        parts.push(...lines, ...warnings,
+            `<p class="fieldDescription">${t(S, 'web.templates.length', { length: formatNumber(result.Length, lang), limit: formatNumber(result.Limit, lang) })}</p>`,
+            `<pre class="tgj-template-preview">${esc(result.Preview)}</pre>`);
+    }
+
+    return `<div class="verticalSection">${parts.join('')}</div>`;
+}
+
 /**
  * The diagnostics block under Advanced (spec §12): Copy diagnostics, and the text itself when the clipboard refused it.
  * @param {Record<string, string>} S
@@ -988,6 +1064,10 @@ export default function TgJellyPage(view, params) {
             // Diagnostics: the text when the clipboard refused it, and whether the last copy worked.
             diagText: '',
             diagCopied: false,
+            // The template editor: the selected event key, the last validation per key, a request in flight.
+            tplKey: '',
+            tplResults: {},
+            tplBusy: false,
         },
     };
     const lang = () => document.documentElement.lang || 'en';
@@ -1103,6 +1183,25 @@ export default function TgJellyPage(view, params) {
         takeDestinations(list.body);
     }
 
+    /** Takes a TemplatesDto into the state and one editor form per event key (keeping unsaved edits). */
+    const takeTemplates = dto => {
+        state.templates = dto;
+        const live = new Set(dto.Items.map(i => `tpl:${i.EventKey}`));
+        for (const key of Object.keys(state.forms).filter(k => k.startsWith('tpl:') && !live.has(k))) {
+            delete state.forms[key];
+        }
+
+        for (const item of dto.Items) {
+            syncForm(`tpl:${item.EventKey}`, templateFormData(item));
+        }
+    };
+
+    /** The selected event key: the chosen one while it exists, else the first. */
+    const templateKey = () => {
+        const items = state.templates ? state.templates.Items : [];
+        return items.some(i => i.EventKey === state.ui.tplKey) ? state.ui.tplKey : (items[0] ? items[0].EventKey : '');
+    };
+
     const sections = {
         status: {
             id: 'tgj-status',
@@ -1190,7 +1289,24 @@ export default function TgJellyPage(view, params) {
             load: async () => {},
             render: () => renderDiagnostics(state.strings, { text: state.ui.diagText, copied: state.ui.diagCopied }),
         },
-        // Task 12: add the templates section here, in page order.
+        templates: {
+            id: 'tgj-templates',
+            load: async () => {
+                const result = await api.get('Templates');
+                if (result.status !== 200 || !result.body) {
+                    throw new Error('HTTP ' + result.status);
+                }
+
+                takeTemplates(result.body);
+            },
+            render: () => renderTemplates(state.templates, state.strings, {
+                key: templateKey(),
+                forms: state.forms,
+                result: state.ui.tplResults[templateKey()] ?? null,
+                busy: state.ui.tplBusy,
+                lang: lang(),
+            }),
+        },
     };
 
     const renderSection = name => {
@@ -1792,7 +1908,77 @@ export default function TgJellyPage(view, params) {
 
             return undefined;
         }),
-        // Task 12: add click actions here.
+        tplSample: () => {
+            const key = templateKey();
+            const item = state.templates && state.templates.Items.find(i => i.EventKey === key);
+            if (item) {
+                markDirty(`tpl:${key}`, 'Text', sampleTemplate(item.Fields));
+                renderSection('templates');
+            }
+        },
+        tplValidate: () => runAction('templates', async () => {
+            const key = templateKey();
+            const form = state.forms[`tpl:${key}`];
+            if (!form) {
+                return undefined;
+            }
+
+            state.ui.tplBusy = true;
+            renderSection('templates');
+            let result;
+            try {
+                result = await api.post('Templates/Validate', { EventKey: key, Text: String(form.local.Text ?? '') });
+            } finally {
+                state.ui.tplBusy = false;
+            }
+
+            if (result.status !== 200 || !result.body) {
+                return result;
+            }
+
+            state.ui.tplResults[key] = result.body;
+            return undefined;
+        }),
+        tplSave: () => runAction('templates', async () => {
+            const key = templateKey();
+            const name = `tpl:${key}`;
+            const form = state.forms[name];
+            if (!form || !state.templates) {
+                return undefined;
+            }
+
+            const S = state.strings;
+            state.ui.tplBusy = true;
+            renderSection('templates');
+            let result;
+            try {
+                result = await api.put(`Templates/${encodeURIComponent(key)}`,
+                    { ExpectedRevision: state.templates.Revision, Enabled: Boolean(form.local.Enabled), Text: String(form.local.Text ?? '') });
+            } finally {
+                state.ui.tplBusy = false;
+            }
+
+            if (result.status === 200 && result.body) {
+                // Saved: this key starts over from the server's data; other keys keep their unsaved text.
+                delete state.forms[name];
+                delete state.ui.tplResults[key];
+                takeTemplates(result.body);
+                return undefined;
+            }
+
+            if (result.status === 409 && result.body && result.body.Current) {
+                takeTemplates(result.body.Current);
+                state.ui.errors.templates = t(S, 'web.templates.conflict');
+                return undefined;
+            }
+
+            if (result.status === 400 && result.body && Array.isArray(result.body.Errors)) {
+                state.ui.errors.templates = result.body.Errors.map(e => esc(e.Message)).join(' ');
+                return undefined;
+            }
+
+            return result;
+        }),
     };
 
     const inputs = {
@@ -1900,7 +2086,15 @@ export default function TgJellyPage(view, params) {
                 markDirty('settings', 'UpdateCheck.Mode', el.value);
             }
         },
-        // Task 12: add input/change handlers here.
+        // The textarea and checkbox only record the edit: re-rendering would move the caret.
+        tplText: el => markDirty(`tpl:${templateKey()}`, 'Text', String(el.value ?? '')),
+        tplEnabled: el => markDirty(`tpl:${templateKey()}`, 'Enabled', Boolean(el.checked)),
+        tplEvent: el => {
+            if (state.templates && state.templates.Items.some(i => i.EventKey === el.value)) {
+                state.ui.tplKey = el.value;
+                renderSection('templates');
+            }
+        },
     };
 
     const stopPolling = () => {

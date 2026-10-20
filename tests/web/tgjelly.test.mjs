@@ -246,6 +246,7 @@ test('viewshow loads strings and status, and renders the status', async () => {
         'GET /jf/TgJelly/Settings',
         'GET /jf/TgJelly/Destinations',
         'GET /jf/TgJelly/Libraries',
+        'GET /jf/TgJelly/Templates',
     ]);
     assert.ok(el('tgj-status').innerHTML.includes('Connected as @jf_bot'));
     assert.equal(el('tgj-advanced-title').innerHTML, m.t(EN, 'web.advanced'));
@@ -1471,6 +1472,157 @@ test('copy diagnostics falls back to a textarea when clipboard rejects', async (
     const html = el('tgj-diagnostics').innerHTML;
     assert.match(html, /<textarea[^>]*readonly[^>]*>TgJelly 1\.0 &lt;diag&gt;<\/textarea>/);
     assert.equal(selected, 1);
+});
+
+// --- template editor (Task 12) ---
+
+function templates(overrides = {}) {
+    return {
+        Revision: 4,
+        Items: [
+            {
+                EventKey: 'movie.added', Label: 'Movie added', Media: false, Enabled: false, Text: '', SampleFull: '', SampleSparse: '', Flag: null,
+                Fields: [{ Name: 'title', Type: 'string', Description: 'The <title>.', Optional: false }, { Name: 'year', Type: 'number', Description: 'The year.', Optional: true }],
+            },
+            {
+                EventKey: 'media.digest', Label: 'Digest', Media: true, Enabled: true, Text: 'Hi {{ title }}', SampleFull: '', SampleSparse: '',
+                Flag: { Kind: 'BadHtml', Error: 'bad <tag>', At: '2026-10-20T10:00:00Z' },
+                Fields: [{ Name: 'title', Type: 'string', Description: 'T', Optional: false }],
+            },
+        ],
+        ...overrides,
+    };
+}
+
+const tplInput = (view, name, extra, type = 'input') => dispatchOn(view, type, { 'data-tgj-input': name }, extra);
+
+test('preview is escaped, not markup', async () => {
+    const { view, el } = mount({
+        'GET TgJelly/Templates': templates(),
+        'POST TgJelly/Templates/Validate': { Errors: [], Warnings: [], Preview: '<b onclick=x>hi</b>', Length: 19, Limit: 4096 },
+    });
+    await show(view);
+    await click(view, 'tplValidate');
+    const html = el('tgj-templates').innerHTML;
+    assert.ok(html.includes('<pre class="tgj-template-preview">&lt;b onclick=x&gt;hi&lt;/b&gt;</pre>'), html);
+    assert.ok(!html.includes('<b onclick'));
+    assert.ok(html.includes('19 / 4,096'));
+});
+
+test('errors show line and column', async () => {
+    const { view, el } = mount({
+        'GET TgJelly/Templates': templates(),
+        'POST TgJelly/Templates/Validate': {
+            Errors: [{ Message: 'Unexpected <end>', Line: 2, Column: 7 }, { Message: 'No position' }],
+            Warnings: ['careful & slow'], Preview: '', Length: 0, Limit: 4096,
+        },
+    });
+    await show(view);
+    await click(view, 'tplValidate');
+    const html = el('tgj-templates').innerHTML;
+    assert.ok(html.includes('line 2, column 7: Unexpected &lt;end&gt;'), html);
+    assert.ok(html.includes('No position'));
+    assert.ok(html.includes('careful &amp; slow'));
+});
+
+test('validate sends the selected key and typed text', async () => {
+    const { view, api } = mount({
+        'GET TgJelly/Templates': templates(),
+        'POST TgJelly/Templates/Validate': { Errors: [], Warnings: [], Preview: '', Length: 0, Limit: 4096 },
+    });
+    await show(view);
+    tplInput(view, 'tplText', { value: '{{ title }}' });
+    await click(view, 'tplValidate');
+    assert.deepEqual(posted(api, 'Templates/Validate'), [{ EventKey: 'movie.added', Text: '{{ title }}' }]);
+});
+
+test('save sends revision', async () => {
+    const { view, api } = mount({
+        'GET TgJelly/Templates': templates(),
+        'PUT TgJelly/Templates/movie.added': templates({ Revision: 5 }),
+    });
+    await show(view);
+    tplInput(view, 'tplEnabled', { checked: true }, 'change');
+    tplInput(view, 'tplText', { value: 'New {{ title }}' });
+    await flush();
+    await click(view, 'tplSave');
+    const put = api.calls.find(c => c.type === 'PUT');
+    assert.equal(put.url, '/jf/TgJelly/Templates/movie.added');
+    assert.deepEqual(JSON.parse(put.data), { ExpectedRevision: 4, Enabled: true, Text: 'New {{ title }}' });
+});
+
+test('409 keeps typed text', async () => {
+    const fresh = templates({ Revision: 9 });
+    fresh.Items[0].Text = 'theirs';
+    const { view, el, hooks } = mount({
+        'GET TgJelly/Templates': templates(),
+        'PUT TgJelly/Templates/movie.added': { status: 409, body: { Current: fresh } },
+    });
+    await show(view);
+    tplInput(view, 'tplText', { value: 'mine' });
+    await click(view, 'tplSave');
+    const html = el('tgj-templates').innerHTML;
+    assert.ok(html.includes('>mine</textarea>'), html);
+    assert.ok(html.includes('tgj-changed'), 'both sides changed the text');
+    assert.equal(hooks.state.templates.Revision, 9);
+    assert.equal(hooks.state.forms['tpl:movie.added'].dirty, true);
+});
+
+test('typing keeps other keys unsaved text when switching', async () => {
+    const { view, el } = mount({ 'GET TgJelly/Templates': templates() });
+    await show(view);
+    tplInput(view, 'tplText', { value: 'draft one' });
+    tplInput(view, 'tplEvent', { value: 'media.digest' }, 'change');
+    await flush();
+    assert.ok(el('tgj-templates').innerHTML.includes('>Hi {{ title }}</textarea>'));
+    tplInput(view, 'tplEvent', { value: 'movie.added' }, 'change');
+    await flush();
+    assert.ok(el('tgj-templates').innerHTML.includes('>draft one</textarea>'));
+});
+
+test('typing in the textarea does not re-render it', async () => {
+    const { view, el } = mount({ 'GET TgJelly/Templates': templates() });
+    await show(view);
+    const before = el('tgj-templates').writes;
+    tplInput(view, 'tplText', { value: 'abc' });
+    tplInput(view, 'tplText', { value: 'abcd' }, 'change');
+    await flush();
+    assert.equal(el('tgj-templates').writes, before);
+});
+
+test('flag shown for flagged key', async () => {
+    const { view, el } = mount({ 'GET TgJelly/Templates': templates() });
+    await show(view);
+    tplInput(view, 'tplEvent', { value: 'media.digest' }, 'change');
+    await flush();
+    const html = el('tgj-templates').innerHTML;
+    assert.ok(html.includes(m.t(EN, 'web.templates.flagged')));
+    assert.ok(html.includes('bad &lt;tag&gt;'));
+    tplInput(view, 'tplEvent', { value: 'movie.added' }, 'change');
+    await flush();
+    assert.ok(!el('tgj-templates').innerHTML.includes('bad &lt;tag&gt;'));
+});
+
+test('media keys mention digests', async () => {
+    const { view, el } = mount({ 'GET TgJelly/Templates': templates() });
+    await show(view);
+    assert.ok(!el('tgj-templates').innerHTML.includes(m.t(EN, 'web.templates.digestNote')));
+    tplInput(view, 'tplEvent', { value: 'media.digest' }, 'change');
+    await flush();
+    assert.ok(el('tgj-templates').innerHTML.includes(m.t(EN, 'web.templates.digestNote')));
+});
+
+test('template editor lists events, fields and the docs link, and insert sample fills the text', async () => {
+    const { view, el, hooks } = mount({ 'GET TgJelly/Templates': templates() });
+    await show(view);
+    const html = el('tgj-templates').innerHTML;
+    assert.ok(html.includes('https://github.com/MrSnowball-dev/tgjelly_plugin/blob/main/docs/templates.md'));
+    assert.ok(html.includes('Movie added') && html.includes('Digest'));
+    assert.ok(html.includes('The &lt;title&gt;.'));
+    assert.ok(html.includes('class="tgj-template-text"'));
+    await click(view, 'tplSample');
+    assert.equal(hooks.state.forms['tpl:movie.added'].local.Text, '{{ title }}');
+    assert.ok(el('tgj-templates').innerHTML.includes('>{{ title }}</textarea>'));
 });
 
 // --- source checks ---

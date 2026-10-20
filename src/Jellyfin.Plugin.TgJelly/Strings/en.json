@@ -378,5 +378,20 @@
   "web.diag.title": "Diagnostics",
   "web.diag.copy": "Copy diagnostics",
   "web.diag.copied": "Copied to the clipboard.",
-  "web.diag.manual": "Copying failed. Select the text below and copy it yourself."
+  "web.diag.manual": "Copying failed. Select the text below and copy it yourself.",
+  "web.templates.title": "Custom message templates",
+  "web.templates.intro": "A custom template replaces only the text or caption of a message. The poster and buttons still follow your message settings.",
+  "web.templates.docs": "Template guide",
+  "web.templates.event": "Event",
+  "web.templates.flagged": "Telegram rejected this template, so the default message is used instead:",
+  "web.templates.digestNote": "Digests always use the default layout; this template applies to single messages only.",
+  "web.templates.enabled": "Use this custom template",
+  "web.templates.fields": "Available fields",
+  "web.templates.optional": "optional",
+  "web.templates.sample": "Insert sample",
+  "web.templates.validate": "Validate",
+  "web.templates.save": "Save template",
+  "web.templates.errorAt": "line {line}, column {column}: {message}",
+  "web.templates.length": "{length} / {limit} characters",
+  "web.templates.conflict": "The templates changed on the server. Your unsaved text is kept on top of the new data; check it and save again."
 }
