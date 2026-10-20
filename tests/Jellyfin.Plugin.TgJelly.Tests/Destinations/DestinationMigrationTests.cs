@@ -45,6 +45,17 @@ public sealed class DestinationMigrationTests : System.IDisposable
     }
 
     [Fact]
+    public void NothingToMigrate_DoesNotBumpTheRevision()
+    {
+        _h.AddDestination(-1002, ChatKind.Group);
+        var revision = _h.Settings.Current.Revision;
+
+        Assert.Null(_migration.Migrate(-1001, -1009));
+
+        Assert.Equal(revision, _h.Settings.Current.Revision);
+    }
+
+    [Fact]
     public void Collision_MergesEventsSilentGroupsAndLibraries_RepointsTheOutbox()
     {
         var old = _h.AddDestination(-1001, ChatKind.Group, preset: PresetKind.NewMedia);

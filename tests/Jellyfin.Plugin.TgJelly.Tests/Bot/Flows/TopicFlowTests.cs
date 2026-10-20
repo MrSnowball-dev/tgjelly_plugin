@@ -116,7 +116,6 @@ public sealed class TopicFlowTests : IDisposable, IAsyncLifetime
         var wizard = WizardId();
 
         await Click("1|tc", wizard);
-        await Click("1|tc", wizard); // pressed twice: one prompt
 
         Assert.Empty(_h.Api.CallsTo("createForumTopic"));
         var prompt = Sent().Last();
@@ -209,6 +208,42 @@ public sealed class TopicFlowTests : IDisposable, IAsyncLifetime
         await Click("1|tc", wizard);
 
         Assert.Equal(2, Sent().Count(c => c.Body["reply_markup"]?["keyboard"]?.ToString().Contains("Allow topic creation", StringComparison.Ordinal) == true));
+    }
+
+    [Fact]
+    public async Task ExpiredPromotion_CreateAgain_SendsAFreshPrompt()
+    {
+        AddForum(topics: false);
+        await AskWhere();
+        var wizard = WizardId();
+        await Click("1|tc", wizard);
+        var first = _rig.Memory.GetFlow(Manager)!.PickerRequestIds.Single();
+
+        _h.Time.Advance(TimeSpan.FromMinutes(11));
+        await _rig.Flow.TickAsync(TestContext.Current.CancellationToken);
+        await Click("1|tc", wizard);
+
+        Assert.Equal(2, PromotionPrompts());
+        var second = _rig.Memory.GetFlow(Manager)!.PickerRequestIds.Single();
+        Assert.NotEqual(first, second);
+    }
+
+    [Fact]
+    public async Task IgnoredPromotion_CreateAgain_SpendsTheOldPromptAndSendsAFreshOne()
+    {
+        AddForum(topics: false);
+        await AskWhere();
+        var wizard = WizardId();
+        await Click("1|tc", wizard);
+        var flow = _rig.Memory.GetFlow(Manager)!;
+        var oldPrompt = flow.PromptMessageId!.Value;
+        var first = flow.PickerRequestIds.Single();
+
+        await Click("1|tc", wizard);
+
+        Assert.Equal(2, PromotionPrompts());
+        Assert.Contains(oldPrompt, Deleted());
+        Assert.NotEqual(first, _rig.Memory.GetFlow(Manager)!.PickerRequestIds.Single());
     }
 
     [Fact]
@@ -382,6 +417,9 @@ public sealed class TopicFlowTests : IDisposable, IAsyncLifetime
 
     private BotApiCall[] Sent()
         => [.. _h.Api.CallsTo("sendMessage").Where(c => c.Body["chat_id"]!.ToString() == Manager.ToString(CultureInfo.InvariantCulture))];
+
+    private int PromotionPrompts()
+        => Sent().Count(c => c.Body["reply_markup"]?["keyboard"]?.ToString().Contains("Allow topic creation", StringComparison.Ordinal) == true);
 
     private int[] Deleted() => [.. _h.Api.CallsTo("deleteMessage").Select(c => (int)c.Body["message_id"]!)];
 

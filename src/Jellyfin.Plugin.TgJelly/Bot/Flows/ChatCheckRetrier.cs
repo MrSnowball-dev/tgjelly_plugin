@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Immutable;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.TgJelly.Destinations;
@@ -12,7 +13,7 @@ namespace Jellyfin.Plugin.TgJelly.Bot.Flows;
 public sealed class ChatCheckRetrier
 {
     /// <summary>When the tries happen, as offsets from the first one.</summary>
-    public static readonly TimeSpan[] Schedule = [TimeSpan.Zero, TimeSpan.FromSeconds(1.5), TimeSpan.FromSeconds(3), TimeSpan.FromSeconds(5)];
+    public static readonly ImmutableArray<TimeSpan> Schedule = [TimeSpan.Zero, TimeSpan.FromSeconds(1.5), TimeSpan.FromSeconds(3), TimeSpan.FromSeconds(5)];
 
     private readonly DestinationChecker _checker;
 
@@ -37,18 +38,34 @@ public sealed class ChatCheckRetrier
     /// <param name="retry">Whether to follow the whole <see cref="Schedule"/>; otherwise one try.</param>
     /// <param name="ct">Cancels the check.</param>
     /// <returns>The first passing result, or the last failing one.</returns>
+    /// <exception cref="Exception">The last try threw (earlier tries that threw count as failed).</exception>
     /// <exception cref="BotNotConnectedException">No bot is connected.</exception>
     public async Task<ChatCheckResult> CheckAsync(long chatId, bool retry, CancellationToken ct)
     {
         var tries = retry ? Schedule.Length : 1;
-        var result = await _checker.CheckAsync(chatId, 0, ct).ConfigureAwait(false);
-        for (var i = 1; i < tries && !result.Passed; i++)
+        ChatCheckResult? result = null;
+        for (var i = 0; i < tries; i++)
         {
-            await Delay(Schedule[i] - Schedule[i - 1], ct).ConfigureAwait(false);
-            result = await _checker.CheckAsync(chatId, 0, ct).ConfigureAwait(false);
+            if (i > 0)
+            {
+                await Delay(Schedule[i] - Schedule[i - 1], ct).ConfigureAwait(false);
+            }
+
+            try
+            {
+                result = await _checker.CheckAsync(chatId, 0, ct).ConfigureAwait(false);
+                if (result.Passed)
+                {
+                    break;
+                }
+            }
+            catch (Exception ex) when (ex is not (OperationCanceledException or BotNotConnectedException) && i < tries - 1)
+            {
+                // A transient error is one failed try; the last try's error is thrown.
+            }
         }
 
-        return result;
+        return result!;
     }
 
     /// <summary>

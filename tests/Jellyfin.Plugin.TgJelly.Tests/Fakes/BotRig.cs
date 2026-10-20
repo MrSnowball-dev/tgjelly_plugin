@@ -42,7 +42,7 @@ public sealed class BotRig
         var advanced = new AdvancedScreen(h.Connection, h.Strings, formatter);
         var destinations = new DestinationScreens(h.Settings, Health, tester, Library, Outbox, h.Connection, h.Strings, formatter, NullLogger<DestinationScreens>.Instance);
         Server = new FakeServerInfo();
-        var settingsScreens = new SettingsScreens(h.Settings, new LinkBuilder(Server), Memory, h.Connection, h.Strings, formatter);
+        var settingsScreens = new SettingsScreens(h.Settings, h.State, new LinkBuilder(Server), Memory, h.Connection, h.Strings, formatter);
         var checker = new DestinationChecker(h.Connection, h.Strings);
         Retrier = new ChatCheckRetrier(checker, h.Time)
         {

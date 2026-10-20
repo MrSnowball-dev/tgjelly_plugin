@@ -166,6 +166,17 @@ public sealed class DestinationScreensTests : IDisposable, IAsyncLifetime
     }
 
     [Fact]
+    public async Task StaleButton_ForARemovedDestination_DoesNotBumpTheRevision()
+    {
+        _h.AddDestination(-1001);
+        var revision = _h.Settings.Current.Revision;
+
+        await Click("1|dp|zzzzzzzz");
+
+        Assert.Equal(revision, _h.Settings.Current.Revision);
+    }
+
+    [Fact]
     public async Task Remove_AsksAboutLeaving_ThenLeavesWhenAsked()
     {
         var d = _h.AddDestination(-1001);

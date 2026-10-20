@@ -168,7 +168,8 @@ public sealed class TopicFlow
 
     /// <summary>
     /// Create a "Jellyfin" topic (<c>tc</c>): creates it when the bot can manage topics, otherwise sends the throwaway
-    /// promotion prompt. A second press while this runs or waits does nothing.
+    /// promotion prompt. A second press while this runs does nothing; one while the prompt waits (or after it expired)
+    /// replaces the prompt with a fresh one.
     /// </summary>
     /// <param name="chatId">The private chat.</param>
     /// <param name="flow">The wizard's flow.</param>
@@ -179,7 +180,14 @@ public sealed class TopicFlow
         ArgumentNullException.ThrowIfNull(flow);
         if (flow.Params.ContainsKey(OnboardingFlow.CreatingKey))
         {
-            return null;
+            // A promotion prompt that is still waiting, expired or was cancelled in Telegram: spend it and ask afresh.
+            // Without one, a creation is still running and this press does nothing.
+            if (!flow.Params.ContainsKey(PromotionKey))
+            {
+                return null;
+            }
+
+            await SpendAsync(chatId, flow, ct).ConfigureAwait(false);
         }
 
         flow.Params[OnboardingFlow.CreatingKey] = "1";

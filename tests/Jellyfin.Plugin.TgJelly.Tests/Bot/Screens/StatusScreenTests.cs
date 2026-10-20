@@ -28,4 +28,25 @@ public sealed class StatusScreenTests : IDisposable
         Assert.Contains("boom &lt;4&gt;", html, StringComparison.Ordinal);
         Assert.Contains("boom &lt;2&gt;", html, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public async Task Build_WithManyDestinationsAndLongErrors_StaysUnderTelegramsLimit_AndPointsToTheDashboard()
+    {
+        var rig = await BotRig.CreateAsync(_h);
+        for (var i = 1; i <= 150; i++)
+        {
+            _h.AddDestination(-1000000 - i);
+        }
+
+        for (var i = 1; i <= 3; i++)
+        {
+            _h.State.RecordError("outbox", new string('<', 2000));
+        }
+
+        var html = rig.Status.Build().Html;
+
+        Assert.True(html.Length <= 4096, "length " + html.Length);
+        Assert.Contains("more on the dashboard", html, StringComparison.Ordinal);
+        Assert.Contains("Chat -1000001", html, StringComparison.Ordinal);
+    }
 }

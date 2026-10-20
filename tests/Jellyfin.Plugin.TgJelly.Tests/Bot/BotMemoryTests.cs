@@ -189,6 +189,21 @@ public sealed class BotMemoryTests : IDisposable
     }
 
     [Fact]
+    public void CorruptKeys_DoNotStopPruneOrRecentManagers()
+    {
+        var now = _h.Time.GetUtcNow();
+        _memory.TouchManager(5);
+        _h.State.Update(s =>
+        {
+            s.Managers["not-a-number"] = now;
+            s.Flows["bad"] = new FlowState { Screen = "add", PromptMessageId = 9, PromptSentAt = now.AddHours(-1), PickerRequestIds = [3] };
+        });
+
+        Assert.Equal([5L], _memory.RecentManagers());
+        Assert.Empty(_memory.Prune());
+    }
+
+    [Fact]
     public void Prune_ExpiresPromptsAfter10Min_AndRecordsAFailure_Once()
     {
         _memory.SaveFlow(7, new FlowState { Screen = "add", PromptMessageId = 9, PromptSentAt = _h.Time.GetUtcNow(), PickerRequestIds = [3], WizardMessageId = 4 });

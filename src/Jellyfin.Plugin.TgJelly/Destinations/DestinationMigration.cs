@@ -51,7 +51,7 @@ public sealed class DestinationMigration
     public IReadOnlyDictionary<string, string> MigrateAll(long oldChatId, long newChatId)
     {
         var map = new Dictionary<string, string>(StringComparer.Ordinal);
-        _settings.Update(null, c =>
+        _settings.UpdateIf(null, c =>
         {
             map.Clear();
             foreach (var d in c.Destinations.Where(x => x.ChatId == oldChatId).ToList())
@@ -76,6 +76,8 @@ public sealed class DestinationMigration
                 c.Destinations = [.. c.Destinations.Where(x => x.Id != d.Id)];
                 map[d.Id] = other.Id;
             }
+
+            return map.Count > 0;
         });
 
         foreach (var (from, to) in map.Where(p => p.Key != p.Value))

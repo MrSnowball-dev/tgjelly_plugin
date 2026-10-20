@@ -20,6 +20,9 @@ namespace Jellyfin.Plugin.TgJelly.Bot.Screens;
 public sealed class StatusScreen
 {
     private const int ErrorsShown = 3;
+    private const int MaxChars = 4096;
+    private const int MoreReserve = 120;
+    private const int MaxErrorChars = 150;
 
     private readonly BotConnection _connection;
     private readonly CompatResult _compat;
@@ -72,6 +75,23 @@ public sealed class StatusScreen
         html.Append(_formatter.Escape(_strings.Get("status.connection", ("state", ConnectionText())))).Append('\n');
         html.Append(_formatter.Escape(_strings.Get("status.compat", ("message", _compat.IsCompatible ? _strings.Get("status.compat.ok") : _compat.Message)))).Append("\n\n");
 
+        // The tail is built first so the destination list can use what is left of Telegram's message limit.
+        var tail = new StringBuilder();
+        tail.Append(_strings.Get("status.pending", ("count", _formatter.Number(_state.IsLoaded ? _readiness.PendingCount : 0)))).Append('\n');
+        tail.Append(_strings.Get("status.outbox", ("count", _formatter.Number(_outbox.Count)))).Append("\n\n");
+        tail.Append("<b>").Append(_strings.Get("status.errors")).Append("</b>\n");
+        var errors = _state.LastErrorsSnapshot();
+        if (errors.Count == 0)
+        {
+            tail.Append(_strings.Get("status.noErrors"));
+        }
+
+        var now = _time.GetUtcNow();
+        foreach (var error in errors.TakeLast(ErrorsShown).Reverse())
+        {
+            tail.Append(_formatter.Time(error.At, now)).Append(' ').Append(_formatter.Escape(error.Source)).Append(": ").Append(_formatter.Escape(Cut(error.Message))).Append('\n');
+        }
+
         html.Append("<b>").Append(_strings.Get("status.destinations")).Append("</b>\n");
         var destinations = _settings.Current.Destinations;
         if (destinations.Length == 0)
@@ -79,39 +99,42 @@ public sealed class StatusScreen
             html.Append(_strings.Get("status.noDestinations")).Append('\n');
         }
 
+        var budget = MaxChars - html.Length - tail.Length - MoreReserve;
+        var shown = 0;
         foreach (var destination in destinations)
         {
             var health = _health.Get(destination.Id);
             var badge = !destination.Enabled ? "⏸" : health.Status == HealthStatus.Ok ? "✅" : "⛔";
-            html.Append(badge).Append(' ').Append(_formatter.Escape(destination.Title));
+            var line = new StringBuilder(badge).Append(' ').Append(_formatter.Escape(destination.Title));
             if (health.Status != HealthStatus.Ok)
             {
-                html.Append(": ").Append(_strings.Get("status.health." + health.Status));
+                line.Append(": ").Append(_strings.Get("status.health." + health.Status));
             }
 
-            html.Append('\n');
+            line.Append('\n');
+            if (line.Length > budget)
+            {
+                break;
+            }
+
+            budget -= line.Length;
+            html.Append(line);
+            shown++;
         }
 
-        html.Append('\n');
-        html.Append(_strings.Get("status.pending", ("count", _formatter.Number(_state.IsLoaded ? _readiness.PendingCount : 0)))).Append('\n');
-        html.Append(_strings.Get("status.outbox", ("count", _formatter.Number(_outbox.Count)))).Append("\n\n");
-
-        html.Append("<b>").Append(_strings.Get("status.errors")).Append("</b>\n");
-        var errors = _state.LastErrorsSnapshot();
-        if (errors.Count == 0)
+        if (shown < destinations.Length)
         {
-            html.Append(_strings.Get("status.noErrors"));
+            html.Append(_formatter.Escape(_strings.Get("status.moreDestinations", ("count", _formatter.Number(destinations.Length - shown))))).Append('\n');
         }
 
-        var now = _time.GetUtcNow();
-        foreach (var error in errors.TakeLast(ErrorsShown).Reverse())
-        {
-            html.Append(_formatter.Time(error.At, now)).Append(' ').Append(_formatter.Escape(error.Source)).Append(": ").Append(_formatter.Escape(error.Message)).Append('\n');
-        }
+        html.Append('\n').Append(tail);
 
         var back = InlineKeyboardButton.WithCallbackData(_strings.Get("menu.back"), CallbackData.Format("m"));
         return new Screen(html.ToString().TrimEnd(), new InlineKeyboardMarkup(back));
     }
+
+    private static string Cut(string text)
+        => text.Length <= MaxErrorChars ? text : string.Concat(text.AsSpan(0, char.IsHighSurrogate(text[MaxErrorChars - 1]) ? MaxErrorChars - 1 : MaxErrorChars), "…");
 
     private string ConnectionText()
     {

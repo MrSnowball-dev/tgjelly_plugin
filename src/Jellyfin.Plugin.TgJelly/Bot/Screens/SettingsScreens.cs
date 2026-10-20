@@ -5,6 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.TgJelly.Configuration;
 using Jellyfin.Plugin.TgJelly.Rendering;
+using Jellyfin.Plugin.TgJelly.State;
 using Jellyfin.Plugin.TgJelly.State.Documents;
 using Jellyfin.Plugin.TgJelly.Strings;
 using Telegram.Bot.Types.ReplyMarkups;
@@ -28,6 +29,7 @@ public sealed class SettingsScreens
     ];
 
     private readonly SettingsStore _settings;
+    private readonly StateStore _state;
     private readonly LinkBuilder _links;
     private readonly BotMemory _memory;
     private readonly BotConnection _connection;
@@ -38,14 +40,16 @@ public sealed class SettingsScreens
     /// Initializes a new instance of the <see cref="SettingsScreens"/> class.
     /// </summary>
     /// <param name="settings">The settings store.</param>
+    /// <param name="state">The state store, for the public URL notice.</param>
     /// <param name="links">Suggests and normalizes the public URL.</param>
     /// <param name="memory">The bot's memory, for the typed-URL flow.</param>
     /// <param name="connection">The bot connection, to send the URL prompt.</param>
     /// <param name="strings">The string table.</param>
     /// <param name="formatter">The formatter, for escaping.</param>
-    public SettingsScreens(SettingsStore settings, LinkBuilder links, BotMemory memory, BotConnection connection, StringTable strings, Formatter formatter)
+    public SettingsScreens(SettingsStore settings, StateStore state, LinkBuilder links, BotMemory memory, BotConnection connection, StringTable strings, Formatter formatter)
     {
         _settings = settings;
+        _state = state;
         _links = links;
         _memory = memory;
         _connection = connection;
@@ -96,7 +100,7 @@ public sealed class SettingsScreens
             case "spu":
                 if (_links.Suggest() is { } suggested)
                 {
-                    _settings.Update(null, c => c.PublicUrl = suggested);
+                    SetPublicUrl(suggested);
                 }
 
                 return PublicUrl();
@@ -104,7 +108,7 @@ public sealed class SettingsScreens
                 await AskForUrlAsync(chatId, null, ct).ConfigureAwait(false);
                 return PublicUrl();
             case "spc":
-                _settings.Update(null, c => c.PublicUrl = string.Empty);
+                SetPublicUrl(string.Empty);
                 return PublicUrl();
             default:
                 return null;
@@ -133,9 +137,20 @@ public sealed class SettingsScreens
             return (true, null);
         }
 
-        _settings.Update(null, c => c.PublicUrl = url);
+        SetPublicUrl(url);
         CancelInput(chatId);
         return (true, PublicUrl());
+    }
+
+    /// <summary>Saves the public URL; a changed one clears the "public URL flagged" notice (spec §9.4 row 7).</summary>
+    private void SetPublicUrl(string url)
+    {
+        var before = _settings.Current.PublicUrl;
+        _settings.Update(null, c => c.PublicUrl = url);
+        if (!string.Equals(before, url, StringComparison.Ordinal))
+        {
+            _state.Update(s => s.Status.PublicUrlFlag = null);
+        }
     }
 
     /// <summary>

@@ -367,12 +367,15 @@ public sealed class DestinationScreens
     }
 
     private void Change(string id, Action<Destination> change)
-        => _settings.Update(null, c =>
+        => _settings.UpdateIf(null, c =>
         {
-            if (c.Destinations.FirstOrDefault(d => d.Id == id) is { } d)
+            if (c.Destinations.FirstOrDefault(d => d.Id == id) is not { } d)
             {
-                change(d);
+                return false;
             }
+
+            change(d);
+            return true;
         });
 
     private Destination? Find(string id) => _settings.Current.Destinations.FirstOrDefault(d => d.Id == id);

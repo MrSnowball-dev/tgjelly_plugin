@@ -72,6 +72,41 @@ public sealed class ChatCheckRetrierTests : IDisposable
     }
 
     [Fact]
+    public async Task ThrownCheck_DoesNotEndTheSchedule()
+    {
+        _h.Api.SetMember(Channel, BotTestHarness.AdminCanPost);
+        var calls = 0;
+        _h.Api.On("getChat", _ => calls++ == 0
+            ? FakeBotApi.Error(500, "Internal Server Error")
+            : FakeBotApi.Ok("{\"id\":" + Channel + ",\"type\":\"channel\",\"title\":\"Family\",\"accent_color_id\":0,\"max_reaction_count\":11}"));
+
+        var result = await _retrier.CheckAsync(Channel, retry: true, TestContext.Current.CancellationToken);
+
+        Assert.True(result.Passed);
+        Assert.Equal([TimeSpan.FromSeconds(1.5)], _delays);
+    }
+
+    [Fact]
+    public async Task CheckThatKeepsThrowing_IsTriedFourTimes_ThenFails()
+    {
+        _h.Api.On("getChat", _ => FakeBotApi.Error(500, "Internal Server Error"));
+
+        await Assert.ThrowsAnyAsync<Exception>(() => _retrier.CheckAsync(Channel, retry: true, TestContext.Current.CancellationToken));
+
+        Assert.Equal(4, _h.Api.CallsTo("getChat").Count());
+    }
+
+    [Fact]
+    public async Task ThrownCheck_WithoutRetry_Fails()
+    {
+        _h.Api.On("getChat", _ => FakeBotApi.Error(500, "Internal Server Error"));
+
+        await Assert.ThrowsAnyAsync<Exception>(() => _retrier.CheckAsync(Channel, retry: false, TestContext.Current.CancellationToken));
+
+        Assert.Single(_h.Api.CallsTo("getChat"));
+    }
+
+    [Fact]
     public async Task WithoutRetry_TriesOnce()
     {
         var result = await _retrier.CheckAsync(Channel, retry: false, TestContext.Current.CancellationToken);

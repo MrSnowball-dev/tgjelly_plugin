@@ -2,6 +2,7 @@ using System;
 using System.Linq;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.TgJelly.Configuration;
+using Jellyfin.Plugin.TgJelly.State.Documents;
 using Jellyfin.Plugin.TgJelly.Tests.Fakes;
 using Xunit;
 
@@ -119,6 +120,25 @@ public sealed class SettingsScreensTests : IDisposable, IAsyncLifetime
         await Click("1|spc");
 
         Assert.Equal(string.Empty, _h.Settings.Current.PublicUrl);
+    }
+
+    [Fact]
+    public async Task PublicUrl_ChangedInTheBot_ClearsTheFlag()
+    {
+        foreach (var (click, typed) in new[] { ("1|spu", false), ("1|spc", false), ("1|spt", true) })
+        {
+            _rig.Server.Suggestion = "https://jf.example.com";
+            _h.Settings.Update(null, c => c.PublicUrl = "https://old.example.com");
+            _h.State.Update(s => s.Status.PublicUrlFlag = new PublicUrlFlag { Url = "https://old.example.com", At = _h.Time.GetUtcNow() });
+
+            await Click(click);
+            if (typed)
+            {
+                await Text("https://new.example.com");
+            }
+
+            Assert.Null(_h.State.Read(s => s.Status.PublicUrlFlag));
+        }
     }
 
     [Fact]

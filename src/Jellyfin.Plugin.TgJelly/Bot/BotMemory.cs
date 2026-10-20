@@ -135,7 +135,8 @@ public sealed class BotMemory
         return _state.Read(s => (IReadOnlyList<long>)s.Managers
             .Where(m => m.Value + ManagerTtl > now)
             .OrderByDescending(m => m.Value)
-            .Select(m => long.Parse(m.Key, CultureInfo.InvariantCulture))
+            .Select(m => long.TryParse(m.Key, NumberStyles.Integer, CultureInfo.InvariantCulture, out var id) ? (long?)id : null)
+            .OfType<long>()
             .ToList());
     }
 
@@ -301,7 +302,10 @@ public sealed class BotMemory
                     flow.PromptSentAt = null;
                     flow.PickerRequestIds = [];
                     s.SetupFailures.Add(new SetupFailure { Kind = SetupFailureKind.PromptExpired, At = now });
-                    expired.Add(long.Parse(key, CultureInfo.InvariantCulture));
+                    if (long.TryParse(key, NumberStyles.Integer, CultureInfo.InvariantCulture, out var chatId))
+                    {
+                        expired.Add(chatId);
+                    }
                 }
             }
 

@@ -133,6 +133,7 @@
   "status.compat.ok": "OK",
   "status.destinations": "Destinations",
   "status.noDestinations": "No destinations yet.",
+  "status.moreDestinations": "…and {count} more on the dashboard.",
   "status.health.Ok": "OK",
   "status.health.NeedsPermissions": "needs permissions",
   "status.health.TopicMissing": "topic missing",
