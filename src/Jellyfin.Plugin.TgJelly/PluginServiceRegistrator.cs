@@ -96,6 +96,7 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<HealthService>();
         serviceCollection.AddSingleton<Outbox>();
         serviceCollection.AddSingleton<NoticeBuilder>();
+        serviceCollection.AddSingleton<DiagnosticsReport>();
         serviceCollection.AddSingleton<PacingGate>();
         serviceCollection.AddSingleton<OutboxDelivery>();
         serviceCollection.AddSingleton<IServerStartup, ServerStartup>();
