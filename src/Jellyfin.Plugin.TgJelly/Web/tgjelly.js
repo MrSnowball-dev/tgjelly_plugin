@@ -334,9 +334,9 @@ export function renderStatus(status, S, lang = 'en') {
 const BUTTON = 'is="emby-button" type="button"';
 
 /** A button for a data-tgj-act action; disabled while a request is in flight. */
-function button(label, act, { primary = false, disabled = false } = {}) {
+function button(label, act, { primary = false, disabled = false, id = null } = {}) {
     return `<button ${BUTTON} class="raised${primary ? ' button-submit' : ''} emby-button" data-tgj-act="${act}"`
-        + `${disabled ? ' disabled' : ''}><span>${label}</span></button>`;
+        + `${id === null ? '' : ` data-tgj-id="${esc(id)}"`}${disabled ? ' disabled' : ''}><span>${label}</span></button>`;
 }
 
 /** A link to Telegram, or '' when the URL isn't one the server should have sent. */
@@ -503,11 +503,183 @@ export function proxyFormData(settings) {
     return { Mode: settings.ProxyMode, Url: settings.ProxyUrl };
 }
 
+const PRESETS = ['Everything', 'NewMedia', 'AdminAlerts', 'Custom'];
+
+/** The editor's data for one destination from the DestinationDto: the fields Save can send. */
+export function destinationFormData(dest) {
+    return {
+        Preset: dest.Preset,
+        Events: [...(dest.Events ?? [])],
+        LibraryIds: [...(dest.LibraryIds ?? [])],
+        SilentGroups: [...(dest.SilentGroups ?? [])],
+    };
+}
+
+/**
+ * The body of the PUT that Save sends: only the fields that differ from base, plus ExpectedRevision (spec §7.2, §10.4).
+ * Events make the server switch the destination to Custom; a Preset other than Custom sends the Preset alone.
+ * @param {object} base the form data the edit started from
+ * @param {object} local the form's current data
+ * @param {number} revision
+ * @returns {object | null} null when nothing changed
+ */
+export function destinationChanges(base, local, revision) {
+    const body = { ExpectedRevision: revision };
+    const differs = key => !sameValue(local[key], base[key]);
+    if (local.Preset === 'Custom' && differs('Events')) {
+        body.Events = local.Events;
+    } else if (differs('Preset')) {
+        body.Preset = local.Preset;
+    }
+
+    for (const key of ['LibraryIds', 'SilentGroups']) {
+        if (differs(key)) {
+            body[key] = local[key];
+        }
+    }
+
+    return Object.keys(body).length > 1 ? body : null;
+}
+
+const libraryKey = id => String(id).replaceAll('-', '').toLowerCase();
+const sameLibrary = (a, b) => libraryKey(a) === libraryKey(b);
+
+/** A health badge: the status text, plus a second badge when photos are blocked. */
+function healthBadges(health, S) {
+    const status = health && health.Status ? health.Status : 'Ok';
+    const badge = key => `<span class="tgj-badge">${t(S, key)}</span>`;
+    return badge(`dest.health.${status}`) + (health && health.PhotosBlocked && status !== 'PhotosBlocked' ? ' ' + badge('dest.health.PhotosBlocked') : '');
+}
+
+/**
+ * The editor under a destination's row (spec §7.2, §7.3): preset, event switches by group, libraries, silent groups,
+ * and the Save / Send test / Check again / Remove buttons.
+ * @param {object} dest the DestinationDto
+ * @param {{ EventKeys: string[], Groups: string[] }} catalog
+ * @param {{ Id: string, Name: string }[]} libraries
+ * @param {Record<string, string>} S
+ * @param {{ form?: { local: object, changed: string[] }, confirmRemove?: boolean, leave?: boolean, result?: string }} ui
+ *   form defaults to the destination's own values; result is HTML shown under the buttons
+ * @returns {string} HTML
+ */
+export function renderEditor(dest, catalog, libraries, S, ui) {
+    const local = (ui.form && ui.form.local) || destinationFormData(dest);
+    const changedPaths = (ui.form && ui.form.changed) || [];
+    const changed = path => (changedPaths.includes(path) ? ' tgj-changed' : '');
+    const id = esc(dest.Id);
+    const checkbox = (input, attrs, checked, label) => '<label class="emby-checkbox-label">'
+        + `<input is="emby-checkbox" type="checkbox" data-tgj-input="${input}" data-tgj-id="${id}"${attrs}${checked ? ' checked' : ''} />`
+        + `<span>${label}</span></label>`;
+    const parts = [];
+
+    const options = PRESETS.map(p => `<option value="${p}"${local.Preset === p ? ' selected' : ''}>${t(S, `dest.preset.${p}`)}</option>`);
+    parts.push(`<div class="selectContainer${changed('Preset')}"><select is="emby-select" class="emby-select-withcolor emby-select" `
+        + `label="${t(S, 'web.dest.preset')}" data-tgj-input="destPreset" data-tgj-id="${id}">${options.join('')}</select></div>`);
+
+    const events = new Set(local.Events);
+    parts.push(`<h4>${t(S, 'dest.events.title')}</h4><div class="${changed('Events').trim()}">`);
+    for (const group of catalog.Groups) {
+        const keys = catalog.EventKeys.filter(k => k.startsWith(group + '.'));
+        parts.push(`<h5>${t(S, `groups.${group}`)}</h5>`
+            + keys.map(k => checkbox('destEvent', ` data-tgj-key="${esc(k)}"`, events.has(k), t(S, `dest.event.${k}`))).join(''));
+    }
+
+    parts.push('</div>');
+
+    const chosen = new Set(local.LibraryIds.map(libraryKey));
+    parts.push(`<h4>${t(S, 'dest.libraries.title')}</h4><div class="${changed('LibraryIds').trim()}">`);
+    if (dest.LibraryFilterBroken) {
+        parts.push(`<p class="tgj-error">${t(S, 'web.dest.librariesRemoved')}</p>`);
+    }
+
+    parts.push(libraries.map(l => checkbox('destLibrary', ` data-tgj-lib="${esc(l.Id)}"`, chosen.has(libraryKey(l.Id)), esc(l.Name))).join(''));
+    for (const gone of (dest.RemovedLibraryIds ?? []).filter(x => local.LibraryIds.some(y => sameLibrary(x, y)))) {
+        parts.push(`<div class="tgj-removed-library"><span>${t(S, 'dest.libraries.removed', { id: gone })}</span> `
+            + `<button ${BUTTON} class="raised emby-button" data-tgj-act="removeLibrary" data-tgj-id="${id}" data-tgj-lib="${esc(gone)}">`
+            + `<span>${t(S, 'web.dest.removeLibrary')}</span></button></div>`);
+    }
+
+    parts.push(`<p class="fieldDescription">${t(S, chosen.size === 0 ? 'dest.libraries.all' : 'dest.libraries.hint')}</p></div>`);
+
+    const silent = new Set(local.SilentGroups);
+    parts.push(`<h4>${t(S, 'dest.silent.title')}</h4><div class="${changed('SilentGroups').trim()}">`
+        + catalog.Groups.map(g => checkbox('destSilent', ` data-tgj-group="${esc(g)}"`, silent.has(g), t(S, `groups.${g}`))).join('')
+        + `<p class="fieldDescription">${t(S, 'dest.silent.hint')}</p></div>`);
+
+    parts.push(`<div>${button(t(S, 'web.dest.save'), 'saveDest', { primary: true, id: dest.Id })}`
+        + `${button(t(S, 'dest.btn.test'), 'testDest', { id: dest.Id })}${button(t(S, 'dest.btn.check'), 'checkDest', { id: dest.Id })}`
+        + `${ui.confirmRemove ? '' : button(t(S, 'dest.btn.remove'), 'remove', { id: dest.Id })}</div>`);
+    if (ui.confirmRemove) {
+        parts.push(`<div class="tgj-confirm"><p>${t(S, 'web.dest.confirmRemove', { title: dest.Title })}</p>`
+            + checkbox('destLeave', '', ui.leave, t(S, 'web.dest.leave'))
+            + `<div>${button(t(S, 'dest.btn.remove'), 'removeYes', { primary: true, id: dest.Id })}${button(t(S, 'dest.btn.cancel'), 'removeNo', { id: dest.Id })}</div></div>`);
+    }
+
+    if (ui.result) {
+        parts.push(`<p class="fieldDescription">${ui.result}</p>`);
+    }
+
+    return `<div class="tgj-editor">${parts.join('')}</div>`;
+}
+
+/**
+ * The Destinations section (spec §6.6 item 3): one row per destination, its editor when open, Add destination and the
+ * "Set up manually" link once the manual block is unlocked (spec §6.5).
+ * @param {object | null} dto the DestinationsDto
+ * @param {{ Id: string, Name: string }[]} libraries
+ * @param {{ StartAdd?: string } | null} links
+ * @param {Record<string, string>} S
+ * @param {{ editing?: string | null, forms?: Record<string, object>, confirmRemove?: string | null, leave?: boolean,
+ *   results?: Record<string, string> }} ui forms is keyed 'dest:<id>' like the controller's state.forms
+ * @returns {string} HTML
+ */
+export function renderDestinations(dto, libraries, links, S, ui) {
+    if (!dto) {
+        return '';
+    }
+
+    const parts = [`<h2 class="sectionTitle">${t(S, 'web.dest.title')}</h2>`];
+    if (dto.Items.length === 0) {
+        parts.push(`<p class="fieldDescription">${t(S, 'web.dest.empty')}</p>`);
+    }
+
+    for (const dest of dto.Items) {
+        const paused = !dest.Enabled;
+        parts.push('<div class="tgj-destination">'
+            + `<div class="tgj-destination-row"><strong>${esc(dest.Title)}</strong> `
+            + `<span class="fieldDescription">${t(S, `dest.kind.${dest.Kind}`)}</span> ${healthBadges(dest.Health, S)} `
+            + '<label class="emby-checkbox-label">'
+            + `<input is="emby-checkbox" type="checkbox" data-tgj-act="enabled" data-tgj-id="${esc(dest.Id)}"${paused ? ' checked' : ''} />`
+            + `<span>${t(S, paused ? 'dest.btn.resume' : 'dest.btn.pause')}</span></label> `
+            + `${button(t(S, ui.editing === dest.Id ? 'web.dest.close' : 'web.dest.edit'), 'edit', { id: dest.Id })}</div>`);
+        if (ui.editing === dest.Id) {
+            parts.push(renderEditor(dest, dto.Catalog, libraries ?? [], S, {
+                form: (ui.forms ?? {})[`dest:${dest.Id}`],
+                confirmRemove: ui.confirmRemove === dest.Id,
+                leave: ui.leave,
+                result: (ui.results ?? {})[dest.Id],
+            }));
+        } else if ((ui.results ?? {})[dest.Id]) {
+            parts.push(`<p class="fieldDescription">${ui.results[dest.Id]}</p>`);
+        }
+
+        parts.push('</div>');
+    }
+
+    parts.push(`<div>${telegramLink(links && links.StartAdd, t(S, 'web.dest.add'))}</div>`);
+    if (dto.ManualUnlocked) {
+        parts.push(`<p class="fieldDescription">${t(S, 'web.dest.manualHint')} `
+            + `<a href="#tgj-manual" is="emby-linkbutton" class="emby-button" data-tgj-act="open-manual"><strong>${t(S, 'web.dest.manualLink')}</strong></a></p>`);
+    }
+
+    return `<div class="verticalSection">${parts.join('')}</div>`;
+}
+
 
 /**
  * The page controller (spec §11.1). Listeners are bound once, here; viewshow is idempotent.
  *
- * Extension points for the page sections (Tasks 8-12 add their entries in the marked places below):
+ * Extension points for the page sections (Tasks 10-12 add their entries in the marked places below):
  * - sections: name → { id, load, render }. load() fetches into state (forms through syncForm); render() returns the
  *   section's HTML from state. The framework renders each section into #id with its own error line appended.
  * - actions: data-tgj-act → (el, event), for clicks. Wrap the work in runAction(section, fn) so a failure shows in
@@ -544,6 +716,11 @@ export default function TgJellyPage(view, params) {
             // The proxy form (§9.1): its own messages and in-flight flag.
             proxyErrors: [],
             proxySaving: false,
+            // The destinations section (§6.6.3): the open editor, the remove confirm, and the last test/check outcome per id.
+            destEditing: null,
+            destConfirm: null,
+            destLeave: false,
+            destResults: {},
         },
     };
     const lang = () => document.documentElement.lang || 'en';
@@ -598,13 +775,50 @@ export default function TgJellyPage(view, params) {
         takeSettings(result.body);
     }
 
-    async function loadLinks() {
-        const result = await api.get('Links');
-        if (result.status !== 200 || !result.body) {
-            throw new Error('HTTP ' + result.status);
+    // Sections that need the links share one request while it runs.
+    let linksLoad = null;
+    const loadLinks = () => {
+        linksLoad ??= api.get('Links').then(result => {
+            if (result.status !== 200 || !result.body) {
+                throw new Error('HTTP ' + result.status);
+            }
+
+            state.links = result.body;
+        }).finally(() => {
+            linksLoad = null;
+        });
+        return linksLoad;
+    };
+
+    /** Takes a DestinationsDto into the state and the per-destination editor forms (keeping unsaved edits). */
+    const takeDestinations = dto => {
+        state.destinations = dto;
+        const live = new Set(dto.Items.map(d => `dest:${d.Id}`));
+        for (const key of Object.keys(state.forms).filter(k => k.startsWith('dest:') && !live.has(k))) {
+            delete state.forms[key];
         }
 
-        state.links = result.body;
+        for (const dest of dto.Items) {
+            syncForm(`dest:${dest.Id}`, destinationFormData(dest));
+        }
+
+        if (!dto.Items.some(d => d.Id === state.ui.destEditing)) {
+            state.ui.destEditing = null;
+        }
+
+        if (!dto.Items.some(d => d.Id === state.ui.destConfirm)) {
+            state.ui.destConfirm = null;
+        }
+    };
+
+    async function loadDestinations() {
+        const [list, libraries] = await Promise.all([api.get('Destinations'), api.get('Libraries'), loadLinks()]);
+        if (list.status !== 200 || !list.body || libraries.status !== 200 || !Array.isArray(libraries.body)) {
+            throw new Error('HTTP ' + (list.status === 200 ? libraries.status : list.status));
+        }
+
+        state.libraries = libraries.body;
+        takeDestinations(list.body);
     }
 
     const sections = {
@@ -652,7 +866,18 @@ export default function TgJellyPage(view, params) {
             load: loadSettings,
             render: () => renderProxyForm(state.settings, state.strings, proxyUi()),
         },
-        // Tasks 9-12: add sections here, in page order.
+        destinations: {
+            id: 'tgj-destinations',
+            load: loadDestinations,
+            render: () => renderDestinations(state.destinations, state.libraries, state.links, state.strings, {
+                editing: state.ui.destEditing,
+                forms: state.forms,
+                confirmRemove: state.ui.destConfirm,
+                leave: state.ui.destLeave,
+                results: state.ui.destResults,
+            }),
+        },
+        // Tasks 10-12: add sections here, in page order.
     };
 
     const renderSection = name => {
@@ -895,6 +1120,70 @@ export default function TgJellyPage(view, params) {
         return undefined;
     };
 
+    const destination = id => (state.destinations ? state.destinations.Items.find(d => d.Id === id) : undefined);
+    const destKey = id => `dest:${id}`;
+    const idOf = el => el.getAttribute('data-tgj-id');
+
+    /**
+     * Handles a destination change's reply (spec §10.4): a 409 takes the fresh data in and keeps the unsaved edits, a 400
+     * shows the server's messages. Returns the result only for the other failures, which runAction shows.
+     */
+    const destinationReply = result => {
+        const S = state.strings;
+        if (result.status === 409 && result.body && result.body.Current) {
+            takeDestinations(result.body.Current);
+            state.ui.errors.destinations = t(S, 'web.dest.conflict');
+            return undefined;
+        }
+
+        if (result.status === 400 && result.body && Array.isArray(result.body.Errors)) {
+            state.ui.errors.destinations = result.body.Errors.map(e => esc(e.Message)).join(' ');
+            return undefined;
+        }
+
+        return result.status >= 300 ? result : undefined;
+    };
+
+    /** PUTs a change to one destination; on success the section starts over from the server's data (keepForm: not the editor). */
+    const putDestination = async (id, body, { keepForm = false } = {}) => {
+        const result = await api.put(`Destinations/${encodeURIComponent(id)}`, body);
+        if (result.status === 200) {
+            if (!keepForm) {
+                delete state.forms[destKey(id)];
+            }
+
+            await reloadSection('destinations', { fresh: true });
+            return undefined;
+        }
+
+        return destinationReply(result);
+    };
+
+    const destinationOutcome = (id, html) => {
+        state.ui.destResults[id] = html;
+    };
+
+    const openManual = () => {
+        const advanced = byId('tgj-advanced');
+        if (advanced) {
+            advanced.open = true;
+        }
+
+        const manual = byId('tgj-manual');
+        if (manual && typeof manual.scrollIntoView === 'function') {
+            manual.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+    };
+
+    /** Sets one editor value for a destination and re-renders the section. */
+    const editDestination = (id, edits) => {
+        for (const [path, value] of Object.entries(edits)) {
+            markDirty(destKey(id), path, value);
+        }
+    };
+
+    const toggled = (list, value, on) => (on ? [...new Set([...list, value])] : list.filter(x => x !== value));
+
     const actions = {
         dismiss: el => runAction('status', async () => {
             const result = await api.post('Status/Dismiss', { NoticeId: el.getAttribute('data-tgj-id') });
@@ -944,7 +1233,85 @@ export default function TgJellyPage(view, params) {
             }
         }),
         saveProxy: () => runAction('proxy', saveProxy),
-        // Tasks 9-12: add click actions here.
+        edit: el => {
+            const id = idOf(el);
+            state.ui.destEditing = state.ui.destEditing === id ? null : id;
+            state.ui.destConfirm = null;
+            renderSection('destinations');
+        },
+        enabled: el => runAction('destinations', () => {
+            const dest = destination(idOf(el));
+            return dest
+                ? putDestination(dest.Id, { ExpectedRevision: state.destinations.Revision, Enabled: !dest.Enabled }, { keepForm: true })
+                : undefined;
+        }),
+        saveDest: el => runAction('destinations', () => {
+            const id = idOf(el);
+            const form = state.forms[destKey(id)];
+            const body = form && state.destinations
+                ? destinationChanges(destinationFormData(destination(id)), form.local, state.destinations.Revision)
+                : null;
+            return body ? putDestination(id, body) : undefined;
+        }),
+        removeLibrary: el => {
+            const id = idOf(el);
+            const form = state.forms[destKey(id)];
+            if (form) {
+                const gone = el.getAttribute('data-tgj-lib');
+                editDestination(id, { LibraryIds: form.local.LibraryIds.filter(x => x !== gone) });
+            }
+
+            renderSection('destinations');
+        },
+        testDest: el => runAction('destinations', async () => {
+            const id = idOf(el);
+            const result = await api.post(`Destinations/${encodeURIComponent(id)}/Test`);
+            if (result.status !== 200 || !result.body) {
+                return result;
+            }
+
+            const S = state.strings;
+            destinationOutcome(id, result.body.Sent ? t(S, 'dest.test.ok') : t(S, 'dest.test.failed', { error: result.body.Error }));
+            await reloadSection('destinations', { fresh: true });
+            return undefined;
+        }),
+        checkDest: el => runAction('destinations', async () => {
+            const id = idOf(el);
+            const result = await api.post(`Destinations/${encodeURIComponent(id)}/Check`);
+            if (result.status !== 200 || !result.body) {
+                return result;
+            }
+
+            const S = state.strings;
+            const health = result.body.Health;
+            destinationOutcome(id, result.body.Error ? esc(result.body.Error) : t(S, `dest.health.${health && health.Status ? health.Status : 'Ok'}`));
+            await reloadSection('destinations', { fresh: true });
+            return undefined;
+        }),
+        remove: el => {
+            Object.assign(state.ui, { destConfirm: idOf(el), destLeave: false });
+            renderSection('destinations');
+        },
+        removeNo: () => {
+            state.ui.destConfirm = null;
+            renderSection('destinations');
+        },
+        removeYes: el => runAction('destinations', async () => {
+            const id = idOf(el);
+            const revision = state.destinations ? state.destinations.Revision : 0;
+            const result = await api.del(`Destinations/${encodeURIComponent(id)}?leave=${state.ui.destLeave}&expectedRevision=${revision}`);
+            state.ui.destConfirm = null;
+            if (result.status === 204 || result.status === 200) {
+                delete state.forms[destKey(id)];
+                delete state.ui.destResults[id];
+                await reloadSection('destinations', { fresh: true });
+                return undefined;
+            }
+
+            return destinationReply(result);
+        }),
+        'open-manual': openManual,
+        // Tasks 10-12: add click actions here.
     };
 
     const inputs = {
@@ -967,7 +1334,54 @@ export default function TgJellyPage(view, params) {
         proxyPassword: el => {
             typed.proxyPassword = String(el.value ?? '');
         },
-        // Tasks 9-12: add input/change handlers here.
+        destPreset: (el, event) => {
+            const id = idOf(el);
+            const dest = destination(id);
+            const preset = el.value;
+            if (!dest || !PRESETS.includes(preset)) {
+                return;
+            }
+
+            const events = state.destinations.Catalog.Presets[preset];
+            editDestination(id, events ? { Preset: preset, Events: [...events] } : { Preset: preset });
+            if (event.type === 'change') {
+                renderSection('destinations');
+            }
+        },
+        destEvent: (el, event) => {
+            const id = idOf(el);
+            const form = state.forms[destKey(id)];
+            if (!form) {
+                return;
+            }
+
+            const keys = state.destinations.Catalog.EventKeys;
+            const chosen = toggled(form.local.Events, el.getAttribute('data-tgj-key'), Boolean(el.checked));
+            editDestination(id, { Events: keys.filter(k => chosen.includes(k)), Preset: 'Custom' });
+            if (event.type === 'change') {
+                renderSection('destinations');
+            }
+        },
+        destLibrary: el => {
+            const id = idOf(el);
+            const form = state.forms[destKey(id)];
+            if (form) {
+                const lib = el.getAttribute('data-tgj-lib');
+                editDestination(id, { LibraryIds: toggled(form.local.LibraryIds, lib, Boolean(el.checked)) });
+            }
+        },
+        destSilent: el => {
+            const id = idOf(el);
+            const form = state.forms[destKey(id)];
+            if (form) {
+                const group = el.getAttribute('data-tgj-group');
+                editDestination(id, { SilentGroups: toggled(form.local.SilentGroups, group, Boolean(el.checked)) });
+            }
+        },
+        destLeave: el => {
+            state.ui.destLeave = Boolean(el.checked);
+        },
+        // Tasks 10-12: add input/change handlers here.
     };
 
     const stopPolling = () => {

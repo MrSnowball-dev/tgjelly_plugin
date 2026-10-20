@@ -324,5 +324,19 @@
   "web.proxy.password": "Password",
   "web.proxy.saved": "(saved)",
   "web.proxy.save": "Save proxy",
-  "web.proxy.conflict": "These settings changed elsewhere. Your edits are kept; check the highlighted fields and save again."
+  "web.proxy.conflict": "These settings changed elsewhere. Your edits are kept; check the highlighted fields and save again.",
+  "web.dest.title": "Destinations",
+  "web.dest.empty": "No destinations yet. Add one to start getting notifications.",
+  "web.dest.edit": "Edit",
+  "web.dest.close": "Close",
+  "web.dest.add": "Add destination",
+  "web.dest.manualHint": "Telegram setup didn't work?",
+  "web.dest.manualLink": "Set up manually",
+  "web.dest.preset": "Preset",
+  "web.dest.save": "Save",
+  "web.dest.leave": "Bot leaves the chat",
+  "web.dest.confirmRemove": "Remove {title}?",
+  "web.dest.librariesRemoved": "Every library this destination was limited to has been removed, so nothing is sent. Pick libraries or remove the leftovers.",
+  "web.dest.removeLibrary": "Remove",
+  "web.dest.conflict": "This destination changed elsewhere. Your edits are kept; check the highlighted fields and save again."
 }
