@@ -216,7 +216,7 @@ A single card: **"Connect a Telegram bot"** with `[Create a new bot]` `[I alread
 
 - **Create a new bot:** numbered steps, each with a link:
   1. Open **@BotFather** (`https://t.me/BotFather`) and send `/newbot`. Choose a display name and a username ending in `bot`.
-  2. In BotFather's settings for the new bot, **restrict access to yourself** and to anyone else who should manage Jellyfin (up to 10 people) (F40). *The exact menu labels are recorded during implementation (§15).*
+  2. In BotFather's settings for the new bot, **restrict access to yourself** and to anyone else who should manage Jellyfin (up to 10 people) (F40). *The restriction is in BotFather's Mini App (§15 Q1).*
   3. Copy the token BotFather gives you and paste it below.
 - **I already have a bot:** a token field, with two notes:
   - "Restrict access in BotFather if you haven't, because anyone who can open the bot can manage notifications."
@@ -1011,9 +1011,11 @@ Implementation follows test-driven development: write a failing test first for e
 
 ## 15. Open questions to settle during implementation
 1. BotFather's exact menu path for the access restriction, and the three behaviours in §14.4 (a)–(c).
+   **Answered (owner, 2026-10-20):** the access restriction is in BotFather's Mini App, not in its chat commands. The README points there (plan 5). The behaviours in §14.4 (a)–(c) are still checked on the pre-release checklist.
 2. Does Telegram reject `http://` or private-IP URLs in inline buttons (`BUTTON_URL_INVALID`)? Only TDLib's "no dot" rule is verified. The result decides whether PublicUrl validation also rejects private IPs.
    **Answered (real bot, 2026-10-19):** `http://192.168.1.5:8096/…`, `http://10.0.0.5:8096/…`, `http://jellyfin.lan:8096/…` and `https://jf.example.com/web/#/details?…` are accepted. `http://localhost:8096/…` fails with `Bad Request: inline keyboard button URL 'http://localhost:8096/web/' is invalid: Wrong HTTP URL`. IPv6 literals fail, both `[fd00::1]` and `[2001:4860:4860::8888]`, with `Bad Request: BUTTON_URL_INVALID`. So private IPv4 stays valid, and IPv6 literals are now rejected (§8.3).
 3. What does `request_chat` look like on current clients, including the `chat_is_forum` promotion prompt, and do users see a confirmation before the bot gets admin rights? (Handled either way by the check in §6.2 step 2.)
+   **Answered (owner, 2026-10-20, on the owner's bot):** the picker flow is fine on the owner's devices, and the group picker lists groups only, so omitting `chat_is_channel=false` from its JSON is safe.
 4. How should the General topic of a forum be targeted: no `message_thread_id` (current choice) or thread 1?
    **Answered (real bot, 2026-10-19):** no `message_thread_id`. A send without it lands in General; `message_thread_id: 1` fails with `Bad Request: message thread not found`. `ThreadId = 0` stays. Also observed: a bot that is only a plain member of a supergroup can delete its own messages there.
 5. Which exact `Content-Type` does 10.11 serve for embedded `.js`? (Checked by the smoke test.)
