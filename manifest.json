@@ -1,0 +1,29 @@
+[
+  {
+    "guid": "e547b901-0dc4-42ae-8999-3871dd141270",
+    "versions": [
+      {
+        "version": "2.0.1.0",
+        "changelog": "First test release\n\nTgJelly sends Jellyfin events to Telegram chats, groups and channels through your own bot.\n\n- New media, security and server events, with presets\n- Setup from the bot with Telegram's chat picker, or from the dashboard\n- Custom Scriban templates (Advanced)\n- Builds for Jellyfin 10.11 (1.x) and 12 (2.x)\n\nThis is a pre-test release.",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://github.com/MrSnowball-dev/tgjelly_plugin/releases/download/v0.1/tgjelly_2.0.1.0.zip",
+        "checksum": "cb0feb4d6ee44d02cc6cc3be21287301",
+        "timestamp": "2026-10-20T21:57:13Z"
+      },
+      {
+        "version": "1.0.1.0",
+        "changelog": "First test release\n\nTgJelly sends Jellyfin events to Telegram chats, groups and channels through your own bot.\n\n- New media, security and server events, with presets\n- Setup from the bot with Telegram's chat picker, or from the dashboard\n- Custom Scriban templates (Advanced)\n- Builds for Jellyfin 10.11 (1.x) and 12 (2.x)\n\nThis is a pre-test release.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/MrSnowball-dev/tgjelly_plugin/releases/download/v0.1/tgjelly_1.0.1.0.zip",
+        "checksum": "9024db30c0ac73a5bd2cf108cf07071a",
+        "timestamp": "2026-10-20T21:57:13Z"
+      }
+    ],
+    "name": "TgJelly",
+    "description": "A Telegram bot inside your Jellyfin server: new media, security and server notifications for the chats, groups and channels you choose, set up from the dashboard or the bot.",
+    "overview": "Telegram notifications for Jellyfin",
+    "owner": "MrSnowball-dev",
+    "category": "Administration",
+    "imageUrl": "https://mrsnowball-dev.github.io/tgjelly_plugin/logo.png"
+  }
+]
