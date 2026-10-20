@@ -23,6 +23,7 @@ public sealed class DestinationsControllerTests : IAsyncLifetime
     private readonly HealthService _health;
     private readonly Outbox _outbox;
     private DestinationsController _controller = null!;
+    private readonly Jellyfin.Plugin.TgJelly.Bot.BotMemory _memory;
     private readonly FakeLibrary _library = new();
     private readonly DestinationChecker _checker;
     private readonly DestinationTester _tester;
@@ -37,6 +38,7 @@ public sealed class DestinationsControllerTests : IAsyncLifetime
         _health = new HealthService(gate, _h.Connection, checker, _h.Settings, _h.State, _h.Time, NullLogger<HealthService>.Instance);
         _h.Track(_health);
         _outbox = new Outbox(_h.State, _h.Strings, _h.Time);
+        _memory = new Jellyfin.Plugin.TgJelly.Bot.BotMemory(_h.State, _h.Time);
         _tester = new DestinationTester(_h.Connection, _health, _h.Strings, NullLogger<DestinationTester>.Instance);
     }
 
@@ -67,6 +69,38 @@ public sealed class DestinationsControllerTests : IAsyncLifetime
         Assert.True(items[1].LibraryFilterBroken);
         Assert.Empty(items[2].RemovedLibraryIds);
         Assert.False(items[2].LibraryFilterBroken);
+    }
+
+    [Fact]
+    public void GetDestinations_IncludesVisibleDetectedChats()
+    {
+        _h.AddDestination(-1001);
+        _memory.RecordDetected(-1002, "Family", ChatKind.Supergroup);
+        _memory.RecordDetected(-1003, "Too new", ChatKind.Channel);
+        _h.Time.Advance(TimeSpan.FromSeconds(10));
+        _memory.RecordDetected(-1004, "News", ChatKind.Channel);
+        _h.Time.Advance(TimeSpan.FromSeconds(20));
+        _memory.RecordDetected(-1005, "Newest", ChatKind.Channel);
+
+        var dto = _controller.Get().Value!;
+
+        Assert.Equal([-1002L, -1003L], dto.DetectedChats.Select(d => d.ChatId));
+        var first = dto.DetectedChats[0];
+        Assert.Equal(("Family", "Supergroup", _h.Time.GetUtcNow().AddSeconds(-30)), (first.Title, first.Kind, first.DetectedAt));
+        Assert.True(dto.ManualUnlocked);
+    }
+
+    [Fact]
+    public void GetDestinations_ReportsManualUnlocked()
+    {
+        _h.AddDestination(-1001);
+        Assert.False(_controller.Get().Value!.ManualUnlocked);
+
+        _memory.RecordFailure(SetupFailureKind.CheckFailed);
+        Assert.True(_controller.Get().Value!.ManualUnlocked);
+
+        _h.Time.Advance(TimeSpan.FromDays(7));
+        Assert.False(_controller.Get().Value!.ManualUnlocked);
     }
 
     [Fact]
@@ -396,5 +430,5 @@ public sealed class DestinationsControllerTests : IAsyncLifetime
     }
 
     private DestinationsController NewController(Jellyfin.Plugin.TgJelly.Bot.BotConnection connection, InstanceGate gate)
-        => new(_h.Settings, connection, _checker, _health, _tester, _outbox, _h.Strings, gate, _h.State, NullLogger<DestinationsController>.Instance, _library);
+        => new(_h.Settings, connection, _checker, _health, _tester, _outbox, _h.Strings, gate, _h.State, NullLogger<DestinationsController>.Instance, new DestinationDtoMapper(_health, _library, _memory, new SetupGate(_memory, _health, _h.Settings)), new DestinationCreator(_h.Settings, _health, _tester, _memory, NullLogger<DestinationCreator>.Instance));
 }

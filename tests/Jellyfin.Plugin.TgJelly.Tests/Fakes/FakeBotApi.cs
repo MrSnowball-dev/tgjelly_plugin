@@ -30,6 +30,7 @@ public sealed class FakeBotApi : HttpMessageHandler
     private readonly ConcurrentDictionary<long, string> _members = new();
     private int _messageId;
     private int _fileId;
+    private int _topicId = 100;
 
     public IReadOnlyList<BotApiCall> Calls => _calls.ToArray();
 
@@ -219,7 +220,14 @@ public sealed class FakeBotApi : HttpMessageHandler
             case "sendPhoto":
             case "editMessageCaption":
                 return Ok(MessageJson(call, photo: true));
-            default:
+            case "createForumTopic":
+                return Ok(new JsonObject
+                {
+                    ["message_thread_id"] = Interlocked.Increment(ref _topicId),
+                    ["name"] = call.Body["name"]?.ToString(),
+                    ["icon_color"] = 7322096,
+                }.ToJsonString());
+            default: // deleteMessage and every other boolean method
                 return Ok("true");
         }
     }

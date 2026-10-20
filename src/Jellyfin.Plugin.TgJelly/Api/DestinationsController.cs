@@ -8,7 +8,6 @@ using Jellyfin.Plugin.TgJelly.Bot;
 using Jellyfin.Plugin.TgJelly.Configuration;
 using Jellyfin.Plugin.TgJelly.Delivery;
 using Jellyfin.Plugin.TgJelly.Destinations;
-using Jellyfin.Plugin.TgJelly.Library;
 using Jellyfin.Plugin.TgJelly.Pipeline;
 using Jellyfin.Plugin.TgJelly.State;
 using Jellyfin.Plugin.TgJelly.State.Documents;
@@ -43,7 +42,8 @@ public class DestinationsController : ControllerBase
     private readonly ILogger<DestinationsController> _logger;
     private readonly InstanceGate _gate;
     private readonly StateStore _state;
-    private readonly ILibraryAccess _library;
+    private readonly DestinationDtoMapper _mapper;
+    private readonly DestinationCreator _creator;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="DestinationsController"/> class.
@@ -58,10 +58,12 @@ public class DestinationsController : ControllerBase
     /// <param name="gate">The instance gate; changes wait until this instance owns the data folder.</param>
     /// <param name="state">The state store.</param>
     /// <param name="logger">The logger.</param>
-    /// <param name="library">The library, for removed-library flags.</param>
-    public DestinationsController(SettingsStore settings, BotConnection connection, DestinationChecker checker, HealthService health, DestinationTester tester, Outbox outbox, StringTable strings, InstanceGate gate, StateStore state, ILogger<DestinationsController> logger, ILibraryAccess library)
+    /// <param name="mapper">Builds the destination DTOs.</param>
+    /// <param name="creator">The destination creator.</param>
+    public DestinationsController(SettingsStore settings, BotConnection connection, DestinationChecker checker, HealthService health, DestinationTester tester, Outbox outbox, StringTable strings, InstanceGate gate, StateStore state, ILogger<DestinationsController> logger, DestinationDtoMapper mapper, DestinationCreator creator)
     {
-        _library = library;
+        _creator = creator;
+        _mapper = mapper;
         _gate = gate;
         _state = state;
         _settings = settings;
@@ -139,7 +141,7 @@ public class DestinationsController : ControllerBase
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             _logger.LogWarning(ex, "TgJelly could not check a chat to add");
-            return Error("ChatId", CheckError(ex));
+            return Error("ChatId", CheckError(_strings, ex));
         }
 
         if (!check.Passed)
@@ -153,63 +155,18 @@ public class DestinationsController : ControllerBase
             return Error("TopicLink", _strings.Get("destination.notForum"));
         }
 
-        // The duplicate rule (spec §6.2): an existing destination for this chat and topic is re-checked, not added.
-        if (Find(_settings.Current, check.ChatId, threadId) is { } existing)
+        var created = await _creator.CreateAsync(check, threadId, EventCatalog.Expand(preset), preset, request.ExpectedRevision, cancellationToken).ConfigureAwait(false);
+        switch (created.Outcome)
         {
-            try
-            {
-                await _health.CheckNowAsync(existing.Id, cancellationToken).ConfigureAwait(false);
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                _logger.LogWarning(ex, "TgJelly could not re-check destination {Destination}", existing.Title);
-            }
-
-            return new AddDestinationResponse { Outcome = "AlreadyExists", Destination = ToDto(existing) };
+            case CreateOutcome.Conflict:
+                return Conflict(new ConflictDto<DestinationsDto> { Current = List(created.Configuration) });
+            case CreateOutcome.Invalid:
+                return BadRequest(new ErrorsDto { Errors = created.Errors });
+            case CreateOutcome.AlreadyExists:
+                return new AddDestinationResponse { Outcome = "AlreadyExists", Destination = ToDto(created.Destination!) };
+            default:
+                return new AddDestinationResponse { Outcome = "Added", Destination = ToDto(created.Destination!), TestSent = created.Test!.Sent, TestError = created.Test.Error };
         }
-
-        string? newId = null;
-        var result = _settings.UpdateIf(request.ExpectedRevision, c =>
-        {
-            if (Find(c, check.ChatId, threadId) is not null)
-            {
-                return false;
-            }
-
-            newId = DestinationIds.New(c.Destinations.Select(d => d.Id));
-            c.Destinations =
-            [
-                .. c.Destinations,
-                new Destination
-                {
-                    Id = newId,
-                    ChatId = check.ChatId,
-                    ThreadId = threadId,
-                    Title = check.Title,
-                    Kind = check.Kind,
-                    Preset = preset,
-                    Events = EventCatalog.Expand(preset),
-                },
-            ];
-            return true;
-        });
-
-        switch (result.Status)
-        {
-            case SettingsUpdateStatus.Unchanged:
-            case SettingsUpdateStatus.Conflict when Find(result.Configuration, check.ChatId, threadId) is not null:
-                // Another request added the same chat between our check and our save.
-                return new AddDestinationResponse { Outcome = "AlreadyExists", Destination = ToDto(Find(result.Configuration, check.ChatId, threadId)!) };
-            case SettingsUpdateStatus.Conflict:
-                return Conflict(new ConflictDto<DestinationsDto> { Current = List(result.Configuration) });
-            case SettingsUpdateStatus.Invalid:
-                return BadRequest(new ErrorsDto { Errors = result.Errors });
-        }
-
-        var added = result.Configuration.Destinations.First(d => d.Id == newId);
-        _health.SetChecked(added.Id, check);
-        var test = await _tester.SendTestAsync(added, cancellationToken).ConfigureAwait(false);
-        return new AddDestinationResponse { Outcome = "Added", Destination = ToDto(added), TestSent = test.Sent, TestError = test.Error };
     }
 
     /// <summary>
@@ -440,57 +397,37 @@ public class DestinationsController : ControllerBase
             return new LinksDto();
         }
 
-        var start = "https://t.me/" + bot;
         return new LinksDto
         {
-            OpenBot = start + "?start=setup",
-            StartAdd = start + "?start=add",
-            StartGroup = start + "?startgroup=add",
-            StartChannel = start + "?startchannel&admin=post_messages+edit_messages",
+            OpenBot = BotLinks.OpenBot(bot),
+            StartAdd = BotLinks.StartAdd(bot),
+            StartGroup = BotLinks.StartGroup(bot),
+            StartChannel = BotLinks.StartChannel(bot),
         };
     }
 
-    private static bool TryPreset(string? text, out PresetKind preset)
+    internal static bool TryPreset(string? text, out PresetKind preset)
         => Enum.TryParse(text, ignoreCase: true, out preset) && Enum.IsDefined(preset);
 
-    private static Destination? Find(PluginConfiguration c, long chatId, int threadId)
-        => c.Destinations.FirstOrDefault(d => d.ChatId == chatId && d.ThreadId == threadId);
-
-    private static HealthDto ToDto(DestinationHealth h)
-        => new() { Status = h.Status.ToString(), PhotosBlocked = h.PhotosBlocked, LastError = h.LastError, At = h.At };
-
-    private string CheckError(Exception ex) => ex switch
+    /// <summary>
+    /// Explains why a check could not run: not connected, rejected by Telegram, or unreachable.
+    /// </summary>
+    /// <param name="strings">The string table.</param>
+    /// <param name="ex">What went wrong.</param>
+    /// <returns>The message.</returns>
+    internal static string CheckError(StringTable strings, Exception ex) => ex switch
     {
-        BotNotConnectedException => _strings.Get("destination.notConnected"),
-        ApiRequestException => _strings.Get("token.failed", ("error", TelegramErrorClassifier.ClassifyDelivery(ex).Description)),
-        _ => _strings.Get("token.unreachable"),
+        BotNotConnectedException => strings.Get("destination.notConnected"),
+        ApiRequestException => strings.Get("token.failed", ("error", TelegramErrorClassifier.ClassifyDelivery(ex).Description)),
+        _ => strings.Get("token.unreachable"),
     };
 
     private BadRequestObjectResult Error(string field, string message)
         => BadRequest(new ErrorsDto { Errors = [new SettingsError(field, message)] });
 
-    private DestinationDto ToDto(Destination d) => ToDto(d, _library.GetVirtualFolders().Select(l => l.Id).ToHashSet());
+    private DestinationDto ToDto(Destination d) => _mapper.ToDto(d);
 
-    private DestinationDto ToDto(Destination d, IReadOnlyCollection<Guid> existing) => new()
-    {
-        Id = d.Id,
-        ChatId = d.ChatId,
-        ThreadId = d.ThreadId,
-        Title = d.Title,
-        Kind = d.Kind.ToString(),
-        Enabled = d.Enabled,
-        Preset = d.Preset.ToString(),
-        Events = d.Events,
-        LibraryIds = d.LibraryIds,
-        SilentGroups = d.SilentGroups,
-        Health = ToDto(_health.Get(d.Id)),
-        RemovedLibraryIds = LibraryFilter.Removed(d, existing),
-        LibraryFilterBroken = LibraryFilter.RefersOnlyToRemoved(d, existing),
-    };
+    private DestinationsDto List(PluginConfiguration c) => _mapper.List(c);
 
-    private DestinationsDto List(PluginConfiguration c)
-    {
-        var existing = _library.GetVirtualFolders().Select(l => l.Id).ToHashSet();
-        return new() { Revision = c.Revision, Items = [.. c.Destinations.Select(d => ToDto(d, existing))] };
-    }
+    private static HealthDto ToDto(DestinationHealth h) => DestinationDtoMapper.ToDto(h);
 }

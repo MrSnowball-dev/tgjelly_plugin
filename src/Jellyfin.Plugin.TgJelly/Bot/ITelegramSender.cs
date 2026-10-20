@@ -99,4 +99,24 @@ public interface ITelegramSender
     /// <param name="ct">Cancels the call.</param>
     /// <returns>A task.</returns>
     Task SetChannelAdminRightsAsync(CancellationToken ct);
+
+    /// <summary>Calls <c>sendMessage</c> in HTML with a reply keyboard, keyboard removal or force-reply markup.</summary>
+    /// <param name="prompt">The prompt.</param>
+    /// <param name="ct">Cancels the call.</param>
+    /// <returns>The sent message.</returns>
+    Task<Message> SendPromptAsync(OutgoingPrompt prompt, CancellationToken ct);
+
+    /// <summary>Calls <c>deleteMessage</c>.</summary>
+    /// <param name="chatId">The chat.</param>
+    /// <param name="messageId">The message.</param>
+    /// <param name="ct">Cancels the call.</param>
+    /// <returns><c>true</c> if deleted; <c>false</c> if the message is gone or cannot be deleted.</returns>
+    Task<bool> DeleteMessageAsync(long chatId, int messageId, CancellationToken ct);
+
+    /// <summary>Calls <c>createForumTopic</c>.</summary>
+    /// <param name="chatId">The forum supergroup.</param>
+    /// <param name="name">The topic name.</param>
+    /// <param name="ct">Cancels the call.</param>
+    /// <returns>The new topic's <c>message_thread_id</c>.</returns>
+    Task<int> CreateForumTopicAsync(long chatId, string name, CancellationToken ct);
 }

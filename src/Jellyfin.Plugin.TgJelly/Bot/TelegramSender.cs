@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using Telegram.Bot;
+using Telegram.Bot.Exceptions;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
 
@@ -133,6 +134,42 @@ public sealed class TelegramSender : ITelegramSender
             rights: new ChatAdministratorRights { CanPostMessages = true, CanEditMessages = true },
             forChannels: true,
             cancellationToken: ct);
+
+    /// <inheritdoc />
+    public Task<Message> SendPromptAsync(OutgoingPrompt prompt, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(prompt);
+        return _client.SendMessage(
+            chatId: prompt.ChatId,
+            text: prompt.Html,
+            parseMode: ParseMode.Html,
+            replyMarkup: prompt.Markup,
+            linkPreviewOptions: NoPreview,
+            cancellationToken: ct);
+    }
+
+    /// <inheritdoc />
+    public async Task<bool> DeleteMessageAsync(long chatId, int messageId, CancellationToken ct)
+    {
+        try
+        {
+            await _client.DeleteMessage(chatId: chatId, messageId: messageId, cancellationToken: ct).ConfigureAwait(false);
+            return true;
+        }
+        catch (ApiRequestException ex) when (ex.ErrorCode == 400
+            && (ex.Message.Contains("message to delete not found", StringComparison.OrdinalIgnoreCase)
+                || ex.Message.Contains("message can't be deleted", StringComparison.OrdinalIgnoreCase)))
+        {
+            return false;
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task<int> CreateForumTopicAsync(long chatId, string name, CancellationToken ct)
+    {
+        var topic = await _client.CreateForumTopic(chatId: chatId, name: name, cancellationToken: ct).ConfigureAwait(false);
+        return topic.MessageThreadId;
+    }
 
     private static int? Thread(int threadId) => threadId == 0 ? null : threadId;
 

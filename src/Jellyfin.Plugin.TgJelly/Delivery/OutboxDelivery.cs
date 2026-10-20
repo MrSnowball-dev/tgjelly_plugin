@@ -38,6 +38,7 @@ public sealed class OutboxDelivery
     private readonly PacingGate _pacing;
     private readonly Formatter _formatter;
     private readonly TimeProvider _time;
+    private readonly DestinationMigration _migration;
     private readonly ILogger<OutboxDelivery> _logger;
 
     /// <summary>
@@ -51,9 +52,11 @@ public sealed class OutboxDelivery
     /// <param name="pacing">The pacing gate.</param>
     /// <param name="formatter">The formatter, for the ⏱ line.</param>
     /// <param name="time">The clock.</param>
+    /// <param name="migration">The chat migration.</param>
     /// <param name="logger">The logger.</param>
-    public OutboxDelivery(BotConnection connection, Outbox outbox, HealthService health, SettingsStore settings, StateStore state, PacingGate pacing, Formatter formatter, TimeProvider time, ILogger<OutboxDelivery> logger)
+    public OutboxDelivery(BotConnection connection, Outbox outbox, HealthService health, SettingsStore settings, StateStore state, PacingGate pacing, Formatter formatter, TimeProvider time, DestinationMigration migration, ILogger<OutboxDelivery> logger)
     {
+        _migration = migration;
         _connection = connection;
         _outbox = outbox;
         _health = health;
@@ -252,7 +255,8 @@ public sealed class OutboxDelivery
                 _health.MarkProblem(destination.Id, HealthStatus.TopicMissing, error.Description);
                 return null;
             case DeliveryErrorKind.Migrated when !entry.Migrated && error.MigrateToChatId is { } newChatId:
-                var migrated = Migrate(destination, newChatId);
+                var map = _migration.MigrateAll(destination.ChatId, newChatId);
+                var migrated = map.TryGetValue(destination.Id, out var nowId) ? _settings.Current.Destinations.FirstOrDefault(x => x.Id == nowId) : null;
                 if (migrated is null)
                 {
                     break;
@@ -326,48 +330,6 @@ public sealed class OutboxDelivery
         _logger.LogWarning("TgJelly dropped a message to {Destination}: {Reason}", destination.Title, reason);
         _outbox.Drop(entry.EntryId);
         _state.RecordError("outbox", destination.Title + ": " + reason);
-    }
-
-    // Spec §9.4 row 5: rewrite the chat ID, or merge into the destination that already has the new chat.
-    private Destination? Migrate(Destination destination, long newChatId)
-    {
-        string? mergedInto = null;
-        _settings.Update(null, c =>
-        {
-            var d = c.Destinations.FirstOrDefault(x => x.Id == destination.Id);
-            if (d is null)
-            {
-                return;
-            }
-
-            var other = c.Destinations.FirstOrDefault(x => x.Id != d.Id && x.ChatId == newChatId && x.ThreadId == d.ThreadId);
-            if (other is null)
-            {
-                d.ChatId = newChatId;
-                d.Kind = ChatKind.Supergroup;
-                return;
-            }
-
-            other.Events = [.. other.Events.Union(d.Events, StringComparer.Ordinal)];
-            other.SilentGroups = [.. other.SilentGroups.Union(d.SilentGroups, StringComparer.Ordinal)];
-            other.LibraryIds = other.LibraryIds.Length == 0 || d.LibraryIds.Length == 0 ? [] : [.. other.LibraryIds.Union(d.LibraryIds, StringComparer.Ordinal)];
-            if (other.Preset != d.Preset)
-            {
-                other.Preset = PresetKind.Custom;
-            }
-
-            c.Destinations = [.. c.Destinations.Where(x => x.Id != d.Id)];
-            mergedInto = other.Id;
-        });
-
-        if (mergedInto is not null)
-        {
-            _outbox.Repoint(destination.Id, mergedInto);
-            _health.Remove(destination.Id);
-        }
-
-        var id = mergedInto ?? destination.Id;
-        return _settings.Current.Destinations.FirstOrDefault(x => x.Id == id);
     }
 
     private sealed record Attempt(SentMessage? EditTarget, int? ReplyTo, bool Photo, string? FileId, string? UploadPath);

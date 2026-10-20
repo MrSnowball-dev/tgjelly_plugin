@@ -1,0 +1,1 @@
+{"update_id":{{update_id}},"message":{"message_id":{{message_id}},"from":{"id":{{user_id}},"is_bot":false,"first_name":"Ann","username":"ann"},"chat":{"id":{{chat_id}},"type":"supergroup","title":"Family"},"date":1760000000,"text":"{{text}}"}}

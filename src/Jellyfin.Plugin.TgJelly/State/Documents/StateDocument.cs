@@ -23,4 +23,16 @@ public sealed class StateDocument
 
     /// <summary>Gets or sets the update checker's state (spec §7.6).</summary>
     public UpdateCheckState UpdateCheck { get; set; } = new();
+
+    /// <summary>Gets or sets each private chat's menu or setup flow, keyed by chat ID (invariant culture).</summary>
+    public Dictionary<string, FlowState> Flows { get; set; } = new(StringComparer.Ordinal);
+
+    /// <summary>Gets or sets when each manager last used the bot, keyed by private chat ID (invariant culture).</summary>
+    public Dictionary<string, DateTimeOffset> Managers { get; set; } = new(StringComparer.Ordinal);
+
+    /// <summary>Gets or sets the chats the bot was added to that are not destinations yet.</summary>
+    public List<DetectedChat> DetectedChats { get; set; } = [];
+
+    /// <summary>Gets or sets the recent setup failures.</summary>
+    public List<SetupFailure> SetupFailures { get; set; } = [];
 }

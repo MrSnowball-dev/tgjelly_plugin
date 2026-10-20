@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -93,13 +94,21 @@ public sealed class DestinationTester
         }
     }
 
-    private string Message(Destination destination)
+    /// <summary>
+    /// Names the event groups a destination receives, as the test message does ("new media, server alerts").
+    /// </summary>
+    /// <param name="strings">The string table.</param>
+    /// <param name="events">The destination's event keys.</param>
+    /// <returns>Plain text, not escaped.</returns>
+    internal static string GroupsText(StringTable strings, IReadOnlyCollection<string> events)
     {
         var groups = EventCatalog.Groups
-            .Where(g => destination.Events.Any(e => EventCatalog.GroupOf(e) == g))
-            .Select(g => _strings.Get("groups." + g))
+            .Where(g => events.Any(e => EventCatalog.GroupOf(e) == g))
+            .Select(g => strings.Get("groups." + g))
             .ToList();
-        var text = groups.Count == 0 ? _strings.Get("groups.none") : string.Join(_strings.Get("groups.separator"), groups);
-        return _strings.Get("test.message", ("groups", HtmlText.Escape(text)));
+        return groups.Count == 0 ? strings.Get("groups.none") : string.Join(strings.Get("groups.separator"), groups);
     }
+
+    private string Message(Destination destination)
+        => _strings.Get("test.message", ("groups", HtmlText.Escape(GroupsText(_strings, destination.Events))));
 }
