@@ -356,6 +356,7 @@ public sealed class OnboardingFlow
         {
             "tg" => await _topics.OnGeneralAsync(chatId, flow, ct).ConfigureAwait(false),
             "tc" => await _topics.OnCreateAsync(chatId, flow, ct).ConfigureAwait(false),
+            "tb" => await _topics.OnBackAsync(chatId, flow, ct).ConfigureAwait(false),
             _ => await _topics.OnExistingAsync(chatId, flow, ct).ConfigureAwait(false),
         };
         await ContinueWithTopicAsync(chatId, choice, ct).ConfigureAwait(false);

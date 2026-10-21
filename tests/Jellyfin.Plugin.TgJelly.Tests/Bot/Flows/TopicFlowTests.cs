@@ -276,16 +276,20 @@ public sealed class TopicFlowTests : IDisposable, IAsyncLifetime
     }
 
     [Fact]
-    public async Task Existing_RecordsTopicNotPickable_AndAsksForTheLink()
+    public async Task Existing_RecordsTopicNotPickable_AndAsksInTheWizard()
     {
         AddForum();
         await AskWhere();
+        var wizard = WizardId();
 
-        await Click("1|te", WizardId());
+        await Click("1|te", wizard);
 
-        var prompt = Sent().Last();
-        Assert.Contains("Copy link", (string)prompt.Body["text"]!, StringComparison.Ordinal);
-        Assert.True((bool)prompt.Body["reply_markup"]!["force_reply"]!);
+        var prompt = _h.Api.CallsTo("editMessageText").Last();
+        Assert.Equal(wizard, (int)prompt.Body["message_id"]!);
+        Assert.Contains("Send me the topic's link as a message.", (string)prompt.Body["text"]!, StringComparison.Ordinal);
+        Assert.Equal(["1|tb"], Data(prompt));
+        prompt.Explains("Cancel");
+        Assert.DoesNotContain(_h.Api.Calls, c => c.Body.ToJsonString().Contains("force_reply", StringComparison.Ordinal));
         Assert.Equal("topicLink", _rig.Memory.GetFlow(Manager)!.Params["input"]);
         Assert.Equal([SetupFailureKind.TopicNotPickable], _h.State.Read(s => s.SetupFailures.Select(f => f.Kind).ToList()));
     }
@@ -325,7 +329,7 @@ public sealed class TopicFlowTests : IDisposable, IAsyncLifetime
         Assert.Empty(_h.Api.CallsTo("sendChatAction"));
         var prompt = Sent().Last();
         Assert.Contains("different chat", (string)prompt.Body["text"]!, StringComparison.Ordinal);
-        Assert.True((bool)prompt.Body["reply_markup"]!["force_reply"]!);
+        Assert.Equal(["1|tb"], Data(prompt));
         Assert.Equal("topicLink", _rig.Memory.GetFlow(Manager)!.Params["input"]);
     }
 
@@ -340,8 +344,57 @@ public sealed class TopicFlowTests : IDisposable, IAsyncLifetime
 
         var prompt = Sent().Last();
         Assert.Contains("isn't a topic link", (string)prompt.Body["text"]!, StringComparison.Ordinal);
-        Assert.True((bool)prompt.Body["reply_markup"]!["force_reply"]!);
+        Assert.Equal(["1|tb"], Data(prompt));
         Assert.Equal("topicLink", _rig.Memory.GetFlow(Manager)!.Params["input"]);
+    }
+
+    [Fact]
+    public async Task TopicQuestion_ExplainsEachChoice()
+    {
+        AddForum();
+
+        await AskWhere();
+
+        Sent().Last().Explains("General topic", "Create a &quot;Jellyfin&quot; topic", "Use an existing topic…");
+    }
+
+    [Fact]
+    public async Task LinkCancel_ReturnsToTheTopicQuestion()
+    {
+        AddForum();
+        await AskWhere();
+        var wizard = WizardId();
+        await Click("1|te", wizard);
+
+        await Click("1|tb", wizard);
+
+        var edit = _h.Api.CallsTo("editMessageText").Last();
+        Assert.Equal(wizard, (int)edit.Body["message_id"]!);
+        Assert.Equal(["1|tg", "1|tc", "1|te"], Data(edit));
+        await Text("https://t.me/c/5550001/9");
+        Assert.Empty(_h.Api.CallsTo("sendChatAction"));
+    }
+
+    [Fact]
+    public async Task BadLink_AsksAgainInANewMessage_ThatLaterStepsEdit()
+    {
+        AddForum();
+        await AskWhere();
+        var oldId = WizardId();
+        await Click("1|te", oldId);
+        var before = Sent().Length;
+
+        await Text("nope");
+
+        var again = Sent().Skip(before).Single();
+        Assert.StartsWith("That isn't a topic link.", (string)again.Body["text"]!, StringComparison.Ordinal);
+        Assert.Equal(["1|tb"], Data(again));
+        var newId = WizardId();
+        Assert.NotEqual(oldId, newId);
+        await Text("https://t.me/c/5550001/9");
+        var edit = _h.Api.CallsTo("editMessageText").Last();
+        Assert.Equal(newId, (int)edit.Body["message_id"]!);
+        Assert.Contains("What should I send there?", (string)edit.Body["text"]!, StringComparison.Ordinal);
     }
 
     [Fact]

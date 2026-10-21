@@ -83,7 +83,7 @@ public sealed class FlowEngine : IBotFlows, IDisposable
     [
         "m", "st", "dl", "noop", "d", "de", "deg", "det", "dlb", "dlt", "dsg", "dsgt", "dt", "dc", "dp", "dr", "drx", "tp",
         "s", "sm", "smt", "su", "sut", "sum", "sp", "spu", "spt", "spc", "op", "oc", "ocg", "ocd", "oa", "ot", "ox", "ol", "od",
-        "tg", "tc", "te", "xl", "xs", "xd",
+        "tg", "tc", "te", "tb", "xl", "xs", "xd",
     ];
 
     /// <inheritdoc />
@@ -200,6 +200,7 @@ public sealed class FlowEngine : IBotFlows, IDisposable
             case "tg":
             case "tc":
             case "te":
+            case "tb":
                 await _onboarding.OnTopicAsync(query, action, ct).ConfigureAwait(false);
                 break;
             case "ocd":

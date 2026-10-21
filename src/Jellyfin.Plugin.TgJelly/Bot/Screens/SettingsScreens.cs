@@ -32,7 +32,6 @@ public sealed class SettingsScreens
     private readonly StateStore _state;
     private readonly LinkBuilder _links;
     private readonly BotMemory _memory;
-    private readonly BotConnection _connection;
     private readonly StringTable _strings;
     private readonly Formatter _formatter;
 
@@ -43,16 +42,14 @@ public sealed class SettingsScreens
     /// <param name="state">The state store, for the public URL notice.</param>
     /// <param name="links">Suggests and normalizes the public URL.</param>
     /// <param name="memory">The bot's memory, for the typed-URL flow.</param>
-    /// <param name="connection">The bot connection, to send the URL prompt.</param>
     /// <param name="strings">The string table.</param>
     /// <param name="formatter">The formatter, for escaping.</param>
-    public SettingsScreens(SettingsStore settings, StateStore state, LinkBuilder links, BotMemory memory, BotConnection connection, StringTable strings, Formatter formatter)
+    public SettingsScreens(SettingsStore settings, StateStore state, LinkBuilder links, BotMemory memory, StringTable strings, Formatter formatter)
     {
         _settings = settings;
         _state = state;
         _links = links;
         _memory = memory;
-        _connection = connection;
         _strings = strings;
         _formatter = formatter;
     }
@@ -105,8 +102,7 @@ public sealed class SettingsScreens
 
                 return PublicUrl();
             case "spt":
-                await AskForUrlAsync(chatId, null, ct).ConfigureAwait(false);
-                return PublicUrl();
+                return UrlPrompt(chatId, null);
             case "spc":
                 SetPublicUrl(string.Empty);
                 return PublicUrl();
@@ -122,7 +118,7 @@ public sealed class SettingsScreens
     /// <param name="text">The text.</param>
     /// <param name="ct">Cancels the work.</param>
     /// <returns><c>Handled</c> is false when no URL was awaited (the text is ordinary). Otherwise a valid URL is saved
-    /// and <c>Screen</c> is the public URL screen to send; an invalid one is explained and asked for again, with no screen.</returns>
+    /// and <c>Screen</c> is the public URL screen to send; an invalid one is explained and asked for again: <c>Screen</c> is the prompt, to send as a new message.</returns>
     public async Task<(bool Handled, Screen? Screen)> OnTextAsync(long chatId, string text, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(text);
@@ -133,8 +129,7 @@ public sealed class SettingsScreens
 
         if (LinkBuilder.Normalize(text) is not { } url)
         {
-            await AskForUrlAsync(chatId, _strings.Get("settings.url.invalid") + "\n\n", ct).ConfigureAwait(false);
-            return (true, null);
+            return (true, UrlPrompt(chatId, _strings.Get("settings.url.invalid")));
         }
 
         SetPublicUrl(url);
@@ -211,16 +206,17 @@ public sealed class SettingsScreens
     private bool AwaitsUrl(long chatId)
         => _memory.GetFlow(chatId) is { } flow && flow.Params.TryGetValue(InputKey, out var input) && input == PublicUrlInput;
 
-    private async Task AskForUrlAsync(long chatId, string? prefix, CancellationToken ct)
+    /// <summary>The inline prompt for a typed public URL, with Cancel back to the public URL screen; it starts waiting for the text.</summary>
+    private Screen UrlPrompt(long chatId, string? problem)
     {
         var flow = _memory.GetFlow(chatId) ?? new FlowState();
         flow.Screen = "settings";
         flow.Params[InputKey] = PublicUrlInput;
         _memory.SaveFlow(chatId, flow);
-        var html = prefix is null ? string.Empty : _formatter.Escape(prefix);
-        html += _formatter.Escape(_strings.Get("settings.url.prompt")) + "\n\n" + _formatter.Escape(_strings.Get("settings.url.rule"));
-        var markup = new ForceReplyMarkup { InputFieldPlaceholder = _strings.Get("settings.url.placeholder") };
-        await _connection.RequireSender().SendPromptAsync(new OutgoingPrompt(chatId, html, markup), ct).ConfigureAwait(false);
+        var html = problem is null ? string.Empty : _formatter.Escape(problem) + "\n\n";
+        html += _formatter.Escape(_strings.Get("settings.url.prompt")) + "\n\n" + _formatter.Escape(_strings.Get("settings.url.rule"))
+            + ButtonGuide.Lines(_strings, _formatter, ("input.cancel", "input.cancel.about"));
+        return new Screen(html, new InlineKeyboardMarkup(Button("input.cancel", "sp")));
     }
 
     private Screen Menu()

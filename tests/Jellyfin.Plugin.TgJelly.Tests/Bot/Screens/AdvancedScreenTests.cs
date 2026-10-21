@@ -95,7 +95,7 @@ public sealed class AdvancedScreenTests : IDisposable, IAsyncLifetime
 
         await Click(existing, 77);
 
-        var prompt = Sent().Last();
+        var prompt = _h.Api.CallsTo("editMessageText").Last();
         Assert.Contains("Copy link", (string)prompt.Body["text"]!, StringComparison.Ordinal);
         Assert.Contains(SetupFailureKind.TopicNotPickable, _h.State.Read(s => s.SetupFailures.Select(f => f.Kind).ToList()));
 
@@ -105,6 +105,20 @@ public sealed class AdvancedScreenTests : IDisposable, IAsyncLifetime
         var flow = _rig.Memory.GetFlow(Manager)!;
         Assert.Equal(("9", Group.ToString(CultureInfo.InvariantCulture)), (flow.Params["threadId"], flow.Params["chatId"]));
         Assert.Contains("What should I send there?", (string)_h.Api.CallsTo("editMessageText").Last().Body["text"]!, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task AdvancedTopic_AsksInPlace_WithCancelBackToAdvanced()
+    {
+        AddForum();
+
+        await Click("1|ol", 9);
+
+        var edit = Assert.Single(_h.Api.CallsTo("editMessageText"));
+        Assert.Equal(9, (int)edit.Body["message_id"]!);
+        Assert.Contains("Send me the topic's link as a message.", (string)edit.Body["text"]!, StringComparison.Ordinal);
+        Assert.Equal(["1|ox"], Buttons(edit).Select(b => (string)b["callback_data"]!));
+        Assert.Empty(_h.Api.CallsTo("sendMessage"));
     }
 
     [Fact]

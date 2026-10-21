@@ -125,7 +125,8 @@ public sealed class TopicFlow
             new[] { Button("topic.create", "tc") },
             new[] { Button("topic.existing", "te") },
         };
-        var html = "<b>" + _formatter.Escape(check.Title) + "</b>\n" + _formatter.Escape(_strings.Get("topic.ask"));
+        var html = "<b>" + _formatter.Escape(check.Title) + "</b>\n" + _formatter.Escape(_strings.Get("topic.ask"))
+            + ButtonGuide.Lines(_strings, _formatter, ("topic.general", "topic.general.about"), ("topic.create", "topic.create.about"), ("topic.existing", "topic.existing.about"));
         flow.WizardMessageId = await _screens.ShowAsync(privateChatId, new Screen(html, new InlineKeyboardMarkup(rows)), wizardMessageId, ct).ConfigureAwait(false);
         _memory.SaveFlow(privateChatId, flow);
         await DeleteAsync(privateChatId, previous?.CheckingMessageId, ct).ConfigureAwait(false);
@@ -305,6 +306,21 @@ public sealed class TopicFlow
     }
 
     /// <summary>
+    /// Cancel on the link prompt (<c>tb</c>): drops the link input and asks the topic question again in the wizard message.
+    /// </summary>
+    /// <param name="chatId">The private chat.</param>
+    /// <param name="flow">The wizard's flow.</param>
+    /// <param name="ct">Cancels the work.</param>
+    /// <returns><c>null</c>: the topic is still to be chosen.</returns>
+    public async Task<TopicChoice?> OnBackAsync(long chatId, FlowState flow, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(flow);
+        await SpendAsync(chatId, flow, ct).ConfigureAwait(false);
+        await AskAsync(chatId, Rebuild(flow), flow.WizardMessageId, ct).ConfigureAwait(false);
+        return null;
+    }
+
+    /// <summary>
     /// Use an existing topic from the Advanced options screen with no chat picked (spec §6.5): records
     /// <see cref="SetupFailureKind.TopicNotPickable"/> and asks for the topic's link, whose chat is then checked
     /// directly.
@@ -456,13 +472,21 @@ public sealed class TopicFlow
         await DeleteAsync(chatId, prompt, ct).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Asks for the topic's link inline, with Cancel (back to Advanced options without a picked chat, otherwise to the
+    /// topic question). The first ask edits the wizard message; a repeat after a problem is a new message, which later
+    /// steps then edit.
+    /// </summary>
     private async Task AskForLinkAsync(long chatId, FlowState flow, string? problem, CancellationToken ct)
     {
         flow.Params[InputKey] = LinkInput;
         _memory.SaveFlow(chatId, flow);
         var html = problem is null ? string.Empty : _formatter.Escape(problem) + "\n\n";
-        html += _formatter.Escape(_strings.Get("topic.linkPrompt"));
-        await _connection.RequireSender().SendPromptAsync(new OutgoingPrompt(chatId, html, new ForceReplyMarkup()), ct).ConfigureAwait(false);
+        html += _formatter.Escape(_strings.Get("topic.linkPrompt")) + ButtonGuide.Lines(_strings, _formatter, ("input.cancel", "input.cancel.about"));
+        var cancel = Button("input.cancel", flow.Params.ContainsKey(AnyChatKey) ? "ox" : "tb");
+        var screen = new Screen(html, new InlineKeyboardMarkup(cancel));
+        flow.WizardMessageId = await _screens.ShowAsync(chatId, screen, problem is null ? flow.WizardMessageId : null, ct).ConfigureAwait(false);
+        _memory.SaveFlow(chatId, flow);
     }
 
     /// <summary>

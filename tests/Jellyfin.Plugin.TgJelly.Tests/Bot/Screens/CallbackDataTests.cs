@@ -34,7 +34,7 @@ public class CallbackDataTests
     {
         {
             var rows = new Dictionary<string, string[]>(StringComparer.Ordinal);
-            foreach (var a in new[] { "m", "st", "noop", "s", "sm", "su", "sut", "sum", "sp", "spu", "spt", "spc", "ocd", "oa", "ot", "ox", "ol", "od", "tg", "tc", "te" })
+            foreach (var a in new[] { "m", "st", "noop", "s", "sm", "su", "sut", "sum", "sp", "spu", "spt", "spc", "ocd", "oa", "ot", "ox", "ol", "od", "tg", "tc", "te", "tb" })
             {
                 rows[a] = [];
             }

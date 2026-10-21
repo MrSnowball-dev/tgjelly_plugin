@@ -75,8 +75,6 @@ public sealed class SettingsScreensTests : IDisposable, IAsyncLifetime
     public async Task PublicUrl_TypeAnother_Valid_Saves()
     {
         await Click("1|spt");
-        var prompt = _h.Api.CallsTo("sendMessage").Last();
-        Assert.Contains("force_reply", prompt.Body["reply_markup"]!.ToJsonString(), StringComparison.Ordinal);
         Assert.Equal("publicUrl", _rig.Memory.GetFlow(Chat)!.Params["input"]);
 
         await Text(" http://192.168.1.5:8096/ ");
@@ -98,7 +96,6 @@ public sealed class SettingsScreensTests : IDisposable, IAsyncLifetime
         Assert.Equal("publicUrl", _rig.Memory.GetFlow(Chat)!.Params["input"]);
         var again = _h.Api.CallsTo("sendMessage").Skip(sent).ToList();
         Assert.Single(again);
-        Assert.Contains("force_reply", again[0].Body["reply_markup"]!.ToJsonString(), StringComparison.Ordinal);
         Assert.Contains("IPv6", (string)again[0].Body["text"]!, StringComparison.Ordinal);
     }
 
@@ -160,6 +157,52 @@ public sealed class SettingsScreensTests : IDisposable, IAsyncLifetime
 
         Assert.Equal(string.Empty, _h.Settings.Current.PublicUrl);
     }
+
+    [Fact]
+    public async Task TypeAnother_EditsToAnInlinePrompt_WithCancel()
+    {
+        await Click("1|spt");
+
+        var edit = Assert.Single(_h.Api.CallsTo("editMessageText"));
+        Assert.Equal(55, (int)edit.Body["message_id"]!);
+        var text = (string)edit.Body["text"]!;
+        Assert.Contains("Send the public URL as a message.", text, StringComparison.Ordinal);
+        Assert.Contains("must start with http", text, StringComparison.Ordinal);
+        Assert.Equal(["1|sp"], Data(edit));
+        edit.Explains("Cancel");
+        Assert.DoesNotContain(_h.Api.Calls, c => c.Body.ToJsonString().Contains("force_reply", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task InvalidUrl_SendsThePromptAgain_AsANewMessage()
+    {
+        await Click("1|spt");
+
+        await Text("jellyfin");
+
+        var again = _h.Api.CallsTo("sendMessage").Last();
+        var text = (string)again.Body["text"]!;
+        Assert.StartsWith("not usable", text, StringComparison.Ordinal);
+        Assert.Contains("Send the public URL as a message.", text, StringComparison.Ordinal);
+        Assert.Equal(["1|sp"], Data(again));
+        await Text("https://jf.example.com");
+        Assert.Equal("https://jf.example.com", _h.Settings.Current.PublicUrl);
+    }
+
+    [Fact]
+    public async Task PromptCancel_StopsWaiting()
+    {
+        await Click("1|spt");
+        await Click("1|sp");
+
+        await Text("https://jf.example.com");
+
+        Assert.Equal(string.Empty, _h.Settings.Current.PublicUrl);
+        Assert.Contains("Menu", (string)_h.Api.CallsTo("sendMessage").Last().Body["text"]!, StringComparison.Ordinal);
+    }
+
+    private static string[] Data(BotApiCall call)
+        => call.Body["reply_markup"]!["inline_keyboard"]!.AsArray().SelectMany(r => r!.AsArray()).Select(b => (string)b!["callback_data"]!).ToArray();
 
     private async Task Click(string data) => await _rig.Deliver(TelegramFixtures.Update("callback_query", ("data", data), ("message_id", "55")));
 

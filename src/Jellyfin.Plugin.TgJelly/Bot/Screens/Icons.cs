@@ -150,6 +150,7 @@ internal static partial class Icons
         ["onboard.here"] = Chat,
         ["onboard.cancel"] = Cancel,
         ["dest.btn.cancel"] = Cancel,
+        ["input.cancel"] = Cancel,
         ["topic.allow"] = Key,
         ["onboard.tryAgain"] = Refresh,
         ["dest.btn.check"] = Refresh,
