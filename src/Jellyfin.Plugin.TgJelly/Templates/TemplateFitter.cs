@@ -12,6 +12,15 @@ namespace Jellyfin.Plugin.TgJelly.Templates;
 /// </summary>
 public static class TemplateFitter
 {
+    /// <summary>The caption limit.</summary>
+    public const int CaptionLimit = 1024;
+
+    /// <summary>The text limit.</summary>
+    public const int TextLimit = 4096;
+
+    /// <summary>Code points kept free for the ⏱ line added at send time.</summary>
+    public const int DelayedReserve = 40;
+
     /// <summary>The most list items rendered; the engine's loop limit.</summary>
     public const int MaxListItems = 1000;
 
@@ -29,13 +38,21 @@ public static class TemplateFitter
     {
         ArgumentNullException.ThrowIfNull(model);
         ArgumentNullException.ThrowIfNull(render);
-        var budget = limit - MessageFitter.DelayedReserve;
+        var budget = limit - DelayedReserve;
         var fullList = Math.Min(model.ListCount, MaxListItems);
         TemplateError? error = null;
+        TemplateError? tooLong = null;
 
+        // Output over the engine's limit is far over any message limit: it does not fit, and a shorter model may.
         string? Render(string? text, int kept)
         {
             var result = render(model.With(text, kept));
+            if (result is { Ok: false, TooLong: true })
+            {
+                tooLong ??= result.Error;
+                return null;
+            }
+
             if (!result.Ok)
             {
                 error ??= result.Error;
@@ -95,7 +112,8 @@ public static class TemplateFitter
             }
         }
 
-        if (fullList > 1)
+        var minKept = model.MinListKept;
+        if (fullList > minKept)
         {
             var (lo, hi) = (0, fullList - 1);
             while (lo < hi)
@@ -117,7 +135,7 @@ public static class TemplateFitter
                 }
             }
 
-            html = Render(text, Math.Max(lo, 1));
+            html = Render(text, Math.Max(lo, minKept));
             if (error is not null)
             {
                 return new FitResult(null, false, error);
@@ -129,7 +147,9 @@ public static class TemplateFitter
             }
         }
 
-        return new FitResult(HtmlText.Truncate(html!, budget, Ellipsis), true, null);
+        return html is null
+            ? new FitResult(null, false, tooLong)
+            : new FitResult(HtmlText.Truncate(html, budget, Ellipsis), true, null);
     }
 
     private static string Prefix(Rune[] runes, int count)

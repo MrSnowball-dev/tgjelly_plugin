@@ -21,6 +21,9 @@ public sealed class TemplateEngine
     private const int Depth = 20;
     private const int TextLimit = 16384;
 
+    // How Scriban starts the message of an OutputLimit failure.
+    private const string OutputLimitMessage = "Rendered output exceeds OutputLimit";
+
     private static readonly TimeSpan DefaultTimeout = TimeSpan.FromSeconds(2);
 
     private readonly ConcurrentDictionary<(string EventKey, string Hash), Template> _cache = new();
@@ -143,7 +146,8 @@ public sealed class TemplateEngine
         }
         catch (ScriptRuntimeException ex)
         {
-            return new TemplateRenderResult(null, ToError(ex.OriginalMessage, ex.Span));
+            var tooLong = ex.OriginalMessage.StartsWith(OutputLimitMessage, StringComparison.Ordinal);
+            return new TemplateRenderResult(null, ToError(ex.OriginalMessage, ex.Span), tooLong);
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {

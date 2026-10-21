@@ -124,7 +124,7 @@ public sealed class TemplateRendererTests : IDisposable
         var result = Renderer().Render(Movie(), hasPoster: true)!;
 
         Assert.Equal(Key, result.TemplateKey);
-        Assert.True(HtmlText.PlainLength(result.Caption) <= MessageFitter.CaptionLimit - MessageFitter.DelayedReserve);
+        Assert.True(HtmlText.PlainLength(result.Caption) <= TemplateFitter.CaptionLimit - TemplateFitter.DelayedReserve);
         Assert.EndsWith("…", result.Caption, StringComparison.Ordinal);
         Assert.Equal(2000, result.Text.Length);
         var flag = StoredFlag()!;
@@ -160,7 +160,7 @@ public sealed class TemplateRendererTests : IDisposable
     {
         var result = Renderer().Render(Movie(name: new string('t', 3000)), hasPoster: true)!;
 
-        Assert.True(HtmlText.PlainLength(result.Caption) <= MessageFitter.CaptionLimit - MessageFitter.DelayedReserve);
+        Assert.True(HtmlText.PlainLength(result.Caption) <= TemplateFitter.CaptionLimit - TemplateFitter.DelayedReserve);
         Assert.Contains("…", result.Caption, StringComparison.Ordinal);
         Assert.Null(result.TemplateKey);
         Assert.Null(StoredFlag());
@@ -213,6 +213,30 @@ public sealed class TemplateRendererTests : IDisposable
         Assert.Equal("<b>Media: Movies</b>", result.Text);
         Assert.Equal(result.Text, result.Caption);
         Assert.Contains("library broke", Assert.Single(_logger.Entries, e => e.Level == LogLevel.Warning).Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Digest_TextOnly_CaptionEmpty()
+    {
+        var item = _library.Add(new MediaItem { Id = Guid.NewGuid(), Kind = MediaKind.Movie, Name = "Dune", Year = 2021 });
+        var group = new RenderModel { Kind = RenderKind.Media, EventKey = "media.movie", LibraryName = "Movies", ItemIds = [item.Id.ToString("N")] };
+
+        var result = Renderer().Render(new RenderModel { Kind = RenderKind.Digest, EventKey = "media.digest", Groups = [group] }, hasPoster: false)!;
+
+        Assert.Equal("🆕 <b>1 new item in Jellyfin</b>\n\n<b>Movies</b>: Dune (2021)", result.Text);
+        Assert.Equal(string.Empty, result.Caption);
+    }
+
+    [Fact]
+    public void Digest_LastResort_CaptionEmpty()
+    {
+        _library.GetItemOverride = _ => throw new InvalidOperationException("library broke");
+        var group = new RenderModel { Kind = RenderKind.Media, EventKey = "media.movie", ItemIds = [Guid.NewGuid().ToString("N")] };
+
+        var result = Renderer().Render(new RenderModel { Kind = RenderKind.Digest, EventKey = "media.digest", Groups = [group] }, hasPoster: false)!;
+
+        Assert.Equal("<b>Digest</b>", result.Text);
+        Assert.Equal(string.Empty, result.Caption);
     }
 
     [Fact]

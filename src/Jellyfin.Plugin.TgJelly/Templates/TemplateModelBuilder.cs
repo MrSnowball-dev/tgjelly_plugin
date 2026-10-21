@@ -55,11 +55,13 @@ public sealed class TemplateModelBuilder
             ["at_text"] = Text(model.At),
             ["at_html"] = new RawHtml(_formatter.Time(model.At, _time.GetUtcNow())),
         };
+        List<DigestEntry>? entries = null;
         if (model.EventKey == TemplateKeys.Digest)
         {
-            // The digest is built from its entries in a later step; until then it has the empty defaults.
-            values["count"] = 0L;
-            values["count_text"] = _formatter.Number(0);
+            entries = DigestEntries(model);
+            values["count"] = (long)entries.Count;
+            values["count_text"] = _formatter.Number(entries.Count);
+            values["libraries"] = Libraries(entries, entries.Count);
             values["more"] = 0L;
             values["more_text"] = _formatter.Number(0);
         }
@@ -81,6 +83,26 @@ public sealed class TemplateModelBuilder
         }
 
         ApplyToggles(result, _settings.Current.Message);
+        if (entries is not null)
+        {
+            // v0.2 kept the first entries that fit, grouped again by library, and could keep none at all.
+            return TemplateModel.Custom(
+                result,
+                null,
+                entries.Count,
+                (source, _, kept) =>
+                {
+                    var keep = Math.Clamp(kept, 0, entries.Count);
+                    return new Dictionary<string, object?>(source, StringComparer.Ordinal)
+                    {
+                        ["libraries"] = Libraries(entries, keep),
+                        ["more"] = (long)(entries.Count - keep),
+                        ["more_text"] = _formatter.Number(entries.Count - keep),
+                    };
+                },
+                minListKept: 0);
+        }
+
         var (text, list, more) = TemplateFieldCatalog.Shrink(model.EventKey);
         return TemplateModel.Of(result, text, list, more);
     }
@@ -254,6 +276,81 @@ public sealed class TemplateModelBuilder
         values["jellyfin_url"] = Open(audiobook ? folder?.Id ?? first!.Id : first?.Id);
     }
 
+    // The libraries of the first entries, in order of first appearance; items without a library share the null name.
+    private static List<object?> Libraries(List<DigestEntry> entries, int kept)
+    {
+        var libraries = new List<object?>();
+        var byName = new Dictionary<string, List<object?>>(StringComparer.Ordinal);
+        List<object?>? unnamed = null;
+        foreach (var (library, entry) in entries.Take(kept))
+        {
+            var list = library is null ? unnamed : byName.GetValueOrDefault(library);
+            if (list is null)
+            {
+                list = [];
+                if (library is null)
+                {
+                    unnamed = list;
+                }
+                else
+                {
+                    byName[library] = list;
+                }
+
+                libraries.Add(new Dictionary<string, object?>(StringComparer.Ordinal) { ["name"] = library, ["entries"] = list });
+            }
+
+            list.Add(entry);
+        }
+
+        return libraries;
+    }
+
+    private List<DigestEntry> DigestEntries(RenderModel digest)
+    {
+        var entries = new List<DigestEntry>(digest.Groups.Count);
+        foreach (var group in digest.Groups)
+        {
+            var items = Items(group);
+            if (items.Count > 0)
+            {
+                entries.Add(new DigestEntry(NonEmpty(group.LibraryName), Entry(items)));
+            }
+        }
+
+        return entries;
+    }
+
+    private Dictionary<string, object?> Entry(List<MediaItem> items)
+    {
+        var first = items[0];
+        (string Kind, string? Title, int? Year) shape = first.Kind switch
+        {
+            MediaKind.Episode when items.Count == 1 => ("episode", first.Name, null),
+            MediaKind.Episode => ("season", null, null),
+            MediaKind.MusicAlbum => ("album", first.Name, first.Year),
+            MediaKind.AudioBook => ("audiobook", first.ParentName ?? first.Name, null),
+            MediaKind.Movie => ("movie", first.Name, first.Year),
+            _ => ("other", first.Name, first.Year),
+        };
+        var (kind, title, year) = shape;
+        var episode = first.Kind == MediaKind.Episode;
+        var count = kind == "season" ? items.Count : 1;
+        return new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            ["kind"] = kind,
+            ["title"] = title,
+            ["year"] = (long?)year,
+            ["series"] = episode ? first.SeriesName : null,
+            ["season_text"] = episode ? Two(first.SeasonNumber) ?? "?" : null,
+            ["episode_text"] = kind == "episode" ? Two(first.EpisodeNumber) ?? "?" : null,
+            ["count"] = (long)count,
+            ["count_text"] = _formatter.Number(count),
+            ["artist"] = kind == "album" ? first.AlbumArtist : null,
+            ["album"] = kind == "album" ? first.Name : null,
+        };
+    }
+
     private void AddAlert(Dictionary<string, object?> values, RenderModel model)
     {
         string? Get(string name) => model.Values.TryGetValue(name, out var value) ? NonEmpty(value) : null;
@@ -276,4 +373,6 @@ public sealed class TemplateModelBuilder
         values["reasons"] = model.Lines.Cast<object?>().ToList();
         values["reasons_more"] = 0L;
     }
+
+    private readonly record struct DigestEntry(string? Library, Dictionary<string, object?> Entry);
 }

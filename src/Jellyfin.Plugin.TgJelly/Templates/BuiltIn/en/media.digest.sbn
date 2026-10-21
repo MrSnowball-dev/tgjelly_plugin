@@ -1,0 +1,25 @@
+🆕 <b>{{ count_text }} new {{ plural count "item" "items" }} in Jellyfin</b>
+
+{{ for library in libraries -}}
+{{ if !for.first }}
+{{ end -}}
+<b>{{ library.name ?? "Other" }}</b>: {{ for entry in library.entries -}}
+{{ if !for.first }}, {{ end -}}
+{{ if entry.kind == "episode" -}}
+{{ entry.series }} S{{ entry.season_text }}E{{ entry.episode_text }}
+{{- else if entry.kind == "season" -}}
+{{ entry.series }} S{{ entry.season_text }} ({{ entry.count_text }} {{ plural entry.count "episode" "episodes" }})
+{{- else if entry.kind == "album" -}}
+{{ entry.artist }} — {{ entry.album }}
+{{- else if entry.kind == "audiobook" -}}
+{{ entry.title }}
+{{- else -}}
+{{ entry.title }}{{ if entry.year }} ({{ entry.year }}){{ end }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- if more > 0 }}
+{{- if libraries.size > 0 }}
+{{ end -}}
+…and {{ more_text }} more
+{{- end -}}

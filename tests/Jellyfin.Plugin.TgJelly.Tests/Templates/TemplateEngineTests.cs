@@ -77,6 +77,14 @@ public sealed class TemplateEngineTests
         Assert.False(result.Ok);
         Assert.Null(result.Output);
         Assert.Contains("OutputLimit", result.Error!.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.True(result.TooLong);
+    }
+
+    [Fact]
+    public void OtherErrors_AreNotTooLong()
+    {
+        Assert.False(Engine().Render("k", "{{ for i in 1..2000 }}x{{ end }}", Empty, strict: false).TooLong);
+        Assert.False(Engine().Render("k", "{{ if }}", Empty, strict: false).TooLong);
     }
 
     [Fact]

@@ -367,7 +367,106 @@ public sealed class TemplateModelBuilderTests : IDisposable
         Assert.Equal(0, model.ListCount);
     }
 
+    [Fact]
+    public void Digest_EntriesGroupedByLibrary_InOrderOfFirstAppearance()
+    {
+        var arrival = _library.Add(new MediaItem { Id = Guid.NewGuid(), Kind = MediaKind.Movie, Name = "Arrival", Year = 2016 });
+        var e1 = _library.Add(new MediaItem { Id = Guid.NewGuid(), Kind = MediaKind.Episode, Name = "One", SeriesName = "Andor", SeasonNumber = 1, EpisodeNumber = 1 });
+        var e2 = _library.Add(new MediaItem { Id = Guid.NewGuid(), Kind = MediaKind.Episode, Name = "Two", SeriesName = "Andor", SeasonNumber = 1, EpisodeNumber = 2 });
+        var lone = _library.Add(new MediaItem { Id = Guid.NewGuid(), Kind = MediaKind.Episode, Name = "Pilot", SeriesName = "Severance" });
+        var album = _library.Add(new MediaItem { Id = Guid.NewGuid(), Kind = MediaKind.MusicAlbum, Name = "Discovery", AlbumArtist = "Daft Punk", Year = 2001 });
+        var part = _library.Add(new MediaItem { Id = Guid.NewGuid(), Kind = MediaKind.AudioBook, Name = "Part 1", ParentName = "The Hobbit" });
+        var book = _library.Add(new MediaItem { Id = Guid.NewGuid(), Kind = MediaKind.Book, Name = "Emma", Year = 1815 });
+        var gone = new MediaItem { Id = Guid.NewGuid(), Kind = MediaKind.Movie, Name = "Gone" };
+
+        var model = _builder.Build(Digest(
+            ("Movies", Media("media.movie", arrival)),
+            ("Shows", Media("media.episodes", e1, e2)),
+            ("Movies", Media("media.movie", gone)),
+            (string.Empty, Media("media.album", album)),
+            ("Shows", Media("media.episodes", lone)),
+            ("Audiobooks", Media("media.book", part)),
+            (string.Empty, Media("media.book", book))));
+
+        var values = model.Values;
+        Assert.Equal(6L, values["count"]);
+        Assert.Equal("6", values["count_text"]);
+        Assert.Equal(0L, values["more"]);
+        Assert.Equal(6, model.ListCount);
+        Assert.Equal(0, model.MinListKept);
+        var libraries = Libraries(values);
+        Assert.Equal(["Movies", "Shows", null, "Audiobooks"], libraries.Select(l => l["name"]));
+        Assert.Equal(["movie"], Kinds(libraries[0]));
+        Assert.Equal(["season", "episode"], Kinds(libraries[1]));
+        Assert.Equal(["album", "other"], Kinds(libraries[2]));
+        Assert.Equal(["audiobook"], Kinds(libraries[3]));
+
+        var movie = Entries(libraries[0])[0];
+        Assert.Equal("Arrival", movie["title"]);
+        Assert.Equal(2016L, movie["year"]);
+        var season = Entries(libraries[1])[0];
+        Assert.Equal("Andor", season["series"]);
+        Assert.Equal("01", season["season_text"]);
+        Assert.Null(season["episode_text"]);
+        Assert.Equal(2L, season["count"]);
+        Assert.Equal("2", season["count_text"]);
+        var episode = Entries(libraries[1])[1];
+        Assert.Equal("Pilot", episode["title"]);
+        Assert.Equal("?", episode["season_text"]);
+        Assert.Equal("?", episode["episode_text"]);
+        Assert.Equal(1L, episode["count"]);
+        var music = Entries(libraries[2])[0];
+        Assert.Equal("Daft Punk", music["artist"]);
+        Assert.Equal("Discovery", music["album"]);
+        Assert.Equal("The Hobbit", Entries(libraries[3])[0]["title"]);
+    }
+
+    [Fact]
+    public void Digest_With_KeepsTheFirstEntriesAndCountsTheRest()
+    {
+        var movies = Enumerable.Range(1, 1200)
+            .Select(i => _library.Add(new MediaItem { Id = Guid.NewGuid(), Kind = MediaKind.Movie, Name = $"Movie {i}" }))
+            .Select((m, i) => (i % 2 == 0 ? "A" : "B", Media("media.movie", m)))
+            .ToArray();
+        var model = _builder.Build(Digest(movies));
+
+        var capped = model.With(null, TemplateFitter.MaxListItems);
+        var three = model.With(null, 3);
+        var none = model.With(null, 0);
+
+        Assert.Equal(1200, model.ListCount);
+        Assert.Equal(1200L, capped["count"]);
+        Assert.Equal(200L, capped["more"]);
+        Assert.Equal("200", capped["more_text"]);
+        Assert.Equal(1000, Libraries(capped).Sum(l => Entries(l).Count));
+        Assert.Equal(1197L, three["more"]);
+        Assert.Equal("1,197", three["more_text"]);
+        Assert.Equal(["A", "B"], Libraries(three).Select(l => l["name"]));
+        Assert.Equal(["Movie 1", "Movie 3"], Entries(Libraries(three)[0]).Select(e => e["title"]));
+        Assert.Empty(Libraries(none));
+        Assert.Equal(1200L, none["more"]);
+        Assert.Equal(1200, Libraries(model.Values).Sum(l => Entries(l).Count));
+    }
+
     public void Dispose() => _h.Dispose();
+
+    private static RenderModel Digest(params (string Library, RenderModel Group)[] groups)
+    {
+        foreach (var (library, group) in groups)
+        {
+            group.LibraryName = library;
+        }
+
+        return new RenderModel { Kind = RenderKind.Digest, EventKey = "media.digest", At = At, Groups = groups.Select(g => g.Group).ToList() };
+    }
+
+    private static List<IReadOnlyDictionary<string, object?>> Libraries(IReadOnlyDictionary<string, object?> values)
+        => Assert.IsAssignableFrom<IReadOnlyList<object?>>(values["libraries"]).Cast<IReadOnlyDictionary<string, object?>>().ToList();
+
+    private static List<IReadOnlyDictionary<string, object?>> Entries(IReadOnlyDictionary<string, object?> library)
+        => Assert.IsAssignableFrom<IReadOnlyList<object?>>(library["entries"]).Cast<IReadOnlyDictionary<string, object?>>().ToList();
+
+    private static List<object?> Kinds(IReadOnlyDictionary<string, object?> library) => Entries(library).Select(e => e["kind"]).ToList();
 
     private IReadOnlyDictionary<string, object?> V(RenderModel model) => _builder.Build(model).Values;
 

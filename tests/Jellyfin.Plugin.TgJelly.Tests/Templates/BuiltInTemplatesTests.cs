@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Jellyfin.Plugin.TgJelly.Rendering;
 using Jellyfin.Plugin.TgJelly.Templates;
 using Telegram.Bot.Extensions;
@@ -17,6 +18,7 @@ public sealed class BuiltInTemplatesTests
     [InlineData("media.book")]
     [InlineData("media.episodes")]
     [InlineData("media.album")]
+    [InlineData("media.digest")]
     public void MediaKeys_Exist(string key)
     {
         Assert.False(string.IsNullOrWhiteSpace(BuiltInTemplates.Get(key, "en")));
@@ -42,6 +44,13 @@ public sealed class BuiltInTemplatesTests
     {
         Assert.False(string.IsNullOrWhiteSpace(BuiltInTemplates.Get(key, "en")));
         Assert.Contains(key, BuiltInTemplates.Keys("en"));
+    }
+
+    [Fact]
+    public void EveryTemplateKey_HasABuiltIn()
+    {
+        // Messages have no other text source, so a key without a built-in template would only get the last-resort text.
+        Assert.Equal(TemplateKeys.All.Order(StringComparer.Ordinal), BuiltInTemplates.Keys("en"));
     }
 
     [Fact]

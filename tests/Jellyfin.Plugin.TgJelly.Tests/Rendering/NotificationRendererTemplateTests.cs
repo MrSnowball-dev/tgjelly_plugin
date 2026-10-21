@@ -69,14 +69,29 @@ public sealed class NotificationRendererTemplateTests : IDisposable
     }
 
     [Fact]
-    public void Digest_NeverUsesTemplate()
+    public void Digest_EditedTemplate_IsUsed_TextOnly()
     {
         var item = _library.Add(new MediaItem { Id = Guid.NewGuid(), Kind = MediaKind.Movie, Name = "Arrival" });
-        Set("media.digest", "custom");
+        Set("media.digest", "custom {{ count }}");
 
         var message = _renderer.Render(new RenderModel { Kind = RenderKind.Digest, EventKey = "media.digest", Groups = [Media(item)] }, Dest())!;
 
-        Assert.NotEqual("custom", message.Text);
+        Assert.Equal("custom 1", message.Text);
+        Assert.Equal(string.Empty, message.Caption);
+        Assert.Equal("media.digest", message.TemplateKey);
+        Assert.Null(message.PosterPath);
+        Assert.Empty(message.Buttons);
+    }
+
+    [Fact]
+    public void Digest_NoOverride_UsesTheBuiltInTemplate()
+    {
+        var item = _library.Add(new MediaItem { Id = Guid.NewGuid(), Kind = MediaKind.Movie, Name = "Arrival", Year = 2016 });
+
+        var message = _renderer.Render(new RenderModel { Kind = RenderKind.Digest, EventKey = "media.digest", Groups = [Media(item)] }, Dest())!;
+
+        Assert.Equal("🆕 <b>1 new item in Jellyfin</b>\n\n<b>Other</b>: Arrival (2016)", message.Text);
+        Assert.Equal(string.Empty, message.Caption);
         Assert.Null(message.TemplateKey);
     }
 
@@ -153,7 +168,7 @@ public sealed class NotificationRendererTemplateTests : IDisposable
         var message = _renderer.Render(Media(item), Dest())!;
 
         Assert.Equal("truncated", _flags.Current("media.movie")!.Kind);
-        Assert.True(message.Caption.Length <= MessageFitter.CaptionLimit - MessageFitter.DelayedReserve);
+        Assert.True(message.Caption.Length <= TemplateFitter.CaptionLimit - TemplateFitter.DelayedReserve);
         Assert.True(message.Text.Length > 1500);
     }
 

@@ -159,20 +159,25 @@ public sealed class TemplateRenderer
     }
 
     // Fits a template to both limits. The problem is the flag text of the first error, whitelist problem or empty part.
+    // The digest is sent as text only, so its caption stays empty, as in v0.2.
     private (FitResult? Caption, FitResult? Text, string? Problem) FitBoth(string key, string text, TemplateModel values, string language)
     {
         TemplateRenderResult Render(IReadOnlyDictionary<string, object?> variant)
             => _engine.Render(key, text, variant, strict: false, language);
 
-        var caption = TemplateFitter.Fit(values, Render, MessageFitter.CaptionLimit);
-        var problem = Problem(caption);
-        if (problem is not null)
+        var caption = new FitResult(string.Empty, false, null);
+        if (key != TemplateKeys.Digest)
         {
-            return (null, null, problem);
+            caption = TemplateFitter.Fit(values, Render, MessageFitter.CaptionLimit);
+            var captionProblem = Problem(caption);
+            if (captionProblem is not null)
+            {
+                return (null, null, captionProblem);
+            }
         }
 
         var full = TemplateFitter.Fit(values, Render, MessageFitter.TextLimit);
-        problem = Problem(full);
+        var problem = Problem(full);
         return problem is null ? (caption, full, null) : (null, null, problem);
     }
 
@@ -205,7 +210,7 @@ public sealed class TemplateRenderer
             html += "\n" + HtmlText.Escape(name);
         }
 
-        return new RenderedText(html, html, null);
+        return new RenderedText(key == TemplateKeys.Digest ? string.Empty : html, html, null);
     }
 
     private void SafeFlag(string key, string kind, string error, string hash)

@@ -11,7 +11,7 @@ namespace Jellyfin.Plugin.TgJelly.Tests.Templates;
 public sealed class TemplateFitterTests
 {
     private const int Limit = 1024;
-    private const int Budget = Limit - MessageFitter.DelayedReserve;
+    private const int Budget = Limit - TemplateFitter.DelayedReserve;
 
     private static readonly TemplateEngine Engine = new(TimeProvider.System);
 
@@ -114,6 +114,52 @@ public sealed class TemplateFitterTests
 
         Assert.Null(result.Error);
         Assert.Contains("+500 more", result.Html, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Fit_OutputOverTheEngineLimit_ShrinksTheList()
+    {
+        // 1000 items of 30 characters are over the engine's 16,384-character output limit.
+        const string Template = "{{ for i in items }}{{ i }}\n{{ end }}{{ if items_more > 0 }}+{{ items_more }} more{{ end }}";
+        var values = new Dictionary<string, object?>
+        {
+            ["items"] = Enumerable.Range(1, 1200).Select(i => (object?)$"item {i:0000} {new string('x', 19)}").ToList(),
+            ["items_more"] = 0L,
+        };
+
+        var result = TemplateFitter.Fit(TemplateModel.Of(values, null, "items", "items_more"), Renderer(Template), 4096);
+
+        Assert.Null(result.Error);
+        Assert.False(result.Truncated);
+        Assert.True(HtmlText.PlainLength(result.Html!) <= 4096 - TemplateFitter.DelayedReserve);
+        Assert.Contains("more", result.Html, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Fit_OutputOverTheEngineLimit_NothingToShrink_ReturnsTheError()
+    {
+        var result = TemplateFitter.Fit(TemplateModel.Of(Values("T", null), null, null, null), Renderer("{{ for i in 1..900 }}{{ \"x\" | string.pad_right 100 }}{{ end }}"), Limit);
+
+        Assert.NotNull(result.Error);
+        Assert.Null(result.Html);
+    }
+
+    [Fact]
+    public void Fit_MinListKeptZero_CanKeepNoItem()
+    {
+        var values = new Dictionary<string, object?> { ["items"] = new List<object?> { new string('a', 2000), "b" }, ["items_more"] = 0L };
+        var list = (List<object?>)values["items"]!;
+        var model = TemplateModel.Custom(
+            values,
+            null,
+            list.Count,
+            (source, _, kept) => new Dictionary<string, object?>(source) { ["items"] = list.Take(kept).ToList(), ["items_more"] = (long)(list.Count - kept) },
+            minListKept: 0);
+
+        var result = TemplateFitter.Fit(model, Renderer("Head{{ for i in items }}\n{{ i }}{{ end }}\n+{{ items_more }} more"), Limit);
+
+        Assert.Equal("Head\n+2 more", result.Html);
+        Assert.False(result.Truncated);
     }
 
     [Fact]

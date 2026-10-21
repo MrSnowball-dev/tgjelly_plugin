@@ -318,6 +318,71 @@ internal static class LayoutCorpus
 
         cases.Add(DigestMovies("digest-overflow-60", 60, i => $"A very long movie title number {i:000} " + new string('x', 60)));
         cases.Add(DigestMovies("digest-1200", 1200, i => $"Movie {i}"));
+        AddMoreDigests(cases);
+    }
+
+    private static void AddMoreDigests(List<CorpusCase> cases)
+    {
+        // Episodes with unknown or zero season and episode numbers.
+        var ids = new Ids();
+        var show = new Show(ids);
+        var lone = show.Episode(null, "Lone", null);
+        var unknown = new[] { show.Episode(1, "One", null), show.Episode(2, "Two", null) };
+        var specials = new[] { show.Episode(1, "Extra 1", 0), show.Episode(2, "Extra 2", 0) };
+        var zeroOne = show.Episode(0, "Pilot", 0);
+        cases.Add(Add(
+            "digest-episode-unknown-numbers",
+            DigestOf([Group("Shows", "media.episodes", lone), Group("Shows", "media.episodes", unknown), Group("Shows", "media.episodes", specials), Group("Shows", "media.episodes", zeroOne)]),
+            [show.Series, show.Season, lone, zeroOne, .. unknown, .. specials]));
+
+        // Audiobook parts without a parent name, a book, a music video without a year, a group whose items are all
+        // gone and an episodes group with one item left.
+        ids = new Ids();
+        show = new Show(ids, "Andor", "Season 1");
+        var left = show.Episode(4, "Aldhani", 1);
+        var goneEpisode = show.Episode(5, "The Axe Forgets", 1);
+        var part = new MediaItem { Id = ids.Next(), Kind = MediaKind.AudioBook, Name = "Chapter One" };
+        var book = new MediaItem { Id = ids.Next(), Kind = MediaKind.Book, Name = "Emma", Year = 1815 };
+        var video = new MediaItem { Id = ids.Next(), Kind = MediaKind.MusicVideo, Name = "Karma Police", AlbumArtist = "Radiohead" };
+        var ghost = Movie(ids, "Ghost");
+        cases.Add(Add(
+            "digest-mixed-kinds",
+            DigestOf([
+                Group("Audiobooks", "media.book", part),
+                Group("Movies", "media.movie", ghost),
+                Group("Books", "media.book", book),
+                Group("Music Videos", "media.musicvideo", video),
+                Group("Shows", "media.episodes", left, goneEpisode),
+            ]),
+            [show.Series, show.Season, left, part, book, video]));
+
+        // Libraries interleaved: grouped in order of first appearance, names escaped.
+        ids = new Ids();
+        var a = Movie(ids, "Alpha", year: 2001);
+        var b = Movie(ids, "Beta", year: 2002);
+        var c = Movie(ids, "Gamma", year: 2003);
+        var d = Movie(ids, "Delta", year: 2004);
+        cases.Add(Add(
+            "digest-interleaved-libraries",
+            DigestOf([Group("Kids & <Teens>", "media.movie", a), Group("Movies", "media.movie", b), Group("Kids & <Teens>", "media.movie", c), Group(string.Empty, "media.movie", d)]),
+            [a, b, c, d]));
+
+        // One entry alone is longer than the message: v0.2 keeps no entry at all.
+        ids = new Ids();
+        var huge = Movie(ids, Words(5000, "title"), year: 2000);
+        var small = Movie(ids, "Small", year: 2000);
+        cases.Add(Add("digest-huge-first-entry", DigestOf([Group("Movies", "media.movie", huge), Group("Movies", "media.movie", small)]), [huge, small]));
+        ids = new Ids();
+        var alone = Movie(ids, Words(5000, "title"), year: 2000);
+        cases.Add(Add("digest-huge-only-entry", DigestOf([Group("Movies", "media.movie", alone)]), [alone]));
+
+        // Every group is gone.
+        ids = new Ids();
+        var gone = Movie(ids, "Gone");
+        cases.Add(Add("digest-all-gone", DigestOf([Group("Movies", "media.movie", gone)]), []));
+
+        // Exactly one entry left out.
+        cases.Add(DigestMovies("digest-overflow-one-more", 39, i => $"A very long movie title number {i:000} " + new string('x', 60)));
     }
 
     private static CorpusCase DigestMovies(string name, int count, Func<int, string> title)

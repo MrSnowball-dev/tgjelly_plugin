@@ -15,11 +15,13 @@ public sealed class TemplateModel
         IReadOnlyDictionary<string, object?> values,
         string? shrinkText,
         int listCount,
+        int minListKept,
         Func<IReadOnlyDictionary<string, object?>, string?, int, IReadOnlyDictionary<string, object?>> with)
     {
         Values = values;
         ShrinkText = shrinkText;
         ListCount = listCount;
+        MinListKept = minListKept;
         _with = with;
     }
 
@@ -31,6 +33,9 @@ public sealed class TemplateModel
 
     /// <summary>Gets the item count of the shrinkable list; 0 when there is none.</summary>
     public int ListCount { get; }
+
+    /// <summary>Gets the fewest list items the fitter keeps: 1, or 0 for the digest, which v0.2 could empty.</summary>
+    public int MinListKept { get; }
 
     /// <summary>
     /// The generic rule: the text field is a top-level string, the list field a top-level array.
@@ -49,6 +54,7 @@ public sealed class TemplateModel
             values,
             text,
             list?.Count ?? 0,
+            1,
             (source, newText, kept) =>
             {
                 var copy = new Dictionary<string, object?>(source);
@@ -78,17 +84,19 @@ public sealed class TemplateModel
     /// <param name="textField">The field holding the shrinkable text, or null.</param>
     /// <param name="listCount">The item count of the shrinkable list.</param>
     /// <param name="with">Builds a copy from the full model, the text and the number of list items to keep.</param>
+    /// <param name="minListKept">The fewest list items the fitter keeps.</param>
     /// <returns>The model.</returns>
     public static TemplateModel Custom(
         IReadOnlyDictionary<string, object?> values,
         string? textField,
         int listCount,
-        Func<IReadOnlyDictionary<string, object?>, string?, int, IReadOnlyDictionary<string, object?>> with)
+        Func<IReadOnlyDictionary<string, object?>, string?, int, IReadOnlyDictionary<string, object?>> with,
+        int minListKept = 1)
     {
         ArgumentNullException.ThrowIfNull(values);
         ArgumentNullException.ThrowIfNull(with);
         var text = textField is not null && values.TryGetValue(textField, out var t) && t is string s && s.Length > 0 ? s : null;
-        return new TemplateModel(values, text, listCount, with);
+        return new TemplateModel(values, text, listCount, Math.Max(minListKept, 0), with);
     }
 
     /// <summary>
