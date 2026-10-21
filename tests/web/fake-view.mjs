@@ -98,11 +98,31 @@ export function makeApiClient(routes) {
     };
 }
 
-/** Fake setInterval/clearInterval that count the live intervals and run them on tick(). */
+/**
+ * Fake setInterval/clearInterval that count the live intervals and run them on tick(), and fake setTimeout/clearTimeout
+ * whose pending callbacks run (once) on runTimeouts().
+ */
 export function fakeTimers() {
     const live = new Map();
+    const timeouts = new Map();
     let next = 1;
     return {
+        setTimeout: (fn, ms) => {
+            const id = next++;
+            timeouts.set(id, { fn, ms });
+            return id;
+        },
+        clearTimeout: id => {
+            timeouts.delete(id);
+        },
+        timeouts: () => [...timeouts.values()].map(v => v.ms),
+        runTimeouts: () => {
+            const due = [...timeouts.values()];
+            timeouts.clear();
+            for (const { fn } of due) {
+                fn();
+            }
+        },
         setInterval: (fn, ms) => {
             const id = next++;
             live.set(id, { fn, ms });
