@@ -7,9 +7,12 @@ using Jellyfin.Plugin.TgJelly.Bot;
 using Jellyfin.Plugin.TgJelly.Configuration;
 using Jellyfin.Plugin.TgJelly.State.Documents;
 using Jellyfin.Plugin.TgJelly.Strings;
+using Jellyfin.Plugin.TgJelly.Templates;
 using Microsoft.Extensions.Logging;
 using Telegram.Bot.Extensions;
+using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
+using Telegram.Bot.Types.ReplyMarkups;
 
 namespace Jellyfin.Plugin.TgJelly.Destinations;
 
@@ -19,6 +22,8 @@ namespace Jellyfin.Plugin.TgJelly.Destinations;
 /// </summary>
 public sealed class DestinationTester
 {
+    private const string PosterResource = "Jellyfin.Plugin.TgJelly.Templates.sample-poster.png";
+
     private readonly BotConnection _connection;
     private readonly HealthService _health;
     private readonly StringTable _strings;
@@ -45,9 +50,53 @@ public sealed class DestinationTester
     /// <param name="destination">The destination.</param>
     /// <param name="ct">Cancels the send.</param>
     /// <returns>The result.</returns>
-    public async Task<TestSendResult> SendTestAsync(Destination destination, CancellationToken ct)
+    public Task<TestSendResult> SendTestAsync(Destination destination, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(destination);
+        return CheckAndSendAsync(destination, (sender, token) => sender.SendTextAsync(new OutgoingText(destination.ChatId, destination.ThreadId, Message(destination), ParseMode.Html, null, null, false), token), ct);
+    }
+
+    /// <summary>
+    /// Re-checks a destination and, unless it's unhealthy, sends a sample message: the poster with the caption, or the
+    /// text alone when the sample has no poster or the destination blocks photos.
+    /// </summary>
+    /// <param name="destination">The destination.</param>
+    /// <param name="sample">The sample message.</param>
+    /// <param name="ct">Cancels the send.</param>
+    /// <returns>The result.</returns>
+    public Task<TestSendResult> SendSampleAsync(Destination destination, SampleMessage sample, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(destination);
+        ArgumentNullException.ThrowIfNull(sample);
+        var group = EventCatalog.GroupOf(sample.EventKey);
+        var silent = destination.SilentGroups.Contains(group, StringComparer.Ordinal);
+        var buttons = sample.Buttons.Count == 0
+            ? null
+            : new InlineKeyboardMarkup(sample.Buttons.Select(row => row.Select(b => InlineKeyboardButton.WithUrl(b.Text, b.Url))));
+        async Task Send(ITelegramSender sender, CancellationToken token)
+        {
+            if (sample.Poster && !_health.Get(destination.Id).PhotosBlocked)
+            {
+                var stream = typeof(DestinationTester).Assembly.GetManifestResourceStream(PosterResource)
+                    ?? throw new InvalidOperationException("The sample poster is missing from the plugin.");
+                await using (stream.ConfigureAwait(false))
+                {
+                    var photo = new OutgoingPhoto(destination.ChatId, destination.ThreadId, InputFile.FromStream(stream, "poster.png"), sample.Html ?? string.Empty, ParseMode.Html, buttons, null, silent);
+                    await sender.SendPhotoAsync(photo, token).ConfigureAwait(false);
+                }
+            }
+            else
+            {
+                var text = new OutgoingText(destination.ChatId, destination.ThreadId, sample.TextHtml ?? sample.Html ?? string.Empty, ParseMode.Html, buttons, null, silent);
+                await sender.SendTextAsync(text, token).ConfigureAwait(false);
+            }
+        }
+
+        return CheckAndSendAsync(destination, Send, ct);
+    }
+
+    private async Task<TestSendResult> CheckAndSendAsync(Destination destination, Func<ITelegramSender, CancellationToken, Task> send, CancellationToken ct)
+    {
         if (_connection.Sender is not { } sender)
         {
             return new TestSendResult(false, _strings.Get("destination.notConnected"), _health.Get(destination.Id));
@@ -71,7 +120,7 @@ public sealed class DestinationTester
 
         try
         {
-            await sender.SendTextAsync(new OutgoingText(destination.ChatId, destination.ThreadId, Message(destination), ParseMode.Html, null, null, false), ct).ConfigureAwait(false);
+            await send(sender, ct).ConfigureAwait(false);
             return new TestSendResult(true, null, _health.Get(destination.Id));
         }
         catch (Exception ex) when (ex is not OperationCanceledException)

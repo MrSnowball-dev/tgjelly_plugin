@@ -13,12 +13,24 @@ public sealed class TemplateValidationDto
     /// <summary>Gets the notes that don't block saving.</summary>
     public IReadOnlyList<string> Warnings { get; init; } = [];
 
-    /// <summary>Gets the sample render; empty when there are errors before rendering.</summary>
+    /// <summary>Gets the raw sample render, not fitted; empty when there are errors before rendering.</summary>
     public string Preview { get; init; } = string.Empty;
 
-    /// <summary>Gets the preview's length without markup.</summary>
+    /// <summary>Gets the sample message's HTML as it is sent, fitted to <see cref="Limit"/>; empty when there are errors.</summary>
+    public string Html { get; init; } = string.Empty;
+
+    /// <summary>Gets a value indicating whether the message goes out as a photo caption.</summary>
+    public bool Caption { get; init; }
+
+    /// <summary>Gets a value indicating whether the message has a poster.</summary>
+    public bool Poster { get; init; }
+
+    /// <summary>Gets the sample message's button rows.</summary>
+    public IReadOnlyList<IReadOnlyList<TemplateButtonDto>> Buttons { get; init; } = [];
+
+    /// <summary>Gets the length of the unfitted preview without markup.</summary>
     public int Length { get; init; }
 
-    /// <summary>Gets the length limit for this event.</summary>
+    /// <summary>Gets the length limit: 1024 for a caption, otherwise 4096.</summary>
     public int Limit { get; init; }
 }

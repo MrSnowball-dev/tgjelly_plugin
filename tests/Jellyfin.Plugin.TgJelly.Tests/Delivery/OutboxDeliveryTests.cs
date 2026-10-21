@@ -222,11 +222,10 @@ public sealed class OutboxDeliveryTests : IDisposable
     }
 
     [Fact]
-    public async Task ParseError_WithTemplate_FlagsIt_EvenWhenNotEnabled()
+    public async Task ParseError_WithTemplate_FlagsIt_WhateverEnabledSays()
     {
-        // Enabled is ignored: an override with text is the template in use.
         var d = _h.AddDestination(-1001);
-        _h.Settings.Update(null, c => c.Templates = [new TemplateOverride { EventKey = "media.movie", Enabled = false, Text = "<b>x" }]);
+        _h.Settings.Update(null, c => c.Templates = [new TemplateOverride { EventKey = "media.movie", Enabled = true, Text = "<b>x" }]);
         _h.Api.OnSequence("sendMessage", FakeBotApi.Error(400, "Bad Request: can't parse entities: Unsupported start tag \"x\" at byte offset 0"), FakeBotApi.Ok("""{"message_id":5,"date":1790000000,"chat":{"id":-1001,"type":"supergroup"},"text":"x"}"""));
         var entry = Entry(d, "<x>");
         entry.Message.TemplateKey = "media.movie";

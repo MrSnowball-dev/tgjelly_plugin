@@ -99,7 +99,7 @@ public sealed class TemplateRenderer
                 return new RenderedText(caption!.Html!, text!.Html!, null);
             }
 
-            failure = problem;
+            failure = Describe(problem);
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
@@ -139,7 +139,7 @@ public sealed class TemplateRenderer
             var (caption, full, problem) = FitBoth(key, text, values, language);
             if (problem is not null)
             {
-                SafeFlag(key, "error", problem, hash);
+                SafeFlag(key, "error", Describe(problem), hash);
                 return null;
             }
 
@@ -158,9 +158,16 @@ public sealed class TemplateRenderer
         }
     }
 
-    // Fits a template to both limits. The problem is the flag text of the first error, whitelist problem or empty part.
-    // The digest is sent as text only, so its caption stays empty, as in v0.2.
-    private (FitResult? Caption, FitResult? Text, string? Problem) FitBoth(string key, string text, TemplateModel values, string language)
+    /// <summary>
+    /// Fits a template to both limits. The problem is the first render error, HTML whitelist problem or empty part.
+    /// The digest is sent as text only, so its caption stays empty, as in v0.2.
+    /// </summary>
+    /// <param name="key">The template key.</param>
+    /// <param name="text">The template text.</param>
+    /// <param name="values">The model.</param>
+    /// <param name="language">The language.</param>
+    /// <returns>The caption and text fits, or the problem.</returns>
+    internal (FitResult? Caption, FitResult? Text, TemplateError? Problem) FitBoth(string key, string text, TemplateModel values, string language)
     {
         TemplateRenderResult Render(IReadOnlyDictionary<string, object?> variant)
             => _engine.Render(key, text, variant, strict: false, language);
@@ -181,21 +188,21 @@ public sealed class TemplateRenderer
         return problem is null ? (caption, full, null) : (null, null, problem);
     }
 
-    private string? Problem(FitResult result)
+    private TemplateError? Problem(FitResult result)
     {
         if (result.Error is { } error)
         {
-            return Describe(error);
+            return error;
         }
 
         var html = result.Html ?? string.Empty;
         if (TelegramHtmlValidator.Validate(html) is { Count: > 0 } problems)
         {
-            return problems[0].Describe(_strings);
+            return new TemplateError(problems[0].Describe(_strings), null, null);
         }
 
         // Telegram refuses an empty message, which would lose the notification.
-        return string.IsNullOrWhiteSpace(HtmlText.ToPlain(html)) ? _strings.Get("templates.empty") : null;
+        return string.IsNullOrWhiteSpace(HtmlText.ToPlain(html)) ? new TemplateError(_strings.Get("templates.empty"), null, null) : null;
     }
 
     private RenderedText LastResort(string key, TemplateModel? values)

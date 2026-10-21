@@ -137,6 +137,7 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<Templates.TemplateModelBuilder>();
         serviceCollection.AddSingleton<Templates.TemplateFlags>();
         serviceCollection.AddSingleton<Templates.TemplateRenderer>();
+        serviceCollection.AddSingleton<Templates.TemplateSample>();
         serviceCollection.AddSingleton<IntakeQueues>();
         serviceCollection.AddSingleton<PendingIdSet>();
         serviceCollection.AddSingleton<LibraryWatcher>();

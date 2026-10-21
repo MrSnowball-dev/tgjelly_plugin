@@ -48,6 +48,7 @@
     <EmbeddedResource Include="Web\tgjelly.js" />
     <EmbeddedResource Include="Strings\en.json" />
     <EmbeddedResource Include="Templates/BuiltIn/**/*.sbn" WithCulture="false" />
+    <EmbeddedResource Include="Templates/sample-poster.png" />
   </ItemGroup>
 
 </Project>

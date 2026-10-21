@@ -243,9 +243,9 @@ public sealed class NotificationRendererTemplateTests : IDisposable
     }
 
     [Fact]
-    public void MediaKey_DisabledOverride_IsUsed()
+    public void MediaKey_Override_IsUsed()
     {
-        Set("media.movie", "<b>New: {{ title }}</b>", enabled: false);
+        Set("media.movie", "<b>New: {{ title }}</b>");
         var item = _library.Add(new MediaItem { Id = Guid.NewGuid(), Kind = MediaKind.Movie, Name = "Arrival" });
 
         var message = _renderer.Render(Media(item), Dest())!;

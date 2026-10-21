@@ -2,7 +2,10 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net.Mime;
+using System.Threading;
+using System.Threading.Tasks;
 using Jellyfin.Plugin.TgJelly.Configuration;
+using Jellyfin.Plugin.TgJelly.Destinations;
 using Jellyfin.Plugin.TgJelly.Rendering;
 using Jellyfin.Plugin.TgJelly.State;
 using Jellyfin.Plugin.TgJelly.Strings;
@@ -16,7 +19,7 @@ using Telegram.Bot.Extensions;
 namespace Jellyfin.Plugin.TgJelly.Api;
 
 /// <summary>
-/// Custom message templates: list, save and validate (spec §8.5, §11.2).
+/// Message templates: list, save, reset, validate and test-send (spec §8.5, §11.2; design §5, §6).
 /// </summary>
 [ApiController]
 [Route("TgJelly")]
@@ -34,6 +37,9 @@ public class TemplatesController : ControllerBase
     private readonly TemplateEngine _engine;
     private readonly StringTable _strings;
     private readonly InstanceGate _gate;
+    private readonly TemplateSample _sample;
+    private readonly DestinationTester _tester;
+    private readonly HealthService _health;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="TemplatesController"/> class.
@@ -44,8 +50,14 @@ public class TemplatesController : ControllerBase
     /// <param name="engine">The template engine.</param>
     /// <param name="strings">The string table, for labels and warnings.</param>
     /// <param name="gate">The instance gate; changes wait until this instance owns the data folder.</param>
-    public TemplatesController(SettingsStore settings, StateStore state, TemplateFlags flags, TemplateEngine engine, StringTable strings, InstanceGate gate)
+    /// <param name="sample">Builds the fitted sample messages.</param>
+    /// <param name="tester">Sends the sample to a destination.</param>
+    /// <param name="health">The health service, for the result's health.</param>
+    public TemplatesController(SettingsStore settings, StateStore state, TemplateFlags flags, TemplateEngine engine, StringTable strings, InstanceGate gate, TemplateSample sample, DestinationTester tester, HealthService health)
     {
+        _health = health;
+        _sample = sample;
+        _tester = tester;
         _settings = settings;
         _state = state;
         _flags = flags;
@@ -81,7 +93,7 @@ public class TemplatesController : ControllerBase
             return blocked;
         }
 
-        if (!EventCatalog.IsKnown(eventKey))
+        if (!TemplateKeys.All.Contains(eventKey))
         {
             return NotFound();
         }
@@ -92,33 +104,57 @@ public class TemplatesController : ControllerBase
             return BadRequest(new ErrorsDto { Errors = [new SettingsError("Text", "Must be at most 16384 characters.")] });
         }
 
+        // Text that is the built-in one (or nothing) is no override: the built-in template stays in use.
+        var builtIn = BuiltInTemplates.Get(eventKey, _settings.Current.Language) ?? string.Empty;
+        var reset = string.IsNullOrWhiteSpace(text) || string.Equals(text.Replace("\r\n", "\n", StringComparison.Ordinal), builtIn, StringComparison.Ordinal);
+        return Change(eventKey, request.ExpectedRevision, reset ? null : text);
+    }
+
+    /// <summary>
+    /// Removes one event's override, so its built-in template is used again.
+    /// </summary>
+    /// <param name="eventKey">The event key.</param>
+    /// <param name="expectedRevision">The revision the caller's data is based on.</param>
+    /// <returns>The templates (unchanged when there was no override), 404 for an unknown key, or 409 with the current data.</returns>
+    [HttpDelete("Templates/{eventKey}")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    public ActionResult<TemplatesDto> Delete(string eventKey, [FromQuery] long expectedRevision)
+    {
+        if (ApiGuard.Block(_gate, _state) is { } blocked)
+        {
+            return blocked;
+        }
+
+        return TemplateKeys.All.Contains(eventKey) ? Change(eventKey, expectedRevision, null) : NotFound();
+    }
+
+    // Sets an override's text, or removes it when the text is null. A flag clears when the template's text changes (spec §8.5).
+    private ActionResult<TemplatesDto> Change(string eventKey, long expectedRevision, string? text)
+    {
         var changed = false;
-        var result = _settings.UpdateIf(request.ExpectedRevision, c =>
+        var result = _settings.UpdateIf(expectedRevision, c =>
         {
             var list = c.Templates.ToList();
             var index = list.FindIndex(t => string.Equals(t.EventKey, eventKey, StringComparison.Ordinal));
             var existing = index >= 0 ? list[index] : null;
-            if ((existing?.Enabled ?? false) == request.Enabled && string.Equals(existing?.Text ?? string.Empty, text, StringComparison.Ordinal))
+            if (string.Equals(existing?.Text, text, StringComparison.Ordinal))
             {
                 return false;
             }
 
             changed = true;
-            var remove = !request.Enabled && text.Length == 0;
-            if (existing is null)
-            {
-                if (!remove)
-                {
-                    list.Add(new TemplateOverride { EventKey = eventKey, Enabled = request.Enabled, Text = text });
-                }
-            }
-            else if (remove)
+            if (text is null)
             {
                 list.RemoveAt(index);
             }
+            else if (existing is null)
+            {
+                list.Add(new TemplateOverride { EventKey = eventKey, Enabled = true, Text = text });
+            }
             else
             {
-                existing.Enabled = request.Enabled;
                 existing.Text = text;
             }
 
@@ -128,7 +164,6 @@ public class TemplatesController : ControllerBase
 
         if (result.Status == SettingsUpdateStatus.Saved && changed)
         {
-            // Spec §8.5: a flag clears when the template's text or Enabled changes.
             _flags.Clear(eventKey);
         }
 
@@ -144,7 +179,7 @@ public class TemplatesController : ControllerBase
     /// Checks a template without saving it: parse, strict renders with the full and sparse samples, the HTML whitelist and the length.
     /// </summary>
     /// <param name="request">The event key and text.</param>
-    /// <returns>The errors, warnings and preview, or 404 for an unknown key.</returns>
+    /// <returns>The errors, warnings, preview and fitted sample message, or 404 for an unknown key.</returns>
     [HttpPost("Templates/Validate")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -152,17 +187,75 @@ public class TemplatesController : ControllerBase
     {
         ArgumentNullException.ThrowIfNull(request);
         var key = request.EventKey ?? string.Empty;
-        if (!EventCatalog.IsKnown(key))
+        if (!TemplateKeys.All.Contains(key))
         {
             return NotFound();
         }
 
-        var text = request.Text ?? string.Empty;
-        var limit = TemplateFieldCatalog.IsMedia(key) ? CaptionLimit : MessageLimit;
+        return Check(key, request.Text ?? string.Empty).Dto;
+    }
+
+    /// <summary>
+    /// Sends a template's sample message to a destination, without saving the template.
+    /// </summary>
+    /// <param name="request">The event key, text and destination.</param>
+    /// <param name="cancellationToken">Cancels the request.</param>
+    /// <returns>The result, or 404 for an unknown key or destination. A template with errors is not sent.</returns>
+    [HttpPost("Templates/Test")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<TestResultDto>> Test([FromBody] TemplateTestRequest request, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        if (ApiGuard.Block(_gate, _state) is { } blocked)
+        {
+            return blocked;
+        }
+
+        var key = request.EventKey ?? string.Empty;
+        if (!TemplateKeys.All.Contains(key) || _settings.Current.Destinations.FirstOrDefault(d => d.Id == request.DestinationId) is not { } destination)
+        {
+            return NotFound();
+        }
+
+        var (dto, sample) = Check(key, request.Text ?? string.Empty);
+        if (dto.Errors.Count > 0 || sample is null || sample.Error is not null)
+        {
+            var message = dto.Errors.Count > 0 ? dto.Errors[0].Message : sample?.Error?.Message;
+            return new TestResultDto { Sent = false, Error = message, Health = DestinationDtoMapper.ToDto(_health.Get(destination.Id)) };
+        }
+
+        var result = await _tester.SendSampleAsync(destination, sample, cancellationToken).ConfigureAwait(false);
+        return new TestResultDto { Sent = result.Sent, Error = result.Error, Health = DestinationDtoMapper.ToDto(result.Health) };
+    }
+
+    private bool IsEmptyProblem(TemplateError error) => error.Message == _strings.Get("templates.empty");
+
+    private static bool IsEmpty(string? output) => string.IsNullOrWhiteSpace(HtmlText.ToPlain(output ?? string.Empty));
+
+    private static TemplateErrorDto ToDto(TemplateError e) => new() { Message = e.Message, Line = e.Line, Column = e.Column };
+
+    // Sample values for the dashboard's JSON: HTML written as-is is plain text there.
+    private static object? Plain(object? value) => value switch
+    {
+        RawHtml raw => raw.Html,
+        IReadOnlyDictionary<string, object?> map => map.ToDictionary(p => p.Key, p => Plain(p.Value), StringComparer.Ordinal),
+        IEnumerable<object?> list when value is not string => list.Select(Plain).ToList(),
+        _ => value,
+    };
+
+    private static IReadOnlyDictionary<string, object?> Plain(IReadOnlyDictionary<string, object?> values)
+        => values.ToDictionary(p => p.Key, p => Plain(p.Value), StringComparer.Ordinal);
+
+    private (TemplateValidationDto Dto, SampleMessage? Sample) Check(string key, string text)
+    {
+        var config = _settings.Current;
+        var poster = key != TemplateKeys.Digest && TemplateFieldCatalog.IsMedia(key) && config.Message.ShowPoster;
+        var limit = poster ? CaptionLimit : MessageLimit;
         var parse = _engine.Parse(text);
         if (parse.Count > 0)
         {
-            return new TemplateValidationDto { Errors = [.. parse.Select(ToDto)], Limit = limit };
+            return (new TemplateValidationDto { Errors = [.. parse.Select(ToDto)], Limit = limit, Caption = poster, Poster = poster }, null);
         }
 
         var errors = new List<TemplateErrorDto>();
@@ -182,7 +275,7 @@ public class TemplatesController : ControllerBase
         var length = HtmlText.PlainLength(preview);
         if ((full.Ok && IsEmpty(full.Output)) || (sparse.Ok && IsEmpty(sparse.Output)))
         {
-            // At send time an empty result keeps the default layout and flags the template.
+            // At send time an empty result keeps the built-in template and flags the override.
             warnings.Add(_strings.Get("templates.emptyWarning"));
         }
 
@@ -193,36 +286,53 @@ public class TemplatesController : ControllerBase
             {
                 errors.Add(new TemplateErrorDto { Message = _strings.Get("templates.tooLong", ("length", length), ("limit", MessageLimit)) });
             }
-            else if (length > limit)
+            else if (poster && length > CaptionLimit)
             {
                 warnings.Add(_strings.Get("templates.willShorten"));
             }
         }
 
-        return new TemplateValidationDto { Errors = errors, Warnings = warnings, Preview = preview, Length = length, Limit = limit };
+        if (errors.Count > 0)
+        {
+            return (new TemplateValidationDto { Errors = errors, Warnings = warnings, Preview = preview, Length = length, Limit = limit, Caption = poster, Poster = poster }, null);
+        }
+
+        var sample = _sample.Build(key, text);
+        var dto = new TemplateValidationDto
+        {
+            // An empty result is only a warning (the built-in template takes over at send time); the test send still refuses it.
+            Errors = sample.Error is null || (warnings.Count > 0 && IsEmptyProblem(sample.Error)) ? errors : [ToDto(sample.Error)],
+            Warnings = warnings,
+            Preview = preview,
+            Length = length,
+            Limit = sample.Limit,
+            Html = sample.Html ?? string.Empty,
+            Caption = sample.Caption,
+            Poster = sample.Poster,
+            Buttons = [.. sample.Buttons.Select(row => (IReadOnlyList<TemplateButtonDto>)[.. row.Select(b => new TemplateButtonDto { Text = b.Text, Url = b.Url })])],
+        };
+        return (dto, sample);
     }
-
-    private static bool IsEmpty(string? output) => string.IsNullOrWhiteSpace(HtmlText.ToPlain(output ?? string.Empty));
-
-    private static TemplateErrorDto ToDto(TemplateError e) => new() { Message = e.Message, Line = e.Line, Column = e.Column };
 
     private TemplatesDto ToDto(PluginConfiguration c) => new()
     {
         Revision = c.Revision,
-        Items = [.. EventCatalog.AllKeys.Select(key =>
+        Items = [.. TemplateKeys.All.Select(key =>
         {
             var template = c.Templates.FirstOrDefault(t => string.Equals(t.EventKey, key, StringComparison.Ordinal));
+            var builtIn = BuiltInTemplates.Get(key, c.Language) ?? string.Empty;
             var flag = _flags.Current(key);
             return new TemplateItemDto
             {
                 EventKey = key,
-                Label = _strings.Get("dest.event." + key),
-                Media = TemplateFieldCatalog.IsMedia(key),
-                Enabled = template?.Enabled ?? false,
-                Text = template?.Text ?? string.Empty,
+                Label = _strings.Get(key == TemplateKeys.Digest ? "templates.digestLabel" : "dest.event." + key),
+                Media = TemplateFieldCatalog.IsMedia(key) && key != TemplateKeys.Digest,
+                Text = template?.Text ?? builtIn,
+                BuiltIn = builtIn,
+                Edited = template is not null,
                 Fields = [.. TemplateFieldCatalog.For(key).Select(f => new TemplateFieldDto { Name = f.Name, Type = f.Type, Description = f.Description, Optional = f.Optional })],
-                SampleFull = TemplateFieldCatalog.SampleFull(key),
-                SampleSparse = TemplateFieldCatalog.SampleSparse(key),
+                SampleFull = Plain(TemplateFieldCatalog.SampleFull(key)),
+                SampleSparse = Plain(TemplateFieldCatalog.SampleSparse(key)),
                 Flag = flag is null ? null : new TemplateFlagDto { Kind = flag.Kind, Error = flag.Error, At = flag.At },
             };
         })],

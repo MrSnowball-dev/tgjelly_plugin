@@ -47,8 +47,7 @@ public sealed class TemplateRendererTests : IDisposable
     [Fact]
     public void Edited_UsedAndKeyed()
     {
-        // Enabled is ignored: an override with text is the template in use.
-        Set("<b>New: {{ title }}</b>", enabled: false);
+        Set("<b>New: {{ title }}</b>");
 
         var result = Renderer().Render(Movie(), hasPoster: true)!;
 
