@@ -45,7 +45,7 @@ public sealed class TemplateModelBuilder
     /// </summary>
     /// <param name="model">What the message is rendered from.</param>
     /// <returns>The template model, with the catalog's fields for the event key in catalog order.</returns>
-    public IReadOnlyDictionary<string, object?> Build(RenderModel model)
+    public TemplateModel Build(RenderModel model)
     {
         ArgumentNullException.ThrowIfNull(model);
         var values = new Dictionary<string, object?>(StringComparer.Ordinal)
@@ -53,8 +53,17 @@ public sealed class TemplateModelBuilder
             ["event"] = model.EventKey,
             ["at_unix"] = model.At.ToUnixTimeSeconds(),
             ["at_text"] = Text(model.At),
+            ["at_html"] = new RawHtml(_formatter.Time(model.At, _time.GetUtcNow())),
         };
-        if (TemplateFieldCatalog.IsMedia(model.EventKey))
+        if (model.EventKey == TemplateKeys.Digest)
+        {
+            // The digest is built from its entries in a later step; until then it has the empty defaults.
+            values["count"] = 0L;
+            values["count_text"] = _formatter.Number(0);
+            values["more"] = 0L;
+            values["more_text"] = _formatter.Number(0);
+        }
+        else if (TemplateFieldCatalog.IsMedia(model.EventKey))
         {
             AddMedia(values, model);
         }
@@ -71,8 +80,53 @@ public sealed class TemplateModelBuilder
                 : field.Type.EndsWith("[]", StringComparison.Ordinal) ? new List<object?>() : null;
         }
 
-        return result;
+        ApplyToggles(result, _settings.Current.Message);
+        var (text, list, more) = TemplateFieldCatalog.Shrink(model.EventKey);
+        return TemplateModel.Of(result, text, list, more);
     }
+
+    /// <summary>
+    /// Returns the sample model of an event key, as the current message toggles shape it.
+    /// </summary>
+    /// <param name="eventKey">The event key.</param>
+    /// <returns>The sample model.</returns>
+    public TemplateModel Sample(string eventKey)
+    {
+        ArgumentNullException.ThrowIfNull(eventKey);
+        var values = new Dictionary<string, object?>(TemplateFieldCatalog.SampleFull(eventKey), StringComparer.Ordinal);
+        ApplyToggles(values, _settings.Current.Message);
+        var (text, list, more) = TemplateFieldCatalog.Shrink(eventKey);
+        return TemplateModel.Of(values, text, list, more);
+    }
+
+    private static void ApplyToggles(Dictionary<string, object?> values, MessageOptions options)
+    {
+        if (!options.ShowRatingGenres)
+        {
+            SetIfPresent(values, "rating", null);
+            SetIfPresent(values, "rating_text", null);
+            SetIfPresent(values, "genres", new List<object?>());
+        }
+
+        if (!options.ShowOverview)
+        {
+            SetIfPresent(values, "overview", null);
+        }
+    }
+
+    private static void SetIfPresent(Dictionary<string, object?> values, string name, object? value)
+    {
+        if (values.ContainsKey(name))
+        {
+            values[name] = value;
+        }
+    }
+
+    private static string? Trimmed(string? text) => string.IsNullOrWhiteSpace(text) ? null : text.Trim();
+
+    private static string? Two(long? n) => n is { } v ? v.ToString("00", CultureInfo.InvariantCulture) : null;
+
+    private string? NumberText(long? n) => n is { } v ? _formatter.Number(v) : null;
 
     private static string? Provider(MediaItem? item, string provider)
     {
@@ -133,6 +187,7 @@ public sealed class TemplateModelBuilder
                 values["album"] = first?.Name;
                 values["year"] = (long?)first?.Year;
                 values["tracks"] = first is null ? null : (long)first.ChildCount;
+                values["tracks_text"] = NumberText(first is null ? null : first.ChildCount);
                 values["jellyfin_url"] = Open(first?.Id);
                 return;
             case "media.book":
@@ -143,12 +198,20 @@ public sealed class TemplateModelBuilder
         values["title"] = first?.Name;
         values["year"] = (long?)first?.Year;
         values["overview"] = first?.Overview;
-        values["rating"] = first?.CommunityRating is { } rating ? Math.Round((double)rating, 1) : null;
-        values["runtime_minutes"] = first?.RunTime is { } runtime && runtime > TimeSpan.Zero ? (long)Math.Round(runtime.TotalMinutes) : null;
-        values["genres"] = first is null ? new List<object?>() : first.Genres.Cast<object?>().ToList();
+        AddRatingGenres(values, first);
+        var hasRuntime = first?.RunTime is { } runtime && runtime > TimeSpan.Zero;
+        values["runtime_minutes"] = hasRuntime ? (long)Math.Round(first!.RunTime!.Value.TotalMinutes) : null;
+        values["runtime_text"] = hasRuntime ? _formatter.Runtime(first!.RunTime!.Value) : null;
         values["imdb_id"] = Provider(first, "Imdb");
         values["tmdb_id"] = Provider(first, "Tmdb");
         values["jellyfin_url"] = Open(first?.Id);
+    }
+
+    private void AddRatingGenres(Dictionary<string, object?> values, MediaItem? item)
+    {
+        values["rating"] = item?.CommunityRating is { } rating ? Math.Round((double)rating, 1) : null;
+        values["rating_text"] = item?.CommunityRating is { } text ? _formatter.Rating(text) : null;
+        values["genres"] = item is null ? new List<object?>() : item.Genres.Cast<object?>().ToList();
     }
 
     private void AddEpisodes(Dictionary<string, object?> values, RenderModel model, List<MediaItem> items)
@@ -159,9 +222,16 @@ public sealed class TemplateModelBuilder
         values["series"] = first?.SeriesName;
         values["season"] = (long?)first?.SeasonNumber;
         values["count"] = (long)sorted.Count;
+        values["count_text"] = _formatter.Number(sorted.Count);
         values["episodes"] = sorted
-            .Select(i => (object?)new Dictionary<string, object?>(StringComparer.Ordinal) { ["number"] = (long?)i.EpisodeNumber, ["title"] = i.Name })
+            .Select(i => (object?)new Dictionary<string, object?>(StringComparer.Ordinal)
+            {
+                ["number"] = (long?)i.EpisodeNumber,
+                ["number_text"] = Two(i.EpisodeNumber),
+                ["title"] = i.Name,
+            })
             .ToList();
+        values["episodes_more"] = 0L;
         values["new_series"] = model.NewSeries;
         values["imdb_id"] = Provider(series, "Imdb");
         values["tmdb_id"] = Provider(series, "Tmdb");
@@ -177,7 +247,10 @@ public sealed class TemplateModelBuilder
         values["title"] = audiobook ? first!.ParentName ?? folder?.Name ?? first.Name : first?.Name;
         values["year"] = (long?)first?.Year;
         values["overview"] = first?.Overview;
-        values["parts"] = audiobook ? items.Count : 0L;
+        AddRatingGenres(values, first);
+        var parts = audiobook ? items.Count : 0L;
+        values["parts"] = parts;
+        values["parts_text"] = _formatter.Number(parts);
         values["jellyfin_url"] = Open(audiobook ? folder?.Id ?? first!.Id : first?.Id);
     }
 
@@ -185,17 +258,22 @@ public sealed class TemplateModelBuilder
     {
         string? Get(string name) => model.Values.TryGetValue(name, out var value) ? NonEmpty(value) : null;
 
-        foreach (var name in new[] { "user", "client", "device", "ip", "version", "server", "current", "url", "plugin", "changelog", "error", "task" })
+        foreach (var name in new[] { "user", "client", "device", "ip", "version", "server", "current", "url", "plugin", "task" })
         {
             values[name] = Get(name);
         }
 
+        values["changelog"] = Trimmed(Get("changelog"));
+        values["error"] = Trimmed(Get("error"));
         values["attempts"] = Number(Get("attempts"));
+        values["attempts_text"] = NumberText(Number(Get("attempts")));
         values["ip_count"] = Number(Get("ip_count"));
+        values["ip_count_text"] = NumberText(Number(Get("ip_count")));
         values["last_ip"] = Get("ip");
         values["last_attempt_unix"] = model.At.ToUnixTimeSeconds();
         values["last_attempt_text"] = Text(model.At);
         values["locked"] = string.Equals(Get("locked"), "true", StringComparison.OrdinalIgnoreCase);
         values["reasons"] = model.Lines.Cast<object?>().ToList();
+        values["reasons_more"] = 0L;
     }
 }

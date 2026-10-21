@@ -89,7 +89,7 @@ public sealed class NotificationRenderer
         var hash = TemplateText.Hash(template.Text);
         try
         {
-            var result = _engine.Render(key, template.Text, _models.Build(model), strict: false);
+            var result = _engine.Render(key, template.Text, _models.Build(model).Values, strict: false);
             if (!result.Ok)
             {
                 _flags.Flag(key, "error", Describe(result.Error!), hash);

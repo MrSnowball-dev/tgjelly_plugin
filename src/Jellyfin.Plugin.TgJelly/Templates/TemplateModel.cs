@@ -54,14 +54,7 @@ public sealed class TemplateModel
                 var copy = new Dictionary<string, object?>(source);
                 if (textField is not null)
                 {
-                    if (newText is null)
-                    {
-                        copy.Remove(textField);
-                    }
-                    else
-                    {
-                        copy[textField] = newText;
-                    }
+                    copy[textField] = newText;
                 }
 
                 if (listField is not null && list is not null)
@@ -101,7 +94,7 @@ public sealed class TemplateModel
     /// <summary>
     /// Builds a copy with a shortened text and list. The source is never changed.
     /// </summary>
-    /// <param name="text">The text field's value; null drops it.</param>
+    /// <param name="text">The text field's value; null sets it to null (the key stays).</param>
     /// <param name="listKept">How many list items to keep.</param>
     /// <returns>The new model.</returns>
     public IReadOnlyDictionary<string, object?> With(string? text, int listKept) => _with(Values, text, listKept);

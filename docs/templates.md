@@ -61,11 +61,14 @@ Times come as two fields. `<name>_unix` is Unix seconds and `<name>_text` is tex
 | `event` | `string` | no | The event key. |
 | `at_unix` | `number` | no | When the event happened, as Unix seconds. |
 | `at_text` | `string` | no | When the event happened, as text in UTC. |
+| `at_html` | `string` | no | When the event happened, as a time each reader sees in their own time zone. Write it as it is: it is not escaped. |
 | `title` | `string` | no | The title. |
 | `year` | `number` | yes | The production year. |
 | `overview` | `string` | yes | The overview text. |
 | `rating` | `number` | yes | The community rating, from 0 to 10. |
+| `rating_text` | `string` | yes | The rating with one decimal, e.g. 7.9. |
 | `runtime_minutes` | `number` | yes | The runtime in minutes. |
+| `runtime_text` | `string` | yes | The runtime as hours and minutes, e.g. 1h 56m. |
 | `genres` | `string[]` | no | The genres. |
 | `library` | `string` | yes | The library name. |
 | `imdb_id` | `string` | yes | The IMDb ID. |
@@ -88,10 +91,13 @@ Example:
 | `event` | `string` | no | The event key. |
 | `at_unix` | `number` | no | When the event happened, as Unix seconds. |
 | `at_text` | `string` | no | When the event happened, as text in UTC. |
+| `at_html` | `string` | no | When the event happened, as a time each reader sees in their own time zone. Write it as it is: it is not escaped. |
 | `series` | `string` | yes | The series name. |
 | `season` | `number` | yes | The season number. Specials are 0. |
 | `count` | `number` | no | How many episodes the message covers. |
-| `episodes` | `episode[]` | no | The episodes, in number order. Each has a number (empty for an episode without one) and a title. |
+| `count_text` | `string` | no | The episode count with digit grouping. |
+| `episodes` | `episode[]` | no | The episodes, in number order. Each has a number (empty for an episode without one), number_text (the number with two digits, empty without a number) and a title. |
+| `episodes_more` | `number` | no | How many episodes were left out of the list to fit the message. 0 when none. |
 | `new_series` | `bool` | no | True when the series is new to the library. |
 | `library` | `string` | yes | The library name. |
 | `imdb_id` | `string` | yes | The IMDb ID. |
@@ -114,10 +120,12 @@ Example:
 | `event` | `string` | no | The event key. |
 | `at_unix` | `number` | no | When the event happened, as Unix seconds. |
 | `at_text` | `string` | no | When the event happened, as text in UTC. |
+| `at_html` | `string` | no | When the event happened, as a time each reader sees in their own time zone. Write it as it is: it is not escaped. |
 | `artist` | `string` | yes | The album artist. |
 | `album` | `string` | no | The album title. |
 | `year` | `number` | yes | The release year. |
 | `tracks` | `number` | no | The number of tracks. |
+| `tracks_text` | `string` | no | The track count with digit grouping. |
 | `library` | `string` | yes | The library name. |
 | `jellyfin_url` | `string` | yes | A link that opens the item in Jellyfin. Empty when no public URL is set. |
 | `upgraded` | `bool` | no | True when the item replaces an older file. |
@@ -136,11 +144,14 @@ Example:
 | `event` | `string` | no | The event key. |
 | `at_unix` | `number` | no | When the event happened, as Unix seconds. |
 | `at_text` | `string` | no | When the event happened, as text in UTC. |
+| `at_html` | `string` | no | When the event happened, as a time each reader sees in their own time zone. Write it as it is: it is not escaped. |
 | `title` | `string` | no | The title. |
 | `year` | `number` | yes | The production year. |
 | `overview` | `string` | yes | The overview text. |
 | `rating` | `number` | yes | The community rating, from 0 to 10. |
+| `rating_text` | `string` | yes | The rating with one decimal, e.g. 7.9. |
 | `runtime_minutes` | `number` | yes | The runtime in minutes. |
+| `runtime_text` | `string` | yes | The runtime as hours and minutes, e.g. 1h 56m. |
 | `genres` | `string[]` | no | The genres. |
 | `library` | `string` | yes | The library name. |
 | `imdb_id` | `string` | yes | The IMDb ID. |
@@ -162,10 +173,15 @@ Example:
 | `event` | `string` | no | The event key. |
 | `at_unix` | `number` | no | When the event happened, as Unix seconds. |
 | `at_text` | `string` | no | When the event happened, as text in UTC. |
+| `at_html` | `string` | no | When the event happened, as a time each reader sees in their own time zone. Write it as it is: it is not escaped. |
 | `title` | `string` | no | The title. For an audiobook, the name of the book. |
 | `year` | `number` | yes | The year. |
 | `overview` | `string` | yes | The overview text. |
+| `rating` | `number` | yes | The community rating, from 0 to 10. |
+| `rating_text` | `string` | yes | The rating with one decimal, e.g. 8.2. |
+| `genres` | `string[]` | no | The genres. |
 | `parts` | `number` | no | The number of audiobook parts. 0 for a book. |
+| `parts_text` | `string` | no | The part count with digit grouping. |
 | `library` | `string` | yes | The library name. |
 | `jellyfin_url` | `string` | yes | A link that opens the item in Jellyfin. Empty when no public URL is set. |
 | `upgraded` | `bool` | no | True when the item replaces an older file. |
@@ -184,10 +200,14 @@ Example:
 | `event` | `string` | no | The event key. |
 | `at_unix` | `number` | no | When the event happened, as Unix seconds. |
 | `at_text` | `string` | no | When the event happened, as text in UTC. |
+| `at_html` | `string` | no | When the event happened, as a time each reader sees in their own time zone. Write it as it is: it is not escaped. |
 | `user` | `string` | no | The user name that was tried. |
 | `attempts` | `number` | yes | How many attempts failed in a row. |
+| `attempts_text` | `string` | yes | The attempt count with digit grouping. |
 | `ip_count` | `number` | yes | How many different addresses the attempts came from. |
+| `ip_count_text` | `string` | yes | The address count with digit grouping. |
 | `last_ip` | `string` | yes | The address of the latest attempt. |
+| `ip` | `string` | yes | The address of the latest attempt. Same as last_ip. |
 | `client` | `string` | yes | The client app. |
 | `device` | `string` | yes | The device name. |
 | `last_attempt_unix` | `number` | no | When the latest attempt happened, as Unix seconds. |
@@ -209,8 +229,10 @@ The account is locked.{{ end }}
 | `event` | `string` | no | The event key. |
 | `at_unix` | `number` | no | When the event happened, as Unix seconds. |
 | `at_text` | `string` | no | When the event happened, as text in UTC. |
+| `at_html` | `string` | no | When the event happened, as a time each reader sees in their own time zone. Write it as it is: it is not escaped. |
 | `user` | `string` | no | The user name. |
 | `attempts` | `number` | yes | How many attempts failed. |
+| `attempts_text` | `string` | yes | The attempt count with digit grouping. |
 
 Example:
 
@@ -225,6 +247,7 @@ Example:
 | `event` | `string` | no | The event key. |
 | `at_unix` | `number` | no | When the event happened, as Unix seconds. |
 | `at_text` | `string` | no | When the event happened, as text in UTC. |
+| `at_html` | `string` | no | When the event happened, as a time each reader sees in their own time zone. Write it as it is: it is not escaped. |
 | `user` | `string` | no | The user name. |
 | `client` | `string` | yes | The client app. |
 | `device` | `string` | yes | The device name. |
@@ -243,6 +266,7 @@ Example:
 | `event` | `string` | no | The event key. |
 | `at_unix` | `number` | no | When the event happened, as Unix seconds. |
 | `at_text` | `string` | no | When the event happened, as text in UTC. |
+| `at_html` | `string` | no | When the event happened, as a time each reader sees in their own time zone. Write it as it is: it is not escaped. |
 | `user` | `string` | no | The user name. |
 
 Example:
@@ -258,6 +282,7 @@ User <b>{{ user }}</b> was created.
 | `event` | `string` | no | The event key. |
 | `at_unix` | `number` | no | When the event happened, as Unix seconds. |
 | `at_text` | `string` | no | When the event happened, as text in UTC. |
+| `at_html` | `string` | no | When the event happened, as a time each reader sees in their own time zone. Write it as it is: it is not escaped. |
 | `user` | `string` | no | The user name. |
 
 Example:
@@ -273,6 +298,7 @@ User <b>{{ user }}</b> was deleted.
 | `event` | `string` | no | The event key. |
 | `at_unix` | `number` | no | When the event happened, as Unix seconds. |
 | `at_text` | `string` | no | When the event happened, as text in UTC. |
+| `at_html` | `string` | no | When the event happened, as a time each reader sees in their own time zone. Write it as it is: it is not escaped. |
 | `user` | `string` | no | The user name. |
 
 Example:
@@ -288,6 +314,7 @@ The password of <b>{{ user }}</b> was changed.
 | `event` | `string` | no | The event key. |
 | `at_unix` | `number` | no | When the event happened, as Unix seconds. |
 | `at_text` | `string` | no | When the event happened, as text in UTC. |
+| `at_html` | `string` | no | When the event happened, as a time each reader sees in their own time zone. Write it as it is: it is not escaped. |
 | `version` | `string` | yes | The Jellyfin version. |
 | `server` | `string` | yes | The server name. |
 
@@ -304,6 +331,7 @@ Jellyfin {{ version }} started on {{ server }}.
 | `event` | `string` | no | The event key. |
 | `at_unix` | `number` | no | When the event happened, as Unix seconds. |
 | `at_text` | `string` | no | When the event happened, as text in UTC. |
+| `at_html` | `string` | no | When the event happened, as a time each reader sees in their own time zone. Write it as it is: it is not escaped. |
 | `version` | `string` | no | The new Jellyfin version. |
 | `current` | `string` | yes | The version that is running. |
 | `url` | `string` | yes | A link to the release notes. |
@@ -322,6 +350,7 @@ Jellyfin {{ version }} is available. You run {{ current }}.
 | `event` | `string` | no | The event key. |
 | `at_unix` | `number` | no | When the event happened, as Unix seconds. |
 | `at_text` | `string` | no | When the event happened, as text in UTC. |
+| `at_html` | `string` | no | When the event happened, as a time each reader sees in their own time zone. Write it as it is: it is not escaped. |
 | `plugin` | `string` | no | The plugin name. |
 | `version` | `string` | yes | The plugin version. |
 
@@ -338,6 +367,7 @@ Plugin <b>{{ plugin }}</b> {{ version }} was installed.
 | `event` | `string` | no | The event key. |
 | `at_unix` | `number` | no | When the event happened, as Unix seconds. |
 | `at_text` | `string` | no | When the event happened, as text in UTC. |
+| `at_html` | `string` | no | When the event happened, as a time each reader sees in their own time zone. Write it as it is: it is not escaped. |
 | `plugin` | `string` | no | The plugin name. |
 | `version` | `string` | yes | The plugin version. |
 | `changelog` | `string` | yes | The plugin's change notes. |
@@ -356,6 +386,7 @@ Plugin <b>{{ plugin }}</b> is now {{ version }}.
 | `event` | `string` | no | The event key. |
 | `at_unix` | `number` | no | When the event happened, as Unix seconds. |
 | `at_text` | `string` | no | When the event happened, as text in UTC. |
+| `at_html` | `string` | no | When the event happened, as a time each reader sees in their own time zone. Write it as it is: it is not escaped. |
 | `plugin` | `string` | no | The plugin name. |
 | `version` | `string` | yes | The plugin version. |
 
@@ -372,6 +403,7 @@ Plugin <b>{{ plugin }}</b> {{ version }} was removed.
 | `event` | `string` | no | The event key. |
 | `at_unix` | `number` | no | When the event happened, as Unix seconds. |
 | `at_text` | `string` | no | When the event happened, as text in UTC. |
+| `at_html` | `string` | no | When the event happened, as a time each reader sees in their own time zone. Write it as it is: it is not escaped. |
 | `plugin` | `string` | no | The plugin name. |
 | `version` | `string` | yes | The plugin version. |
 | `error` | `string` | yes | The error message. |
@@ -390,6 +422,7 @@ Plugin <b>{{ plugin }}</b> {{ version }} failed to install.
 | `event` | `string` | no | The event key. |
 | `at_unix` | `number` | no | When the event happened, as Unix seconds. |
 | `at_text` | `string` | no | When the event happened, as text in UTC. |
+| `at_html` | `string` | no | When the event happened, as a time each reader sees in their own time zone. Write it as it is: it is not escaped. |
 | `task` | `string` | no | The name of the scheduled task. |
 | `error` | `string` | yes | The error message. |
 
@@ -407,7 +440,9 @@ Task <b>{{ task }}</b> failed.
 | `event` | `string` | no | The event key. |
 | `at_unix` | `number` | no | When the event happened, as Unix seconds. |
 | `at_text` | `string` | no | When the event happened, as text in UTC. |
+| `at_html` | `string` | no | When the event happened, as a time each reader sees in their own time zone. Write it as it is: it is not escaped. |
 | `reasons` | `string[]` | no | Why a restart is needed, as plain text. |
+| `reasons_more` | `number` | no | How many reasons were left out of the list to fit the message. 0 when none. |
 
 Example:
 

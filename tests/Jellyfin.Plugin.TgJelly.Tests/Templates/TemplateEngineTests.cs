@@ -161,6 +161,15 @@ public sealed class TemplateEngineTests
     }
 
     [Fact]
+    public void Plural_OneForm_AndThreeForms()
+    {
+        Assert.Equal("x", Engine().Render("k", "{{ plural 2 \"x\" }}", Empty, strict: true).Output);
+        Assert.Equal("x", Engine().Render("k", "{{ plural 1 \"x\" }}", Empty, strict: true).Output);
+        Assert.Equal("b", Engine().Render("k", "{{ plural 5 \"a\" \"b\" \"c\" }}", Empty, strict: true).Output);
+        Assert.Equal("a", Engine().Render("k", "{{ plural 1 \"a\" \"b\" \"c\" }}", Empty, strict: true).Output);
+    }
+
+    [Fact]
     public void Plural_CannotBeReplacedByModelKey()
     {
         var result = Engine().Render("k", "{{ plural 1 \"a\" \"b\" }}", Model("plural", "x"), strict: true);

@@ -28,6 +28,18 @@ public sealed class TemplateFitterTests
         };
 
     [Fact]
+    public void With_NullText_KeepsKeyAsNull()
+    {
+        var model = TemplateModel.Of(Values("T", "short"), "overview", null, null);
+
+        var copy = model.With(null, 0);
+
+        Assert.True(copy.ContainsKey("overview"));
+        Assert.Null(copy["overview"]);
+        Assert.Equal("short", model.Values["overview"]);
+    }
+
+    [Fact]
     public void Fit_ShortText_Unchanged()
     {
         var model = TemplateModel.Of(Values("T", "short"), "overview", null, null);
