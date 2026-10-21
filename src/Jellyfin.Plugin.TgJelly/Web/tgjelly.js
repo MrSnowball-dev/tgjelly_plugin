@@ -1163,8 +1163,7 @@ export function renderTemplates(dto, S, ui) {
     const changed = path => (form && (form.changed ?? []).includes(path) ? ' tgj-changed' : '');
     const options = dto.Items.map(i => `<option value="${esc(i.EventKey)}"${i === item ? ' selected' : ''}>${i.Edited ? '● ' : ''}${esc(i.Label)}</option>`);
     const parts = [`<h2 class="sectionTitle">${t(S, 'web.templates.title')}</h2>`,
-        `<p class="fieldDescription">${t(S, 'web.templates.intro')} `
-        + `<a is="emby-linkbutton" href="${TEMPLATES_DOCS}" target="_blank" rel="noopener noreferrer">${t(S, 'web.templates.docs')}</a></p>`,
+        `<p class="fieldDescription">${t(S, 'web.templates.intro')}</p>`,
         `<div class="tgj-tpl-head"><div class="selectContainer"><select is="emby-select" class="emby-select-withcolor emby-select" `
         + `label="${t(S, 'web.templates.event')}" data-tgj-input="tplEvent">${options.join('')}</select></div>`
         + `<span class="tgj-badge">${item.Edited ? t(S, 'web.templates.edited') : t(S, 'web.templates.builtIn')}</span></div>`];
@@ -1179,7 +1178,8 @@ export function renderTemplates(dto, S, ui) {
         + `<td>${f.Optional ? t(S, 'web.templates.optional') : ''}</td><td>${esc(f.Description)}</td></tr>`);
     parts.push(`<div class="tgj-tpl-grid"><div class="tgj-tpl-edit">`
         + `<div class="${changed('Text').trim()}"><textarea class="tgj-template-text" data-tgj-input="tplText" rows="12" spellcheck="false">${esc(local.Text)}</textarea></div>`
-        + `<details><summary>${t(S, 'web.templates.fields')}</summary><table class="tgj-template-fields">${rows.join('')}</table></details></div>`
+        + `<details><summary>${t(S, 'web.templates.fields')}</summary><table class="tgj-template-fields">${rows.join('')}</table></details>`
+        + `<p class="fieldDescription"><a is="emby-linkbutton" href="${TEMPLATES_DOCS}" target="_blank" rel="noopener noreferrer">${t(S, 'web.templates.docs')}</a></p></div>`
         + `<div id="tgj-tpl-preview" class="tgj-tpl-preview">${renderTemplatePreview(ui.result ?? null, S, lang, ui.good ?? null)}</div></div>`);
 
     const destinations = ui.destinations ?? [];

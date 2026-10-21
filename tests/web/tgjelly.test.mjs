@@ -1871,7 +1871,16 @@ test('template section shows events, fields and the docs link', async () => {
     const { view, el } = mount({ 'GET TgJelly/Templates': templates() });
     await show(view);
     const html = el('tgj-templates').innerHTML;
-    assert.ok(html.includes('https://github.com/MrSnowball-dev/tgjelly_plugin/blob/main/docs/templates.md'));
+    // Spec §6.1: the guide link sits under the template, after the fields list, inside the left column.
+    const link = html.indexOf('href="https://github.com/MrSnowball-dev/tgjelly_plugin/blob/main/docs/templates.md"');
+    const left = html.indexOf('<div class="tgj-tpl-edit">');
+    const textarea = html.indexOf('<textarea');
+    const fieldsEnd = html.indexOf('</details>', html.indexOf(`<summary>${m.t(EN, 'web.templates.fields')}</summary>`));
+    const pane = html.indexOf('<div id="tgj-tpl-preview"');
+    assert.ok(left >= 0 && left < textarea && textarea < fieldsEnd && fieldsEnd < link && link < pane, html);
+    assert.equal(html.split('docs/templates.md').length, 2, 'one guide link');
+    const intro = html.indexOf(m.t(EN, 'web.templates.intro'));
+    assert.ok(intro >= 0 && intro < left, 'the intro stays at the top');
     assert.ok(html.includes('Movie added') && html.includes('Digest'));
     assert.ok(html.includes('The &lt;title&gt;.'));
     assert.ok(html.includes('class="tgj-template-text"'));
