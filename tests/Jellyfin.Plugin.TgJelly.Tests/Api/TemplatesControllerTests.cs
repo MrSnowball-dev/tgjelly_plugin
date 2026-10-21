@@ -196,9 +196,14 @@ public sealed class TemplatesControllerTests : IAsyncLifetime
     [Fact]
     public void Delete_NoOverride_ReturnsUnchanged()
     {
+        _flags.Flag("media.movie", "error", "stale", TemplateText.Hash("gone"));
+        Assert.Contains("media.movie", _flags.Keys());
+
         var dto = Assert.IsType<TemplatesDto>(_controller.Delete("media.movie", 0).Value);
 
         Assert.Equal(0, dto.Revision);
+        Assert.DoesNotContain("media.movie", _flags.Keys());
+        Assert.False(_h.State.Read(s => s.Status.TemplateFlags.ContainsKey("media.movie")));
     }
 
     [Fact]

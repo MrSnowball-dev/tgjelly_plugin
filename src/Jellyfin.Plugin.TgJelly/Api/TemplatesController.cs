@@ -127,7 +127,20 @@ public class TemplatesController : ControllerBase
             return blocked;
         }
 
-        return TemplateKeys.All.Contains(eventKey) ? Change(eventKey, expectedRevision, null) : NotFound();
+        if (!TemplateKeys.All.Contains(eventKey))
+        {
+            return NotFound();
+        }
+
+        var result = Change(eventKey, expectedRevision, null);
+
+        // A reset always clears the flag, also when there was no override to remove; a conflict changes nothing.
+        if (result.Result is not ConflictObjectResult and not BadRequestObjectResult)
+        {
+            _flags.Clear(eventKey);
+        }
+
+        return result;
     }
 
     // Sets an override's text, or removes it when the text is null. A flag clears when the template's text changes (spec §8.5).
