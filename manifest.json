@@ -3,12 +3,28 @@
     "guid": "e547b901-0dc4-42ae-8999-3871dd141270",
     "versions": [
       {
+        "version": "2.0.2.0",
+        "changelog": "Inline-only bot setup, icons and clearer screens\n\n- Adding a destination is one inline message: Add to a channel, Add to a group or Right here. The add buttons open Telegram's own chat chooser, and setup continues in the same message.\n- Chats the bot is already in are offered as \"Set up <chat>\".\n- Topic creation permission is granted from a link button, with Check again.\n- The public URL and topic link prompts use an inline Cancel button instead of a reply keyboard.\n- Events are split into Media, Security and Server screens.\n- Every bot screen explains what each of its buttons does.\n- Custom emoji icons on buttons and headings. They show only if the bot owner has Telegram Premium.\n- The dashboard shows the bot's name once, in the Bot section.",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://github.com/MrSnowball-dev/tgjelly_plugin/releases/download/v0.2/tgjelly_2.0.2.0.zip",
+        "checksum": "3fee137e9948c447a128262a79333955",
+        "timestamp": "2026-10-21T19:34:36Z"
+      },
+      {
         "version": "2.0.1.0",
         "changelog": "First test release\n\nTgJelly sends Jellyfin events to Telegram chats, groups and channels through your own bot.\n\n- New media, security and server events, with presets\n- Setup from the bot with Telegram's chat picker, or from the dashboard\n- Custom Scriban templates (Advanced)\n- Builds for Jellyfin 10.11 (1.x) and 12 (2.x)\n\nThis is a pre-test release.",
         "targetAbi": "12.0.0.0",
         "sourceUrl": "https://github.com/MrSnowball-dev/tgjelly_plugin/releases/download/v0.1/tgjelly_2.0.1.0.zip",
         "checksum": "cb0feb4d6ee44d02cc6cc3be21287301",
         "timestamp": "2026-10-20T21:57:13Z"
+      },
+      {
+        "version": "1.0.2.0",
+        "changelog": "Inline-only bot setup, icons and clearer screens\n\n- Adding a destination is one inline message: Add to a channel, Add to a group or Right here. The add buttons open Telegram's own chat chooser, and setup continues in the same message.\n- Chats the bot is already in are offered as \"Set up <chat>\".\n- Topic creation permission is granted from a link button, with Check again.\n- The public URL and topic link prompts use an inline Cancel button instead of a reply keyboard.\n- Events are split into Media, Security and Server screens.\n- Every bot screen explains what each of its buttons does.\n- Custom emoji icons on buttons and headings. They show only if the bot owner has Telegram Premium.\n- The dashboard shows the bot's name once, in the Bot section.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/MrSnowball-dev/tgjelly_plugin/releases/download/v0.2/tgjelly_1.0.2.0.zip",
+        "checksum": "77294cdd3d1c1698dccc1d397a141fc5",
+        "timestamp": "2026-10-21T19:34:36Z"
       },
       {
         "version": "1.0.1.0",
