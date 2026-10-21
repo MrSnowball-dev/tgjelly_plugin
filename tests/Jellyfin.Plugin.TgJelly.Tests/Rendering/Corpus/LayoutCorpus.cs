@@ -22,23 +22,7 @@ internal sealed record CorpusCase(string Name, RenderModel Model, IReadOnlyList<
 /// <summary>Renders corpus cases through the production renderer.</summary>
 internal static class CorpusRig
 {
-    /// <summary>Renders a case with v0.2's C# layouts only, never a template.</summary>
-    public static (string Caption, string Text) RenderV02(CorpusCase c)
-    {
-        ArgumentNullException.ThrowIfNull(c);
-        using var h = new BotTestHarness();
-        var (library, time, formatter, link) = Setup(h, c);
-        var media = new MediaLayouts(formatter, link, library, h.Settings);
-        var message = c.Model.Kind switch
-        {
-            RenderKind.Media => media.Render(c.Model),
-            RenderKind.Digest => media.RenderDigest(c.Model),
-            _ => new AlertLayouts(formatter, time).Render(c.Model),
-        } ?? throw new InvalidOperationException($"Case {c.Name} rendered nothing.");
-        return (message.Caption, message.Text);
-    }
-
-    /// <summary>Renders a case through the production renderer, which uses the built-in templates where they exist.</summary>
+    /// <summary>Renders a case through the production renderer and its built-in templates.</summary>
     public static (string Caption, string Text) RenderTemplates(CorpusCase c)
     {
         ArgumentNullException.ThrowIfNull(c);
@@ -49,13 +33,8 @@ internal static class CorpusRig
         var flags = new TemplateFlags(h.State, h.Settings, time);
         var renderer = new NotificationRenderer(
             new MediaLayouts(formatter, link, library, h.Settings),
-            new AlertLayouts(formatter, time),
-            new TemplateRenderer(engine, models, flags, h.Settings, h.Strings, NullLogger<TemplateRenderer>.Instance),
-            engine,
-            models,
-            flags,
-            h.Settings,
-            h.Strings);
+            new AlertLayouts(formatter),
+            new TemplateRenderer(engine, models, flags, h.Settings, h.Strings, NullLogger<TemplateRenderer>.Instance));
         var message = renderer.Render(c.Model, new Destination { Id = "d1" })
             ?? throw new InvalidOperationException($"Case {c.Name} rendered nothing.");
         Assert.Empty(h.State.Read(s => s.Status.TemplateFlags.Keys.ToList()));

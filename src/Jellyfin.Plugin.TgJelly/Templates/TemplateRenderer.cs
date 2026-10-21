@@ -168,7 +168,7 @@ public sealed class TemplateRenderer
         var caption = new FitResult(string.Empty, false, null);
         if (key != TemplateKeys.Digest)
         {
-            caption = TemplateFitter.Fit(values, Render, MessageFitter.CaptionLimit);
+            caption = TemplateFitter.Fit(values, Render, TemplateFitter.CaptionLimit);
             var captionProblem = Problem(caption);
             if (captionProblem is not null)
             {
@@ -176,7 +176,7 @@ public sealed class TemplateRenderer
             }
         }
 
-        var full = TemplateFitter.Fit(values, Render, MessageFitter.TextLimit);
+        var full = TemplateFitter.Fit(values, Render, TemplateFitter.TextLimit);
         var problem = Problem(full);
         return problem is null ? (caption, full, null) : (null, null, problem);
     }

@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using Jellyfin.Plugin.TgJelly.Rendering;
 using Jellyfin.Plugin.TgJelly.Templates;
 using Telegram.Bot.Extensions;
 using Xunit;
@@ -183,6 +182,33 @@ public sealed class TemplateFitterTests
 
         Assert.True(result.Truncated);
         Assert.Equal(Budget, HtmlText.PlainLength(result.Html!));
+    }
+
+    [Fact]
+    public void Fit_NonBmpOverview_IsCutOnCodePoints_AndFits()
+    {
+        var model = TemplateModel.Of(Values("Head", string.Concat(Enumerable.Repeat("𝕏", 2000))), "overview", null, null);
+
+        var result = TemplateFitter.Fit(model, Renderer("{{ title }}\n\n{{ overview }}\n\n📁 Movies"), Limit);
+
+        Assert.True(HtmlText.PlainLength(result.Html!) <= Budget);
+        var overview = result.Html!.Split("\n\n")[1];
+        Assert.EndsWith("𝕏…", overview, StringComparison.Ordinal);
+        Assert.DoesNotContain(overview.Select((c, i) => (c, i)), p => char.IsHighSurrogate(p.c) && (p.i + 1 >= overview.Length || !char.IsLowSurrogate(overview[p.i + 1])));
+    }
+
+    [Fact]
+    public void Fit_ExactlyAtTheLimit_IsUntouched()
+    {
+        var head = string.Concat(Enumerable.Repeat("𝕏", Budget));
+
+        var exact = TemplateFitter.Fit(TemplateModel.Of(Values(head, null), null, null, null), Renderer("{{ title }}"), Limit);
+        var over = TemplateFitter.Fit(TemplateModel.Of(Values(head + "𝕏", null), null, null, null), Renderer("{{ title }}"), Limit);
+
+        Assert.Equal(head, exact.Html);
+        Assert.False(exact.Truncated);
+        Assert.NotEqual(head + "𝕏", over.Html);
+        Assert.True(over.Truncated);
     }
 
     [Fact]

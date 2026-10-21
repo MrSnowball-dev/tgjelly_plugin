@@ -5,7 +5,6 @@ using Jellyfin.Plugin.TgJelly.Library;
 using Jellyfin.Plugin.TgJelly.Rendering;
 using Jellyfin.Plugin.TgJelly.State.Documents;
 using Jellyfin.Plugin.TgJelly.Tests.Fakes;
-using Microsoft.Extensions.Time.Testing;
 using Xunit;
 
 namespace Jellyfin.Plugin.TgJelly.Tests.Rendering;
@@ -25,13 +24,8 @@ public sealed class NotificationRendererTests : IDisposable
         var flags = new Jellyfin.Plugin.TgJelly.Templates.TemplateFlags(_h.State, _h.Settings, _h.Time);
         _renderer = new NotificationRenderer(
             new MediaLayouts(formatter, new LinkBuilder(new FakeServerInfo()), _library, _h.Settings),
-            new AlertLayouts(formatter, new FakeTimeProvider(_h.Time.GetUtcNow())),
-            new Jellyfin.Plugin.TgJelly.Templates.TemplateRenderer(engine, models, flags, _h.Settings, _h.Strings, Microsoft.Extensions.Logging.Abstractions.NullLogger<Jellyfin.Plugin.TgJelly.Templates.TemplateRenderer>.Instance),
-            engine,
-            models,
-            flags,
-            _h.Settings,
-            _h.Strings);
+            new AlertLayouts(formatter),
+            new Jellyfin.Plugin.TgJelly.Templates.TemplateRenderer(engine, models, flags, _h.Settings, _h.Strings, Microsoft.Extensions.Logging.Abstractions.NullLogger<Jellyfin.Plugin.TgJelly.Templates.TemplateRenderer>.Instance));
         _movie = _library.Add(new MediaItem { Id = Guid.NewGuid(), Kind = MediaKind.Movie, Name = "Arrival" });
     }
 

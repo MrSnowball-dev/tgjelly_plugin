@@ -30,13 +30,8 @@ public sealed class NotificationRendererTemplateTests : IDisposable
         var models = new TemplateModelBuilder(_library, links, _h.Settings, formatter, _h.Time);
         _renderer = new NotificationRenderer(
             new MediaLayouts(formatter, links, _library, _h.Settings),
-            new AlertLayouts(formatter, _h.Time),
-            new TemplateRenderer(engine, models, _flags, _h.Settings, _h.Strings, _logger),
-            engine,
-            models,
-            _flags,
-            _h.Settings,
-            _h.Strings);
+            new AlertLayouts(formatter),
+            new TemplateRenderer(engine, models, _flags, _h.Settings, _h.Strings, _logger));
     }
 
     [Fact]
