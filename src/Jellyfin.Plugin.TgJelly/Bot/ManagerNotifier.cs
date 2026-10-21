@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using Jellyfin.Plugin.TgJelly.Bot.Screens;
 using Jellyfin.Plugin.TgJelly.Configuration;
 using Jellyfin.Plugin.TgJelly.Destinations;
+using Jellyfin.Plugin.TgJelly.Rendering;
 using Jellyfin.Plugin.TgJelly.State;
 using Jellyfin.Plugin.TgJelly.State.Documents;
 using Jellyfin.Plugin.TgJelly.Strings;
@@ -30,6 +31,7 @@ public sealed class ManagerNotifier
     private readonly BotConnection _connection;
     private readonly StateStore _state;
     private readonly StringTable _strings;
+    private readonly Formatter _formatter;
     private readonly ILogger<ManagerNotifier> _logger;
     private readonly Dictionary<string, (HealthStatus Status, HashSet<long> Done)> _handled = new(StringComparer.Ordinal);
 
@@ -51,6 +53,7 @@ public sealed class ManagerNotifier
         _connection = connection;
         _state = state;
         _strings = strings;
+        _formatter = new Formatter(strings);
         _logger = logger;
     }
 
@@ -96,7 +99,8 @@ public sealed class ManagerNotifier
 
             if (pending.Count > 0)
             {
-                var text = _strings.Get("notify.problem", ("title", HtmlText.Escape(destination.Title)), ("problem", HtmlText.Escape(ProblemText(health))));
+                var text = _strings.Get("notify.problem", ("title", HtmlText.Escape(destination.Title)), ("problem", HtmlText.Escape(ProblemText(health))))
+                    + ButtonGuide.Lines(_strings, _formatter, ("notify.btn.open", "notify.btn.open.about"), ("dest.btn.check", "dest.btn.check.about"));
                 var buttons = new InlineKeyboardMarkup(new[]
                 {
                     Buttons.Callback(_strings, "notify.btn.open", CallbackData.Format("d", destination.Id)),

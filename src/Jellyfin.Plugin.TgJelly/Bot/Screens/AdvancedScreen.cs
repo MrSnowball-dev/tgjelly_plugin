@@ -35,7 +35,8 @@ public sealed class AdvancedScreen
             new[] { Buttons.Callback(_strings, "advanced.topic", CallbackData.Format("ol")) },
             new[] { Buttons.Callback(_strings, "advanced.dashboard", CallbackData.Format("od")) },
         };
-        return new Screen(_formatter.Escape(_strings.Get("advanced.title")), new InlineKeyboardMarkup(rows));
+        var guide = ButtonGuide.Lines(_strings, _formatter, ("advanced.topic", "advanced.topic.about"), ("advanced.dashboard", "advanced.dashboard.about"));
+        return new Screen(_formatter.Escape(_strings.Get("advanced.title")) + guide, new InlineKeyboardMarkup(rows));
     }
 
     /// <summary>

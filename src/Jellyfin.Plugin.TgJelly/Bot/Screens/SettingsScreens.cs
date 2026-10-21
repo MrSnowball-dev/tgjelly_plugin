@@ -220,12 +220,19 @@ public sealed class SettingsScreens
     }
 
     private Screen Menu()
-        => Titled("settings.title", null, [
-            Button("settings.messages", "sm"),
-            Button("settings.updates", "su"),
-            Button("settings.url", "sp"),
-            Button("menu.back", "m"),
-        ]);
+    {
+        var guide = ButtonGuide.Lines(
+            _strings,
+            _formatter,
+            ("settings.messages", "settings.messages.about"),
+            ("settings.updates", "settings.updates.about"),
+            ("settings.url", "settings.url.about"));
+        return Titled(
+            "settings.title",
+            null,
+            [Button("settings.messages", "sm"), Button("settings.updates", "su"), Button("settings.url", "sp"), Button("menu.back", "m")],
+            guide);
+    }
 
     private Screen Messages()
     {
@@ -237,7 +244,7 @@ public sealed class SettingsScreens
         }
 
         rows.Add(Button("menu.back", "s"));
-        return Titled("settings.messages.title", "settings.messages.hint", rows);
+        return Titled("settings.messages.title", "settings.messages.hint", rows, "\n\n" + _formatter.Escape(_strings.Get("settings.messages.pick")));
     }
 
     private Screen Updates()
@@ -251,7 +258,13 @@ public sealed class SettingsScreens
         }
 
         rows.Add(Button("menu.back", "s"));
-        return Titled("settings.updates.title", "settings.updates.hint", rows);
+        var guide = ButtonGuide.Lines(
+            _strings,
+            _formatter,
+            ("settings.updates.enabled", "settings.updates.enabled.about"),
+            ("settings.updates.mode.SameMajor", "settings.updates.mode.SameMajor.about"),
+            ("settings.updates.mode.AnyNewer", "settings.updates.mode.AnyNewer.about"));
+        return Titled("settings.updates.title", "settings.updates.hint", rows, guide);
     }
 
     private Screen PublicUrl()
@@ -274,23 +287,28 @@ public sealed class SettingsScreens
         }
 
         var rows = new List<InlineKeyboardButton[]>();
+        var shown = new List<(string, string)>();
         if (suggested is not null && suggested != current)
         {
             html.Append("\n\n").Append(_formatter.Escape(_strings.Get("settings.url.suggested", ("url", suggested))));
             rows.Add(Button("settings.url.use", "spu"));
+            shown.Add(("settings.url.use", "settings.url.use.about"));
         }
 
         rows.Add(Button("settings.url.type", "spt"));
+        shown.Add(("settings.url.type", "settings.url.type.about"));
         if (current.Length > 0)
         {
             rows.Add(Button("settings.url.clear", "spc"));
+            shown.Add(("settings.url.clear", "settings.url.clear.about"));
         }
 
         rows.Add(Button("menu.back", "s"));
+        html.Append(ButtonGuide.Lines(_strings, _formatter, [.. shown]));
         return new Screen(html.ToString(), new InlineKeyboardMarkup(rows));
     }
 
-    private Screen Titled(string titleKey, string? hintKey, IEnumerable<InlineKeyboardButton[]> rows)
+    private Screen Titled(string titleKey, string? hintKey, IEnumerable<InlineKeyboardButton[]> rows, string guide)
     {
         var html = "<b>" + Icons.Heading(_strings, _formatter, titleKey) + "</b>";
         if (hintKey is not null)
@@ -298,6 +316,6 @@ public sealed class SettingsScreens
             html += "\n" + _formatter.Escape(_strings.Get(hintKey));
         }
 
-        return new Screen(html, new InlineKeyboardMarkup(rows));
+        return new Screen(html + guide, new InlineKeyboardMarkup(rows));
     }
 }

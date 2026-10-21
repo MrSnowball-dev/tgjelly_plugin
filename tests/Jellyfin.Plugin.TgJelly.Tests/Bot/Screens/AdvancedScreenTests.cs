@@ -35,6 +35,18 @@ public sealed class AdvancedScreenTests : IDisposable, IAsyncLifetime
     }
 
     [Fact]
+    public async Task AdvancedOptions_ExplainsEachButton()
+    {
+        await Click("1|ox", 77);
+
+        var edit = Assert.Single(_h.Api.CallsTo("editMessageText"));
+        edit.Explains("Use an existing topic", "Open dashboard");
+        var text = (string)edit.Body["text"]!;
+        Assert.Contains("post in a topic you already have; you'll send me its link", text, StringComparison.Ordinal);
+        Assert.Contains("add a chat by its ID in the Jellyfin dashboard", text, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task OpenDashboard_ShowsThePath()
     {
         await Click("1|ox", 77);

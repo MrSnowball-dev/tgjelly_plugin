@@ -189,6 +189,22 @@ public sealed class DetectedChatFlowTests : IDisposable, IAsyncLifetime
     }
 
     [Fact]
+    public async Task DetectedList_ExplainsSetUpAndDismiss_Once()
+    {
+        await Added(NewGroup);
+        await Added(-1005550003);
+        _h.Time.Advance(TimeSpan.FromSeconds(30));
+
+        await Click("1|xl|0", 55);
+
+        var text = (string)Assert.Single(_h.Api.CallsTo("editMessageText")).Body["text"]!;
+        Assert.Equal(1, Count(text, "<b>Set up …</b> — add the chat as a destination"));
+        Assert.Equal(1, Count(text, "<b>Dismiss …</b> — hide it from this list; I stay in the chat"));
+    }
+
+    private static int Count(string text, string part) => text.Split(part).Length - 1;
+
+    [Fact]
     public async Task Dismiss_RemovesIt()
     {
         await Added(NewGroup);

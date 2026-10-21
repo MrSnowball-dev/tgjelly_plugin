@@ -204,6 +204,63 @@ public sealed class SettingsScreensTests : IDisposable, IAsyncLifetime
     private static string[] Data(BotApiCall call)
         => call.Body["reply_markup"]!["inline_keyboard"]!.AsArray().SelectMany(r => r!.AsArray()).Select(b => (string)b!["callback_data"]!).ToArray();
 
+    [Fact]
+    public async Task SettingsMenu_ExplainsEachButton()
+    {
+        await Click("1|s");
+
+        var edit = LastEdit();
+        edit.Explains("Message style", "Update checks", "Public URL");
+        var text = (string)edit.Body["text"]!;
+        Assert.Contains("<b>Message style</b> — what notifications show: poster, overview and buttons", text, StringComparison.Ordinal);
+        Assert.Contains("<b>Update checks</b> — turn release checks on or off, and choose which versions count", text, StringComparison.Ordinal);
+        Assert.Contains("<b>Public URL</b> — the address the Open in Jellyfin button uses", text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task MessageStyle_SaysWhatTappingDoes()
+    {
+        await Click("1|sm");
+
+        var text = (string)LastEdit().Body["text"]!;
+        Assert.EndsWith("\n\nTap a switch to turn it on (✅) or off (⬜).", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("<b>Back</b>", text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Updates_ExplainsEachButton()
+    {
+        await Click("1|su");
+
+        var edit = LastEdit();
+        edit.Explains("Check for updates", "Same major version only", "Any newer version");
+        var text = (string)edit.Body["text"]!;
+        Assert.Contains("<b>Check for updates</b> — look for new releases and tell you here", text, StringComparison.Ordinal);
+        Assert.Contains("<b>Same major version only</b> — only versions with the same major number as yours", text, StringComparison.Ordinal);
+        Assert.Contains("<b>Any newer version</b> — every newer version", text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task PublicUrl_ExplainsOnlyTheButtonsShown()
+    {
+        await Click("1|sp");
+
+        var bare = (string)LastEdit().Body["text"]!;
+        Assert.Contains("<b>Type another</b> — send me a different address", bare, StringComparison.Ordinal);
+        Assert.DoesNotContain("<b>Use the suggested URL</b>", bare, StringComparison.Ordinal);
+        Assert.DoesNotContain("<b>Clear</b>", bare, StringComparison.Ordinal);
+
+        _rig.Server.Suggestion = "https://jf.example.com";
+        _h.Settings.Update(null, c => c.PublicUrl = "https://old.example.com");
+        await Click("1|sp");
+
+        var full = LastEdit();
+        full.Explains("Use the suggested URL", "Type another", "Clear");
+        var text = (string)full.Body["text"]!;
+        Assert.Contains("<b>Use the suggested URL</b> — save the suggested address", text, StringComparison.Ordinal);
+        Assert.Contains("<b>Clear</b> — remove the address; posts lose the Open in Jellyfin button", text, StringComparison.Ordinal);
+    }
+
     private async Task Click(string data) => await _rig.Deliver(TelegramFixtures.Update("callback_query", ("data", data), ("message_id", "55")));
 
     private async Task Text(string text) => await _rig.Deliver(TelegramFixtures.Update("private_text", ("text", System.Text.Json.JsonEncodedText.Encode(text).ToString())));

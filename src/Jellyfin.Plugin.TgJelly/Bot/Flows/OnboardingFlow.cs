@@ -737,7 +737,7 @@ public sealed class OnboardingFlow
         {
             var rows = EventPicker.ToggleRows(_strings, group, selected, k => CallbackData.Format("oc", k));
             rows.Add([Button("menu.back", "ocg")]);
-            screen = new Screen(title + "<b>" + Icons.Heading(_strings, _formatter, "events.group." + group) + "</b>", new InlineKeyboardMarkup(rows));
+            screen = new Screen(title + "<b>" + Icons.Heading(_strings, _formatter, "events.group." + group) + "</b>\n\n" + _formatter.Escape(_strings.Get("dest.events.pick")), new InlineKeyboardMarkup(rows));
         }
         else
         {
@@ -832,6 +832,7 @@ public sealed class OnboardingFlow
             html += "\n" + _formatter.Escape(_strings.Get("check.photosBlocked"));
         }
 
+        html += ButtonGuide.Lines(_strings, _formatter, ("onboard.addAnother", "onboard.addAnother.about"), ("onboard.menu", "onboard.menu.about"));
         var buttons = new InlineKeyboardMarkup(new[] { Button("onboard.addAnother", "oa"), Button("onboard.menu", "m") });
         return new Screen(html, buttons);
     }

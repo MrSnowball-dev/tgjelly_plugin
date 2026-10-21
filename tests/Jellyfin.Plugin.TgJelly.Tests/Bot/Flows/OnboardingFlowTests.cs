@@ -519,7 +519,10 @@ public sealed class OnboardingFlowTests : IDisposable, IAsyncLifetime
 
         var done = _h.Api.CallsTo("editMessageText").Last();
         Assert.Equal(wizard, (int)done.Body["message_id"]!);
-        Assert.Equal("✅ Done: <b>Family</b> will receive <i>new media, security alerts, server alerts</i>.", (string)done.Body["text"]!);
+        Assert.StartsWith("✅ Done: <b>Family</b> will receive <i>new media, security alerts, server alerts</i>.", (string)done.Body["text"]!, StringComparison.Ordinal);
+        done.Explains("Add another place", "Menu");
+        Assert.Contains("<b>Add another place</b> — set up one more chat", (string)done.Body["text"]!, StringComparison.Ordinal);
+        Assert.Contains("<b>Menu</b> — back to the main menu", (string)done.Body["text"]!, StringComparison.Ordinal);
         Assert.Equal(["Add another place", "Menu"], Labels(done));
         Assert.Equal(["1|oa", "1|m"], Data(done));
         Assert.Null(_rig.Memory.GetFlow(Manager));
@@ -605,6 +608,7 @@ public sealed class OnboardingFlowTests : IDisposable, IAsyncLifetime
         Assert.Equal(6, Labels(media).Length);
         Assert.Equal(["Back"], Labels(media)[5..]);
         Assert.Equal("1|ocg", Data(media)[5]);
+        Assert.EndsWith("\n\nTap an event to switch it on (✅) or off (▫️).", (string)media.Body["text"]!, StringComparison.Ordinal);
 
         await Click("1|oc|media.movie", wizard);
         var after = _h.Api.CallsTo("editMessageText").Last();
@@ -632,7 +636,7 @@ public sealed class OnboardingFlowTests : IDisposable, IAsyncLifetime
         var destination = Assert.Single(_h.Settings.Current.Destinations);
         Assert.Equal(PresetKind.Custom, destination.Preset);
         Assert.Equal(["media.movie", "server.started"], destination.Events);
-        Assert.Equal("✅ Done: <b>Family</b> will receive <i>new media, server alerts</i>.", (string)_h.Api.CallsTo("editMessageText").Last().Body["text"]!);
+        Assert.StartsWith("✅ Done: <b>Family</b> will receive <i>new media, server alerts</i>.\n\n", (string)_h.Api.CallsTo("editMessageText").Last().Body["text"]!, StringComparison.Ordinal);
     }
 
     [Fact]

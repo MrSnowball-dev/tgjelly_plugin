@@ -74,6 +74,13 @@ public sealed class MenuScreens
 
     private Screen Build(string headingHtml, int destinations, int detected)
     {
+        var lines = new List<string>
+        {
+            ButtonGuide.Line(_formatter, _strings.Get("menu.destinations", ("count", destinations)), _strings.Get("menu.destinations.about")),
+            ButtonGuide.Line(_strings, _formatter, "menu.add", "menu.add.about"),
+            ButtonGuide.Line(_strings, _formatter, "menu.settings", "menu.settings.about"),
+            ButtonGuide.Line(_strings, _formatter, "menu.status", "menu.status.about"),
+        };
         var rows = new List<InlineKeyboardButton[]>
         {
             new[] { Buttons.Callback(_strings, "menu.destinations", CallbackData.Format("dl", "0"), ("count", destinations)) },
@@ -84,8 +91,9 @@ public sealed class MenuScreens
         if (detected > 0)
         {
             rows.Add([Buttons.Callback(_strings, "menu.detected", CallbackData.Format("xl", "0"), ("count", detected))]);
+            lines.Add(ButtonGuide.Line(_formatter, _strings.Get("menu.detected", ("count", detected)), _strings.Get("menu.detected.about")));
         }
 
-        return new Screen("<b>" + headingHtml + "</b>", new InlineKeyboardMarkup(rows));
+        return new Screen("<b>" + headingHtml + "</b>" + ButtonGuide.Block([.. lines]), new InlineKeyboardMarkup(rows));
     }
 }

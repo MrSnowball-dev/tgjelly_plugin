@@ -118,14 +118,14 @@ public sealed class DestinationScreens
     /// </summary>
     /// <param name="page">The zero-based page.</param>
     /// <returns>The screen.</returns>
-    public Screen List(int page) => Listing(page, "menu.destinations.title", "d", "dl", "m");
+    public Screen List(int page) => Listing(page, "menu.destinations.title", "menu.destinations.pick", "d", "dl", "m");
 
     /// <summary>
     /// Builds one page of the <c>/test</c> picker.
     /// </summary>
     /// <param name="page">The zero-based page.</param>
     /// <returns>The screen.</returns>
-    public Screen Picker(int page) => Listing(page, "dest.picker.title", "dt", "tp", "m");
+    public Screen Picker(int page) => Listing(page, "dest.picker.title", "dest.picker.pick", "dt", "tp", "m");
 
     private static int PageOf(string? text)
         => int.TryParse(text, NumberStyles.None, CultureInfo.InvariantCulture, out var page) ? page : 0;
@@ -143,7 +143,7 @@ public sealed class DestinationScreens
     private static InlineKeyboardButton[] Row(string text, string action, params string[] args)
         => [InlineKeyboardButton.WithCallbackData(text, CallbackData.Format(action, args))];
 
-    private Screen Listing(int page, string titleKey, string pick, string pageAction, string backAction)
+    private Screen Listing(int page, string titleKey, string pickKey, string pick, string pageAction, string backAction)
     {
         var destinations = _settings.Current.Destinations;
         var shown = Paging.Page(destinations, page);
@@ -165,6 +165,11 @@ public sealed class DestinationScreens
         }
 
         rows.Add([Button("menu.back", backAction)]);
+        if (destinations.Length > 0)
+        {
+            html.Append("\n\n").Append(_formatter.Escape(_strings.Get(pickKey)));
+        }
+
         return new Screen(html.ToString(), new InlineKeyboardMarkup(rows));
     }
 
@@ -188,11 +193,22 @@ public sealed class DestinationScreens
             html.Append("\n\n").Append(note);
         }
 
+        var pauseKey = d.Enabled ? "dest.btn.pause" : "dest.btn.resume";
+        html.Append(ButtonGuide.Lines(
+            _strings,
+            _formatter,
+            ("dest.btn.events", "dest.btn.events.about"),
+            ("dest.btn.libraries", "dest.btn.libraries.about"),
+            ("dest.btn.silent", "dest.btn.silent.about"),
+            ("dest.btn.test", "dest.btn.test.about"),
+            ("dest.btn.check", "dest.btn.check.about"),
+            (pauseKey, pauseKey + ".about"),
+            ("dest.btn.remove", "dest.btn.remove.about")));
         var rows = new List<InlineKeyboardButton[]>
         {
             new[] { Button("dest.btn.events", "de", d.Id), Button("dest.btn.libraries", "dlb", d.Id, "0") },
             new[] { Button("dest.btn.silent", "dsg", d.Id), Button("dest.btn.test", "dt", d.Id) },
-            new[] { Button("dest.btn.check", "dc", d.Id), Button(d.Enabled ? "dest.btn.pause" : "dest.btn.resume", "dp", d.Id) },
+            new[] { Button("dest.btn.check", "dc", d.Id), Button(pauseKey, "dp", d.Id) },
             new[] { Button("dest.btn.remove", "dr", d.Id) },
             new[] { Button("menu.back", "dl", "0") },
         };
@@ -228,7 +244,7 @@ public sealed class DestinationScreens
         var rows = EventPicker.ToggleRows(_strings, group, d.Events, key => CallbackData.Format("det", d.Id, key));
         rows.Add([Button("menu.back", "de", d.Id)]);
         var name = Icons.Heading(_strings, _formatter, "events.group." + group);
-        return new Screen(Heading("dest.events.title", d) + "\n\n<b>" + name + "</b>", new InlineKeyboardMarkup(rows));
+        return new Screen(Heading("dest.events.title", d) + "\n\n<b>" + name + "</b>\n\n" + _formatter.Escape(_strings.Get("dest.events.pick")), new InlineKeyboardMarkup(rows));
     }
 
     private Screen Libraries(string id, int page)
@@ -244,6 +260,12 @@ public sealed class DestinationScreens
         foreach (var gone in removed)
         {
             html.Append('\n').Append(_formatter.Escape(_strings.Get("dest.libraries.removed", ("id", gone))));
+        }
+
+        html.Append(ButtonGuide.Lines(_strings, _formatter, ("dest.libraries.all", "dest.libraries.all.about")));
+        if (folders.Count > 0)
+        {
+            html.Append("\n\n").Append(_formatter.Escape(_strings.Get("dest.libraries.pick")));
         }
 
         var all = Button("dest.libraries.all", "dlt", d.Id, "all");
@@ -262,7 +284,7 @@ public sealed class DestinationScreens
             return Gone();
         }
 
-        var html = Heading("dest.silent.title", d) + "\n\n" + _strings.Get("dest.silent.hint");
+        var html = Heading("dest.silent.title", d) + "\n\n" + _strings.Get("dest.silent.hint") + "\n\n" + _formatter.Escape(_strings.Get("dest.silent.pick"));
         var rows = EventCatalog.Groups
             .Select(g => Row((d.SilentGroups.Contains(g, StringComparer.Ordinal) ? "🔕" : "🔔") + " " + _strings.Get("groups." + g), "dsgt", d.Id, g))
             .ToList();
@@ -277,7 +299,8 @@ public sealed class DestinationScreens
             return Gone();
         }
 
-        var html = "<b>" + _formatter.Escape(d.Title) + "</b>\n\n" + _formatter.Escape(_strings.Get("dest.remove.ask"));
+        var html = "<b>" + _formatter.Escape(d.Title) + "</b>\n\n" + _formatter.Escape(_strings.Get("dest.remove.ask"))
+            + ButtonGuide.Lines(_strings, _formatter, ("dest.btn.remove", "dest.remove.only.about"), ("dest.btn.removeLeave", "dest.btn.removeLeave.about"), ("dest.btn.cancel", "dest.btn.cancel.about"));
         var rows = new List<InlineKeyboardButton[]>
         {
             new[] { Button("dest.btn.remove", "drx", d.Id, "0"), Button("dest.btn.removeLeave", "drx", d.Id, "1") },

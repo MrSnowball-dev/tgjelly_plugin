@@ -134,7 +134,10 @@ public sealed class DetectedChatFlow
         }
 
         rows.Add([Buttons.Callback(_strings, "menu.back", CallbackData.Format("m"))]);
-        var html = "<b>" + Icons.Heading(_strings, _formatter, "detected.title") + "</b>\n\n" + string.Join('\n', lines);
+        var guide = ButtonGuide.Block(
+            ButtonGuide.Line(_formatter, _strings.Get("detected.setUp", ("title", "…")), _strings.Get("detected.setUp.about")),
+            ButtonGuide.Line(_formatter, _strings.Get("detected.dismiss", ("title", "…")), _strings.Get("detected.dismiss.about")));
+        var html = "<b>" + Icons.Heading(_strings, _formatter, "detected.title") + "</b>\n\n" + string.Join('\n', lines) + guide;
         return new Screen(html, new InlineKeyboardMarkup(rows));
     }
 

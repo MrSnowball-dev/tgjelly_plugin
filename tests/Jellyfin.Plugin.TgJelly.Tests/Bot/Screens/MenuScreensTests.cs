@@ -40,6 +40,21 @@ public class MenuScreensTests
         Assert.StartsWith("<b><tg-emoji emoji-id=\"5875271289605722323\">🏠</tg-emoji> Menu</b>", screen.Html, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void MainMenu_ExplainsEachButton()
+    {
+        var plain = _menus.Main(2, 0).Html;
+        Assert.Contains("<b>Destinations (2)</b> — see and change the chats I send to", plain, StringComparison.Ordinal);
+        Assert.Contains("<b>Add destination</b> — send notifications to another channel, group or chat", plain, StringComparison.Ordinal);
+        Assert.Contains("<b>Settings</b> — message style, update checks and the public URL", plain, StringComparison.Ordinal);
+        Assert.Contains("<b>Status</b> — connection, destination health and recent errors", plain, StringComparison.Ordinal);
+        Assert.DoesNotContain("Chats added outside setup", plain, StringComparison.Ordinal);
+
+        var withDetected = _menus.SetUp(2, 1).Html;
+        Assert.Contains("<b>Chats added outside setup (1)</b> — chats someone added me to outside setup; set them up or dismiss them", withDetected, StringComparison.Ordinal);
+        Assert.Contains("<b>Status</b> — ", withDetected, StringComparison.Ordinal);
+    }
+
     private static string[] Labels(Screen screen)
         => screen.Buttons!.InlineKeyboard.SelectMany(r => r).Select(b => b.Text).ToArray();
 }

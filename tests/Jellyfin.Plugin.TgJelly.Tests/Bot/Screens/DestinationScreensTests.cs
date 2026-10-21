@@ -383,6 +383,102 @@ public sealed class DestinationScreensTests : IDisposable, IAsyncLifetime
         Assert.Equal(["1|dt|" + a.Id, "1|dt|" + b.Id, "1|m"], data);
     }
 
+    [Fact]
+    public async Task DestinationList_SaysWhatTappingDoes()
+    {
+        _h.AddDestination(-1001);
+        for (var i = 2; i <= 10; i++)
+        {
+            _h.AddDestination(-1000 - i);
+        }
+
+        await Click("1|dl|0");
+
+        var text = (string)LastEdit().Body["text"]!;
+        Assert.Contains("Tap a destination to open it.", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("<b>‹ Prev</b>", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("<b>Next ›</b>", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("<b>Back</b>", text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task TestPicker_SaysWhatTappingDoes()
+    {
+        _h.AddDestination(-1001);
+
+        await _rig.Deliver(TelegramFixtures.Update("private_text", ("text", "/test")));
+
+        Assert.Contains("Tap a destination to send it a test message.", (string)_h.Api.CallsTo("sendMessage").Last().Body["text"]!, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Detail_ExplainsEachButton()
+    {
+        var d = _h.AddDestination(-1001);
+
+        await Click("1|d|" + d.Id);
+
+        var edit = LastEdit();
+        edit.Explains("Events", "Libraries", "Silent groups", "Send test", "Check again", "Pause", "Remove");
+        var text = (string)edit.Body["text"]!;
+        Assert.Contains("<b>Pause</b> — stop sending here for now; nothing is deleted", text, StringComparison.Ordinal);
+        Assert.Contains("<b>Remove</b> — stop sending here and forget this chat", text, StringComparison.Ordinal);
+        Assert.Contains("<b>Check again</b> — check again that I can still post here", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("<b>Back</b>", text, StringComparison.Ordinal);
+
+        await Click("1|dp|" + d.Id);
+        Assert.Contains("<b>Resume</b> — start sending here again", (string)LastEdit().Body["text"]!, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ConfirmRemove_ExplainsEachChoice()
+    {
+        var d = _h.AddDestination(-1001);
+
+        await Click("1|dr|" + d.Id);
+
+        var text = (string)LastEdit().Body["text"]!;
+        Assert.Contains("<b>Remove</b> — forget this chat; I stay in it", text, StringComparison.Ordinal);
+        Assert.Contains("<b>Remove and leave</b> — forget this chat and leave it", text, StringComparison.Ordinal);
+        Assert.Contains("<b>Cancel</b> — keep this destination", text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task EventGroup_SaysWhatTappingDoes()
+    {
+        var d = _h.AddDestination(-1001);
+
+        await Click("1|deg|" + d.Id + "|media");
+
+        Assert.EndsWith("\n\nTap an event to switch it on (✅) or off (▫️).", (string)LastEdit().Body["text"]!, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Libraries_ExplainsAllAndTheSwitches()
+    {
+        var d = _h.AddDestination(-1001);
+        _rig.Library.VirtualFolders.Add(new LibraryRef(Guid.NewGuid(), "Movies", "movies"));
+
+        await Click("1|dlb|" + d.Id + "|0");
+
+        var edit = LastEdit();
+        edit.Explains("All libraries");
+        var text = (string)edit.Body["text"]!;
+        Assert.Contains("<b>All libraries</b> — post new media from every library", text, StringComparison.Ordinal);
+        Assert.Contains("Tap a library to include it (✅) or leave it out (▫️).", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("<b>Movies</b>", text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task SilentGroups_SaysWhatTappingDoes()
+    {
+        var d = _h.AddDestination(-1001);
+
+        await Click("1|dsg|" + d.Id);
+
+        Assert.Contains("Tap a group to switch it between 🔔 with sound and 🔕 silent.", (string)LastEdit().Body["text"]!, StringComparison.Ordinal);
+    }
+
     private async Task Click(string data) => await _rig.Deliver(TelegramFixtures.Update("callback_query", ("data", data), ("message_id", "55")));
 
     private async Task<string> ClickText(string data)

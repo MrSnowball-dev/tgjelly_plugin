@@ -54,12 +54,28 @@ public sealed class ManagerNotifierTests : IDisposable
         var calls = _h.Api.CallsTo("sendMessage").ToList();
         Assert.Equal([11L, 12L], calls.Select(c => (long)c.Body["chat_id"]!).Order());
         var text = (string)calls[0].Body["text"]!;
-        Assert.Equal("⚠️ <b>Chat -1001</b>: Forbidden: bot &lt;was&gt; kicked", text);
+        Assert.StartsWith("⚠️ <b>Chat -1001</b>: Forbidden: bot &lt;was&gt; kicked", text, StringComparison.Ordinal);
         Assert.Equal("Html", (string)calls[0].Body["parse_mode"]!);
         var buttons = calls[0].Body["reply_markup"]!["inline_keyboard"]!.AsArray().SelectMany(r => r!.AsArray()).ToList();
         Assert.Equal(["Open", "Check again"], buttons.Select(b => (string)b!["text"]!));
         Assert.Equal([CallbackData.Format("d", d.Id), CallbackData.Format("dc", d.Id)], buttons.Select(b => (string)b!["callback_data"]!));
         Assert.True(_health.Get(d.Id).Notified);
+    }
+
+    [Fact]
+    public async Task ProblemNotification_ExplainsOpenAndCheck()
+    {
+        var d = _h.AddDestination(-1001);
+        _memory.TouchManager(11);
+        _health.MarkProblem(d.Id, HealthStatus.Lost, "kicked");
+
+        await _notifier.NotifyAsync(TestContext.Current.CancellationToken);
+
+        var call = Assert.Single(_h.Api.CallsTo("sendMessage"));
+        call.Explains("Open", "Check again");
+        var text = (string)call.Body["text"]!;
+        Assert.Contains("<b>Open</b> — open this destination's settings", text, StringComparison.Ordinal);
+        Assert.Contains("<b>Check again</b> — check again that I can still post here", text, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -111,7 +127,7 @@ public sealed class ManagerNotifierTests : IDisposable
 
         await _notifier.NotifyAsync(TestContext.Current.CancellationToken);
 
-        Assert.Equal("⚠️ <b>Chat -1001</b>: ⛔ Needs permissions", (string)_h.Api.CallsTo("sendMessage").Single().Body["text"]!);
+        Assert.StartsWith("⚠️ <b>Chat -1001</b>: ⛔ Needs permissions\n\n<b>Open</b> — ", (string)_h.Api.CallsTo("sendMessage").Single().Body["text"]!, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -222,7 +238,7 @@ public sealed class ManagerNotifierTests : IDisposable
 
         await _notifier.NotifyAsync(TestContext.Current.CancellationToken);
 
-        Assert.Equal("⚠️ <b>Chat -1001</b>: " + new string('x', 299) + "😀…", (string)_h.Api.CallsTo("sendMessage").Single().Body["text"]!);
+        Assert.StartsWith("⚠️ <b>Chat -1001</b>: " + new string('x', 299) + "😀…\n\n<b>Open</b> — ", (string)_h.Api.CallsTo("sendMessage").Single().Body["text"]!, StringComparison.Ordinal);
     }
 
     [Fact]

@@ -7,6 +7,7 @@ public static class StringKeys
 {
     public static readonly string[] All =
     [
+        "menu.destinations.about", "menu.add.about", "menu.settings.about", "menu.status.about", "menu.detected.about", "menu.destinations.pick", "dest.picker.pick", "dest.btn.events.about", "dest.btn.libraries.about", "dest.btn.silent.about", "dest.btn.test.about", "dest.btn.check.about", "dest.btn.pause.about", "dest.btn.resume.about", "dest.btn.remove.about", "dest.remove.only.about", "dest.btn.removeLeave.about", "dest.btn.cancel.about", "dest.events.pick", "dest.libraries.all.about", "dest.libraries.pick", "dest.silent.pick", "settings.messages.about", "settings.updates.about", "settings.url.about", "settings.messages.pick", "settings.updates.enabled.about", "settings.updates.mode.SameMajor.about", "settings.updates.mode.AnyNewer.about", "settings.url.use.about", "settings.url.type.about", "settings.url.clear.about", "detected.setUp.about", "detected.dismiss.about", "advanced.topic.about", "advanced.dashboard.about", "onboard.addAnother.about", "onboard.menu.about", "notify.btn.open.about",
         "connection.NoToken", "connection.WaitingForStartup", "connection.Incompatible", "connection.WaitingForInstance",
         "connection.Connecting", "connection.Connected", "connection.TokenRejected", "connection.WebhookConflict",
         "connection.ConflictingInstance", "connection.Unreachable", "connection.InvalidBaseUrl",
