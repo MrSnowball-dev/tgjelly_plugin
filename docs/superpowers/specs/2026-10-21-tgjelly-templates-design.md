@@ -135,7 +135,7 @@ This is the core acceptance test, and the old layouts are only deleted after it 
 The preview renders Telegram HTML as formatted text, which v0.2 did not do: it showed escaped source.
 
 - The output has already passed `TelegramHtmlValidator`'s whitelist.
-- The dashboard still builds the preview by **parsing the whitelist itself** and creating DOM elements, never by assigning the output to `innerHTML`. Anything outside the whitelist is shown as text.
+- The dashboard still **parses the output itself** and re-emits only whitelisted tags, with attributes it writes itself and all text escaped again. The template output never reaches `innerHTML` as it came from the server. Anything outside the whitelist is shown as text.
 - How each tag renders:
   - `b`/`strong`, `i`/`em`, `u`/`ins`, `s`/`strike`/`del`, `code`, `pre` → the matching elements;
   - `tg-spoiler`/`span.tg-spoiler` → a blurred span that reveals on click;
