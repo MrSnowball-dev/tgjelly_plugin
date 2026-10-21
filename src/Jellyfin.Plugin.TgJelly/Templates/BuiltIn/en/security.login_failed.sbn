@@ -1,0 +1,9 @@
+🔐 <b>Wrong password for {{ user }}</b>
+{{- if attempts > 1 }}
+×{{ attempts_text }} from {{ ip_count_text }} {{ plural ip_count "IP" "IPs" }} · last {{ ip }} · {{ client }} · {{ at_html }}
+{{- else }}
+{{ if ip }}{{ ip }} · {{ end }}{{ if client }}{{ client }} · {{ end }}{{ if device }}{{ device }} · {{ end }}{{ at_html }}
+{{- end }}
+{{- if locked }}
+🔒 locked
+{{- end -}}

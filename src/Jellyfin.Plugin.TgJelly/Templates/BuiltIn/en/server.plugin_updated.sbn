@@ -1,0 +1,5 @@
+⚙️ <b>Plugin updated: {{ plugin }} {{ version }}</b>
+{{- if changelog }}
+
+<blockquote expandable>{{ changelog }}</blockquote>
+{{- end -}}

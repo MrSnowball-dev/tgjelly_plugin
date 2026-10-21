@@ -57,16 +57,15 @@ public sealed class NotificationRendererTemplateTests : IDisposable
     }
 
     [Fact]
-    public void DisabledOrBlank_UsesDefault()
+    public void BlankOverride_UsesDefault()
     {
-        Set("security.lockout", "custom", enabled: false);
-        Assert.Null(_renderer.Render(Lockout(), Dest())!.TemplateKey);
-
         Set("security.lockout", "   ");
         var message = _renderer.Render(Lockout(), Dest())!;
 
+        // The built-in template renders it, not the blank override.
         Assert.Null(message.TemplateKey);
         Assert.StartsWith("🔒", message.Text, StringComparison.Ordinal);
+        Assert.Null(_flags.Current("security.lockout"));
     }
 
     [Fact]

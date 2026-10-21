@@ -74,4 +74,13 @@ public class LayoutCorpusTests
         Assert.NotEmpty(media);
         Assert.All(media, c => Assert.True(TemplateRenderer.HasBuiltIn(c.Model.EventKey), c.Name));
     }
+
+    [Fact]
+    public void Templates_CoverEveryAlertCase()
+    {
+        var alerts = LayoutCorpus.Cases.Where(c => c.Model.Kind == RenderKind.Alert).ToList();
+
+        Assert.NotEmpty(alerts);
+        Assert.All(alerts, c => Assert.True(TemplateRenderer.HasBuiltIn(c.Model.EventKey), c.Name));
+    }
 }

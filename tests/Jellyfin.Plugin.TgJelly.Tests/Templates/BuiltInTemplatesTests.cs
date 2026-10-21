@@ -23,6 +23,27 @@ public sealed class BuiltInTemplatesTests
         Assert.Contains(key, BuiltInTemplates.Keys("en"));
     }
 
+    [Theory]
+    [InlineData("security.login_failed")]
+    [InlineData("security.lockout")]
+    [InlineData("security.login_succeeded")]
+    [InlineData("security.user_created")]
+    [InlineData("security.user_deleted")]
+    [InlineData("security.password_changed")]
+    [InlineData("server.started")]
+    [InlineData("server.update_available")]
+    [InlineData("server.plugin_installed")]
+    [InlineData("server.plugin_updated")]
+    [InlineData("server.plugin_uninstalled")]
+    [InlineData("server.plugin_install_failed")]
+    [InlineData("server.task_failed")]
+    [InlineData("server.restart_pending")]
+    public void AlertKeys_Exist(string key)
+    {
+        Assert.False(string.IsNullOrWhiteSpace(BuiltInTemplates.Get(key, "en")));
+        Assert.Contains(key, BuiltInTemplates.Keys("en"));
+    }
+
     [Fact]
     public void UnknownLanguage_FallsBackToEn()
     {

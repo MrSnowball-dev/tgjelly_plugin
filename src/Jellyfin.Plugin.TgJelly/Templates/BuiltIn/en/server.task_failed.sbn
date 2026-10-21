@@ -1,0 +1,5 @@
+⚙️ <b>Task failed: {{ task }}</b>
+{{- if error }}
+
+<blockquote expandable>{{ error }}</blockquote>
+{{- end -}}

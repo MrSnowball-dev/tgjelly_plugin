@@ -1,0 +1,6 @@
+🔐 <b>{{ user }} signed in</b>
+{{ if client }}{{ client }}{{ end }}{{ if client && device }} · {{ end }}{{ if device }}{{ device }}{{ end }}
+{{- if ip }}
+🌐 {{ ip }}
+{{- end }}
+🕒 {{ at_html }}
