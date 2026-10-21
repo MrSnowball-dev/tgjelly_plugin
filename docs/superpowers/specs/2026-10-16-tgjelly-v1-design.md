@@ -144,7 +144,7 @@ These facts were checked against Jellyfin **v10.11.11** and **v12.2** server sou
 - F40. Access settings: Bot API 10.0 (2026-05-08) added `BotAccessSettings` (only selected users plus the owner can access the bot; up to 10 users). The API docs describe it only for managed bots. **The owner confirms that BotFather offers it for ordinary bots.** A bot cannot read its own access settings or find out who its owner is.
 - F41. Scriban ≥ 7.2.6 fixes the 2026 advisories. It is not a security boundary for reflected objects, so templates only get plain data. Relevant `TemplateContext` members: `LoopLimit`, `RecursiveLimit`, `ObjectRecursionLimit`, `LimitToString`, `OutputLimit` (int?, UTF-16 chars), `OnOutputLimit`/`OnStringLimit` (`ScriptLimitBehavior.Truncate|Throw`), `RegexTimeOut`, `StrictVariables`, `EnableRelaxedMemberAccess`, `CancellationToken`, and `virtual Write(SourceSpan, object?)`.
 - F42. `https://t.me/<bot>?startgroup=<payload>` and `?startchannel&admin=<rights>` open the client's chat chooser and add the bot, with the rights for a channel. The bot receives `my_chat_member` with `from` = the user who added it. `admin=` on `startgroup` asks for those rights for the bot (`manage_topics` for topic promotion).
-- F43 (unverified, §15 Q10). After a `startgroup` add, the client sends `/start@<bot> <payload>` into the group from that user, possibly even when the bot is already a member.
+- F43 (§15 Q10, confirmed by the owner 2026-10-21). After a `startgroup` add, the client sends `/start@<bot> <payload>` into the group from that user, also when the bot is already a member.
 
 ---
 
@@ -881,8 +881,8 @@ README.md (setup with screenshots, BotFather restriction, GitHub contact for upd
 - **CI fails** if a zip contains anything other than the three DLLs and `meta.json`, or if `tgjelly.html` lacks `data-role="page"` or contains `${`.
 
 ### 13.5 CI and distribution
-- **`ci.yml`** (push and PR): install .NET 9 and 10, build both frameworks, run unit tests on both, the web checks, package, then the integration smoke tests (§14.3).
-- **`release.yml`** (tag `v*`): everything above, then create a GitHub Release with both zips and commit the updated `manifest.json` to `gh-pages`.
+- **`ci.yml`** (PRs, pushes to `main`, manual runs): install .NET 9 and 10, build both frameworks, run unit tests on both, the web checks, package, then the integration smoke tests (§14.3). A change gets the full smoke matrix once, on its PR (and on a manual run). A push to `main` skips the smoke tests. Branch pushes without a PR run nothing.
+- **`release.yml`** (tag `v*`): first checks that `ci.yml` passed on `main` for the tagged commit, and stops if it didn't. Then it builds and packages the release zips and smoke-tests them on one image per track (10.11.11 and 12.2, without a BaseUrl). It then creates a GitHub Release with both zips and commits the updated `manifest.json` to `gh-pages`.
 - **Users add:** `https://mrsnowball-dev.github.io/tgjelly_plugin/manifest.json`.
 - ⚠️ **Prerequisite:** the repo is currently **private**. On a free plan, Pages and public release downloads need it to be public, so the owner makes it public before the first release.
 - **Local development:**
@@ -981,7 +981,7 @@ Recorded Bot API JSON for:
 They are parsed with Telegram.Bot and passed to `UpdateRouter`, FlowEngine and the classifier.
 
 ### 14.3 Integration smoke tests (CI; Docker)
-- **Matrix:** `jellyfin/jellyfin:10.11.0` and `10.11.11` with the 1.x zip; `12.0` and `12.2` with the 2.x zip. Each also runs a variant with BaseUrl `/jf`.
+- **Matrix** (`.github/smoke-matrix.json`): the latest image of each track, `jellyfin/jellyfin:10.11.11` with the 1.x zip and `12.2` with the 2.x zip, each also with BaseUrl `/jf`, plus `12.2` with the 1.x zip (F8). The owner narrowed it to these images on 2026-10-21; 10.11.0 and 12.0 are no longer tested. A release runs only the entries marked `release` (§13.5).
 - **Setup:**
   1. Unpack the zip into the container's `plugins/TgJelly_<ver>/` and start the container with `TGJELLY_BOT_API_BASE_URL=http://stub:8081`.
   2. Complete the startup wizard through `/Startup/*` and authenticate.
@@ -1013,7 +1013,7 @@ They are parsed with Telegram.Bot and passed to `UpdateRouter`, FlowEngine and t
   - (b) members and subscribers who aren't on the allow-list see its posts,
   - (c) an unlisted user's `/start` produces no update.
 - **Inline add links** on Android, iOS and Desktop: channel, group (with and without media permissions for members), forum (General, a created topic, the "Allow topic creation" promotion, an existing topic via link), and a chat the bot is already in.
-- **Already a member:** does a group receive `/start@bot add` when the bot is already a member (Q10)?
+- **Already a member:** does a group receive `/start@bot add` when the bot is already a member (Q10)? Yes (owner, 2026-10-21).
 - **Posters:** different sizes and formats, including a > 10 MB file falling back to text.
 - **Buttons:** with a LAN IP public URL and with a public HTTPS URL.
 - **Conflicts and proxies:** a second app polling with the same token; a webhook set by another app (`[Take over]`); SOCKS5 and HTTP proxies.
@@ -1047,6 +1047,7 @@ Implementation follows test-driven development: write a failing test first for e
 9. The exact Bot API descriptions of an HTML parse error and of "can't initiate conversation", recorded into Appendix A and the fixtures. The classifier already matches several variants.
    **Partly answered (real bot, 2026-10-19):** the parse error is `Bad Request: can't parse entities: Can't find end tag corresponding to start tag "b"`, which classifier row 6 matches. "Can't initiate conversation" needs a user who knows the bot but never pressed Start; a user ID the bot has never seen gives `Bad Request: chat not found` instead, which row 2 also treats as Lost.
 10. Does a group receive `/start@bot <payload>` from the adding user after a `startgroup` add, including when the bot is already a member (F43)? If clients don't send it, nothing breaks: the detected-chat rows on the prompt remain.
+    **Answered (owner, 2026-10-21, v0.2 on real phones):** yes, the `/start` is posted, also into a group the bot is already in. The inline add flow and the topic creation step work as designed.
 
 ---
 

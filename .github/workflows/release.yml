@@ -15,11 +15,25 @@ jobs:
   meta:
     name: Read the tag
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
     outputs:
       release: ${{ steps.tag.outputs.release }}
       changelog: ${{ steps.tag.outputs.changelog }}
     steps:
       - uses: actions/checkout@v7
+
+      # The full suite ran on the PR and CI ran again on main, so a release only smoke-tests its own zips (ci.yml).
+      - name: The tagged commit passed CI on main
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          passed=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?branch=main&event=push&status=success&head_sha=$GITHUB_SHA" --jq .total_count)
+          if [ "$passed" -eq 0 ]; then
+            echo "::error::CI on main has not passed for $GITHUB_SHA. Tag a commit on main after its CI run succeeds, or re-run this workflow once it has."
+            exit 1
+          fi
 
       - name: Release number and annotated-tag message
         id: tag

@@ -1,0 +1,7 @@
+[
+  {"image": "jellyfin/jellyfin:10.11.11", "track": 1, "args": "--stub", "release": true},
+  {"image": "jellyfin/jellyfin:10.11.11", "track": 1, "args": "--stub --base-url /jf"},
+  {"image": "jellyfin/jellyfin:12.2", "track": 2, "args": "--stub", "release": true},
+  {"image": "jellyfin/jellyfin:12.2", "track": 2, "args": "--stub --base-url /jf"},
+  {"image": "jellyfin/jellyfin:12.2", "track": 1, "args": "--expect-incompatible"}
+]
