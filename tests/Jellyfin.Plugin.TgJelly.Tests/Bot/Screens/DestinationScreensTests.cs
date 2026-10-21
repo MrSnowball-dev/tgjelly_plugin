@@ -100,7 +100,7 @@ public sealed class DestinationScreensTests : IDisposable, IAsyncLifetime
             IconIds(LastEdit()));
         Assert.StartsWith("<b>" + d.Title, (string)LastEdit().Body["text"]!, StringComparison.Ordinal);
 
-        await Click("1|de|" + d.Id + "|0");
+        await Click("1|de|" + d.Id);
         Assert.StartsWith("<b><tg-emoji emoji-id=\"" + Icons.Bell + "\">🔔</tg-emoji> Events</b>", (string)LastEdit().Body["text"]!, StringComparison.Ordinal);
     }
 
@@ -110,7 +110,7 @@ public sealed class DestinationScreensTests : IDisposable, IAsyncLifetime
         var d = _h.AddDestination(-1001);
         _rig.Library.VirtualFolders.Add(new LibraryRef(Guid.NewGuid(), "Movies", "movies"));
 
-        await Click("1|de|" + d.Id + "|0");
+        await Click("1|deg|" + d.Id + "|media");
         var events = IconIds(LastEdit());
         await Click("1|dlb|" + d.Id + "|0");
         var libraries = IconIds(LastEdit());
@@ -119,6 +119,91 @@ public sealed class DestinationScreensTests : IDisposable, IAsyncLifetime
         Assert.All(events[..^1], Assert.Null);
         Assert.Equal(Icons.Back, events[^1]);
         Assert.Equal([Icons.Layers, null, Icons.Back], libraries);
+    }
+
+    [Fact]
+    public async Task EventGroups_CarryTheirIcons_AndTheGroupHeadingShowsOne()
+    {
+        var d = ThreeEvents();
+
+        await Click("1|de|" + d.Id);
+        Assert.Equal([Icons.Video, Icons.Lock, Icons.Server, Icons.Back], IconIds(LastEdit()));
+
+        await Click("1|deg|" + d.Id + "|server");
+        Assert.Contains("<b><tg-emoji emoji-id=\"" + Icons.Server + "\">🖥</tg-emoji> Server</b>", (string)LastEdit().Body["text"]!, StringComparison.Ordinal);
+    }
+
+    private Destination ThreeEvents()
+    {
+        var d = _h.AddDestination(-1001);
+        _h.Settings.Update(null, c => c.Destinations.First(x => x.Id == d.Id).Events = ["media.movie", "media.episodes", "server.started"]);
+        return d;
+    }
+
+    [Fact]
+    public async Task Events_ShowsOneButtonPerGroup_WithCounts()
+    {
+        var d = ThreeEvents();
+
+        await Click("1|de|" + d.Id);
+
+        var edit = LastEdit();
+        Assert.Equal(["Media 2/5", "Security 0/6", "Server 1/8", "Back"], Labels(edit));
+        Assert.Equal(["1|deg|" + d.Id + "|media", "1|deg|" + d.Id + "|security", "1|deg|" + d.Id + "|server", "1|d|" + d.Id], Data(edit));
+        var text = (string)edit.Body["text"]!;
+        Assert.Contains("Pick a group to switch its events.", text, StringComparison.Ordinal);
+        edit.Explains("Media", "Security", "Server");
+        Assert.Contains("Media</b> — new movies, episodes, albums, music videos and books", text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task EventGroup_ShowsOnlyItsSwitches_AndBackToTheGroups()
+    {
+        var d = ThreeEvents();
+
+        await Click("1|deg|" + d.Id + "|security");
+
+        var edit = LastEdit();
+        var labels = Labels(edit);
+        Assert.Equal(7, labels.Length);
+        Assert.All(labels.Take(6), l => Assert.StartsWith("▫️ ", l, StringComparison.Ordinal));
+        Assert.Equal(EventCatalog.AllKeys.Where(k => k.StartsWith("security.", StringComparison.Ordinal)).Select(k => "1|det|" + d.Id + "|" + k), Data(edit).Take(6));
+        Assert.Equal("1|de|" + d.Id, Data(edit)[^1]);
+    }
+
+    [Fact]
+    public async Task EventSwitch_StaysOnItsGroup_AndRecomputesThePreset()
+    {
+        var d = ThreeEvents();
+
+        await Click("1|det|" + d.Id + "|server.task_failed");
+
+        var edit = LastEdit();
+        Assert.Equal(9, Labels(edit).Length);
+        Assert.StartsWith("✅ ", Labels(edit)[Data(edit).ToList().IndexOf("1|det|" + d.Id + "|server.task_failed")], StringComparison.Ordinal);
+        var saved = _h.Settings.Current.Destinations.Single();
+        Assert.Contains("server.task_failed", saved.Events);
+        Assert.Equal(PresetKind.Custom, saved.Preset);
+    }
+
+    [Fact]
+    public async Task OldPagedEventsButton_OpensTheGroups()
+    {
+        var d = ThreeEvents();
+
+        await Click("1|de|" + d.Id + "|1");
+
+        Assert.Equal(["Media 2/5", "Security 0/6", "Server 1/8", "Back"], Labels(LastEdit()));
+    }
+
+    [Fact]
+    public async Task UnknownGroup_OpensTheGroups()
+    {
+        var d = ThreeEvents();
+
+        await Click("1|deg|" + d.Id + "|nope");
+
+        Assert.Equal(["Media 2/5", "Security 0/6", "Server 1/8", "Back"], Labels(LastEdit()));
     }
 
     [Fact]
@@ -313,6 +398,9 @@ public sealed class DestinationScreensTests : IDisposable, IAsyncLifetime
 
     private static string?[] IconIds(BotApiCall call)
         => [.. call.Body["reply_markup"]!["inline_keyboard"]!.AsArray().SelectMany(row => row!.AsArray()).Select(b => (string?)b!["icon_custom_emoji_id"])];
+
+    private static string[] Data(BotApiCall call)
+        => call.Body["reply_markup"]!["inline_keyboard"]!.AsArray().SelectMany(r => r!.AsArray()).Select(b => (string)b!["callback_data"]!).ToArray();
 
     private static string[] NavLabels(BotApiCall call)
         => Labels(call).Where(l => l is "‹ Prev" or "Next ›").ToArray();

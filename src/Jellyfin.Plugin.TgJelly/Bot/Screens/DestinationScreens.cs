@@ -82,9 +82,12 @@ public sealed class DestinationScreens
             case "d":
                 return Detail(id);
             case "de":
-                return Events(id, PageOf(arg));
+                return Events(id);
+            case "deg":
+                return EventGroup(id, arg);
             case "det":
-                return Events(id, ToggleEvent(id, arg));
+                ToggleEvent(id, arg);
+                return EventCatalog.IsKnown(arg) ? EventGroup(id, EventCatalog.GroupOf(arg)) : Events(id);
             case "dlb":
                 return Libraries(id, PageOf(arg));
             case "dlt":
@@ -187,7 +190,7 @@ public sealed class DestinationScreens
 
         var rows = new List<InlineKeyboardButton[]>
         {
-            new[] { Button("dest.btn.events", "de", d.Id, "0"), Button("dest.btn.libraries", "dlb", d.Id, "0") },
+            new[] { Button("dest.btn.events", "de", d.Id), Button("dest.btn.libraries", "dlb", d.Id, "0") },
             new[] { Button("dest.btn.silent", "dsg", d.Id), Button("dest.btn.test", "dt", d.Id) },
             new[] { Button("dest.btn.check", "dc", d.Id), Button(d.Enabled ? "dest.btn.pause" : "dest.btn.resume", "dp", d.Id) },
             new[] { Button("dest.btn.remove", "dr", d.Id) },
@@ -196,21 +199,36 @@ public sealed class DestinationScreens
         return new Screen(html.ToString(), new InlineKeyboardMarkup(rows));
     }
 
-    private Screen Events(string id, int page)
+    private Screen Events(string id)
     {
         if (Find(id) is not { } d)
         {
             return Gone();
         }
 
-        var keys = EventCatalog.AllKeys;
-        var shown = Paging.Page(keys, page);
-        var rows = shown
-            .Select(k => Row(Mark(d.Events.Contains(k, StringComparer.Ordinal)) + " " + _strings.Get("dest.event." + k), "det", d.Id, k))
-            .ToList();
-        AddNav(rows, page, keys.Count, "de", d.Id);
+        var rows = EventPicker.GroupRows(_strings, d.Events, g => CallbackData.Format("deg", d.Id, g));
         rows.Add([Button("menu.back", "d", d.Id)]);
-        return new Screen(Heading("dest.events.title", d), new InlineKeyboardMarkup(rows));
+        var html = Heading("dest.events.title", d) + "\n\n" + _formatter.Escape(_strings.Get("events.choose"))
+            + ButtonGuide.Lines(_strings, _formatter, [.. EventCatalog.Groups.Select(g => ("events.group." + g, "events.group." + g + ".about"))]);
+        return new Screen(html, new InlineKeyboardMarkup(rows));
+    }
+
+    private Screen EventGroup(string id, string group)
+    {
+        if (Find(id) is not { } d)
+        {
+            return Gone();
+        }
+
+        if (!EventCatalog.Groups.Contains(group, StringComparer.Ordinal))
+        {
+            return Events(id);
+        }
+
+        var rows = EventPicker.ToggleRows(_strings, group, d.Events, key => CallbackData.Format("det", d.Id, key));
+        rows.Add([Button("menu.back", "de", d.Id)]);
+        var name = Icons.Heading(_strings, _formatter, "events.group." + group);
+        return new Screen(Heading("dest.events.title", d) + "\n\n<b>" + name + "</b>", new InlineKeyboardMarkup(rows));
     }
 
     private Screen Libraries(string id, int page)
@@ -329,12 +347,12 @@ public sealed class DestinationScreens
         return List(0);
     }
 
-    /// <summary>Flips an event and returns the page the event is on.</summary>
-    private int ToggleEvent(string id, string key)
+    /// <summary>Flips an event; an unknown key changes nothing.</summary>
+    private void ToggleEvent(string id, string key)
     {
         if (!EventCatalog.IsKnown(key))
         {
-            return 0;
+            return;
         }
 
         Change(id, d =>
@@ -345,7 +363,6 @@ public sealed class DestinationScreens
                 .Cast<PresetKind?>()
                 .FirstOrDefault(p => EventCatalog.Expand(p!.Value).SequenceEqual(d.Events, StringComparer.Ordinal)) ?? PresetKind.Custom;
         });
-        return Math.Max(0, EventCatalog.AllKeys.ToList().IndexOf(key)) / Paging.PageSize;
     }
 
     /// <summary>Flips a library, or clears the filter for <c>all</c>; returns page 0.</summary>

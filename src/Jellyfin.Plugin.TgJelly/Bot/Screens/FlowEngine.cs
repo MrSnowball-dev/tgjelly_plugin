@@ -81,8 +81,8 @@ public sealed class FlowEngine : IBotFlows, IDisposable
     /// </summary>
     public static IReadOnlyList<string> Actions { get; } =
     [
-        "m", "st", "dl", "noop", "d", "de", "det", "dlb", "dlt", "dsg", "dsgt", "dt", "dc", "dp", "dr", "drx", "tp",
-        "s", "sm", "smt", "su", "sut", "sum", "sp", "spu", "spt", "spc", "op", "oc", "ocd", "oa", "ot", "ox", "ol", "od",
+        "m", "st", "dl", "noop", "d", "de", "deg", "det", "dlb", "dlt", "dsg", "dsgt", "dt", "dc", "dp", "dr", "drx", "tp",
+        "s", "sm", "smt", "su", "sut", "sum", "sp", "spu", "spt", "spc", "op", "oc", "ocg", "ocd", "oa", "ot", "ox", "ol", "od",
         "tg", "tc", "te", "xl", "xs", "xd",
     ];
 
@@ -193,6 +193,9 @@ public sealed class FlowEngine : IBotFlows, IDisposable
                 break;
             case "oc":
                 await _onboarding.OnCustomToggleAsync(query, args.Count > 0 ? args[0] : string.Empty, ct).ConfigureAwait(false);
+                break;
+            case "ocg":
+                await _onboarding.OnCustomGroupAsync(query, args.Count > 0 ? args[0] : null, ct).ConfigureAwait(false);
                 break;
             case "tg":
             case "tc":

@@ -289,7 +289,7 @@ public sealed class OnboardingFlowTests : IDisposable, IAsyncLifetime
     }
 
     [Fact]
-    public async Task Custom_StartsWithNothingSelected_ThenCreatesWithTheChosenKeys()
+    public async Task Custom_OpensTheGroups_WithDone()
     {
         AddChannel();
         await Start();
@@ -298,20 +298,61 @@ public sealed class OnboardingFlowTests : IDisposable, IAsyncLifetime
 
         await Click("1|op|Custom", wizard);
 
-        var switches = _h.Api.CallsTo("editMessageText").Last();
-        Assert.Equal(wizard, (int)switches.Body["message_id"]!);
-        var labels = Labels(switches);
-        Assert.Equal(EventCatalog.AllKeys.Count + 1, labels.Length);
-        Assert.All(labels.Take(EventCatalog.AllKeys.Count), l => Assert.StartsWith("▫️", l, StringComparison.Ordinal));
-        Assert.Equal("1|ocd", Data(switches).Last());
+        var groups = _h.Api.CallsTo("editMessageText").Last();
+        Assert.Equal(wizard, (int)groups.Body["message_id"]!);
+        Assert.Equal(["Media 0/5", "Security 0/6", "Server 0/8", "Done"], Labels(groups));
+        Assert.Equal(["1|ocg|media", "1|ocg|security", "1|ocg|server", "1|ocd"], Data(groups));
+        groups.Explains("Media", "Security", "Server", "Done");
+    }
+
+    [Fact]
+    public async Task PresetScreen_ExplainsEachPreset()
+    {
+        AddChannel();
+        await Start();
+        await Shared(ChannelRequest());
+
+        Sent().Last().Explains("Everything", "New media", "Admin alerts", "Custom…");
+    }
+
+    [Fact]
+    public async Task CustomGroup_SwitchesStayInTheGroup_AndBackReturns()
+    {
+        AddChannel();
+        await Start();
+        await Shared(ChannelRequest());
+        var wizard = WizardId();
+        await Click("1|op|Custom", wizard);
+
+        await Click("1|ocg|media", wizard);
+        var media = _h.Api.CallsTo("editMessageText").Last();
+        Assert.Equal(6, Labels(media).Length);
+        Assert.Equal(["Back"], Labels(media)[5..]);
+        Assert.Equal("1|ocg", Data(media)[5]);
+
+        await Click("1|oc|media.movie", wizard);
+        var after = _h.Api.CallsTo("editMessageText").Last();
+        Assert.Equal(6, Labels(after).Length);
+        Assert.StartsWith("✅", Labels(after)[0], StringComparison.Ordinal);
+
+        await Click("1|ocg", wizard);
+        Assert.Equal("Media 1/5", Labels(_h.Api.CallsTo("editMessageText").Last())[0]);
+    }
+
+    [Fact]
+    public async Task CustomDone_CreatesWithTheChosenEvents()
+    {
+        AddChannel();
+        await Start();
+        await Shared(ChannelRequest());
+        var wizard = WizardId();
+        await Click("1|op|Custom", wizard);
 
         await Click("1|oc|server.started", wizard);
         await Click("1|oc|media.movie", wizard);
         await Click("1|oc|security.lockout", wizard);
         await Click("1|oc|security.lockout", wizard);
-        Assert.Equal(2, Labels(_h.Api.CallsTo("editMessageText").Last()).Count(l => l.StartsWith('✅')));
         Assert.Empty(_h.Settings.Current.Destinations);
-
         await Click("1|ocd", wizard);
 
         var destination = Assert.Single(_h.Settings.Current.Destinations);
@@ -333,7 +374,7 @@ public sealed class OnboardingFlowTests : IDisposable, IAsyncLifetime
         Assert.Equal(2, _h.Api.CallsTo("getChatMember").Count());
         var screen = Sent().Last();
         Assert.StartsWith("<b>" + existing.Title + "</b> is already set up", (string)screen.Body["text"]!, StringComparison.Ordinal);
-        Assert.Contains("1|de|" + existing.Id + "|0", Data(screen));
+        Assert.Contains("1|de|" + existing.Id, Data(screen));
         Assert.Equal([promptId, promptId + 1], Deleted());
         Assert.Null(_rig.Memory.GetFlow(Manager));
         Assert.Empty(Sent(Channel));

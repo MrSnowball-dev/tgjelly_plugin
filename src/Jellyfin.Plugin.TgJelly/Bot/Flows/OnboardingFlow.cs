@@ -264,7 +264,7 @@ public sealed class OnboardingFlow
         if (kind == PresetKind.Custom)
         {
             flow.Params[EventsKey] = string.Empty;
-            await ShowCustomAsync(chatId, flow, ct).ConfigureAwait(false);
+            await ShowCustomAsync(chatId, flow, null, ct).ConfigureAwait(false);
             return;
         }
 
@@ -294,7 +294,26 @@ public sealed class OnboardingFlow
             flow.Params[EventsKey] = string.Join(',', EventCatalog.AllKeys.Where(k => k == key ? !on : selected.Contains(k, StringComparer.Ordinal)));
         }
 
-        await ShowCustomAsync(query.Message!.Chat.Id, flow, ct).ConfigureAwait(false);
+        await ShowCustomAsync(query.Message!.Chat.Id, flow, EventCatalog.IsKnown(key) ? EventCatalog.GroupOf(key) : null, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Handles a group button on the Custom wizard (<c>ocg</c>): opens that group's switches, or the groups without one.
+    /// </summary>
+    /// <param name="query">The button press.</param>
+    /// <param name="group">The event group, or <c>null</c> for the chooser.</param>
+    /// <param name="ct">Cancels the work.</param>
+    /// <returns>A task.</returns>
+    public async Task OnCustomGroupAsync(CallbackQuery query, string? group, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+        if (Wizard(query) is not { } flow || !flow.Params.ContainsKey(EventsKey))
+        {
+            await MenuExpiredAsync(query, ct).ConfigureAwait(false);
+            return;
+        }
+
+        await ShowCustomAsync(query.Message!.Chat.Id, flow, group, ct).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -608,15 +627,29 @@ public sealed class OnboardingFlow
         await _screens.ShowAsync(chatId, screen, wizardMessageId, ct).ConfigureAwait(false);
     }
 
-    private async Task ShowCustomAsync(long chatId, FlowState flow, CancellationToken ct)
+    private async Task ShowCustomAsync(long chatId, FlowState flow, string? group, CancellationToken ct)
     {
         var selected = Split(flow.Params[EventsKey]);
-        var rows = EventCatalog.AllKeys
-            .Select(k => new[] { InlineKeyboardButton.WithCallbackData(DestinationScreens.Mark(selected.Contains(k, StringComparer.Ordinal)) + " " + _strings.Get("dest.event." + k), CallbackData.Format("oc", k)) })
-            .ToList();
-        rows.Add([Button("onboard.customDone", "ocd")]);
-        var html = "<b>" + _formatter.Escape(flow.Params[TitleKey]) + "</b>\n" + _formatter.Escape(_strings.Get("onboard.preset"));
-        flow.WizardMessageId = await _screens.ShowAsync(chatId, new Screen(html, new InlineKeyboardMarkup(rows)), flow.WizardMessageId, ct).ConfigureAwait(false);
+        var title = "<b>" + _formatter.Escape(flow.Params[TitleKey]) + "</b>\n";
+        Screen screen;
+        if (group is not null && EventCatalog.Groups.Contains(group, StringComparer.Ordinal))
+        {
+            var rows = EventPicker.ToggleRows(_strings, group, selected, k => CallbackData.Format("oc", k));
+            rows.Add([Button("menu.back", "ocg")]);
+            screen = new Screen(title + "<b>" + Icons.Heading(_strings, _formatter, "events.group." + group) + "</b>", new InlineKeyboardMarkup(rows));
+        }
+        else
+        {
+            var rows = EventPicker.GroupRows(_strings, selected, g => CallbackData.Format("ocg", g));
+            rows.Add([Button("onboard.customDone", "ocd")]);
+            var guide = ButtonGuide.Lines(
+                _strings,
+                _formatter,
+                [.. EventCatalog.Groups.Select(g => ("events.group." + g, "events.group." + g + ".about")), ("onboard.customDone", "onboard.customDone.about")]);
+            screen = new Screen(title + _formatter.Escape(_strings.Get("events.choose")) + guide, new InlineKeyboardMarkup(rows));
+        }
+
+        flow.WizardMessageId = await _screens.ShowAsync(chatId, screen, flow.WizardMessageId, ct).ConfigureAwait(false);
         _memory.SaveFlow(chatId, flow);
     }
 
@@ -627,7 +660,14 @@ public sealed class OnboardingFlow
             new[] { Button("onboard.preset.everything", "op", nameof(PresetKind.Everything)), Button("onboard.preset.newMedia", "op", nameof(PresetKind.NewMedia)) },
             new[] { Button("onboard.preset.adminAlerts", "op", nameof(PresetKind.AdminAlerts)), Button("onboard.preset.custom", "op", nameof(PresetKind.Custom)) },
         };
-        var html = "<b>" + _formatter.Escape(title) + "</b>\n" + _formatter.Escape(_strings.Get("onboard.preset"));
+        var guide = ButtonGuide.Lines(
+            _strings,
+            _formatter,
+            ("onboard.preset.everything", "onboard.preset.everything.about"),
+            ("onboard.preset.newMedia", "onboard.preset.newMedia.about"),
+            ("onboard.preset.adminAlerts", "onboard.preset.adminAlerts.about"),
+            ("onboard.preset.custom", "onboard.preset.custom.about"));
+        var html = "<b>" + _formatter.Escape(title) + "</b>\n" + _formatter.Escape(_strings.Get("onboard.preset")) + guide;
         return new Screen(html, new InlineKeyboardMarkup(rows));
     }
 

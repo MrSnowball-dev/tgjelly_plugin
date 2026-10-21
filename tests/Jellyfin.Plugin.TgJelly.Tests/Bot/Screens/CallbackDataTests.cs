@@ -49,10 +49,10 @@ public class CallbackDataTests
                 rows[a] = [Id];
             }
 
-            foreach (var a in new[] { "de", "dlb" })
-            {
-                rows[a] = [Id, Page];
-            }
+            rows["de"] = [Id];
+            rows["dlb"] = [Id, Page];
+            rows["deg"] = [Id, "security"];
+            rows["ocg"] = ["security"];
 
             rows["det"] = [Id, LongestEvent];
             rows["dlt"] = [Id, LibraryId];

@@ -181,6 +181,9 @@ internal static partial class Icons
         ["detected.dismiss"] = Hide,
         ["notify.btn.open"] = Open,
         ["settings.messages"] = Palette,
+        ["events.group.media"] = Video,
+        ["events.group.security"] = Lock,
+        ["events.group.server"] = Server,
     };
 
     /// <summary>Icon and fallback emoji of each heading, by the heading's string key.</summary>
@@ -197,6 +200,9 @@ internal static partial class Icons
         ["dest.libraries.title"] = (Folder, "📁"),
         ["dest.silent.title"] = (BellOff, "🔕"),
         ["settings.messages.title"] = (Palette, "🎨"),
+        ["events.group.media"] = (Video, "🎬"),
+        ["events.group.security"] = (Lock, "🔐"),
+        ["events.group.server"] = (Server, "🖥"),
     };
 
     /// <summary>
