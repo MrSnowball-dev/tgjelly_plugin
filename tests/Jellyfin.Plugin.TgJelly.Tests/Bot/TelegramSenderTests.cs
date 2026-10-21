@@ -156,9 +156,83 @@ public sealed class TelegramSenderTests : System.IDisposable
     }
 
     [Fact]
-    public async Task OtherBadRequests_AreNotRetried()
+    public async Task RejectedIcons_LogOneWarning()
     {
-        _api.On("sendMessage", _ => FakeBotApi.Error(400, "Bad Request: chat not found"));
+        var ct = TestContext.Current.CancellationToken;
+        var logger = new ListLogger<TelegramSender>();
+        var message = FakeBotApi.Ok("""{"message_id":9,"date":0,"chat":{"id":42,"type":"private"}}""");
+        _api.OnSequence("sendMessage", FakeBotApi.Error(400, "Bad Request: custom emoji entities can't be used"), message);
+        var sender = new TelegramSender(_api.CreateClient(), logger);
+
+        await sender.SendTextAsync(WithIcon(), ct);
+        await sender.SendTextAsync(WithIcon(), ct);
+
+        Assert.Equal(1, logger.Count(Microsoft.Extensions.Logging.LogLevel.Warning));
+    }
+
+    [Fact]
+    public async Task UnrelatedBadRequest_WhoseStrippedRetrySucceeds_BlocksIcons()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var message = FakeBotApi.Ok("""{"message_id":9,"date":0,"chat":{"id":42,"type":"private"}}""");
+        _api.OnSequence("sendMessage", FakeBotApi.Error(400, "Bad Request: DOCUMENT_INVALID"), message, message);
+        var sender = Sender;
+
+        await sender.SendTextAsync(WithIcon(), ct);
+
+        var calls = _api.CallsTo("sendMessage").ToArray();
+        Assert.Equal(2, calls.Length);
+        Assert.Equal("<b>🏠 Menu</b>", (string)calls[1].Body["text"]!);
+        Assert.DoesNotContain("icon_custom_emoji_id", calls[1].Body["reply_markup"]!.ToJsonString(), System.StringComparison.Ordinal);
+
+        await sender.SendTextAsync(WithIcon(), ct);
+
+        var third = _api.CallsTo("sendMessage").ElementAt(2);
+        Assert.Equal("<b>🏠 Menu</b>", (string)third.Body["text"]!);
+    }
+
+    [Fact]
+    public async Task BadRequest_WhoseStrippedRetryAlsoFails_IsRethrown_AndDoesNotBlock()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        _api.OnSequence(
+            "sendMessage",
+            FakeBotApi.Error(400, "Bad Request: chat not found"),
+            FakeBotApi.Error(400, "Bad Request: chat not found again"),
+            FakeBotApi.Ok("""{"message_id":9,"date":0,"chat":{"id":42,"type":"private"}}"""));
+        var sender = Sender;
+
+        var ex = await Assert.ThrowsAsync<ApiRequestException>(() => sender.SendTextAsync(WithIcon(), ct));
+
+        Assert.Equal("Bad Request: chat not found again", ex.Message);
+        Assert.Equal(2, _api.CallsTo("sendMessage").Count());
+
+        await sender.SendTextAsync(WithIcon(), ct);
+
+        var third = _api.CallsTo("sendMessage").ElementAt(2);
+        Assert.Contains("tg-emoji", (string)third.Body["text"]!, System.StringComparison.Ordinal);
+        Assert.Contains("icon_custom_emoji_id", third.Body["reply_markup"]!.ToJsonString(), System.StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("Bad Request: message is not modified: specified new message content and reply markup are exactly the same")]
+    [InlineData("Bad Request: message to edit not found")]
+    [InlineData("Bad Request: message can't be edited")]
+    public async Task NotModifiedAndGoneEdits_AreNotRetried(string description)
+    {
+        _api.On("editMessageText", _ => FakeBotApi.Error(400, description));
+        var text = WithIcon();
+
+        await Assert.ThrowsAsync<ApiRequestException>(() =>
+            Sender.EditTextAsync(new MessageEdit(42, 5, text.Text, ParseMode.Html, text.Buttons), TestContext.Current.CancellationToken));
+
+        Assert.Single(_api.CallsTo("editMessageText"));
+    }
+
+    [Fact]
+    public async Task OtherErrorCodes_AreNotRetried()
+    {
+        _api.On("sendMessage", _ => FakeBotApi.Error(403, "Forbidden: bot was blocked by the user"));
 
         await Assert.ThrowsAsync<ApiRequestException>(() => Sender.SendTextAsync(WithIcon(), TestContext.Current.CancellationToken));
 

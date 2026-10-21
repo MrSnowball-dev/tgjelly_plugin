@@ -497,6 +497,27 @@ public sealed class OnboardingFlowTests : IDisposable, IAsyncLifetime
     }
 
     [Fact]
+    public async Task CheckingEditFails_ReportsFailure_WithTryAgain()
+    {
+        AddChannel();
+        await Start();
+        var prompt = WizardId();
+        _h.Api.OnSequence(
+            "editMessageText",
+            FakeBotApi.Error(429, "Too Many Requests: retry after 7", """{"retry_after":7}"""),
+            FakeBotApi.Ok("""{"message_id":1,"date":0,"chat":{"id":42,"type":"private"}}"""));
+
+        await Added(ChannelAdd, Channel);
+
+        var failure = Edits(prompt).Last();
+        Assert.StartsWith(_h.Strings.Get("token.unreachable"), (string)failure.Body["text"]!, StringComparison.Ordinal);
+        Assert.Equal(["Try again", "Advanced options"], Labels(failure));
+        var flow = _rig.Memory.GetFlow(Manager)!;
+        Assert.True(flow.Params.ContainsKey("failed"));
+        Assert.Equal(Num(Channel), flow.Params["chatId"]);
+    }
+
+    [Fact]
     public async Task Preset_Creates_SendsTheTest_AndEditsTheWizardToDone()
     {
         await ChooseChannel();

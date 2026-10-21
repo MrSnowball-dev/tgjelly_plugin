@@ -474,7 +474,141 @@ public sealed class TopicFlowTests : IDisposable, IAsyncLifetime
         Assert.Equal(edits, _h.Api.CallsTo("editMessageText").Count());
     }
 
+    [Fact]
+    public async Task FailureScreen_ExplainsGeneralAndAdvanced()
+    {
+        AddForum();
+        _h.Api.On("createForumTopic", _ => FakeBotApi.Error(400, "Bad Request: not enough rights to create a topic"));
+        await AskWhere();
+
+        await Click("1|tc", WizardId());
+
+        var failure = _h.Api.CallsTo("editMessageText").Last();
+        Assert.Equal(["General topic", "Advanced options"], Labels(failure));
+        failure.Explains("General topic", "Advanced options");
+        var text = (string)failure.Body["text"]!;
+        Assert.True(text.IndexOf("<b>General topic</b> — ", StringComparison.Ordinal) < text.IndexOf("<b>Advanced options</b> — ", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task FailureScreen_WithNoPickedChat_ExplainsOnlyAdvanced()
+    {
+        AddForum();
+        _h.Api.On("sendChatAction", _ => FakeBotApi.Error(400, "Bad Request: message thread not found"));
+        await Click("1|ol", 9);
+
+        await Text("https://t.me/c/5550001/9");
+
+        var failure = _h.Api.CallsTo("editMessageText").Last();
+        Assert.Equal(["Advanced options"], Labels(failure));
+        failure.Explains("Advanced options");
+        Assert.DoesNotContain("<b>General topic</b> — ", (string)failure.Body["text"]!, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task V01FlowCaughtMidPromotion_CreateProceeds(bool rights)
+    {
+        AddForum(topics: rights);
+        var flow = new FlowState { Screen = "onboard", WizardMessageId = 77 };
+        flow.Params["topic"] = "1";
+        flow.Params["chatId"] = Group.ToString(CultureInfo.InvariantCulture);
+        flow.Params["title"] = "Family";
+        flow.Params["kind"] = "Supergroup";
+        flow.Params["isForum"] = "1";
+        flow.Params["photosBlocked"] = "0";
+        flow.Params["creating"] = "1";
+        flow.Params["promotionRequest"] = "5";
+        _rig.Memory.SaveFlow(Manager, flow);
+
+        await Click("1|tc", 77);
+
+        var edit = _h.Api.CallsTo("editMessageText").Last();
+        Assert.Equal(77, (int)edit.Body["message_id"]!);
+        var after = _rig.Memory.GetFlow(Manager)!;
+        Assert.False(after.Params.ContainsKey("promotionRequest"));
+        if (rights)
+        {
+            Assert.Single(_h.Api.CallsTo("createForumTopic"));
+            Assert.Contains("What should I send there?", (string)edit.Body["text"]!, StringComparison.Ordinal);
+            Assert.Equal("101", after.Params["threadId"]);
+        }
+        else
+        {
+            Assert.Empty(_h.Api.CallsTo("createForumTopic"));
+            AssertPromotionScreen(edit);
+            Assert.True(TopicFlow.AwaitsPromotion(after));
+        }
+    }
+
+    [Fact]
+    public async Task JoinElsewhere_WhileThePromotionWaits_NotesItAndRecordsTheChat()
+    {
+        AddForum(topics: false);
+        await AskWhere();
+        var wizard = WizardId();
+        await Click("1|tc", wizard);
+
+        await Joined(Other);
+
+        var edit = _h.Api.CallsTo("editMessageText").Last();
+        Assert.Equal(wizard, (int)edit.Body["message_id"]!);
+        Assert.Contains("You changed my rights in", (string)edit.Body["text"]!, StringComparison.Ordinal);
+        Assert.True(_rig.Memory.IsDetected(Other));
+        Assert.True(TopicFlow.AwaitsPromotion(_rig.Memory.GetFlow(Manager)!));
+    }
+
+    [Fact]
+    public async Task JoinElsewhere_WhoseNoteFails_IsStillRecorded()
+    {
+        AddForum(topics: false);
+        await AskWhere();
+        await Click("1|tc", WizardId());
+        _h.Api.On("editMessageText", _ => FakeBotApi.Error(429, "Too Many Requests: retry after 7", """{"retry_after":7}"""));
+
+        await Joined(Other);
+
+        Assert.True(_rig.Memory.IsDetected(Other));
+    }
+
+    [Fact]
+    public async Task TryAgain_AfterTheCreatedTopicsReCheckFails_KeepsThatTopic()
+    {
+        AddForum();
+        await AskWhere();
+        var wizard = WizardId();
+        await Click("1|tc", wizard);
+        Assert.Equal("101", _rig.Memory.GetFlow(Manager)!.Params["threadId"]);
+        _h.Api.SetMember(Group, FakeBotApi.Member("left"));
+
+        await Click("1|op|Everything", wizard);
+
+        var failure = _h.Api.CallsTo("editMessageText").Last();
+        Assert.Equal(["1|ot", "1|ox"], Data(failure));
+        Assert.Empty(_h.Settings.Current.Destinations);
+
+        await Click("1|op|Everything", wizard); // a redelivered preset press on the failure screen does nothing
+        Assert.Empty(_h.Settings.Current.Destinations);
+
+        _h.Api.SetMember(Group, TopicRights());
+        await Click("1|ot", WizardId());
+
+        var presets = _h.Api.CallsTo("editMessageText").Last();
+        Assert.Contains("What should I send there?", (string)presets.Body["text"]!, StringComparison.Ordinal);
+        Assert.Equal("101", _rig.Memory.GetFlow(Manager)!.Params["threadId"]);
+        Assert.Single(_h.Api.CallsTo("createForumTopic"));
+
+        await Click("1|op|Everything", WizardId());
+
+        Assert.Equal(101, Assert.Single(_h.Settings.Current.Destinations).ThreadId);
+        Assert.Single(_h.Api.CallsTo("createForumTopic"));
+    }
+
     private static string TopicRights() => TelegramFixtures.Json("get_chat_member_admin_topics");
+
+    /// <summary>The manager adds the bot to another group (left → member).</summary>
+    private Task Joined(long chatId) => _rig.Deliver(TelegramFixtures.Update("my_chat_member_group_member", ("chat_id", chatId.ToString(CultureInfo.InvariantCulture))));
 
     private void AddForum(bool topics = true, string? username = null)
     {

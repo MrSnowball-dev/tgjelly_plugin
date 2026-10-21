@@ -25,6 +25,9 @@ public sealed class TopicFlow
 {
     private const string TopicKey = "topic";
     private const string PromotionKey = "promotion";
+
+    /// <summary>v0.1's marker of a pending promotion through the chat picker, which also left <c>creating</c> set.</summary>
+    private const string LegacyPromotionKey = "promotionRequest";
     private const string InputKey = "input";
     private const string LinkInput = "topicLink";
     private const string AnyChatKey = "anyChat";
@@ -165,6 +168,14 @@ public sealed class TopicFlow
     public async Task<TopicChoice?> OnCreateAsync(long chatId, FlowState flow, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(flow);
+
+        // A v0.1 flow caught mid-promotion at the upgrade: its creating marker belongs to the old chat-picker
+        // promotion, which can no longer finish, so it is dropped and Create starts afresh.
+        if (flow.Params.Remove(LegacyPromotionKey))
+        {
+            flow.Params.Remove(OnboardingFlow.CreatingKey);
+        }
+
         if (flow.Params.ContainsKey(OnboardingFlow.CreatingKey))
         {
             return null;
@@ -488,7 +499,8 @@ public sealed class TopicFlow
 
     /// <summary>
     /// A failed promotion, check or creation (spec §6.2 step 3): records <see cref="SetupFailureKind.TopicFailed"/> and
-    /// edits the wizard to <c>[General topic] [Advanced options]</c>. General still works on the same wizard.
+    /// edits the wizard to <c>[General topic] [Advanced options]</c>, each explained. General still works on the same
+    /// wizard.
     /// </summary>
     private async Task<TopicChoice?> FailAsync(long chatId, FlowState flow, string? message, CancellationToken ct)
     {
@@ -498,7 +510,10 @@ public sealed class TopicFlow
         // Without a picked chat there is no General topic to fall back to.
         var anyChat = flow.Params.Remove(AnyChatKey);
         var buttons = new InlineKeyboardMarkup(anyChat ? [Button("onboard.advanced", "ox")] : new[] { Button("topic.general", "tg"), Button("onboard.advanced", "ox") });
-        var html = _formatter.Escape(string.IsNullOrEmpty(message) ? _strings.Get("topic.failed") : message);
+        var html = _formatter.Escape(string.IsNullOrEmpty(message) ? _strings.Get("topic.failed") : message)
+            + (anyChat
+                ? ButtonGuide.Lines(_strings, _formatter, ("onboard.advanced", "onboard.advanced.about"))
+                : ButtonGuide.Lines(_strings, _formatter, ("topic.general", "topic.general.about"), ("onboard.advanced", "onboard.advanced.about")));
         flow.WizardMessageId = await _screens.ShowAsync(chatId, new Screen(html, buttons), flow.WizardMessageId, ct).ConfigureAwait(false);
         _memory.SaveFlow(chatId, flow);
         _memory.RecordFailure(SetupFailureKind.TopicFailed);

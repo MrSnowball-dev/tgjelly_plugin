@@ -65,10 +65,12 @@ public sealed class TelegramSender : ITelegramSender
         {
             return await SendCoreAsync(message, ct).ConfigureAwait(false);
         }
-        catch (ApiRequestException ex) when (RejectsIcons(ex) && HasIcons(message.Text, message.Buttons))
+        catch (ApiRequestException ex) when (MayRejectIcons(ex) && HasIcons(message.Text, message.Buttons))
         {
+            // A failed retry throws its own error and leaves the icons on: they weren't the problem.
+            var sent = await SendCoreAsync(Plain(message), ct).ConfigureAwait(false);
             BlockIcons();
-            return await SendCoreAsync(Plain(message), ct).ConfigureAwait(false);
+            return sent;
         }
     }
 
@@ -101,10 +103,10 @@ public sealed class TelegramSender : ITelegramSender
         {
             await EditCoreAsync(edit, ct).ConfigureAwait(false);
         }
-        catch (ApiRequestException ex) when (RejectsIcons(ex) && HasIcons(edit.Html, edit.Buttons))
+        catch (ApiRequestException ex) when (MayRejectIcons(ex) && HasIcons(edit.Html, edit.Buttons))
         {
-            BlockIcons();
             await EditCoreAsync(Plain(edit), ct).ConfigureAwait(false);
+            BlockIcons();
         }
     }
 
@@ -189,8 +191,14 @@ public sealed class TelegramSender : ITelegramSender
         return topic.MessageThreadId;
     }
 
-    private static bool RejectsIcons(ApiRequestException ex)
-        => ex.ErrorCode == 400 && ex.Message.Contains("emoji", StringComparison.OrdinalIgnoreCase);
+    /// <summary>
+    /// Whether a failed send or edit may have been rejected because of its custom emoji: Telegram's wording for that
+    /// varies, so any 400 counts except "message is not modified" and a gone edit target, which say nothing about
+    /// icons. The message is then retried once without them, and only a retry that goes through blocks them.
+    /// </summary>
+    private static bool MayRejectIcons(ApiRequestException ex)
+        => ex.ErrorCode == 400
+            && TelegramErrorClassifier.ClassifyDelivery(ex).Kind is not (DeliveryErrorKind.NotModified or DeliveryErrorKind.EditTargetGone);
 
     private static bool HasIcons(string html, InlineKeyboardMarkup? markup)
         => html.Contains("<tg-emoji", StringComparison.Ordinal)

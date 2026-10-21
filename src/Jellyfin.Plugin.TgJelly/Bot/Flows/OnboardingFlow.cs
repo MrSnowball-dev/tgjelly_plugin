@@ -187,8 +187,16 @@ public sealed class OnboardingFlow
             }
             else if (IsAdd(update))
             {
-                // Not taken: a real join elsewhere is still a detected chat.
-                await _topics.OnOtherChatAsync(update.From.Id, flow, update.Chat, ct).ConfigureAwait(false);
+                // Not taken: a real join elsewhere is still a detected chat, even when the note can't be shown.
+                try
+                {
+                    await _topics.OnOtherChatAsync(update.From.Id, flow, update.Chat, ct).ConfigureAwait(false);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    _logger.LogWarning(ex, "TgJelly could not note a change in another chat on the topic promotion screen");
+                }
+
                 return false;
             }
         }
@@ -264,7 +272,7 @@ public sealed class OnboardingFlow
         SpendPrompt(flow);
         flow.Params[ChatIdKey] = Text(chatId);
         _memory.SaveFlow(chatId, flow);
-        await CheckChosenAsync(chatId, flow.WizardMessageId, chatId, _formatter.Escape(_strings.Get("onboard.hereChosen")), retry: false, ct).ConfigureAwait(false);
+        await CheckChosenAsync(chatId, flow.WizardMessageId, chatId, _formatter.Escape(_strings.Get("onboard.hereChosen")), retry: false, threadId: 0, ct).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -290,8 +298,8 @@ public sealed class OnboardingFlow
 
     /// <summary>
     /// Handles Try again on a failure (<c>ot</c>, spec §6.2 step 2): the chat whose check failed is checked once more,
-    /// without retries, in the same message, and the wizard continues. Without such a chat, a fresh prompt replaces
-    /// the pressed message.
+    /// without retries, in the same message, and the wizard continues, with the forum topic already chosen when the
+    /// failure kept one. Without such a chat, a fresh prompt replaces the pressed message.
     /// </summary>
     /// <param name="query">The button press.</param>
     /// <param name="ct">Cancels the work.</param>
@@ -314,7 +322,8 @@ public sealed class OnboardingFlow
             var html = target == chatId
                 ? _formatter.Escape(_strings.Get("onboard.hereChosen"))
                 : Checking(flow.Params.GetValueOrDefault(TitleKey), target);
-            await CheckChosenAsync(chatId, message.MessageId, target, html, retry: false, ct).ConfigureAwait(false);
+            var threadId = int.TryParse(flow.Params.GetValueOrDefault(ThreadIdKey), NumberStyles.Integer, CultureInfo.InvariantCulture, out var thread) ? thread : 0;
+            await CheckChosenAsync(chatId, message.MessageId, target, html, retry: false, threadId, ct).ConfigureAwait(false);
             return;
         }
 
@@ -572,19 +581,21 @@ public sealed class OnboardingFlow
         flow.Params[ChatIdKey] = Text(chat.Id);
         flow.Params[TitleKey] = title;
         _memory.SaveFlow(privateChatId, flow);
-        await CheckChosenAsync(privateChatId, flow.WizardMessageId, chat.Id, Checking(title, chat.Id), retry: true, ct).ConfigureAwait(false);
+        await CheckChosenAsync(privateChatId, flow.WizardMessageId, chat.Id, Checking(title, chat.Id), retry: true, threadId: 0, ct).ConfigureAwait(false);
     }
 
     /// <summary>
-    /// Shows the "Checking…" text in the wizard message, checks the chat and continues; a transport error is a failed
-    /// step that keeps the chat for Try again.
+    /// Shows the "Checking…" text in the wizard message, checks the chat and continues, with <paramref name="threadId"/>
+    /// as the forum topic when one is already chosen (0 asks the topic question for a forum). A transport or Telegram
+    /// error, in the "Checking…" edit or in the check, is a failed step that keeps the chat for Try again.
     /// </summary>
-    private async Task CheckChosenAsync(long privateChatId, int? wizardMessageId, long chatId, string checkingHtml, bool retry, CancellationToken ct)
+    private async Task CheckChosenAsync(long privateChatId, int? wizardMessageId, long chatId, string checkingHtml, bool retry, int threadId, CancellationToken ct)
     {
-        var wizard = await _screens.ShowAsync(privateChatId, new Screen(checkingHtml, null), wizardMessageId, ct).ConfigureAwait(false);
+        var wizard = wizardMessageId;
         ChatCheckResult check;
         try
         {
+            wizard = await _screens.ShowAsync(privateChatId, new Screen(checkingHtml, null), wizardMessageId, ct).ConfigureAwait(false);
             check = await _retrier.CheckAsync(chatId, retry, ct).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -594,7 +605,7 @@ public sealed class OnboardingFlow
             return;
         }
 
-        await ContinueAfterCheckAsync(privateChatId, check, 0, wizard, ct).ConfigureAwait(false);
+        await ContinueAfterCheckAsync(privateChatId, check, threadId, wizard, ct).ConfigureAwait(false);
     }
 
     /// <summary>"Checking <b>Title</b>…", with the chat's ID when the title is unknown.</summary>
@@ -688,7 +699,8 @@ public sealed class OnboardingFlow
     /// <summary>
     /// A failed step (spec §6.2 step 2, "On failure"): the wizard explains what's missing with
     /// <c>[Try again] [Advanced options]</c>, a setup failure is recorded and the flow is spent. The spent flow keeps
-    /// the chat that was checked (and its title, when known), so Try again can check it again.
+    /// the chat that was checked (and its title and forum topic, when known), so Try again can check it again without
+    /// asking for the topic, or creating one, a second time.
     /// </summary>
     private async Task FailAsync(long chatId, string message, int? wizardMessageId, long? failedChatId, CancellationToken ct)
     {
@@ -713,6 +725,14 @@ public sealed class OnboardingFlow
                 && flow.Params.TryGetValue(TitleKey, out var title))
             {
                 spent.Params[TitleKey] = title;
+            }
+
+            if (flow is not null
+                && flow.Params.GetValueOrDefault(ChatIdKey) == Text(failed)
+                && flow.Params.TryGetValue(ThreadIdKey, out var thread)
+                && thread != "0")
+            {
+                spent.Params[ThreadIdKey] = thread;
             }
         }
 
@@ -846,13 +866,17 @@ public sealed class OnboardingFlow
             ? flow
             : null;
 
-    /// <summary>The wizard's flow, when the pressed message is the live wizard and it isn't creating already.</summary>
+    /// <summary>
+    /// The wizard's flow, when the pressed message is the live wizard and it isn't creating already. A failed flow is
+    /// spent, even though it keeps the chat and topic for Try again.
+    /// </summary>
     private FlowState? Wizard(CallbackQuery query)
     {
         if (query.Message is not { } message
             || _memory.GetFlow(message.Chat.Id) is not { } flow
             || flow.WizardMessageId != message.MessageId
             || flow.Params.ContainsKey(CreatingKey)
+            || flow.Params.ContainsKey(FailedKey)
             || !flow.Params.TryGetValue(ChatIdKey, out var chat) || !long.TryParse(chat, NumberStyles.Integer, CultureInfo.InvariantCulture, out _)
             || !flow.Params.TryGetValue(ThreadIdKey, out var thread) || !int.TryParse(thread, NumberStyles.Integer, CultureInfo.InvariantCulture, out _)
             || !flow.Params.ContainsKey(TitleKey))
