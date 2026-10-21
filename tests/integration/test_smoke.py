@@ -12,6 +12,20 @@ import package  # noqa: E402  (build/package.py names the zips)
 
 
 class HelperTests(unittest.TestCase):
+    def test_chat_member_update_comes_from_the_admin(self):
+        u = smoke.chat_member_update(smoke.SMOKE_CHAT_3, "channel", "Smoke channel", "left", "administrator", {"can_post_messages": True})
+        m = u["my_chat_member"]
+        self.assertEqual(m["from"]["id"], smoke.SMOKE_ADMIN)
+        self.assertEqual((m["chat"]["id"], m["chat"]["type"]), (smoke.SMOKE_CHAT_3, "channel"))
+        self.assertEqual((m["old_chat_member"]["status"], m["new_chat_member"]["status"]), ("left", "administrator"))
+        self.assertEqual(m["new_chat_member"]["user"]["id"], int(smoke.SMOKE_TOKEN.split(":")[0]))
+        self.assertTrue(m["new_chat_member"]["can_post_messages"])
+
+    def test_url_button_finds_by_url(self):
+        markup = {"inline_keyboard": [[{"text": "a", "callback_data": "1|oh"}], [{"text": "b", "url": "https://t.me/x?startchannel&admin=post_messages"}]]}
+        self.assertEqual(smoke.url_button(markup, "startchannel")["text"], "b")
+        self.assertIsNone(smoke.url_button(markup, "startgroup"))
+
     def test_plugin_folder_matches_jellyfin_layout(self):
         self.assertEqual(smoke.plugin_folder_name({"name": "TgJelly", "version": "2.0.0.0"}), "TgJelly_2.0.0.0")
 

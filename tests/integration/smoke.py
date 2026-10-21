@@ -333,8 +333,25 @@ def button_with(markup, key: str, text_part: str = ""):
     return next((b for row in rows for b in row if key in b and text_part in b.get("text", "")), None)
 
 
+def url_button(markup, url_part: str):
+    """The first inline button whose url contains url_part, or None."""
+    rows = (markup or {}).get("inline_keyboard") or []
+    return next((b for row in rows for b in row if url_part in b.get("url", "")), None)
+
+
+def chat_member_update(chat_id: int, chat_type: str, title: str, old_status: str, new_status: str,
+                       rights: dict = None) -> dict:
+    """A my_chat_member update: the smoke admin changes the bot's status in a chat."""
+    admin = {"id": SMOKE_ADMIN, "is_bot": False, "first_name": "Smoke"}
+    bot = {"id": int(SMOKE_TOKEN.split(":")[0]), "is_bot": True, "first_name": "TgJelly", "username": "tgjelly_smoke_bot"}
+    return {"my_chat_member": {
+        "chat": {"id": chat_id, "type": chat_type, "title": title}, "from": admin, "date": int(time.time()),
+        "old_chat_member": {"user": bot, "status": old_status},
+        "new_chat_member": {"user": bot, "status": new_status, **(rights or {})}}}
+
+
 def onboarding_checks(base: str, token: str, stub) -> None:
-    """The bot's picker onboarding: /start setup, share a channel, pick a preset, and the destination exists (plan 4)."""
+    """The bot's inline onboarding: /start setup, add the bot to a channel (my_chat_member), pick a preset, and the destination exists."""
     def connected():
         code, _, body = http("GET", f"{base}/TgJelly/Status", token=token)
         return code == 200 and json.loads(body).get("ConnectionState") == "Connected"
@@ -343,24 +360,28 @@ def onboarding_checks(base: str, token: str, stub) -> None:
 
     stub.push_update(user_update(text="/start setup", entities=[{"offset": 0, "length": 6, "type": "bot_command"}]))
 
-    def channel_picker():
-        button = button_with(stub.last_reply_markup("sendMessage", SMOKE_ADMIN), "request_chat")
-        return button if button and button["request_chat"].get("chat_is_channel") else None
+    def channel_prompt():
+        return url_button(stub.last_reply_markup("sendMessage", SMOKE_ADMIN), "startchannel")
 
-    wait_until(channel_picker, "/start setup shows the channel picker", 30)
-    request_id = channel_picker()["request_chat"]["request_id"]
+    wait_until(channel_prompt, "/start setup shows the inline channel prompt", 30)
+    check(url_button(stub.last_reply_markup("sendMessage", SMOKE_ADMIN), "startgroup=add") is not None,
+          "the prompt also has a startgroup button")
+    prompt_id = stub.sent_message_id(SMOKE_ADMIN, "Where should notifications go?")
+    check(prompt_id is not None, "the prompt is a message with the expected text")
 
-    stub.push_update(user_update(chat_shared={"request_id": request_id, "chat_id": SMOKE_CHAT_3, "title": "Smoke channel"}))
+    rights = {"can_be_edited": False, "can_manage_chat": True, "can_change_info": False, "can_post_messages": True,
+              "can_edit_messages": True, "can_delete_messages": False, "can_invite_users": False,
+              "can_restrict_members": False, "can_promote_members": False, "can_manage_video_chats": False,
+              "is_anonymous": False, "can_post_stories": False, "can_edit_stories": False, "can_delete_stories": False}
+    stub.push_update(chat_member_update(SMOKE_CHAT_3, "channel", "Smoke channel", "left", "administrator", rights))
 
     def wizard_button():
-        return button_with(stub.last_reply_markup("sendMessage", SMOKE_ADMIN), "callback_data", "New media")
+        return button_with(stub.last_reply_markup("editMessageText", SMOKE_ADMIN), "callback_data", "New media")
 
-    wait_until(wizard_button, "sharing a channel shows the preset wizard", 30)
+    wait_until(wizard_button, "adding the bot to a channel edits the prompt into the preset wizard", 30)
     data = wizard_button()["callback_data"]
-    wizard_id = stub.sent_message_id(SMOKE_ADMIN, "What should I send there?")
-    check(wizard_id is not None, "the preset wizard is a new message")
 
-    stub.push_update(callback_update(data, wizard_id, "What should I send there?"))
+    stub.push_update(callback_update(data, prompt_id, "What should I send there?"))
 
     def destination_added():
         code, _, body = http("GET", f"{base}/TgJelly/Destinations", token=token)
