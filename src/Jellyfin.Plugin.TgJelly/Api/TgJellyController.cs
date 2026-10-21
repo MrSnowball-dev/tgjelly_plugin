@@ -86,6 +86,7 @@ public class TgJellyController : ControllerBase
         {
             ConnectionState.Incompatible => _compat.Message,
             ConnectionState.WaitingForInstance => _gate.WaitingMessage,
+            ConnectionState.Connected => _strings.Get("web.status.connected"),
             _ => _strings.Get("connection." + state, ("bot", username)),
         };
 
