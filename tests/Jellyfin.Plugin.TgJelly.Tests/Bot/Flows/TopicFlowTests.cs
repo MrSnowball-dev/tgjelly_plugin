@@ -29,17 +29,19 @@ public sealed class TopicFlowTests : IDisposable, IAsyncLifetime
     {
         AddForum();
         await Text("/start add");
-        var promptId = _rig.Memory.GetFlow(Manager)!.PromptMessageId!.Value;
+        var promptId = _rig.Memory.GetFlow(Manager)!.WizardMessageId!.Value;
 
-        await Shared(GroupRequest());
+        await Added();
 
-        var wizard = Sent().Last();
+        var wizard = _h.Api.CallsTo("editMessageText").Last();
+        Assert.Equal(promptId, (int)wizard.Body["message_id"]!);
         Assert.Contains("This group has topics. Where should I post?", (string)wizard.Body["text"]!, StringComparison.Ordinal);
         Assert.Equal(["General topic", "Create a \"Jellyfin\" topic", "Use an existing topic…"], Labels(wizard));
         Assert.Equal(["1|tg", "1|tc", "1|te"], Data(wizard));
-        Assert.Equal([promptId, promptId + 1], Deleted());
+        Assert.Empty(Deleted());
+        Assert.Single(Sent());
         var flow = _rig.Memory.GetFlow(Manager)!;
-        Assert.Equal(promptId + 2, flow.WizardMessageId);
+        Assert.Equal(promptId, flow.WizardMessageId);
         Assert.Equal("1", flow.Params["isForum"]);
         Assert.Equal(Group.ToString(CultureInfo.InvariantCulture), flow.Params["chatId"]);
         Assert.Null(flow.CheckingMessageId);
@@ -355,7 +357,7 @@ public sealed class TopicFlowTests : IDisposable, IAsyncLifetime
 
         await AskWhere();
 
-        Sent().Last().Explains("General topic", "Create a &quot;Jellyfin&quot; topic", "Use an existing topic…");
+        _h.Api.CallsTo("editMessageText").Last().Explains("General topic", "Create a &quot;Jellyfin&quot; topic", "Use an existing topic…");
     }
 
     [Fact]
@@ -430,11 +432,12 @@ public sealed class TopicFlowTests : IDisposable, IAsyncLifetime
     {
         AddForum();
         await AskWhere();
+        var edits = _h.Api.CallsTo("editMessageText").Count();
 
         await Text("https://t.me/c/5550001/9");
 
         Assert.Empty(_h.Api.CallsTo("sendChatAction"));
-        Assert.Empty(_h.Api.CallsTo("editMessageText"));
+        Assert.Equal(edits, _h.Api.CallsTo("editMessageText").Count());
     }
 
     private static string TopicRights() => TelegramFixtures.Json("get_chat_member_admin_topics");
@@ -448,10 +451,11 @@ public sealed class TopicFlowTests : IDisposable, IAsyncLifetime
     private async Task AskWhere()
     {
         await Text("/start add");
-        await Shared(GroupRequest());
+        await Added();
     }
 
-    private int GroupRequest() => int.Parse(_rig.Memory.GetFlow(Manager)!.Params["requestGroup"], CultureInfo.InvariantCulture);
+    /// <summary>The manager adds the bot to the forum through the prompt's Add to a group link.</summary>
+    private Task Added() => _rig.Deliver(TelegramFixtures.Update("my_chat_member_group_member", ("chat_id", Group.ToString(CultureInfo.InvariantCulture))));
 
     private int WizardId() => _rig.Memory.GetFlow(Manager)!.WizardMessageId!.Value;
 

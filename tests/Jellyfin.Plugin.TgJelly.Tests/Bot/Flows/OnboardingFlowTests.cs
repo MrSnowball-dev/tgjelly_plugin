@@ -1,8 +1,11 @@
 using System;
+using System.Globalization;
 using System.Linq;
 using System.Net.Http;
 using System.Text.Json.Nodes;
 using System.Threading.Tasks;
+using Jellyfin.Plugin.TgJelly.Bot;
+using Jellyfin.Plugin.TgJelly.Bot.Flows;
 using Jellyfin.Plugin.TgJelly.Configuration;
 using Jellyfin.Plugin.TgJelly.State.Documents;
 using Jellyfin.Plugin.TgJelly.Tests.Fakes;
@@ -15,7 +18,11 @@ public sealed class OnboardingFlowTests : IDisposable, IAsyncLifetime
     private const long Manager = 42;
     private const long Channel = -1001234567890;
     private const long Group = -1005550001;
+    private const string Prompt = "Where should notifications go?";
     private const string NoPhotos = """{"can_send_messages":true,"can_send_photos":false}""";
+    private const string ChannelAdd = "my_chat_member_channel_admin";
+    private const string GroupAdd = "my_chat_member_group_member";
+    private static readonly string[] Presets = ["Everything", "New media", "Admin alerts", "Custom…"];
     private readonly BotTestHarness _h = new();
     private BotRig _rig = null!;
 
@@ -26,41 +33,30 @@ public sealed class OnboardingFlowTests : IDisposable, IAsyncLifetime
     public void Dispose() => _h.Dispose();
 
     [Fact]
-    public async Task Start_SendsTheReplyKeyboard_WithFreshRequestIds()
+    public async Task Start_SendsAnInlinePrompt_WithAddLinks()
     {
         await Start();
 
         var prompt = Assert.Single(Sent());
-        Assert.Equal("Where should notifications go?", (string)prompt.Body["text"]!);
-        var keyboard = prompt.Body["reply_markup"]!["keyboard"]!.AsArray().Select(r => r!.AsArray()).ToList();
-        Assert.Equal(["Choose a channel", "Choose a group", "Right here", "Cancel"], keyboard.Select(r => (string)Assert.Single(r)!["text"]!));
+        var text = (string)prompt.Body["text"]!;
+        Assert.StartsWith(Prompt + "\nAfter you choose a chat in Telegram, I'll continue here.\n\n", text, StringComparison.Ordinal);
+        Assert.Equal(["Add to a channel", "Add to a group", "Right here", "Cancel"], Labels(prompt));
+        var buttons = Buttons(prompt);
+        Assert.Equal("https://t.me/tgjelly_test_bot?startchannel&admin=post_messages+edit_messages", (string)buttons[0]["url"]!);
+        Assert.Equal("https://t.me/tgjelly_test_bot?startgroup=add", (string)buttons[1]["url"]!);
+        Assert.Equal(["1|oh", "1|on"], buttons.Select(b => (string?)b["callback_data"]).OfType<string>());
+        Assert.Null(prompt.Body["reply_markup"]!["keyboard"]);
 
-        var channel = keyboard[0][0]!["request_chat"]!;
-        Assert.True((bool)channel["chat_is_channel"]!);
-        Assert.True((bool)channel["request_title"]!);
-        foreach (var rights in new[] { channel["bot_administrator_rights"]!, channel["user_administrator_rights"]! })
-        {
-            Assert.True((bool)rights["can_post_messages"]!);
-            Assert.True((bool)rights["can_edit_messages"]!);
-        }
-
-        var group = keyboard[1][0]!["request_chat"]!;
-        Assert.False((bool?)group["chat_is_channel"] ?? false); // Telegram.Bot leaves false out; the API reads that as false
-        Assert.True((bool)group["bot_is_member"]!);
-        Assert.True((bool)group["request_title"]!);
+        prompt.Explains("Add to a channel", "Add to a group", "Right here", "Cancel");
+        var order = new[] { "Add to a channel", "Add to a group", "Right here", "Cancel" }.Select(l => text.IndexOf("<b>" + l + "</b> — ", StringComparison.Ordinal)).ToList();
+        Assert.Equal(order.Order(), order);
+        Assert.DoesNotContain("Set up", text, StringComparison.Ordinal);
 
         var flow = _rig.Memory.GetFlow(Manager)!;
-        var first = new[] { (int)channel["request_id"]!, (int)group["request_id"]! };
-        Assert.Equal(first, flow.PickerRequestIds);
-        Assert.Equal(first[0].ToString(System.Globalization.CultureInfo.InvariantCulture), flow.Params["requestChannel"]);
-        Assert.Equal(first[1].ToString(System.Globalization.CultureInfo.InvariantCulture), flow.Params["requestGroup"]);
-        Assert.Equal(1, flow.PromptMessageId);
+        Assert.Equal(1, flow.WizardMessageId);
         Assert.Equal(_h.Time.GetUtcNow(), flow.PromptSentAt);
-        Assert.NotEqual(first[0], first[1]);
-
-        await Start();
-        var second = _rig.Memory.GetFlow(Manager)!.PickerRequestIds;
-        Assert.Empty(first.Intersect(second));
+        Assert.Equal("chat", flow.Params["await"]);
+        Assert.True(OnboardingFlow.AwaitsChat(flow));
     }
 
     [Theory]
@@ -71,17 +67,45 @@ public sealed class OnboardingFlowTests : IDisposable, IAsyncLifetime
     {
         await Text(text);
 
-        Assert.Equal("Where should notifications go?", (string)Assert.Single(Sent()).Body["text"]!);
+        Assert.StartsWith(Prompt, (string)Assert.Single(Sent()).Body["text"]!, StringComparison.Ordinal);
     }
 
     [Fact]
-    public async Task MenuAddButton_SendsThePrompt()
+    public async Task StartFromAButton_EditsThatMessage()
     {
         _h.AddDestination(-1001);
 
-        await Click("1|oa", 55);
+        await Click("1|oa", 7);
 
-        Assert.Equal("Where should notifications go?", (string)Assert.Single(Sent()).Body["text"]!);
+        var edit = Assert.Single(_h.Api.CallsTo("editMessageText"));
+        Assert.Equal(7, (int)edit.Body["message_id"]!);
+        Assert.StartsWith(Prompt, (string)edit.Body["text"]!, StringComparison.Ordinal);
+        Assert.Empty(_h.Api.CallsTo("sendMessage"));
+        Assert.Equal(7, _rig.Memory.GetFlow(Manager)!.WizardMessageId);
+    }
+
+    [Fact]
+    public async Task Start_ListsUpToThreeDetectedChats()
+    {
+        for (var i = 0; i < 4; i++)
+        {
+            _rig.Memory.RecordDetected(-1007770000 - i, "Chat " + Num(i), ChatKind.Supergroup);
+            _h.Time.Advance(TimeSpan.FromSeconds(1));
+        }
+
+        _h.Time.Advance(BotMemory.DetectedGrace);
+
+        await Start();
+
+        var prompt = Assert.Single(Sent());
+        var labels = Labels(prompt);
+        Assert.Equal(["Add to a channel", "Add to a group", "Right here", "Set up Chat 0", "Set up Chat 1", "Set up Chat 2", "Cancel"], labels);
+        Assert.Equal(["1|oh", "1|xs|-1007770000", "1|xs|-1007770001", "1|xs|-1007770002", "1|on"], Buttons(prompt).Select(b => (string?)b["callback_data"]).OfType<string>());
+        var text = (string)prompt.Body["text"]!;
+        const string line = "<b>Set up …</b> — a chat I'm already in that isn't set up yet";
+        Assert.Equal(1, Occurrences(text, line));
+        Assert.True(text.IndexOf("<b>Right here</b>", StringComparison.Ordinal) < text.IndexOf(line, StringComparison.Ordinal));
+        Assert.True(text.IndexOf(line, StringComparison.Ordinal) < text.IndexOf("<b>Cancel</b>", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -96,30 +120,28 @@ public sealed class OnboardingFlowTests : IDisposable, IAsyncLifetime
     }
 
     [Fact]
-    public async Task ChannelShared_ChecksThenAsksForThePreset_AndDeletesCheckingAndPrompt()
+    public async Task ChannelAdded_ByThePromptsUser_ChecksAndShowsPresets_InTheSameMessage()
     {
         AddChannel();
         await Start();
-        var promptId = _rig.Memory.GetFlow(Manager)!.PromptMessageId!.Value;
+        var prompt = WizardId();
 
-        await Shared(ChannelRequest());
+        await Added(ChannelAdd, Channel);
 
-        var sent = Sent().Skip(1).ToList();
-        Assert.Equal(2, sent.Count);
-        Assert.Equal("Checking <b>Family</b>…", (string)sent[0].Body["text"]!);
-        Assert.True((bool)sent[0].Body["reply_markup"]!["remove_keyboard"]!);
-        Assert.Contains("What should I send there?", (string)sent[1].Body["text"]!, StringComparison.Ordinal);
-        Assert.Equal(["Everything", "New media", "Admin alerts", "Custom…"], Labels(sent[1]));
-
-        var checkingId = promptId + 1;
-        Assert.Equal([promptId, checkingId], Deleted());
+        var edits = Edits(prompt);
+        Assert.Equal("Checking <b>News</b>…", (string)edits[0].Body["text"]!);
+        var presets = edits.Last();
+        Assert.Equal(Presets, Labels(presets));
+        Assert.StartsWith("<b>Family</b>\nWhat should I send there?", (string)presets.Body["text"]!, StringComparison.Ordinal);
+        Assert.Single(Sent());
+        Assert.Empty(Deleted());
+        Assert.False(_rig.Memory.IsDetected(Channel));
 
         var flow = _rig.Memory.GetFlow(Manager)!;
-        Assert.Equal(checkingId + 1, flow.WizardMessageId);
-        Assert.Empty(flow.PickerRequestIds);
-        Assert.Null(flow.PromptMessageId);
+        Assert.Equal(prompt, flow.WizardMessageId);
         Assert.Null(flow.PromptSentAt);
-        Assert.Equal(Channel.ToString(System.Globalization.CultureInfo.InvariantCulture), flow.Params["chatId"]);
+        Assert.False(flow.Params.ContainsKey("await"));
+        Assert.Equal(Num(Channel), flow.Params["chatId"]);
         Assert.Equal("Family", flow.Params["title"]);
         Assert.Equal(nameof(ChatKind.Channel), flow.Params["kind"]);
         Assert.Equal("0", flow.Params["threadId"]);
@@ -127,54 +149,322 @@ public sealed class OnboardingFlowTests : IDisposable, IAsyncLifetime
     }
 
     [Fact]
-    public async Task ChatSharedBeforeMyChatMember_RetriesUntilThePass()
+    public async Task GroupAdded_ByThePromptsUser_ContinuesTheWizard()
+    {
+        _h.Api.AddChat(Group, "supergroup", "Family");
+        _h.Api.SetMember(Group, FakeBotApi.Member("member"));
+        await Start();
+        var prompt = WizardId();
+
+        await Added(GroupAdd, Group);
+
+        var edits = Edits(prompt);
+        Assert.Equal("Checking <b>Family</b>…", (string)edits[0].Body["text"]!);
+        Assert.Equal(Presets, Labels(edits.Last()));
+        Assert.Single(Sent());
+        Assert.Empty(Sent(Group));
+        Assert.False(_rig.Memory.IsDetected(Group));
+    }
+
+    [Fact]
+    public async Task RightsGranted_InAChannelTheBotIsAlreadyIn_CountsAsTheChoice()
+    {
+        AddChannel();
+        await Start();
+        var prompt = WizardId();
+
+        await Added("my_chat_member_channel_rights", Channel);
+
+        Assert.Equal(Presets, Labels(Edits(prompt).Last()));
+        Assert.False(_rig.Memory.IsDetected(Channel));
+    }
+
+    [Fact]
+    public async Task GroupStart_ByThePromptsUser_CountsAsTheChoice()
+    {
+        _h.Api.AddChat(Group, "supergroup", "Family");
+        _h.Api.SetMember(Group, FakeBotApi.Member("member"));
+        await Start();
+        var prompt = WizardId();
+
+        await GroupStart(Group, "/start@tgjelly_test_bot add");
+
+        Assert.Equal("Checking <b>Family</b>…", (string)Edits(prompt)[0].Body["text"]!);
+        Assert.Equal(Presets, Labels(Edits(prompt).Last()));
+        Assert.Empty(Sent(Group));
+    }
+
+    [Fact]
+    public async Task GroupStart_WithoutAPrompt_DoesNothing()
+    {
+        _h.Api.AddChat(Group, "supergroup", "Family");
+
+        await GroupStart(Group, "/start@tgjelly_test_bot add");
+
+        Assert.DoesNotContain(_h.Api.Calls, c => c.Method is "sendMessage" or "editMessageText" or "getChat");
+    }
+
+    [Fact]
+    public async Task AddedByAnotherUser_IsADetectedChat_AndTheWizardWaits()
+    {
+        AddChannel();
+        await Start();
+        var prompt = WizardId();
+
+        await Added(ChannelAdd, Channel, userId: 99);
+
+        Assert.True(_rig.Memory.IsDetected(Channel));
+        Assert.True(OnboardingFlow.AwaitsChat(_rig.Memory.GetFlow(Manager)!));
+        Assert.Empty(Edits(prompt));
+    }
+
+    [Fact]
+    public async Task RedeliveredAdd_IsHandledOnce()
+    {
+        AddChannel();
+        await Start();
+        var update = TelegramFixtures.Update(ChannelAdd, ("chat_id", Num(Channel)));
+
+        await _rig.Deliver(update);
+        await _rig.Deliver(update);
+
+        Assert.Single(_h.Api.CallsTo("editMessageText"), c => ((string)c.Body["text"]!).StartsWith("Checking", StringComparison.Ordinal));
+        Assert.Single(_h.Api.CallsTo("getChat"), c => c.Body["chat_id"]!.ToString() == Num(Channel));
+        Assert.False(_rig.Memory.IsDetected(Channel));
+
+        var wizard = WizardId();
+        await Click("1|op|Everything", wizard);
+        await Click("1|op|Everything", wizard);
+
+        Assert.Single(_h.Settings.Current.Destinations);
+        Assert.Single(Sent(Channel));
+    }
+
+    [Fact]
+    public async Task TwoManagers_EachGetOnlyTheirOwnAdd()
+    {
+        _h.Api.AddChat(Group, "supergroup", "Family");
+        _h.Api.SetMember(Group, FakeBotApi.Member("member"));
+        await Start();
+        await Text("/start add", userId: 43);
+        var first = WizardId();
+        var second = _rig.Memory.GetFlow(43)!.WizardMessageId!.Value;
+
+        await Added(GroupAdd, Group, userId: 43);
+
+        Assert.Equal(Presets, Labels(Edits(second).Last()));
+        Assert.Equal("43", Edits(second).Last().Body["chat_id"]!.ToString());
+        Assert.True(OnboardingFlow.AwaitsChat(_rig.Memory.GetFlow(Manager)!));
+        Assert.Empty(Edits(first));
+        Assert.False(_rig.Memory.IsDetected(Group));
+    }
+
+    [Fact]
+    public async Task AddedBeforeTheRightsSettle_RetriesUntilThePass()
     {
         _h.Api.AddChat(Channel, "channel", "Family");
         _h.Api.OnSequence("getChatMember", FakeBotApi.Ok(FakeBotApi.Member("left")), FakeBotApi.Ok(FakeBotApi.Member("left")), FakeBotApi.Ok(BotTestHarness.AdminCanPost));
         await Start();
 
-        await Shared(ChannelRequest());
+        await Added(ChannelAdd, Channel);
 
         Assert.Equal([TimeSpan.FromSeconds(1.5), TimeSpan.FromSeconds(1.5)], _rig.Delays);
         Assert.Equal(3, _h.Api.CallsTo("getChatMember").Count());
-        Assert.Contains("What should I send there?", (string)Sent().Last().Body["text"]!, StringComparison.Ordinal);
+        Assert.Equal(Presets, Labels(_h.Api.CallsTo("editMessageText").Last()));
     }
 
     [Fact]
-    public async Task ChatSharedAfterMyChatMember_PassesFirstTry()
+    public async Task UnansweredPrompt_Expires_AndSaysSo()
     {
         AddChannel();
         await Start();
+        var prompt = WizardId();
 
-        await Shared(ChannelRequest());
+        _h.Time.Advance(BotMemory.PromptTtl);
+        await _rig.Flow.TickAsync(TestContext.Current.CancellationToken);
 
-        Assert.Empty(_rig.Delays);
-        Assert.Single(_h.Api.CallsTo("getChatMember"));
-        Assert.Contains("What should I send there?", (string)Sent().Last().Body["text"]!, StringComparison.Ordinal);
+        var expired = Assert.Single(Edits(prompt));
+        Assert.StartsWith("That setup prompt expired.", (string)expired.Body["text"]!, StringComparison.Ordinal);
+        Assert.Equal(["1|oa"], Data(expired));
+        expired.Explains("Add destination");
+        Assert.Null(_rig.Memory.GetFlow(Manager));
+        Assert.Equal([SetupFailureKind.PromptExpired], _h.State.Read(s => s.SetupFailures.Select(f => f.Kind).ToList()));
+
+        await Added(ChannelAdd, Channel);
+
+        Assert.True(_rig.Memory.IsDetected(Channel));
+        Assert.Single(Edits(prompt));
+        Assert.Empty(_h.Settings.Current.Destinations);
     }
 
     [Fact]
-    public async Task CheckFails_DeletesChecking_OffersTryAgainAndAdvanced_RecordsFailure()
+    public async Task RightHere_ChecksThisChat_InTheSameMessage()
+    {
+        _h.Api.AddChat(Manager, "private", "Ann");
+        await Start();
+        var prompt = WizardId();
+
+        await Click("1|oh", prompt);
+
+        var edits = Edits(prompt);
+        Assert.Equal("Checking this chat…", (string)edits[0].Body["text"]!);
+        Assert.Equal(Presets, Labels(edits.Last()));
+        Assert.Single(Sent());
+        Assert.Empty(_h.Api.CallsTo("getChatMember"));
+
+        await Click("1|op|AdminAlerts", prompt);
+
+        var destination = Assert.Single(_h.Settings.Current.Destinations);
+        Assert.Equal(Manager, destination.ChatId);
+        Assert.Equal(ChatKind.Private, destination.Kind);
+        Assert.Equal(PresetKind.AdminAlerts, destination.Preset);
+        Assert.Contains(Sent(), c => ((string)c.Body["text"]!).Contains("TgJelly test", StringComparison.Ordinal));
+        Assert.StartsWith("✅ Done: <b>Ann</b>", (string)Edits(prompt).Last().Body["text"]!, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task RightHere_OnAnOldPrompt_IsExpired()
+    {
+        await Start();
+        var first = WizardId();
+        await Start();
+        var second = WizardId();
+
+        Assert.Equal([first], Deleted());
+
+        await Click("1|oh", first);
+
+        Assert.Contains(Sent(), c => (string)c.Body["text"]! == "That menu expired");
+        Assert.Contains("Add destination", Labels(Sent().Last()));
+        Assert.Empty(_h.Api.CallsTo("getChat"));
+        var flow = _rig.Memory.GetFlow(Manager)!;
+        Assert.Equal(second, flow.WizardMessageId);
+        Assert.True(OnboardingFlow.AwaitsChat(flow));
+    }
+
+    [Fact]
+    public async Task Cancel_ShowsTheMenuInPlace()
+    {
+        await Start();
+        var prompt = WizardId();
+
+        await Click("1|on", prompt);
+
+        var menu = Assert.Single(Edits(prompt));
+        Assert.Contains("<tg-emoji emoji-id=\"5875271289605722323\">🏠</tg-emoji> Menu", (string)menu.Body["text"]!, StringComparison.Ordinal);
+        Assert.Null(_rig.Memory.GetFlow(Manager));
+        Assert.Single(Sent());
+        Assert.DoesNotContain(_h.Api.Calls, c => c.Body["reply_markup"]?["remove_keyboard"] is not null);
+    }
+
+    [Theory]
+    [InlineData("📢 Choose a channel")]
+    [InlineData("👥 Choose a group")]
+    [InlineData("💬 Right here")]
+    [InlineData("Cancel")]
+    [InlineData("chat_shared")]
+    public async Task LegacyReplyInput_RemovesTheOldKeyboard_AndShowsTheMenu(string input)
+    {
+        if (input == "chat_shared")
+        {
+            await _rig.Deliver(TelegramFixtures.Update("chat_shared", ("request_id", "5")));
+        }
+        else
+        {
+            Assert.Contains(input, OnboardingFlow.LegacyReplyTexts);
+            await Text(input);
+        }
+
+        var sent = Sent();
+        Assert.Equal(2, sent.Length);
+        Assert.Equal("That menu expired", (string)sent[0].Body["text"]!);
+        Assert.True((bool)sent[0].Body["reply_markup"]!["remove_keyboard"]!);
+        Assert.Contains("Add destination", Labels(sent[1]));
+        Assert.Single(_h.Api.Calls, c => c.Body["reply_markup"]?["remove_keyboard"] is not null);
+        Assert.Empty(_h.Api.CallsTo("getChat"));
+    }
+
+    [Fact]
+    public async Task CheckFails_ExplainsInTheWizard_WithTryAgainAndAdvanced()
     {
         _h.Api.AddChat(Channel, "channel", "Family");
+        _h.Api.SetMember(Channel, FakeBotApi.Member("member"));
         await Start();
-        var promptId = _rig.Memory.GetFlow(Manager)!.PromptMessageId!.Value;
+        var prompt = WizardId();
 
-        await Shared(ChannelRequest());
+        await Added(ChannelAdd, Channel);
 
         Assert.Equal(3, _rig.Delays.Count);
-        Assert.Equal([promptId, promptId + 1], Deleted());
-        var failure = Sent().Last();
-        Assert.Equal(_h.Strings.Get("check.lost"), (string)failure.Body["text"]!);
+        var failure = Edits(prompt).Last();
+        Assert.StartsWith(_h.Strings.Get("check.channelNotAdmin"), (string)failure.Body["text"]!, StringComparison.Ordinal);
         Assert.Equal(["Try again", "Advanced options"], Labels(failure));
         Assert.Equal(["1|ot", "1|ox"], Data(failure));
+        failure.Explains("Try again", "Advanced options");
         Assert.Equal([SetupFailureKind.CheckFailed], _h.State.Read(s => s.SetupFailures.Select(f => f.Kind).ToList()));
-        Assert.Empty(_rig.Memory.GetFlow(Manager)!.PickerRequestIds);
+        Assert.Single(Sent());
+        Assert.Empty(Deleted());
         Assert.Empty(_h.Settings.Current.Destinations);
+    }
+
+    [Fact]
+    public async Task TryAgain_AfterAFailedChat_RechecksThatChat()
+    {
+        _h.Api.AddChat(Channel, "channel", "Family");
+        _h.Api.SetMember(Channel, FakeBotApi.Member("member"));
+        await Start();
+        var prompt = WizardId();
+        await Added(ChannelAdd, Channel);
+        var checks = _h.Api.CallsTo("getChatMember").Count();
+        var delays = _rig.Delays.Count;
+        _h.Api.SetMember(Channel, BotTestHarness.AdminCanPost);
+
+        await Click("1|ot", prompt);
+
+        var edits = Edits(prompt);
+        Assert.StartsWith("Checking <b>", (string)edits[^2].Body["text"]!, StringComparison.Ordinal);
+        Assert.Equal(Presets, Labels(edits[^1]));
+        Assert.Single(Sent());
+        Assert.Equal(checks + 1, _h.Api.CallsTo("getChatMember").Count());
+        Assert.Equal(delays, _rig.Delays.Count);
+        Assert.Equal(Num(Channel), _rig.Memory.GetFlow(Manager)!.Params["chatId"]);
+    }
+
+    [Fact]
+    public async Task TryAgain_AfterRightHereFails_RechecksThisChat()
+    {
+        var broken = true;
+        _h.Api.On("getChat", _ => broken
+            ? FakeBotApi.Error(400, "Bad Request: chat not found")
+            : FakeBotApi.Ok("""{"id":42,"type":"private","first_name":"Ann","accent_color_id":0,"max_reaction_count":11}"""));
+        await Start();
+        var prompt = WizardId();
+
+        await Click("1|oh", prompt);
+
+        Assert.Equal(["1|ot", "1|ox"], Data(Edits(prompt).Last()));
+
+        broken = false;
+        await Click("1|ot", prompt);
+
+        var edits = Edits(prompt);
+        Assert.Equal("Checking this chat…", (string)edits[^2].Body["text"]!);
+        Assert.Equal(Presets, Labels(edits[^1]));
+        Assert.Single(Sent());
+    }
+
+    [Fact]
+    public async Task TryAgain_WithoutAFailedChat_SendsAFreshPromptInPlace()
+    {
+        _rig.Memory.SaveFlow(Manager, new FlowState { Screen = "onboard", WizardMessageId = 77 });
 
         await Click("1|ot", 77);
-        Assert.Equal("Where should notifications go?", (string)Sent().Last().Body["text"]!);
-        Assert.NotEmpty(_rig.Memory.GetFlow(Manager)!.PickerRequestIds);
+
+        var edit = Assert.Single(Edits(77));
+        Assert.StartsWith(Prompt, (string)edit.Body["text"]!, StringComparison.Ordinal);
+        Assert.Empty(Sent());
+        var flow = _rig.Memory.GetFlow(Manager)!;
+        Assert.Equal(77, flow.WizardMessageId);
+        Assert.True(OnboardingFlow.AwaitsChat(flow));
     }
 
     [Fact]
@@ -192,14 +482,13 @@ public sealed class OnboardingFlowTests : IDisposable, IAsyncLifetime
     {
         AddChannel();
         await Start();
-        var promptId = _rig.Memory.GetFlow(Manager)!.PromptMessageId!.Value;
+        var prompt = WizardId();
         _h.Api.On("getChat", _ => throw new HttpRequestException("connection reset"));
 
-        await Shared(ChannelRequest());
+        await Added(ChannelAdd, Channel);
 
-        Assert.Equal([promptId, promptId + 1], Deleted());
-        var failure = Sent().Last();
-        Assert.Equal(_h.Strings.Get("token.unreachable"), (string)failure.Body["text"]!);
+        var failure = Edits(prompt).Last();
+        Assert.StartsWith(_h.Strings.Get("token.unreachable"), (string)failure.Body["text"]!, StringComparison.Ordinal);
         Assert.Equal(["Try again", "Advanced options"], Labels(failure));
         Assert.True(_rig.Memory.HasRecentFailure());
 
@@ -210,9 +499,7 @@ public sealed class OnboardingFlowTests : IDisposable, IAsyncLifetime
     [Fact]
     public async Task Preset_Creates_SendsTheTest_AndEditsTheWizardToDone()
     {
-        AddChannel();
-        await Start();
-        await Shared(ChannelRequest());
+        await ChooseChannel();
         var wizard = WizardId();
         var checks = _h.Api.CallsTo("getChatMember").Count();
 
@@ -241,9 +528,7 @@ public sealed class OnboardingFlowTests : IDisposable, IAsyncLifetime
     [Fact]
     public async Task SecondPresetClick_AfterDone_SaysExpired()
     {
-        AddChannel();
-        await Start();
-        await Shared(ChannelRequest());
+        await ChooseChannel();
         var wizard = WizardId();
         await Click("1|op|Everything", wizard);
 
@@ -257,27 +542,24 @@ public sealed class OnboardingFlowTests : IDisposable, IAsyncLifetime
     [Fact]
     public async Task Preset_ReChecksFirst_AndReportsAChatThatChanged()
     {
-        AddChannel();
-        await Start();
-        await Shared(ChannelRequest());
+        await ChooseChannel();
         _h.Api.SetMember(Channel, FakeBotApi.Member("left"));
 
         await Click("1|op|Everything", WizardId());
 
         Assert.Empty(_h.Settings.Current.Destinations);
         var failure = _h.Api.CallsTo("editMessageText").Last();
-        Assert.Equal(_h.Strings.Get("check.lost"), (string)failure.Body["text"]!);
+        Assert.StartsWith(_h.Strings.Get("check.lost"), (string)failure.Body["text"]!, StringComparison.Ordinal);
         Assert.Equal(["Try again", "Advanced options"], Labels(failure));
         Assert.True(_rig.Memory.HasRecentFailure());
+        Assert.Equal(Num(Channel), _rig.Memory.GetFlow(Manager)!.Params["chatId"]);
     }
 
     [Fact]
     public async Task FailedTestSend_PutsItsErrorUnderTheDoneLine()
     {
-        AddChannel();
-        await Start();
-        await Shared(ChannelRequest());
-        _h.Api.On("sendMessage", call => call.Body["chat_id"]!.ToString() == Channel.ToString(System.Globalization.CultureInfo.InvariantCulture)
+        await ChooseChannel();
+        _h.Api.On("sendMessage", call => call.Body["chat_id"]!.ToString() == Num(Channel)
             ? FakeBotApi.Error(400, "Bad Request: not enough rights to send text messages to the chat")
             : FakeBotApi.Ok("""{"message_id":900,"date":1790000000,"chat":{"id":42,"type":"private"},"text":"x"}"""));
 
@@ -291,9 +573,7 @@ public sealed class OnboardingFlowTests : IDisposable, IAsyncLifetime
     [Fact]
     public async Task Custom_OpensTheGroups_WithDone()
     {
-        AddChannel();
-        await Start();
-        await Shared(ChannelRequest());
+        await ChooseChannel();
         var wizard = WizardId();
 
         await Click("1|op|Custom", wizard);
@@ -308,19 +588,15 @@ public sealed class OnboardingFlowTests : IDisposable, IAsyncLifetime
     [Fact]
     public async Task PresetScreen_ExplainsEachPreset()
     {
-        AddChannel();
-        await Start();
-        await Shared(ChannelRequest());
+        await ChooseChannel();
 
-        Sent().Last().Explains("Everything", "New media", "Admin alerts", "Custom…");
+        _h.Api.CallsTo("editMessageText").Last().Explains("Everything", "New media", "Admin alerts", "Custom…");
     }
 
     [Fact]
     public async Task CustomGroup_SwitchesStayInTheGroup_AndBackReturns()
     {
-        AddChannel();
-        await Start();
-        await Shared(ChannelRequest());
+        await ChooseChannel();
         var wizard = WizardId();
         await Click("1|op|Custom", wizard);
 
@@ -342,9 +618,7 @@ public sealed class OnboardingFlowTests : IDisposable, IAsyncLifetime
     [Fact]
     public async Task CustomDone_CreatesWithTheChosenEvents()
     {
-        AddChannel();
-        await Start();
-        await Shared(ChannelRequest());
+        await ChooseChannel();
         var wizard = WizardId();
         await Click("1|op|Custom", wizard);
 
@@ -366,117 +640,18 @@ public sealed class OnboardingFlowTests : IDisposable, IAsyncLifetime
     {
         var existing = _h.AddDestination(Channel, ChatKind.Channel);
         await Start();
-        var promptId = _rig.Memory.GetFlow(Manager)!.PromptMessageId!.Value;
+        var prompt = WizardId();
 
-        await Shared(ChannelRequest());
+        await Added(ChannelAdd, Channel);
 
         Assert.Single(_h.Settings.Current.Destinations);
         Assert.Equal(2, _h.Api.CallsTo("getChatMember").Count());
-        var screen = Sent().Last();
+        var screen = Edits(prompt).Last();
         Assert.StartsWith("<b>" + existing.Title + "</b> is already set up", (string)screen.Body["text"]!, StringComparison.Ordinal);
         Assert.Contains("1|de|" + existing.Id, Data(screen));
-        Assert.Equal([promptId, promptId + 1], Deleted());
+        Assert.Empty(Deleted());
         Assert.Null(_rig.Memory.GetFlow(Manager));
         Assert.Empty(Sent(Channel));
-    }
-
-    [Fact]
-    public async Task RedeliveredChatShared_AddsOnce()
-    {
-        AddChannel();
-        await Start();
-        var shared = TelegramFixtures.Update("chat_shared", ("request_id", ChannelRequest().ToString(System.Globalization.CultureInfo.InvariantCulture)));
-
-        await _rig.Deliver(shared);
-        await _rig.Deliver(shared);
-
-        Assert.Single(Sent(), c => ((string)c.Body["text"]!).Contains("What should I send there?", StringComparison.Ordinal));
-        Assert.DoesNotContain(Sent(), c => (string)c.Body["text"]! == "That picker expired");
-
-        var wizard = WizardId();
-        await Click("1|op|Everything", wizard);
-        await Click("1|op|Everything", wizard);
-
-        Assert.Single(_h.Settings.Current.Destinations);
-        Assert.Single(Sent(Channel));
-        Assert.Equal("That menu expired", (string)Sent().SkipLast(1).Last().Body["text"]!);
-    }
-
-    [Fact]
-    public async Task RightHere_UsesThisChat()
-    {
-        _h.Api.AddChat(Manager, "private", "Ann");
-        await Start();
-        var promptId = _rig.Memory.GetFlow(Manager)!.PromptMessageId!.Value;
-
-        await Text("Right here");
-
-        var sent = Sent().Skip(1).ToList();
-        Assert.Equal("Right here.", (string)sent[0].Body["text"]!);
-        Assert.True((bool)sent[0].Body["reply_markup"]!["remove_keyboard"]!);
-        Assert.Contains("What should I send there?", (string)sent[1].Body["text"]!, StringComparison.Ordinal);
-        Assert.Equal([promptId, promptId + 1], Deleted());
-        Assert.Empty(_h.Api.CallsTo("getChatMember"));
-
-        await Click("1|op|AdminAlerts", WizardId());
-
-        var destination = Assert.Single(_h.Settings.Current.Destinations);
-        Assert.Equal(Manager, destination.ChatId);
-        Assert.Equal(ChatKind.Private, destination.Kind);
-        Assert.Equal(PresetKind.AdminAlerts, destination.Preset);
-        Assert.Contains(Sent(), c => ((string)c.Body["text"]!).Contains("TgJelly test", StringComparison.Ordinal));
-        Assert.StartsWith("✅ Done: <b>Ann</b>", (string)_h.Api.CallsTo("editMessageText").Last().Body["text"]!, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public async Task Cancel_RemovesTheKeyboard()
-    {
-        await Start();
-        var promptId = _rig.Memory.GetFlow(Manager)!.PromptMessageId!.Value;
-
-        await Text("Cancel");
-
-        var sent = Sent().Skip(1).ToList();
-        Assert.Equal(2, sent.Count);
-        Assert.True((bool)sent[0].Body["reply_markup"]!["remove_keyboard"]!);
-        Assert.Contains("<tg-emoji emoji-id=\"5875271289605722323\">🏠</tg-emoji> Menu", (string)sent[1].Body["text"]!, StringComparison.Ordinal);
-        Assert.Equal([promptId], Deleted());
-        Assert.Null(_rig.Memory.GetFlow(Manager));
-    }
-
-    [Fact]
-    public async Task ExpiredPicker_SaysExpired_WithKeyboardRemove()
-    {
-        await Shared(5);
-        await Text("Right here");
-        await Start();
-        await Shared(_rig.Memory.GetFlow(Manager)!.PickerRequestIds.Max() + 1);
-
-        var expired = Sent().Where(c => (string)c.Body["text"]! == "That picker expired").ToList();
-        Assert.Equal(3, expired.Count);
-        Assert.All(expired, c => Assert.True((bool)c.Body["reply_markup"]!["remove_keyboard"]!));
-        var all = Sent().ToList();
-        Assert.All(expired, c => Assert.Contains("Add destination", Labels(all[all.IndexOf(c) + 1])));
-        Assert.Empty(_h.Api.CallsTo("getChat"));
-        Assert.NotEmpty(_rig.Memory.GetFlow(Manager)!.PickerRequestIds);
-    }
-
-    [Fact]
-    public async Task PromptExpiry_ViaTick_RecordsAFailure()
-    {
-        AddChannel();
-        await Start();
-        var request = ChannelRequest();
-
-        _h.Time.Advance(TimeSpan.FromMinutes(10));
-        await _rig.Flow.TickAsync(TestContext.Current.CancellationToken);
-
-        Assert.Equal([SetupFailureKind.PromptExpired], _h.State.Read(s => s.SetupFailures.Select(f => f.Kind).ToList()));
-        Assert.Empty(_rig.Memory.GetFlow(Manager)!.PickerRequestIds);
-
-        await Shared(request);
-        Assert.Equal("That picker expired", (string)Sent().SkipLast(1).Last().Body["text"]!);
-        Assert.Empty(_h.Settings.Current.Destinations);
     }
 
     [Fact]
@@ -486,7 +661,7 @@ public sealed class OnboardingFlowTests : IDisposable, IAsyncLifetime
         _h.Api.SetMember(Group, FakeBotApi.Member("member"));
         await Start();
 
-        await Shared(GroupRequest(), Group);
+        await Added(GroupAdd, Group);
         Assert.Equal("1", _rig.Memory.GetFlow(Manager)!.Params["photosBlocked"]);
         await Click("1|op|NewMedia", WizardId());
 
@@ -504,12 +679,26 @@ public sealed class OnboardingFlowTests : IDisposable, IAsyncLifetime
         _h.Api.AddChat(Channel, "channel", "<Tom & Jerry>");
         _h.Api.SetMember(Channel, BotTestHarness.AdminCanPost);
         await Start();
+        var prompt = WizardId();
 
-        var shared = TelegramFixtures.Update("chat_shared", ("request_id", ChannelRequest().ToString(System.Globalization.CultureInfo.InvariantCulture)));
-        shared.Message!.ChatShared!.Title = "<Tom & Jerry>";
-        await _rig.Deliver(shared);
+        var update = TelegramFixtures.Update(ChannelAdd, ("chat_id", Num(Channel)));
+        update.MyChatMember!.Chat.Title = "<Tom & Jerry>";
+        await _rig.Deliver(update);
 
-        Assert.Equal("Checking <b>&lt;Tom &amp; Jerry&gt;</b>…", (string)Sent().Skip(1).First().Body["text"]!);
+        Assert.Equal("Checking <b>&lt;Tom &amp; Jerry&gt;</b>…", (string)Edits(prompt)[0].Body["text"]!);
+    }
+
+    private static string Num(long value) => value.ToString(CultureInfo.InvariantCulture);
+
+    private static int Occurrences(string text, string part)
+    {
+        var count = 0;
+        for (var i = text.IndexOf(part, StringComparison.Ordinal); i >= 0; i = text.IndexOf(part, i + part.Length, StringComparison.Ordinal))
+        {
+            count++;
+        }
+
+        return count;
     }
 
     private void AddChannel()
@@ -520,27 +709,39 @@ public sealed class OnboardingFlowTests : IDisposable, IAsyncLifetime
 
     private Task Start() => Text("/start add");
 
-    private int ChannelRequest() => int.Parse(_rig.Memory.GetFlow(Manager)!.Params["requestChannel"], System.Globalization.CultureInfo.InvariantCulture);
-
-    private int GroupRequest() => int.Parse(_rig.Memory.GetFlow(Manager)!.Params["requestGroup"], System.Globalization.CultureInfo.InvariantCulture);
+    /// <summary>Sends the prompt and adds the bot to the channel, which leaves the wizard on the preset step.</summary>
+    private async Task ChooseChannel()
+    {
+        AddChannel();
+        await Start();
+        await Added(ChannelAdd, Channel);
+    }
 
     private int WizardId() => _rig.Memory.GetFlow(Manager)!.WizardMessageId!.Value;
 
-    private Task Shared(int requestId, long chatId = Channel)
+    private Task Added(string fixture, long chatId, long userId = Manager)
+        => _rig.Deliver(TelegramFixtures.Update(fixture, ("chat_id", Num(chatId)), ("user_id", Num(userId))));
+
+    private Task GroupStart(long chatId, string text, long userId = Manager)
         => _rig.Deliver(TelegramFixtures.Update(
-            "chat_shared",
-            ("request_id", requestId.ToString(System.Globalization.CultureInfo.InvariantCulture)),
-            ("chat_id", chatId.ToString(System.Globalization.CultureInfo.InvariantCulture))));
+            "group_command_start",
+            ("chat_id", Num(chatId)),
+            ("user_id", Num(userId)),
+            ("text", System.Text.Json.JsonEncodedText.Encode(text).ToString())));
 
     private Task Click(string data, int messageId)
-        => _rig.Deliver(TelegramFixtures.Update("callback_query", ("data", data), ("message_id", messageId.ToString(System.Globalization.CultureInfo.InvariantCulture))));
+        => _rig.Deliver(TelegramFixtures.Update("callback_query", ("data", data), ("message_id", Num(messageId))));
 
-    private Task Text(string text)
-        => _rig.Deliver(TelegramFixtures.Update("private_text", ("text", System.Text.Json.JsonEncodedText.Encode(text).ToString())));
+    private Task Text(string text, long userId = Manager)
+        => _rig.Deliver(TelegramFixtures.Update("private_text", ("text", System.Text.Json.JsonEncodedText.Encode(text).ToString()), ("user_id", Num(userId))));
 
     /// <summary>The messages sent to a chat (the manager's private chat by default).</summary>
     private BotApiCall[] Sent(long chatId = Manager)
-        => [.. _h.Api.CallsTo("sendMessage").Where(c => c.Body["chat_id"]!.ToString() == chatId.ToString(System.Globalization.CultureInfo.InvariantCulture))];
+        => [.. _h.Api.CallsTo("sendMessage").Where(c => c.Body["chat_id"]!.ToString() == Num(chatId))];
+
+    /// <summary>The edits of one message.</summary>
+    private BotApiCall[] Edits(int messageId)
+        => [.. _h.Api.CallsTo("editMessageText").Where(c => (int)c.Body["message_id"]! == messageId)];
 
     private int[] Deleted() => [.. _h.Api.CallsTo("deleteMessage").Select(c => (int)c.Body["message_id"]!)];
 

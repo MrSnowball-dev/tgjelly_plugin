@@ -58,22 +58,33 @@ public sealed class DetectedChatFlowTests : IDisposable, IAsyncLifetime
     }
 
     [Fact]
-    public async Task WhilePickerWaits_NotRecorded()
+    public async Task AddMatchingAPrompt_IsNotRecorded()
     {
         await Text("/start add");
-        Assert.NotEmpty(_rig.Memory.GetFlow(Manager)!.PickerRequestIds);
 
         await Added(NewGroup);
 
         _h.Time.Advance(TimeSpan.FromMinutes(1));
         Assert.Empty(Visible());
+        Assert.False(_rig.Memory.IsDetected(NewGroup));
     }
 
     [Fact]
-    public async Task AfterThePickerIsAnswered_AChatIsRecordedAgain()
+    public async Task AddByAnotherUser_WhileAPromptWaits_IsRecorded()
     {
         await Text("/start add");
-        await Text("Cancel");
+
+        await Deliver("my_chat_member_group_member", ("chat_id", Num(NewGroup)), ("user_id", "99"));
+
+        _h.Time.Advance(TimeSpan.FromSeconds(30));
+        Assert.Equal(NewGroup, Assert.Single(Visible()).ChatId);
+    }
+
+    [Fact]
+    public async Task AfterThePromptIsCancelled_AChatIsRecordedAgain()
+    {
+        await Text("/start add");
+        await Click("1|on", PromptId());
 
         await Added(NewGroup);
 
@@ -231,10 +242,11 @@ public sealed class DetectedChatFlowTests : IDisposable, IAsyncLifetime
         await Added(NewGroup);
         _h.Time.Advance(TimeSpan.FromSeconds(30));
         await Text("/start add");
+        var prompt = PromptId();
 
-        await Text("Cancel");
+        await Click("1|on", prompt);
 
-        Assert.Contains("Chats added outside setup (1)", Labels(Sent().Last()));
+        Assert.Contains("Chats added outside setup (1)", Labels(_h.Api.CallsTo("editMessageText").Last()));
     }
 
     [Fact]
@@ -253,6 +265,8 @@ public sealed class DetectedChatFlowTests : IDisposable, IAsyncLifetime
     private static string Num(long value) => value.ToString(CultureInfo.InvariantCulture);
 
     private System.Collections.Generic.IReadOnlyList<Jellyfin.Plugin.TgJelly.State.Documents.DetectedChat> Visible() => _rig.Memory.VisibleDetected([]);
+
+    private int PromptId() => _rig.Memory.GetFlow(Manager)!.WizardMessageId!.Value;
 
     private Task Added(long chatId) => Deliver("my_chat_member_group_member", ("chat_id", Num(chatId)));
 

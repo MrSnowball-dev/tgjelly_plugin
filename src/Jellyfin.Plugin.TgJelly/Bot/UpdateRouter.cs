@@ -11,7 +11,8 @@ namespace Jellyfin.Plugin.TgJelly.Bot;
 
 /// <summary>
 /// Sorts incoming updates for the poll loop (plan 4): button presses are answered at once, and everything that needs
-/// screens or storage is queued for the <see cref="BotWorker"/>. Never throws.
+/// screens or storage is queued for the <see cref="BotWorker"/>. In groups, only migrations and a person's
+/// <c>/start@bot …</c> are taken. Never throws.
 /// </summary>
 public sealed class UpdateRouter : IUpdateHandler
 {
@@ -112,6 +113,25 @@ public sealed class UpdateRouter : IUpdateHandler
                     return Task.CompletedTask;
                 });
                 break;
+            case ChatType.Group or ChatType.Supergroup when message.From is { IsBot: false } && IsStartForThisBot(message.Text):
+                _queue.Enqueue("group-start", token => _flows.OnGroupStartAsync(message, token));
+                break;
         }
+    }
+
+    /// <summary>
+    /// Whether a group message is <c>/start@bot …</c> for this bot (spec §6.2, F43); without the <c>@bot</c> suffix it
+    /// may be meant for another bot in the group.
+    /// </summary>
+    private bool IsStartForThisBot(string? text)
+    {
+        var bot = _connection.BotUsername;
+        if (string.IsNullOrEmpty(text) || string.IsNullOrEmpty(bot))
+        {
+            return false;
+        }
+
+        var word = text.Split([' ', '\n'], 2)[0];
+        return string.Equals(word, "/start@" + bot, StringComparison.OrdinalIgnoreCase);
     }
 }

@@ -35,6 +35,15 @@ public interface IBotFlows
     Task OnChatMemberAsync(ChatMemberUpdated update, CancellationToken ct);
 
     /// <summary>
+    /// Handles a <c>/start@bot …</c> a person sent in a group or supergroup. It is only matched to that person's setup
+    /// flow; the bot never replies in the group.
+    /// </summary>
+    /// <param name="message">The group message.</param>
+    /// <param name="ct">Cancels handling.</param>
+    /// <returns>A task.</returns>
+    Task OnGroupStartAsync(Message message, CancellationToken ct);
+
+    /// <summary>
     /// Called about every 30 seconds, for time-based work such as expiring flows.
     /// </summary>
     /// <param name="ct">Cancels the tick.</param>

@@ -85,6 +85,35 @@ public sealed class UpdateRouterTests : IDisposable
     }
 
     [Fact]
+    public async Task GroupStartForThisBot_IsQueued()
+    {
+        await _router.HandleAsync(GroupMessage("/start@tgjelly_test_bot add"), TestContext.Current.CancellationToken);
+        await _router.HandleAsync(GroupMessage("/START@TgJelly_Test_Bot"), TestContext.Current.CancellationToken);
+        Assert.Empty(_flows.Calls);
+
+        await _queue.RunPendingAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(["/start@tgjelly_test_bot add", "/START@TgJelly_Test_Bot"], _flows.GroupStarts);
+        Assert.Empty(_h.Api.Calls);
+    }
+
+    [Fact]
+    public async Task GroupStartForAnotherBot_OrOtherCommands_AreIgnored()
+    {
+        var fromBot = GroupMessage("/start@tgjelly_test_bot add");
+        fromBot.Message!.From!.IsBot = true;
+
+        await _router.HandleAsync(GroupMessage("/start@other_bot add"), TestContext.Current.CancellationToken);
+        await _router.HandleAsync(GroupMessage("/menu@tgjelly_test_bot"), TestContext.Current.CancellationToken);
+        await _router.HandleAsync(GroupMessage("/start add"), TestContext.Current.CancellationToken);
+        await _router.HandleAsync(fromBot, TestContext.Current.CancellationToken);
+        await _queue.RunPendingAsync(TestContext.Current.CancellationToken);
+
+        Assert.Empty(_flows.Calls);
+        Assert.Empty(_h.Api.Calls);
+    }
+
+    [Fact]
     public async Task MigrateToChatId_RewritesTheDestination()
     {
         var d = _h.AddDestination(-1001, ChatKind.Group);
@@ -215,4 +244,7 @@ public sealed class UpdateRouterTests : IDisposable
     }
 
     public void Dispose() => _h.Dispose();
+
+    private static Telegram.Bot.Types.Update GroupMessage(string text)
+        => TelegramFixtures.Update("group_command_start", ("chat_id", "-1005550001"), ("text", System.Text.Json.JsonEncodedText.Encode(text).ToString()));
 }

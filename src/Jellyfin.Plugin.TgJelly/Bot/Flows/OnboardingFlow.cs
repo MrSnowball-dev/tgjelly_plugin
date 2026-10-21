@@ -12,21 +12,22 @@ using Jellyfin.Plugin.TgJelly.State.Documents;
 using Jellyfin.Plugin.TgJelly.Strings;
 using Microsoft.Extensions.Logging;
 using Telegram.Bot.Types;
+using Telegram.Bot.Types.Enums;
 using Telegram.Bot.Types.ReplyMarkups;
 
 namespace Jellyfin.Plugin.TgJelly.Bot.Flows;
 
 /// <summary>
-/// The bot's onboarding (spec §6.2): a reply-keyboard prompt with Telegram's native chat pickers, the check of the
-/// picked chat, the preset wizard and the Done message. Each step keys off its own marker in the chat's flow (the live
-/// picker request IDs, the wizard message ID), never off <see cref="FlowState.Screen"/> alone, because the settings
-/// screens keep their typed-URL input in the same flow.
+/// The bot's onboarding (spec §6.2): an inline prompt whose <c>startchannel</c>/<c>startgroup</c> links open
+/// Telegram's chat chooser, the check of the chosen chat, the preset wizard and the Done message, all in one message
+/// that gets edited. The chosen chat is learned from the <c>my_chat_member</c> its add produces, or from a group
+/// <c>/start@bot</c>, matched to the private flow of the person who sent it. Each step keys off its own marker in the
+/// chat's flow (the await marker, the wizard message ID), never off <see cref="FlowState.Screen"/> alone, because the
+/// settings screens keep their typed-URL input in the same flow.
 /// </summary>
 public sealed class OnboardingFlow
 {
     internal const string FlowScreen = "onboard";
-    private const string RequestChannelKey = "requestChannel";
-    private const string RequestGroupKey = "requestGroup";
     internal const string AnswerKey = "answer";
     internal const string ChatIdKey = "chatId";
     internal const string TitleKey = "title";
@@ -34,8 +35,22 @@ public sealed class OnboardingFlow
     internal const string IsForumKey = "isForum";
     internal const string PhotosBlockedKey = "photosBlocked";
     internal const string ThreadIdKey = "threadId";
-    private const string EventsKey = "events";
     internal const string CreatingKey = "creating";
+
+    /// <summary>The flow parameter that says what a prompt waits for; <c>chat</c> while the prompt waits for a chat.</summary>
+    internal const string AwaitKey = "await";
+
+    private const string EventsKey = "events";
+    private const string AwaitChat = "chat";
+
+    /// <summary>Marks a spent flow whose check failed; its <see cref="ChatIdKey"/> is the chat Try again re-checks.</summary>
+    private const string FailedKey = "failed";
+
+    /// <summary>
+    /// The texts a stale v0.1 reply keyboard sends when tapped. Only English shipped in v0.1, so they are fixed here
+    /// rather than read from the string table.
+    /// </summary>
+    internal static readonly string[] LegacyReplyTexts = ["📢 Choose a channel", "👥 Choose a group", "💬 Right here", "Cancel"];
 
     private readonly BotConnection _connection;
     private readonly BotMemory _memory;
@@ -60,7 +75,7 @@ public sealed class OnboardingFlow
     /// <param name="memory">The bot's memory, for the chat's flow.</param>
     /// <param name="screens">Shows screens.</param>
     /// <param name="settings">The settings store.</param>
-    /// <param name="retrier">Checks a picked chat, trying again while the bot's membership settles.</param>
+    /// <param name="retrier">Checks a chosen chat, trying again while the bot's membership settles.</param>
     /// <param name="topics">The forum topic step.</param>
     /// <param name="checker">Re-checks the chat, with its topic, right before creating.</param>
     /// <param name="creator">Adds the destination.</param>
@@ -91,47 +106,199 @@ public sealed class OnboardingFlow
     }
 
     /// <summary>
-    /// Starts over: replaces the chat's flow and sends the prompt with the pickers (spec §6.2 step 1).
+    /// Starts over: replaces the chat's flow and shows the prompt (spec §6.2 step 1). A live prompt shown in another
+    /// message is deleted, so only one prompt waits.
     /// </summary>
     /// <param name="chatId">The private chat.</param>
+    /// <param name="editMessageId">The message to turn into the prompt, or <c>null</c> to send it as a new message.</param>
     /// <param name="ct">Cancels the work.</param>
     /// <returns>A task.</returns>
-    public async Task StartAsync(long chatId, CancellationToken ct)
+    public async Task StartAsync(long chatId, int? editMessageId, CancellationToken ct)
     {
-        var sender = _connection.RequireSender();
         var previous = _memory.GetFlow(chatId);
         _memory.ClearFlow(chatId);
-        await DeleteAsync(chatId, previous?.PromptMessageId, ct).ConfigureAwait(false);
-
-        var channel = _memory.NextRequestId();
-        var group = _memory.NextRequestId();
-        var keyboard = new ReplyKeyboardMarkup(
-        [
-            [PickerButton(PickerKind.Channel, channel, _strings.Get("onboard.channel"))],
-            [PickerButton(PickerKind.Group, group, _strings.Get("onboard.group"))],
-            [new KeyboardButton(_strings.Get("onboard.here"))],
-            [new KeyboardButton(_strings.Get("onboard.cancel"))],
-        ])
+        if (previous is not null && AwaitsChat(previous) && previous.WizardMessageId != editMessageId)
         {
-            ResizeKeyboard = true,
-        };
-        var prompt = await sender.SendPromptAsync(new OutgoingPrompt(chatId, _formatter.Escape(_strings.Get("onboard.prompt")), keyboard), ct).ConfigureAwait(false);
+            await DeleteAsync(chatId, previous.WizardMessageId, ct).ConfigureAwait(false);
+        }
 
-        var flow = new FlowState
-        {
-            Screen = FlowScreen,
-            PromptMessageId = prompt.MessageId,
-            PromptSentAt = _time.GetUtcNow(),
-            PickerRequestIds = [channel, group],
-        };
-        flow.Params[RequestChannelKey] = Text(channel);
-        flow.Params[RequestGroupKey] = Text(group);
+        var id = await _screens.ShowAsync(chatId, PromptScreen(), editMessageId, ct).ConfigureAwait(false);
+        var flow = new FlowState { Screen = FlowScreen, WizardMessageId = id, PromptSentAt = _time.GetUtcNow() };
+        flow.Params[AwaitKey] = AwaitChat;
         _memory.SaveFlow(chatId, flow);
     }
 
     /// <summary>
-    /// Handles a chat picked with one of the prompt's pickers: the "Checking…" message, the prompt's removal and the
-    /// check with retries (spec §6.2 step 2). A picker the chat's flow doesn't know has expired.
+    /// Ends a prompt that <see cref="BotMemory.Prune"/> just expired: it is edited to "That setup prompt expired."
+    /// with Add destination, and the flow is forgotten (spec §6.2). Flows waiting for anything else are left alone.
+    /// </summary>
+    /// <param name="chatId">The private chat whose prompt expired.</param>
+    /// <param name="ct">Cancels the work.</param>
+    /// <returns>A task.</returns>
+    public async Task ExpireAsync(long chatId, CancellationToken ct)
+    {
+        if (_memory.GetFlow(chatId) is not { } flow || !flow.Params.TryGetValue(AwaitKey, out var awaited) || awaited != AwaitChat)
+        {
+            return;
+        }
+
+        try
+        {
+            if (flow.WizardMessageId is { } id)
+            {
+                await _screens.ShowAsync(chatId, ExpiredScreen(), id, ct).ConfigureAwait(false);
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex, "TgJelly could not mark an expired setup prompt");
+        }
+
+        _memory.ClearFlow(chatId);
+    }
+
+    /// <summary>
+    /// Matches the bot's own membership change to the setup flow of the person who made it (spec §6.2 step 2): an add
+    /// while that person's prompt waits is the chosen chat. A redelivered add of the chat already chosen is taken and
+    /// ignored. Anything else is left for <see cref="DetectedChatFlow"/>.
+    /// </summary>
+    /// <param name="update">The membership change.</param>
+    /// <param name="ct">Cancels the work.</param>
+    /// <returns><c>true</c> when a setup flow took the update.</returns>
+    public async Task<bool> OnChatMemberAsync(ChatMemberUpdated update, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(update);
+        if (update.Chat.Type == ChatType.Private || _memory.GetFlow(update.From.Id) is not { } flow)
+        {
+            return false;
+        }
+
+        // Cases for steps that wait for something in their own chat belong here, ahead of the repeat rule: such a
+        // flow already has that chat as its chosen chat, so the repeat rule would swallow the update.
+        if (!IsAdd(update))
+        {
+            return false;
+        }
+
+        if (IsChosenChat(flow, update.Chat.Id))
+        {
+            _logger.LogDebug("TgJelly ignored an add it already handled");
+            return true;
+        }
+
+        if (!AwaitsChat(flow))
+        {
+            return false;
+        }
+
+        await OnChatChosenAsync(update.From.Id, flow, update.Chat, ct).ConfigureAwait(false);
+        return true;
+    }
+
+    /// <summary>
+    /// Handles a group <c>/start@bot …</c> (spec §6.2 step 2, F43): from a person whose prompt waits, it counts as
+    /// choosing that group, which covers a group the bot is already in. The bot never replies in the group.
+    /// </summary>
+    /// <param name="message">The group message.</param>
+    /// <param name="ct">Cancels the work.</param>
+    /// <returns>A task.</returns>
+    public async Task OnGroupStartAsync(Message message, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(message);
+        if (message.From is not { } from || _memory.GetFlow(from.Id) is not { } flow)
+        {
+            return;
+        }
+
+        // Cases for steps that wait in their own chat belong here too, ahead of the repeat rule.
+        if (IsChosenChat(flow, message.Chat.Id) || !AwaitsChat(flow))
+        {
+            return;
+        }
+
+        await OnChatChosenAsync(from.Id, flow, message.Chat, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Handles Right here (<c>oh</c>): this private chat becomes the destination, checked once, in the prompt's
+    /// message (spec §6.2 step 1). A press on anything but the live prompt has expired.
+    /// </summary>
+    /// <param name="query">The button press.</param>
+    /// <param name="ct">Cancels the work.</param>
+    /// <returns>A task.</returns>
+    public async Task OnRightHereAsync(CallbackQuery query, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+        if (Prompt(query) is not { } flow)
+        {
+            await MenuExpiredAsync(query, ct).ConfigureAwait(false);
+            return;
+        }
+
+        var chatId = query.Message!.Chat.Id;
+        SpendPrompt(flow);
+        flow.Params[ChatIdKey] = Text(chatId);
+        _memory.SaveFlow(chatId, flow);
+        await CheckChosenAsync(chatId, flow.WizardMessageId, chatId, _formatter.Escape(_strings.Get("onboard.hereChosen")), retry: false, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Handles the prompt's Cancel (<c>on</c>): ends the prompt and shows the menu in its message. A press on anything
+    /// but the live prompt has expired.
+    /// </summary>
+    /// <param name="query">The button press.</param>
+    /// <param name="ct">Cancels the work.</param>
+    /// <returns>A task.</returns>
+    public async Task OnCancelAsync(CallbackQuery query, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+        if (Prompt(query) is null)
+        {
+            await MenuExpiredAsync(query, ct).ConfigureAwait(false);
+            return;
+        }
+
+        var message = query.Message!;
+        _memory.ClearFlow(message.Chat.Id);
+        await _screens.ShowAsync(message.Chat.Id, MainMenu(), message.MessageId, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Handles Try again on a failure (<c>ot</c>, spec §6.2 step 2): the chat whose check failed is checked once more,
+    /// without retries, in the same message, and the wizard continues. Without such a chat, a fresh prompt replaces
+    /// the pressed message.
+    /// </summary>
+    /// <param name="query">The button press.</param>
+    /// <param name="ct">Cancels the work.</param>
+    /// <returns>A task.</returns>
+    public async Task OnTryAgainAsync(CallbackQuery query, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+        if (query.Message is not { } message)
+        {
+            return;
+        }
+
+        var chatId = message.Chat.Id;
+        if (_memory.GetFlow(chatId) is { } flow
+            && flow.WizardMessageId == message.MessageId
+            && flow.Params.ContainsKey(FailedKey)
+            && flow.Params.TryGetValue(ChatIdKey, out var failed)
+            && long.TryParse(failed, NumberStyles.Integer, CultureInfo.InvariantCulture, out var target))
+        {
+            var html = target == chatId
+                ? _formatter.Escape(_strings.Get("onboard.hereChosen"))
+                : Checking(flow.Params.GetValueOrDefault(TitleKey), target);
+            await CheckChosenAsync(chatId, message.MessageId, target, html, retry: false, ct).ConfigureAwait(false);
+            return;
+        }
+
+        await StartAsync(chatId, message.MessageId, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Handles a <c>chat_shared</c>: the answer to the topic-promotion picker goes to the topic step; a redelivered
+    /// one is ignored; any other is left over from a v0.1 picker and is stale input.
     /// </summary>
     /// <param name="message">The private message carrying <see cref="Message.ChatShared"/>.</param>
     /// <param name="ct">Cancels the work.</param>
@@ -158,88 +325,22 @@ public sealed class OnboardingFlow
             return;
         }
 
-        if (flow is null || !flow.PickerRequestIds.Contains(shared.RequestId))
-        {
-            await PickerExpiredAsync(chatId, ct).ConfigureAwait(false);
-            return;
-        }
-
-        var title = string.IsNullOrEmpty(shared.Title) ? Text(shared.ChatId) : shared.Title;
-        await BeginCheckAsync(chatId, flow, message, _strings.Get("onboard.checking", ("title", _formatter.Escape(title))), ct).ConfigureAwait(false);
-
-        ChatCheckResult check;
-        try
-        {
-            check = await _retrier.CheckAsync(shared.ChatId, retry: true, ct).ConfigureAwait(false);
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            _logger.LogWarning(ex, "TgJelly could not check the picked chat {Title}", title);
-            await FailAsync(chatId, _strings.Get("token.unreachable"), null, ct).ConfigureAwait(false);
-            return;
-        }
-
-        await ContinueAfterCheckAsync(chatId, check, 0, null, ct).ConfigureAwait(false);
+        await OnLegacyReplyAsync(message, ct).ConfigureAwait(false);
     }
 
     /// <summary>
-    /// Handles "💬 Right here": this private chat becomes the destination, checked once (spec §6.2 step 1). Without a
-    /// live prompt the picker has expired.
+    /// Handles stale input from a v0.1 client (spec §6.2): a tap on its reply keyboard or its chat picker. "That menu
+    /// expired" removes the keyboard the client still shows, then the menu follows.
     /// </summary>
     /// <param name="message">The private message.</param>
     /// <param name="ct">Cancels the work.</param>
     /// <returns>A task.</returns>
-    public async Task OnRightHereAsync(Message message, CancellationToken ct)
+    public async Task OnLegacyReplyAsync(Message message, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(message);
         var chatId = message.Chat.Id;
-        var flow = _memory.GetFlow(chatId);
-        if (IsRepeat(flow, message))
-        {
-            return;
-        }
-
-        if (flow is null || flow.PickerRequestIds.Count == 0)
-        {
-            await PickerExpiredAsync(chatId, ct).ConfigureAwait(false);
-            return;
-        }
-
-        await BeginCheckAsync(chatId, flow, message, _formatter.Escape(_strings.Get("onboard.hereChosen")), ct).ConfigureAwait(false);
-
-        ChatCheckResult check;
-        try
-        {
-            check = await _retrier.CheckAsync(chatId, retry: false, ct).ConfigureAwait(false);
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            _logger.LogWarning(ex, "TgJelly could not check the private chat");
-            await FailAsync(chatId, _strings.Get("token.unreachable"), null, ct).ConfigureAwait(false);
-            return;
-        }
-
-        await ContinueAfterCheckAsync(chatId, check, 0, null, ct).ConfigureAwait(false);
-    }
-
-    /// <summary>
-    /// Handles the prompt's Cancel: removes the reply keyboard, ends a live prompt and shows the menu.
-    /// </summary>
-    /// <param name="message">The private message.</param>
-    /// <param name="ct">Cancels the work.</param>
-    /// <returns>A task.</returns>
-    public async Task OnCancelAsync(Message message, CancellationToken ct)
-    {
-        ArgumentNullException.ThrowIfNull(message);
-        var chatId = message.Chat.Id;
-        var sender = _connection.RequireSender();
-        await sender.SendPromptAsync(new OutgoingPrompt(chatId, _formatter.Escape(_strings.Get("onboard.cancelled")), new ReplyKeyboardRemove()), ct).ConfigureAwait(false);
-        if (_memory.GetFlow(chatId) is { PickerRequestIds.Count: > 0 } flow)
-        {
-            _memory.ClearFlow(chatId);
-            await DeleteAsync(chatId, flow.PromptMessageId, ct).ConfigureAwait(false);
-        }
-
+        var expired = new OutgoingPrompt(chatId, _formatter.Escape(_strings.Get("menu.expired")), new ReplyKeyboardRemove());
+        await _connection.RequireSender().SendPromptAsync(expired, ct).ConfigureAwait(false);
         await _screens.ShowAsync(chatId, MainMenu(), null, ct).ConfigureAwait(false);
     }
 
@@ -400,10 +501,10 @@ public sealed class OnboardingFlow
     /// Continues after a chat was checked: a failure is explained with <c>[Try again] [Advanced options]</c>; a forum
     /// whose topic isn't chosen yet goes to the topic question (the topic's answers continue through
     /// <see cref="OnTopicAsync"/>, not through here, so General doesn't loop back); anything else meets the duplicate rule, then the preset
-    /// step (spec §6.2 steps 2–4). The "Checking…" message, if the flow has one, is deleted.
+    /// step (spec §6.2 steps 2–4).
     /// </summary>
     /// <param name="privateChatId">The private chat.</param>
-    /// <param name="check">The check of the picked chat.</param>
+    /// <param name="check">The check of the chosen chat.</param>
     /// <param name="threadId">The forum topic, or 0.</param>
     /// <param name="wizardMessageId">The wizard message to edit, or <c>null</c> to send a new one.</param>
     /// <param name="ct">Cancels the work.</param>
@@ -413,7 +514,7 @@ public sealed class OnboardingFlow
         ArgumentNullException.ThrowIfNull(check);
         if (!check.Passed)
         {
-            await FailAsync(privateChatId, check.Message ?? _strings.Get("check.groupCantSend"), wizardMessageId, ct).ConfigureAwait(false);
+            await FailAsync(privateChatId, check.Message ?? _strings.Get("check.groupCantSend"), wizardMessageId, check.ChatId, ct).ConfigureAwait(false);
             return;
         }
 
@@ -427,8 +528,19 @@ public sealed class OnboardingFlow
     }
 
     /// <summary>
-    /// Builds a native chat picker button (spec §6.2): a channel where the bot can post and edit, a group the bot
-    /// joins, or a forum where the bot is promoted to manage topics.
+    /// Whether a flow's prompt is waiting for a chat to be chosen.
+    /// </summary>
+    /// <param name="flow">The chat's flow.</param>
+    /// <returns><c>true</c> while the prompt is live: it waits for a chat and hasn't expired.</returns>
+    internal static bool AwaitsChat(FlowState flow)
+    {
+        ArgumentNullException.ThrowIfNull(flow);
+        return flow.PromptSentAt is not null && flow.Params.TryGetValue(AwaitKey, out var awaited) && awaited == AwaitChat;
+    }
+
+    /// <summary>
+    /// Builds the native chat picker button that asks to promote the bot in a forum so it can manage topics
+    /// (spec §6.2 step 3).
     /// </summary>
     /// <param name="kind">The picker.</param>
     /// <param name="requestId">Its fresh request ID.</param>
@@ -438,21 +550,6 @@ public sealed class OnboardingFlow
     {
         var request = kind switch
         {
-            PickerKind.Channel => new KeyboardButtonRequestChat
-            {
-                RequestId = requestId,
-                ChatIsChannel = true,
-                BotAdministratorRights = PostRights(),
-                UserAdministratorRights = PostRights(),
-                RequestTitle = true,
-            },
-            PickerKind.Group => new KeyboardButtonRequestChat
-            {
-                RequestId = requestId,
-                ChatIsChannel = false,
-                BotIsMember = true,
-                RequestTitle = true,
-            },
             PickerKind.TopicPromotion => new KeyboardButtonRequestChat
             {
                 RequestId = requestId,
@@ -467,7 +564,27 @@ public sealed class OnboardingFlow
         return KeyboardButton.WithRequestChat(text, request);
     }
 
-    private static ChatAdministratorRights PostRights() => new() { CanPostMessages = true, CanEditMessages = true };
+    /// <summary>
+    /// Whether a membership change counts as adding the bot (spec §6.2 step 2): it is now in the chat, and either it
+    /// wasn't before or it was just made an admin (rights granted in a chat it was already in).
+    /// </summary>
+    private static bool IsAdd(ChatMemberUpdated u)
+        => (u.NewChatMember is ChatMemberMember or ChatMemberAdministrator || u.NewChatMember is ChatMemberRestricted { IsMember: true })
+           && (u.OldChatMember.Status is ChatMemberStatus.Left or ChatMemberStatus.Kicked || u.NewChatMember is ChatMemberAdministrator);
+
+    /// <summary>
+    /// Whether the flow already chose this chat, so the update is a redelivery (or a later echo) of the choice. A
+    /// failed check doesn't count: after a failure, a later add of the chat is like any other.
+    /// </summary>
+    private static bool IsChosenChat(FlowState flow, long chatId)
+        => !flow.Params.ContainsKey(FailedKey) && flow.Params.TryGetValue(ChatIdKey, out var chosen) && chosen == Text(chatId);
+
+    /// <summary>Ends the prompt's wait: from here on the flow is on the check.</summary>
+    private static void SpendPrompt(FlowState flow)
+    {
+        flow.Params.Remove(AwaitKey);
+        flow.PromptSentAt = null;
+    }
 
     private static string Text(long value) => value.ToString(CultureInfo.InvariantCulture);
 
@@ -480,6 +597,46 @@ public sealed class OnboardingFlow
         => flow is not null && flow.Params.TryGetValue(AnswerKey, out var answer) && answer == Text(message.MessageId);
 
     /// <summary>
+    /// A chat was chosen in Telegram while the prompt waited: the prompt is spent, the chat remembered, and the prompt's
+    /// message turns into "Checking <i>Title</i>…" while the check runs with retries (spec §6.2 step 2).
+    /// </summary>
+    private async Task OnChatChosenAsync(long privateChatId, FlowState flow, Chat chat, CancellationToken ct)
+    {
+        var title = string.IsNullOrEmpty(chat.Title) ? Text(chat.Id) : chat.Title;
+        SpendPrompt(flow);
+        flow.Params[ChatIdKey] = Text(chat.Id);
+        flow.Params[TitleKey] = title;
+        _memory.SaveFlow(privateChatId, flow);
+        await CheckChosenAsync(privateChatId, flow.WizardMessageId, chat.Id, Checking(title, chat.Id), retry: true, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Shows the "Checking…" text in the wizard message, checks the chat and continues; a transport error is a failed
+    /// step that keeps the chat for Try again.
+    /// </summary>
+    private async Task CheckChosenAsync(long privateChatId, int? wizardMessageId, long chatId, string checkingHtml, bool retry, CancellationToken ct)
+    {
+        var wizard = await _screens.ShowAsync(privateChatId, new Screen(checkingHtml, null), wizardMessageId, ct).ConfigureAwait(false);
+        ChatCheckResult check;
+        try
+        {
+            check = await _retrier.CheckAsync(chatId, retry, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex, "TgJelly could not check the chosen chat {Chat}", chatId);
+            await FailAsync(privateChatId, _strings.Get("token.unreachable"), wizard, chatId, ct).ConfigureAwait(false);
+            return;
+        }
+
+        await ContinueAfterCheckAsync(privateChatId, check, 0, wizard, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>"Checking <b>Title</b>…", with the chat's ID when the title is unknown.</summary>
+    private string Checking(string? title, long chatId)
+        => _strings.Get("onboard.checking", ("title", _formatter.Escape(string.IsNullOrEmpty(title) ? Text(chatId) : title)));
+
+    /// <summary>
     /// After the topic step: a chosen topic (General is thread 0) meets the duplicate rule, then the preset step. Nothing
     /// to do when the step is still waiting or has ended with its own message.
     /// </summary>
@@ -490,7 +647,6 @@ public sealed class OnboardingFlow
     private async Task ContinueWithChatAsync(long chatId, ChatCheckResult check, int threadId, int? wizardMessageId, CancellationToken ct)
     {
         var previous = _memory.GetFlow(chatId);
-        var checking = previous?.CheckingMessageId;
         if (DestinationCreator.Find(_settings.Current, check.ChatId, threadId) is { } existing)
         {
             try
@@ -504,7 +660,6 @@ public sealed class OnboardingFlow
 
             await ShowExistingAsync(chatId, existing, wizardMessageId, ct).ConfigureAwait(false);
             _memory.ClearFlow(chatId);
-            await DeleteAsync(chatId, checking, ct).ConfigureAwait(false);
             return;
         }
 
@@ -522,7 +677,6 @@ public sealed class OnboardingFlow
         flow.Params[ThreadIdKey] = Text(threadId);
         flow.WizardMessageId = await _screens.ShowAsync(chatId, PresetScreen(check.Title), wizardMessageId, ct).ConfigureAwait(false);
         _memory.SaveFlow(chatId, flow);
-        await DeleteAsync(chatId, checking, ct).ConfigureAwait(false);
     }
 
     /// <summary>Re-checks the chat, adds the destination, and edits the wizard to Done (spec §6.2 step 5).</summary>
@@ -544,13 +698,13 @@ public sealed class OnboardingFlow
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             _logger.LogWarning(ex, "TgJelly could not re-check {Title} before adding it", flow.Params[TitleKey]);
-            await FailAsync(chatId, _strings.Get("token.unreachable"), wizard, ct).ConfigureAwait(false);
+            await FailAsync(chatId, _strings.Get("token.unreachable"), wizard, target, ct).ConfigureAwait(false);
             return;
         }
 
         if (!check.Passed)
         {
-            await FailAsync(chatId, check.Message ?? _strings.Get("check.groupCantSend"), wizard, ct).ConfigureAwait(false);
+            await FailAsync(chatId, check.Message ?? _strings.Get("check.groupCantSend"), wizard, target, ct).ConfigureAwait(false);
             return;
         }
 
@@ -565,7 +719,7 @@ public sealed class OnboardingFlow
                 await ShowExistingAsync(chatId, result.Destination!, wizard, ct).ConfigureAwait(false);
                 break;
             default:
-                await FailAsync(chatId, string.Join('\n', result.Errors.Select(e => e.Message)), wizard, ct).ConfigureAwait(false);
+                await FailAsync(chatId, string.Join('\n', result.Errors.Select(e => e.Message)), wizard, target, ct).ConfigureAwait(false);
                 return;
         }
 
@@ -573,47 +727,39 @@ public sealed class OnboardingFlow
     }
 
     /// <summary>
-    /// Ends the current answer: the picker IDs and the prompt are spent, the answer is remembered so a redelivered
-    /// update is ignored, the reply keyboard goes with a short message (kept as the "Checking…" message) and the prompt
-    /// is deleted.
+    /// A failed step (spec §6.2 step 2, "On failure"): the wizard explains what's missing with
+    /// <c>[Try again] [Advanced options]</c>, a setup failure is recorded and the flow is spent. The spent flow keeps
+    /// the chat that was checked (and its title, when known), so Try again can check it again.
     /// </summary>
-    private async Task BeginCheckAsync(long chatId, FlowState flow, Message answer, string html, CancellationToken ct)
-    {
-        var prompt = flow.PromptMessageId;
-        flow.Params[AnswerKey] = Text(answer.MessageId);
-        flow.PickerRequestIds = [];
-        flow.PromptMessageId = null;
-        flow.PromptSentAt = null;
-        _memory.SaveFlow(chatId, flow);
-
-        var sender = _connection.RequireSender();
-        var checking = await sender.SendPromptAsync(new OutgoingPrompt(chatId, html, new ReplyKeyboardRemove()), ct).ConfigureAwait(false);
-        flow.CheckingMessageId = checking.MessageId;
-        _memory.SaveFlow(chatId, flow);
-        await DeleteAsync(chatId, prompt, ct).ConfigureAwait(false);
-    }
-
-    /// <summary>
-    /// A failed step (spec §6.2 step 2, "On failure"): deletes the "Checking…" message, explains what's missing with
-    /// <c>[Try again] [Advanced options]</c>, records a setup failure and spends the flow.
-    /// </summary>
-    private async Task FailAsync(long chatId, string message, int? wizardMessageId, CancellationToken ct)
+    private async Task FailAsync(long chatId, string message, int? wizardMessageId, long? failedChatId, CancellationToken ct)
     {
         var flow = _memory.GetFlow(chatId);
-        await DeleteAsync(chatId, flow?.CheckingMessageId, ct).ConfigureAwait(false);
-
         var buttons = new InlineKeyboardMarkup(new[]
         {
             Button("onboard.tryAgain", "ot"),
             Button("onboard.advanced", "ox"),
         });
-        await _screens.ShowAsync(chatId, new Screen(_formatter.Escape(message), buttons), wizardMessageId, ct).ConfigureAwait(false);
+        var html = _formatter.Escape(message)
+            + ButtonGuide.Lines(_strings, _formatter, ("onboard.tryAgain", "onboard.tryAgain.about"), ("onboard.advanced", "onboard.advanced.about"));
+        var shown = await _screens.ShowAsync(chatId, new Screen(html, buttons), wizardMessageId, ct).ConfigureAwait(false);
         _memory.RecordFailure(SetupFailureKind.CheckFailed);
 
-        var spent = new FlowState { Screen = FlowScreen };
+        var spent = new FlowState { Screen = FlowScreen, WizardMessageId = shown };
         if (flow is not null && flow.Params.TryGetValue(AnswerKey, out var answer))
         {
             spent.Params[AnswerKey] = answer;
+        }
+
+        if (failedChatId is { } failed)
+        {
+            spent.Params[ChatIdKey] = Text(failed);
+            spent.Params[FailedKey] = "1";
+            if (flow is not null
+                && flow.Params.GetValueOrDefault(ChatIdKey) == Text(failed)
+                && flow.Params.TryGetValue(TitleKey, out var title))
+            {
+                spent.Params[TitleKey] = title;
+            }
         }
 
         _memory.SaveFlow(chatId, spent);
@@ -672,6 +818,50 @@ public sealed class OnboardingFlow
         return new Screen(html, new InlineKeyboardMarkup(rows));
     }
 
+    /// <summary>
+    /// The prompt (spec §6.2 step 1): Add to a channel and Add to a group open Telegram's chat chooser, Right here
+    /// uses this chat, up to three chats the bot is already in are offered as Set up rows, and Cancel ends it.
+    /// </summary>
+    private Screen PromptScreen()
+    {
+        var bot = _connection.BotUsername;
+        var rows = new List<InlineKeyboardButton[]>
+        {
+            new[] { Buttons.Url(_strings, "onboard.channel", BotLinks.StartChannel(bot)) },
+            new[] { Buttons.Url(_strings, "onboard.group", BotLinks.StartGroup(bot)) },
+            new[] { Button("onboard.here", "oh") },
+        };
+        var detected = _memory.VisibleDetected(_settings.Current).Take(3).ToList();
+        foreach (var chat in detected)
+        {
+            rows.Add([Buttons.Callback(_strings, "detected.setUp", CallbackData.Format("xs", Text(chat.ChatId)), ("title", MenuScreens.Label(chat.Title)))]);
+        }
+
+        rows.Add([Button("onboard.cancel", "on")]);
+
+        var guide = ButtonGuide.Lines(
+            _strings,
+            _formatter,
+            ("onboard.channel", "onboard.channel.about"),
+            ("onboard.group", "onboard.group.about"),
+            ("onboard.here", "onboard.here.about"));
+        if (detected.Count > 0)
+        {
+            // The Set up rows share one line.
+            guide += "\n" + ButtonGuide.Line(_formatter, _strings.Get("detected.setUp", ("title", "…")), _strings.Get("onboard.detected.about"));
+        }
+
+        guide += "\n" + ButtonGuide.Line(_formatter, _strings.Get("onboard.cancel"), _strings.Get("onboard.cancel.about"));
+        var html = _formatter.Escape(_strings.Get("onboard.prompt")) + "\n" + _formatter.Escape(_strings.Get("onboard.hint")) + guide;
+        return new Screen(html, new InlineKeyboardMarkup(rows));
+    }
+
+    /// <summary>"That setup prompt expired." with Add destination.</summary>
+    private Screen ExpiredScreen()
+        => new(
+            _formatter.Escape(_strings.Get("onboard.expired")) + ButtonGuide.Lines(_strings, _formatter, ("menu.add", "onboard.expired.about")),
+            new InlineKeyboardMarkup(Button("menu.add", "oa")));
+
     private Screen DoneScreen(Destination destination, TestSendResult? test, bool photosBlocked)
     {
         var html = _strings.Get(
@@ -692,6 +882,15 @@ public sealed class OnboardingFlow
         return new Screen(html, buttons);
     }
 
+    /// <summary>The prompt's flow, when the pressed message is the live prompt.</summary>
+    private FlowState? Prompt(CallbackQuery query)
+        => query.Message is { } message
+           && _memory.GetFlow(message.Chat.Id) is { } flow
+           && flow.WizardMessageId == message.MessageId
+           && AwaitsChat(flow)
+            ? flow
+            : null;
+
     /// <summary>The wizard's flow, when the pressed message is the live wizard and it isn't creating already.</summary>
     private FlowState? Wizard(CallbackQuery query)
     {
@@ -709,13 +908,6 @@ public sealed class OnboardingFlow
         return flow;
     }
 
-    /// <summary>"That picker expired" with the reply keyboard removed, then the menu with its Add destination button.</summary>
-    private async Task PickerExpiredAsync(long chatId, CancellationToken ct)
-    {
-        await _connection.RequireSender().SendPromptAsync(new OutgoingPrompt(chatId, _formatter.Escape(_strings.Get("onboard.expired")), new ReplyKeyboardRemove()), ct).ConfigureAwait(false);
-        await _screens.ShowAsync(chatId, MainMenu(), null, ct).ConfigureAwait(false);
-    }
-
     /// <summary>A stale wizard button: "That menu expired", then the menu.</summary>
     private async Task MenuExpiredAsync(CallbackQuery query, CancellationToken ct)
     {
@@ -729,7 +921,7 @@ public sealed class OnboardingFlow
         await _screens.ShowAsync(chatId, MainMenu(), null, ct).ConfigureAwait(false);
     }
 
-    /// <summary>Deletes a throwaway message; a failure only leaves it behind, so it doesn't stop the flow.</summary>
+    /// <summary>Deletes a replaced prompt; a failure only leaves it behind, so it doesn't stop the flow.</summary>
     private async Task DeleteAsync(long chatId, int? messageId, CancellationToken ct)
     {
         if (messageId is not { } id)

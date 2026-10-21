@@ -91,8 +91,9 @@ public sealed class FlowEngineTests : IDisposable, IAsyncLifetime
         await _rig.Deliver(TelegramFixtures.Update("private_command_start"));
 
         var call = Assert.Single(_h.Api.CallsTo("sendMessage"));
-        Assert.Equal("Where should notifications go?", (string)call.Body["text"]!);
-        Assert.NotNull(call.Body["reply_markup"]!["keyboard"]);
+        Assert.StartsWith("Where should notifications go?", (string)call.Body["text"]!, StringComparison.Ordinal);
+        Assert.NotNull(call.Body["reply_markup"]!["inline_keyboard"]);
+        Assert.Null(call.Body["reply_markup"]!["keyboard"]);
     }
 
     [Fact]

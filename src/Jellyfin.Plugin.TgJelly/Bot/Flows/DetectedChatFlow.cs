@@ -60,9 +60,10 @@ public sealed class DetectedChatFlow
     }
 
     /// <summary>
-    /// Follows the bot's own membership change: a group, supergroup or channel it joined is recorded unless it is a
-    /// destination or the person who added it has a chat picker waiting; one it left is forgotten. A person who
-    /// blocks the bot stops being a manager, and one who unblocks it is a manager again (spec §6.5).
+    /// Follows the bot's own membership change that no setup flow took (an add matched to a waiting prompt never gets
+    /// here): a group, supergroup or channel it joined is recorded unless it is a destination; one it left is
+    /// forgotten. A person who blocks the bot stops being a manager, and one who unblocks it is a manager again
+    /// (spec §6.5).
     /// </summary>
     /// <param name="update">The membership change.</param>
     public void OnChatMember(ChatMemberUpdated update)
@@ -93,8 +94,7 @@ public sealed class DetectedChatFlow
         }
         else if (joined
             && Kind(chat.Type) is { } kind
-            && _settings.Current.Destinations.All(d => d.ChatId != chat.Id)
-            && _memory.GetFlow(update.From.Id) is not { PickerRequestIds.Count: > 0 })
+            && _settings.Current.Destinations.All(d => d.ChatId != chat.Id))
         {
             _memory.RecordDetected(chat.Id, string.IsNullOrEmpty(chat.Title) ? chat.Id.ToString(CultureInfo.InvariantCulture) : chat.Title, kind);
         }

@@ -29,7 +29,7 @@ The repository has one build for Jellyfin 10.11 and one for Jellyfin 12. Jellyfi
 2. Restrict access to your bot in BotFather's Mini App, so that only the people you want can use it.
 3. In Jellyfin, open the Dashboard and pick **Telegram** in its menu. Paste the token.
 4. Press **Open @bot**. Telegram opens the bot.
-5. In the bot, pick a chat, group or channel with Telegram's own picker. Then pick a preset.
+5. In the bot, tap **Add to a channel** or **Add to a group** and choose the chat in Telegram. Then pick a preset.
 
 <!-- screenshot: the Telegram page after the token is accepted -->
 
