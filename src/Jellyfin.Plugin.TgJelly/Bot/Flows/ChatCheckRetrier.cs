@@ -7,8 +7,8 @@ using Jellyfin.Plugin.TgJelly.Destinations;
 namespace Jellyfin.Plugin.TgJelly.Bot.Flows;
 
 /// <summary>
-/// Checks a chat that was just picked, trying again a few times: the bot's <c>my_chat_member</c> may arrive after the
-/// <c>chat_shared</c>, so the first <c>getChatMember</c> can still say the bot isn't there (spec §6.2 step 2).
+/// Checks a chat that was just picked, trying again a few times: the bot's membership or rights may settle after the
+/// update that reported them, so the first <c>getChatMember</c> can still say the bot isn't there (spec §6.2 step 2).
 /// </summary>
 public sealed class ChatCheckRetrier
 {

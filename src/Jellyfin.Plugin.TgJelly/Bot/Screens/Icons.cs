@@ -152,6 +152,7 @@ internal static partial class Icons
         ["dest.btn.cancel"] = Cancel,
         ["input.cancel"] = Cancel,
         ["topic.allow"] = Key,
+        ["topic.checkAgain"] = Refresh,
         ["onboard.tryAgain"] = Refresh,
         ["dest.btn.check"] = Refresh,
         ["topic.general"] = Hash,

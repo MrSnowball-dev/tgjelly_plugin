@@ -22,13 +22,12 @@ public sealed class BotMemoryTests : IDisposable
     [Fact]
     public void Flow_RoundTrips_AndExpiresAfter24h()
     {
-        var flow = new FlowState { Screen = "add", WizardMessageId = 5, PickerRequestIds = [1, 2] };
+        var flow = new FlowState { Screen = "add", WizardMessageId = 5 };
         flow.Params["kind"] = "channel";
         _memory.SaveFlow(42, flow);
 
         var read = _memory.GetFlow(42)!;
         Assert.Equal(("add", 5, "channel"), (read.Screen, read.WizardMessageId, read.Params["kind"]));
-        Assert.Equal([1, 2], read.PickerRequestIds);
         Assert.Equal(_h.Time.GetUtcNow(), read.UpdatedAt);
         read.Screen = "changed";
         Assert.Equal("add", _memory.GetFlow(42)!.Screen);
@@ -83,20 +82,6 @@ public sealed class BotMemoryTests : IDisposable
         Assert.NotNull(_memory.GetFlow(1));
         Assert.NotNull(_memory.GetFlow(1000));
         Assert.Equal(1, _h.State.Read(s => s.Status.Counters.Evictions));
-    }
-
-    [Fact]
-    public void NextRequestId_Increases_AndSurvivesReload()
-    {
-        var first = _memory.NextRequestId();
-        var second = _memory.NextRequestId();
-        Assert.True(first > 0 && second > first);
-
-        _h.State.FlushAll();
-        var reloaded = new StateStore(_h.Paths, _h.Time, NullLogger<StateStore>.Instance);
-        reloaded.Load();
-
-        Assert.True(new BotMemory(reloaded, _h.Time).NextRequestId() > second);
     }
 
     [Fact]
@@ -196,7 +181,7 @@ public sealed class BotMemoryTests : IDisposable
         _h.State.Update(s =>
         {
             s.Managers["not-a-number"] = now;
-            s.Flows["bad"] = new FlowState { Screen = "add", PromptMessageId = 9, PromptSentAt = now.AddHours(-1), PickerRequestIds = [3] };
+            s.Flows["bad"] = new FlowState { Screen = "add", PromptSentAt = now.AddHours(-1) };
         });
 
         Assert.Equal([5L], _memory.RecentManagers());
@@ -206,7 +191,7 @@ public sealed class BotMemoryTests : IDisposable
     [Fact]
     public void Prune_ExpiresPromptsAfter10Min_AndRecordsAFailure_Once()
     {
-        _memory.SaveFlow(7, new FlowState { Screen = "add", PromptMessageId = 9, PromptSentAt = _h.Time.GetUtcNow(), PickerRequestIds = [3], WizardMessageId = 4 });
+        _memory.SaveFlow(7, new FlowState { Screen = "add", PromptSentAt = _h.Time.GetUtcNow(), WizardMessageId = 4 });
         _memory.SaveFlow(8, new FlowState { Screen = "home" });
 
         _h.Time.Advance(BotMemory.PromptTtl - TimeSpan.FromSeconds(1));
@@ -216,8 +201,7 @@ public sealed class BotMemoryTests : IDisposable
         _h.Time.Advance(TimeSpan.FromSeconds(1));
         Assert.Equal([7L], _memory.Prune());
         var flow = _memory.GetFlow(7)!;
-        Assert.Equal((null, null, 4), (flow.PromptMessageId, flow.PromptSentAt, flow.WizardMessageId));
-        Assert.Empty(flow.PickerRequestIds);
+        Assert.Equal((null, 4), (flow.PromptSentAt, flow.WizardMessageId));
         Assert.Equal([SetupFailureKind.PromptExpired], _h.State.Read(s => s.SetupFailures.Select(f => f.Kind).ToList()));
 
         Assert.Empty(_memory.Prune());

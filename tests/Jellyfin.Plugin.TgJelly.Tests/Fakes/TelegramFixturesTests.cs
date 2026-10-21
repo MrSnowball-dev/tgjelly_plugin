@@ -14,6 +14,7 @@ public class TelegramFixturesTests
     [InlineData("callback_query")]
     [InlineData("my_chat_member_channel_admin")]
     [InlineData("my_chat_member_channel_rights")]
+    [InlineData("my_chat_member_group_promoted")]
     [InlineData("my_chat_member_group_member")]
     [InlineData("my_chat_member_kicked")]
     [InlineData("my_chat_member_private_blocked")]

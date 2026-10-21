@@ -209,6 +209,28 @@ public class StateStoreTests
     }
 
     [Fact]
+    public void V01State_WithPickerFields_StillLoads()
+    {
+        using var dir = new TempDir();
+        var paths = new DataPaths(dir.Path);
+        Directory.CreateDirectory(paths.Root);
+        File.WriteAllText(
+            paths.State,
+            "{\"version\": 1, \"telegram\": {\"botUsername\": \"old_bot\", \"lastRequestId\": 4}, \"flows\": {\"42\": "
+            + "{\"screen\": \"onboard\", \"pickerRequestIds\": [3, 4], \"promptMessageId\": 5, \"checkingMessageId\": 6, "
+            + "\"promptSentAt\": \"2026-10-16T08:55:00+00:00\"}}}");
+        var store = NewStore(dir, new FakeTimeProvider(Restored));
+
+        store.Load();
+
+        Assert.Empty(store.Read(s => s.Status.LoadWarnings.ToArray()));
+        Assert.Equal("old_bot", store.Read(s => s.Telegram.BotUsername));
+        var flow = store.Read(s => s.Flows["42"]);
+        Assert.Equal("onboard", flow.Screen);
+        Assert.Equal(Restored.AddMinutes(-5), flow.PromptSentAt);
+    }
+
+    [Fact]
     [UnsupportedOSPlatform("windows")]
     public void UnreadableStateFile_IsALoadWarning_NotAnException()
     {

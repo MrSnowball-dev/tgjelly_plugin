@@ -28,7 +28,6 @@ namespace Jellyfin.Plugin.TgJelly.Bot.Flows;
 public sealed class OnboardingFlow
 {
     internal const string FlowScreen = "onboard";
-    internal const string AnswerKey = "answer";
     internal const string ChatIdKey = "chatId";
     internal const string TitleKey = "title";
     internal const string KindKey = "kind";
@@ -158,9 +157,11 @@ public sealed class OnboardingFlow
     }
 
     /// <summary>
-    /// Matches the bot's own membership change to the setup flow of the person who made it (spec §6.2 step 2): an add
-    /// while that person's prompt waits is the chosen chat. A redelivered add of the chat already chosen is taken and
-    /// ignored. Anything else is left for <see cref="DetectedChatFlow"/>.
+    /// Matches the bot's own membership change to the setup flow of the person who made it (spec §6.2 steps 2–3): an
+    /// add while that person's prompt waits is the chosen chat, and the bot made an admin in the forum whose promotion
+    /// screen waits is the promotion. A redelivered add of the chat already chosen is taken and ignored. Anything else
+    /// is left for <see cref="DetectedChatFlow"/>, including an add elsewhere while the promotion screen waits (which
+    /// the screen still mentions).
     /// </summary>
     /// <param name="update">The membership change.</param>
     /// <param name="ct">Cancels the work.</param>
@@ -173,8 +174,25 @@ public sealed class OnboardingFlow
             return false;
         }
 
-        // Cases for steps that wait for something in their own chat belong here, ahead of the repeat rule: such a
-        // flow already has that chat as its chosen chat, so the repeat rule would swallow the update.
+        // The promotion waits in the flow's own chat, so it comes ahead of the repeat rule, which would swallow it.
+        if (TopicFlow.AwaitsPromotion(flow))
+        {
+            if (IsChosenChat(flow, update.Chat.Id))
+            {
+                if (update.NewChatMember is ChatMemberAdministrator)
+                {
+                    await ContinueWithTopicAsync(update.From.Id, await _topics.OnPromotedAsync(update.From.Id, flow, ct).ConfigureAwait(false), ct).ConfigureAwait(false);
+                    return true;
+                }
+            }
+            else if (IsAdd(update))
+            {
+                // Not taken: a real join elsewhere is still a detected chat.
+                await _topics.OnOtherChatAsync(update.From.Id, flow, update.Chat, ct).ConfigureAwait(false);
+                return false;
+            }
+        }
+
         if (!IsAdd(update))
         {
             return false;
@@ -196,8 +214,9 @@ public sealed class OnboardingFlow
     }
 
     /// <summary>
-    /// Handles a group <c>/start@bot …</c> (spec §6.2 step 2, F43): from a person whose prompt waits, it counts as
-    /// choosing that group, which covers a group the bot is already in. The bot never replies in the group.
+    /// Handles a group <c>/start@bot …</c> (spec §6.2 steps 2–3, F43): from a person whose prompt waits, it counts as
+    /// choosing that group, which covers a group the bot is already in; from the forum whose promotion screen waits,
+    /// it counts as the promotion. The bot never replies in the group.
     /// </summary>
     /// <param name="message">The group message.</param>
     /// <param name="ct">Cancels the work.</param>
@@ -210,7 +229,13 @@ public sealed class OnboardingFlow
             return;
         }
 
-        // Cases for steps that wait in their own chat belong here too, ahead of the repeat rule.
+        // The promotion waits in the flow's own chat, so it comes ahead of the repeat rule.
+        if (TopicFlow.AwaitsPromotion(flow) && IsChosenChat(flow, message.Chat.Id))
+        {
+            await ContinueWithTopicAsync(from.Id, await _topics.OnPromotedAsync(from.Id, flow, ct).ConfigureAwait(false), ct).ConfigureAwait(false);
+            return;
+        }
+
         if (IsChosenChat(flow, message.Chat.Id) || !AwaitsChat(flow))
         {
             return;
@@ -294,38 +319,6 @@ public sealed class OnboardingFlow
         }
 
         await StartAsync(chatId, message.MessageId, ct).ConfigureAwait(false);
-    }
-
-    /// <summary>
-    /// Handles a <c>chat_shared</c>: the answer to the topic-promotion picker goes to the topic step; a redelivered
-    /// one is ignored; any other is left over from a v0.1 picker and is stale input.
-    /// </summary>
-    /// <param name="message">The private message carrying <see cref="Message.ChatShared"/>.</param>
-    /// <param name="ct">Cancels the work.</param>
-    /// <returns>A task.</returns>
-    public async Task OnChatSharedAsync(Message message, CancellationToken ct)
-    {
-        ArgumentNullException.ThrowIfNull(message);
-        if (message.ChatShared is not { } shared)
-        {
-            return;
-        }
-
-        var chatId = message.Chat.Id;
-        var flow = _memory.GetFlow(chatId);
-        if (IsRepeat(flow, message))
-        {
-            _logger.LogDebug("TgJelly ignored a chat_shared it already handled");
-            return;
-        }
-
-        if (flow is not null && TopicFlow.IsPromotionRequest(flow, shared.RequestId))
-        {
-            await ContinueWithTopicAsync(chatId, await _topics.OnPromotionSharedAsync(chatId, flow, message, ct).ConfigureAwait(false), ct).ConfigureAwait(false);
-            return;
-        }
-
-        await OnLegacyReplyAsync(message, ct).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -436,8 +429,9 @@ public sealed class OnboardingFlow
     }
 
     /// <summary>
-    /// Handles a button on the topic wizard: General (<c>tg</c>), Create a "Jellyfin" topic (<c>tc</c>) or Use an
-    /// existing topic (<c>te</c>) (spec §6.2 step 3).
+    /// Handles a button on the topic wizard: General (<c>tg</c>), Create a "Jellyfin" topic (<c>tc</c>), Use an
+    /// existing topic (<c>te</c>), the link prompt's Cancel (<c>tb</c>) or the promotion screen's Check again
+    /// (<c>tk</c>) (spec §6.2 step 3).
     /// </summary>
     /// <param name="query">The button press.</param>
     /// <param name="action">The pressed action.</param>
@@ -446,7 +440,7 @@ public sealed class OnboardingFlow
     public async Task OnTopicAsync(CallbackQuery query, string action, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(query);
-        if (_topics.Wizard(query) is not { } flow)
+        if (_topics.Wizard(query) is not { } flow || (action == "tk" && !TopicFlow.AwaitsPromotion(flow)))
         {
             await MenuExpiredAsync(query, ct).ConfigureAwait(false);
             return;
@@ -457,6 +451,7 @@ public sealed class OnboardingFlow
         {
             "tg" => await _topics.OnGeneralAsync(chatId, flow, ct).ConfigureAwait(false),
             "tc" => await _topics.OnCreateAsync(chatId, flow, ct).ConfigureAwait(false),
+            "tk" => await _topics.OnPromotedAsync(chatId, flow, ct).ConfigureAwait(false),
             "tb" => await _topics.OnBackAsync(chatId, flow, ct).ConfigureAwait(false),
             _ => await _topics.OnExistingAsync(chatId, flow, ct).ConfigureAwait(false),
         };
@@ -539,32 +534,6 @@ public sealed class OnboardingFlow
     }
 
     /// <summary>
-    /// Builds the native chat picker button that asks to promote the bot in a forum so it can manage topics
-    /// (spec §6.2 step 3).
-    /// </summary>
-    /// <param name="kind">The picker.</param>
-    /// <param name="requestId">Its fresh request ID.</param>
-    /// <param name="text">The button text.</param>
-    /// <returns>The button.</returns>
-    internal static KeyboardButton PickerButton(PickerKind kind, int requestId, string text)
-    {
-        var request = kind switch
-        {
-            PickerKind.TopicPromotion => new KeyboardButtonRequestChat
-            {
-                RequestId = requestId,
-                ChatIsChannel = false,
-                ChatIsForum = true,
-                BotAdministratorRights = new ChatAdministratorRights { CanManageTopics = true },
-                UserAdministratorRights = new ChatAdministratorRights { CanManageTopics = true },
-                RequestTitle = true,
-            },
-            _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, null),
-        };
-        return KeyboardButton.WithRequestChat(text, request);
-    }
-
-    /// <summary>
     /// Whether a membership change counts as adding the bot (spec §6.2 step 2): it is now in the chat, and either it
     /// wasn't before or it was just made an admin (rights granted in a chat it was already in).
     /// </summary>
@@ -591,10 +560,6 @@ public sealed class OnboardingFlow
     private static string Flag(bool value) => value ? "1" : "0";
 
     private static string[] Split(string csv) => csv.Split(',', StringSplitOptions.RemoveEmptyEntries);
-
-    /// <summary>Whether this exact message was already handled (a redelivered update).</summary>
-    private static bool IsRepeat(FlowState? flow, Message message)
-        => flow is not null && flow.Params.TryGetValue(AnswerKey, out var answer) && answer == Text(message.MessageId);
 
     /// <summary>
     /// A chat was chosen in Telegram while the prompt waited: the prompt is spent, the chat remembered, and the prompt's
@@ -646,7 +611,6 @@ public sealed class OnboardingFlow
     /// <summary>The duplicate rule, then the preset step.</summary>
     private async Task ContinueWithChatAsync(long chatId, ChatCheckResult check, int threadId, int? wizardMessageId, CancellationToken ct)
     {
-        var previous = _memory.GetFlow(chatId);
         if (DestinationCreator.Find(_settings.Current, check.ChatId, threadId) is { } existing)
         {
             try
@@ -664,11 +628,6 @@ public sealed class OnboardingFlow
         }
 
         var flow = new FlowState { Screen = FlowScreen };
-        if (previous is not null && previous.Params.TryGetValue(AnswerKey, out var answer))
-        {
-            flow.Params[AnswerKey] = answer;
-        }
-
         flow.Params[ChatIdKey] = Text(check.ChatId);
         flow.Params[TitleKey] = check.Title;
         flow.Params[KindKey] = check.Kind.ToString();
@@ -745,11 +704,6 @@ public sealed class OnboardingFlow
         _memory.RecordFailure(SetupFailureKind.CheckFailed);
 
         var spent = new FlowState { Screen = FlowScreen, WizardMessageId = shown };
-        if (flow is not null && flow.Params.TryGetValue(AnswerKey, out var answer))
-        {
-            spent.Params[AnswerKey] = answer;
-        }
-
         if (failedChatId is { } failed)
         {
             spent.Params[ChatIdKey] = Text(failed);

@@ -84,7 +84,7 @@ public sealed class FlowEngine : IBotFlows, IDisposable
     [
         "m", "st", "dl", "noop", "d", "de", "deg", "det", "dlb", "dlt", "dsg", "dsgt", "dt", "dc", "dp", "dr", "drx", "tp",
         "s", "sm", "smt", "su", "sut", "sum", "sp", "spu", "spt", "spc", "op", "oc", "ocg", "ocd", "oa", "ot", "oh", "on", "ox", "ol", "od",
-        "tg", "tc", "te", "tb", "xl", "xs", "xd",
+        "tg", "tc", "te", "tb", "tk", "xl", "xs", "xd",
     ];
 
     /// <inheritdoc />
@@ -210,6 +210,7 @@ public sealed class FlowEngine : IBotFlows, IDisposable
             case "tc":
             case "te":
             case "tb":
+            case "tk":
                 await _onboarding.OnTopicAsync(query, action, ct).ConfigureAwait(false);
                 break;
             case "ocd":
@@ -287,15 +288,15 @@ public sealed class FlowEngine : IBotFlows, IDisposable
     }
 
     /// <summary>
-    /// Input from a reply keyboard goes to onboarding before any other text: a picked chat (the topic promotion's, or a
-    /// stale v0.1 picker's) and the texts of a stale v0.1 reply keyboard.
+    /// Stale input from a v0.1 client goes to onboarding before any other text: a chat picked in its native picker
+    /// (<c>chat_shared</c>) and the texts of its reply keyboard. The bot sends no reply keyboards any more.
     /// </summary>
     /// <returns>True when the message was one of them.</returns>
     private async Task<bool> OnLegacyReplyAsync(Message message, CancellationToken ct)
     {
         Func<Message, CancellationToken, Task>? handler = message switch
         {
-            { ChatShared: not null } => _onboarding.OnChatSharedAsync,
+            { ChatShared: not null } => _onboarding.OnLegacyReplyAsync,
             { Text: { } text } when OnboardingFlow.LegacyReplyTexts.Contains(text, StringComparer.Ordinal) => _onboarding.OnLegacyReplyAsync,
             _ => null,
         };

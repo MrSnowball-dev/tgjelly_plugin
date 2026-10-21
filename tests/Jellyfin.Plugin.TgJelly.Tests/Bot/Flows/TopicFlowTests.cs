@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Linq;
 using System.Text.Json.Nodes;
 using System.Threading.Tasks;
+using Jellyfin.Plugin.TgJelly.Bot.Flows;
 using Jellyfin.Plugin.TgJelly.State.Documents;
 using Jellyfin.Plugin.TgJelly.Tests.Fakes;
 using Xunit;
@@ -16,7 +17,6 @@ public sealed class TopicFlowTests : IDisposable, IAsyncLifetime
     private const long Other = -1009990001;
     private readonly BotTestHarness _h = new();
     private BotRig _rig = null!;
-    private int _nextMessageId = 100;
 
     public async ValueTask InitializeAsync() => _rig = await BotRig.CreateAsync(_h);
 
@@ -44,7 +44,6 @@ public sealed class TopicFlowTests : IDisposable, IAsyncLifetime
         Assert.Equal(promptId, flow.WizardMessageId);
         Assert.Equal("1", flow.Params["isForum"]);
         Assert.Equal(Group.ToString(CultureInfo.InvariantCulture), flow.Params["chatId"]);
-        Assert.Null(flow.CheckingMessageId);
     }
 
     [Fact]
@@ -111,75 +110,155 @@ public sealed class TopicFlowTests : IDisposable, IAsyncLifetime
     }
 
     [Fact]
-    public async Task Create_WithoutRights_SendsThePromotionPicker_ThenCreates()
+    public async Task Create_WithoutRights_EditsTheWizardToThePromotionLinks()
     {
         AddForum(topics: false);
         await AskWhere();
         var wizard = WizardId();
+        var sent = Sent().Length;
 
         await Click("1|tc", wizard);
 
         Assert.Empty(_h.Api.CallsTo("createForumTopic"));
-        var prompt = Sent().Last();
-        var keyboard = prompt.Body["reply_markup"]!["keyboard"]!.AsArray().Select(r => r!.AsArray()).ToList();
-        var button = Assert.Single(Assert.Single(keyboard))!;
-        Assert.Equal("Allow topic creation", (string)button["text"]!);
-        var request = button["request_chat"]!;
-        Assert.True((bool)request["chat_is_forum"]!);
-        Assert.False((bool?)request["chat_is_channel"] ?? false);
-        Assert.True((bool)request["request_title"]!);
-        Assert.True((bool)request["bot_administrator_rights"]!["can_manage_topics"]!);
-        Assert.True((bool)request["user_administrator_rights"]!["can_manage_topics"]!);
-        var flow = _rig.Memory.GetFlow(Manager)!;
-        Assert.Equal([(int)request["request_id"]!], flow.PickerRequestIds);
-        Assert.Contains("manage topics", (string)prompt.Body["text"]!, StringComparison.Ordinal);
-        Assert.Equal(1, Sent().Count(c => c.Body["reply_markup"]?["keyboard"] is not null && c.Body["reply_markup"]!["keyboard"]!.ToString().Contains("Allow topic creation", StringComparison.Ordinal)));
-        var promptId = flow.PromptMessageId!.Value;
-
-        _h.Api.SetMember(Group, TopicRights());
-        await Shared((int)request["request_id"]!);
-
-        Assert.Equal("Jellyfin", (string)Assert.Single(_h.Api.CallsTo("createForumTopic")).Body["name"]!);
-        Assert.Contains(promptId, Deleted());
-        var after = _rig.Memory.GetFlow(Manager)!;
-        Assert.Equal("101", after.Params["threadId"]);
-        Assert.Equal(wizard, after.WizardMessageId);
-        Assert.Contains("What should I send there?", (string)_h.Api.CallsTo("editMessageText").Last().Body["text"]!, StringComparison.Ordinal);
+        var edit = _h.Api.CallsTo("editMessageText").Last();
+        Assert.Equal(wizard, (int)edit.Body["message_id"]!);
+        AssertPromotionScreen(edit);
+        Assert.Contains("I need permission to manage topics in <b>Family</b>.", (string)edit.Body["text"]!, StringComparison.Ordinal);
+        Assert.Equal(sent, Sent().Length);
+        Assert.True(TopicFlow.AwaitsPromotion(_rig.Memory.GetFlow(Manager)!));
     }
 
     [Fact]
-    public async Task Promotion_ForAnotherChat_IsRejected()
+    public async Task Promotion_InTheFlowsForum_CreatesTheTopic()
     {
         AddForum(topics: false);
-        _h.Api.AddChat(Other, "supergroup", "Elsewhere", isForum: true);
+        await AskWhere();
+        var wizard = WizardId();
+        await Click("1|tc", wizard);
+        var sent = Sent().Length;
+
+        _h.Api.SetMember(Group, TopicRights());
+        await Promoted(Group);
+
+        Assert.Equal("Jellyfin", (string)Assert.Single(_h.Api.CallsTo("createForumTopic")).Body["name"]!);
+        Assert.Contains(_h.Api.CallsTo("editMessageText"), c => (int)c.Body["message_id"]! == wizard && ((string)c.Body["text"]!).StartsWith("Checking <b>Family</b>", StringComparison.Ordinal));
+        var edit = _h.Api.CallsTo("editMessageText").Last();
+        Assert.Equal(wizard, (int)edit.Body["message_id"]!);
+        Assert.Contains("What should I send there?", (string)edit.Body["text"]!, StringComparison.Ordinal);
+        var after = _rig.Memory.GetFlow(Manager)!;
+        Assert.Equal("101", after.Params["threadId"]);
+        Assert.Equal(wizard, after.WizardMessageId);
+        Assert.Equal(sent, Sent().Length);
+        Assert.False(_rig.Memory.IsDetected(Group));
+    }
+
+    [Fact]
+    public async Task Promotion_WhoseRightsArriveLate_RetriesThenCreates()
+    {
+        AddForum(topics: false);
         await AskWhere();
         await Click("1|tc", WizardId());
-        var request = _rig.Memory.GetFlow(Manager)!.PickerRequestIds.Single();
+        _h.Api.OnSequence("getChatMember", FakeBotApi.Ok(TelegramFixtures.Json("get_chat_member_admin_no_topics")), FakeBotApi.Ok(TelegramFixtures.Json("get_chat_member_admin_no_topics")), FakeBotApi.Ok(TopicRights()));
 
-        await Shared(request, Other);
+        await Promoted(Group);
 
-        Assert.Empty(_h.Api.CallsTo("createForumTopic"));
-        Assert.Contains("different chat", (string)Sent().Last().Body["text"]!, StringComparison.Ordinal);
-        Assert.Equal([request], _rig.Memory.GetFlow(Manager)!.PickerRequestIds);
+        Assert.Single(_h.Api.CallsTo("createForumTopic"));
+        Assert.Equal([TimeSpan.FromSeconds(1.5)], _rig.Delays);
         Assert.False(_rig.Memory.HasRecentFailure());
     }
 
     [Fact]
-    public async Task PromotionFails_FallsBackToGeneralAndAdvanced_RecordsTopicFailed()
+    public async Task Promotion_InAnotherGroup_SaysSo_AndKeepsWaiting()
+    {
+        AddForum(topics: false);
+        _h.Api.AddChat(Other, "supergroup", "Elsewhere", isForum: true);
+        await AskWhere();
+        var wizard = WizardId();
+        await Click("1|tc", wizard);
+
+        await Promoted(Other);
+
+        Assert.Empty(_h.Api.CallsTo("createForumTopic"));
+        var edit = _h.Api.CallsTo("editMessageText").Last();
+        Assert.Equal(wizard, (int)edit.Body["message_id"]!);
+        Assert.Contains("You changed my rights in", (string)edit.Body["text"]!, StringComparison.Ordinal);
+        AssertPromotionScreen(edit);
+        Assert.True(TopicFlow.AwaitsPromotion(_rig.Memory.GetFlow(Manager)!));
+        Assert.False(_rig.Memory.IsDetected(Other));
+        Assert.False(_rig.Memory.HasRecentFailure());
+    }
+
+    [Fact]
+    public async Task CheckAgain_WithRights_CreatesTheTopic()
     {
         AddForum(topics: false);
         await AskWhere();
         var wizard = WizardId();
         await Click("1|tc", wizard);
 
-        await Shared(_rig.Memory.GetFlow(Manager)!.PickerRequestIds.Single()); // the promotion did not happen
+        _h.Api.SetMember(Group, TopicRights());
+        await Click("1|tk", wizard);
+
+        Assert.Equal("Jellyfin", (string)Assert.Single(_h.Api.CallsTo("createForumTopic")).Body["name"]!);
+        Assert.Equal("101", _rig.Memory.GetFlow(Manager)!.Params["threadId"]);
+        Assert.Contains("What should I send there?", (string)_h.Api.CallsTo("editMessageText").Last().Body["text"]!, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task CheckAgain_WithoutRights_SaysSo_AndKeepsTheLinks()
+    {
+        AddForum(topics: false);
+        await AskWhere();
+        var wizard = WizardId();
+        await Click("1|tc", wizard);
+
+        await Click("1|tk", wizard);
 
         Assert.Empty(_h.Api.CallsTo("createForumTopic"));
+        var edit = _h.Api.CallsTo("editMessageText").Last();
+        Assert.Equal(wizard, (int)edit.Body["message_id"]!);
+        Assert.Contains("I still can't manage topics in", (string)edit.Body["text"]!, StringComparison.Ordinal);
+        AssertPromotionScreen(edit);
+        Assert.True(TopicFlow.AwaitsPromotion(_rig.Memory.GetFlow(Manager)!));
+        Assert.False(_rig.Memory.HasRecentFailure());
+    }
+
+    [Fact]
+    public async Task GroupStartTopics_InTheFlowsForum_CountsAsThePromotion()
+    {
+        AddForum(topics: false);
+        await AskWhere();
+        await Click("1|tc", WizardId());
+
+        _h.Api.SetMember(Group, TopicRights());
+        await _rig.Deliver(TelegramFixtures.Update(
+            "group_command_start",
+            ("chat_id", Group.ToString(CultureInfo.InvariantCulture)),
+            ("text", "/start@tgjelly_test_bot topics")));
+
+        Assert.Single(_h.Api.CallsTo("createForumTopic"));
+        Assert.Equal("101", _rig.Memory.GetFlow(Manager)!.Params["threadId"]);
+        Assert.DoesNotContain(_h.Api.CallsTo("sendMessage"), c => c.Body["chat_id"]!.ToString() == Group.ToString(CultureInfo.InvariantCulture));
+    }
+
+    [Fact]
+    public async Task PromotedButCreationFails_FallsBackToGeneralAndAdvanced_RecordsTopicFailed()
+    {
+        AddForum(topics: false);
+        await AskWhere();
+        var wizard = WizardId();
+        await Click("1|tc", wizard);
+        _h.Api.SetMember(Group, TopicRights());
+        _h.Api.On("createForumTopic", _ => FakeBotApi.Error(400, "Bad Request: not enough rights to create a topic"));
+
+        await Promoted(Group);
+
         var edit = _h.Api.CallsTo("editMessageText").Last();
         Assert.Equal(wizard, (int)edit.Body["message_id"]!);
         Assert.Equal(["General topic", "Advanced options"], Labels(edit));
         Assert.Equal(["1|tg", "1|ox"], Data(edit));
         Assert.Equal([SetupFailureKind.TopicFailed], _h.State.Read(s => s.SetupFailures.Select(f => f.Kind).ToList()));
+        Assert.False(TopicFlow.AwaitsPromotion(_rig.Memory.GetFlow(Manager)!));
 
         await Click("1|tg", wizard);
         Assert.Equal("0", _rig.Memory.GetFlow(Manager)!.Params["threadId"]);
@@ -199,69 +278,24 @@ public sealed class TopicFlowTests : IDisposable, IAsyncLifetime
     }
 
     [Fact]
-    public async Task AbandonedPromotion_DoesNotBlockCreate()
-    {
-        AddForum(topics: false);
-        await AskWhere();
-        var wizard = WizardId();
-        await Click("1|tc", wizard);
-        await Click("1|te", wizard);
-
-        await Click("1|tc", wizard);
-
-        Assert.Equal(2, Sent().Count(c => c.Body["reply_markup"]?["keyboard"]?.ToString().Contains("Allow topic creation", StringComparison.Ordinal) == true));
-    }
-
-    [Fact]
-    public async Task ExpiredPromotion_CreateAgain_SendsAFreshPrompt()
-    {
-        AddForum(topics: false);
-        await AskWhere();
-        var wizard = WizardId();
-        await Click("1|tc", wizard);
-        var first = _rig.Memory.GetFlow(Manager)!.PickerRequestIds.Single();
-
-        _h.Time.Advance(TimeSpan.FromMinutes(11));
-        await _rig.Flow.TickAsync(TestContext.Current.CancellationToken);
-        await Click("1|tc", wizard);
-
-        Assert.Equal(2, PromotionPrompts());
-        var second = _rig.Memory.GetFlow(Manager)!.PickerRequestIds.Single();
-        Assert.NotEqual(first, second);
-    }
-
-    [Fact]
-    public async Task IgnoredPromotion_CreateAgain_SpendsTheOldPromptAndSendsAFreshOne()
-    {
-        AddForum(topics: false);
-        await AskWhere();
-        var wizard = WizardId();
-        await Click("1|tc", wizard);
-        var flow = _rig.Memory.GetFlow(Manager)!;
-        var oldPrompt = flow.PromptMessageId!.Value;
-        var first = flow.PickerRequestIds.Single();
-
-        await Click("1|tc", wizard);
-
-        Assert.Equal(2, PromotionPrompts());
-        Assert.Contains(oldPrompt, Deleted());
-        Assert.NotEqual(first, _rig.Memory.GetFlow(Manager)!.PickerRequestIds.Single());
-    }
-
-    [Fact]
-    public async Task Promotion_WhoseRightsArriveLate_RetriesThenCreates()
+    public async Task LegacyAllowTopicPick_IsExpired()
     {
         AddForum(topics: false);
         await AskWhere();
         await Click("1|tc", WizardId());
-        var request = _rig.Memory.GetFlow(Manager)!.PickerRequestIds.Single();
-        _h.Api.OnSequence("getChatMember", FakeBotApi.Ok(TelegramFixtures.Json("get_chat_member_admin_no_topics")), FakeBotApi.Ok(TelegramFixtures.Json("get_chat_member_admin_no_topics")), FakeBotApi.Ok(TopicRights()));
+        var before = _rig.Memory.GetFlow(Manager)!;
+        var sent = Sent().Length;
 
-        await Shared(request);
+        await _rig.Deliver(TelegramFixtures.Update("chat_shared", ("request_id", "5"), ("chat_id", Group.ToString(CultureInfo.InvariantCulture))));
 
-        Assert.Single(_h.Api.CallsTo("createForumTopic"));
-        Assert.Equal([TimeSpan.FromSeconds(1.5)], _rig.Delays);
-        Assert.False(_rig.Memory.HasRecentFailure());
+        var expired = Sent()[sent];
+        Assert.Equal("That menu expired", (string)expired.Body["text"]!);
+        Assert.True((bool)expired.Body["reply_markup"]!["remove_keyboard"]!);
+        Assert.Empty(_h.Api.CallsTo("createForumTopic"));
+        var after = _rig.Memory.GetFlow(Manager)!;
+        Assert.Equal(before.WizardMessageId, after.WizardMessageId);
+        Assert.Equal(before.Params, after.Params);
+        Assert.True(TopicFlow.AwaitsPromotion(after));
     }
 
     [Fact]
@@ -459,12 +493,9 @@ public sealed class TopicFlowTests : IDisposable, IAsyncLifetime
 
     private int WizardId() => _rig.Memory.GetFlow(Manager)!.WizardMessageId!.Value;
 
-    private Task Shared(int requestId, long chatId = Group)
-        => _rig.Deliver(TelegramFixtures.Update(
-            "chat_shared",
-            ("request_id", requestId.ToString(CultureInfo.InvariantCulture)),
-            ("chat_id", chatId.ToString(CultureInfo.InvariantCulture)),
-            ("message_id", (++_nextMessageId).ToString(CultureInfo.InvariantCulture))));
+    /// <summary>The manager makes the bot an admin who can manage topics, through the promotion screen's link.</summary>
+    private Task Promoted(long chatId)
+        => _rig.Deliver(TelegramFixtures.Update("my_chat_member_group_promoted", ("chat_id", chatId.ToString(CultureInfo.InvariantCulture))));
 
     private Task Click(string data, int messageId)
         => _rig.Deliver(TelegramFixtures.Update("callback_query", ("data", data), ("message_id", messageId.ToString(CultureInfo.InvariantCulture))));
@@ -475,14 +506,25 @@ public sealed class TopicFlowTests : IDisposable, IAsyncLifetime
     private BotApiCall[] Sent()
         => [.. _h.Api.CallsTo("sendMessage").Where(c => c.Body["chat_id"]!.ToString() == Manager.ToString(CultureInfo.InvariantCulture))];
 
-    private int PromotionPrompts()
-        => Sent().Count(c => c.Body["reply_markup"]?["keyboard"]?.ToString().Contains("Allow topic creation", StringComparison.Ordinal) == true);
-
     private int[] Deleted() => [.. _h.Api.CallsTo("deleteMessage").Select(c => (int)c.Body["message_id"]!)];
 
     private static string[] Labels(BotApiCall call) => [.. Buttons(call).Select(b => (string)b["text"]!)];
 
-    private static string[] Data(BotApiCall call) => [.. Buttons(call).Select(b => (string)b["callback_data"]!)];
+    /// <summary>The callback data of a message's buttons; URL buttons have none and are skipped.</summary>
+    private static string[] Data(BotApiCall call) => [.. Buttons(call).Select(b => (string?)b["callback_data"]).OfType<string>()];
+
+    /// <summary>The promotion screen: its four buttons, the Allow link, and one explanation line per button in order.</summary>
+    private static void AssertPromotionScreen(BotApiCall call)
+    {
+        Assert.Equal(["Allow topic creation", "Check again", "General topic", "Advanced options"], Labels(call));
+        Assert.Equal("https://t.me/tgjelly_test_bot?startgroup=topics&admin=manage_topics", (string)Buttons(call)[0]["url"]!);
+        Assert.Equal(["1|tk", "1|tg", "1|ox"], Data(call));
+        string[] labels = ["Allow topic creation", "Check again", "General topic", "Advanced options"];
+        call.Explains(labels);
+        var text = (string)call.Body["text"]!;
+        var at = labels.Select(l => text.IndexOf("<b>" + l + "</b> — ", StringComparison.Ordinal)).ToArray();
+        Assert.Equal([.. at.Order()], at);
+    }
 
     private static JsonNode[] Buttons(BotApiCall call)
         => [.. call.Body["reply_markup"]!["inline_keyboard"]!.AsArray().SelectMany(r => r!.AsArray()).Select(b => b!)];
