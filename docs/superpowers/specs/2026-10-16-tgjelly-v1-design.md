@@ -981,7 +981,7 @@ Recorded Bot API JSON for:
 They are parsed with Telegram.Bot and passed to `UpdateRouter`, FlowEngine and the classifier.
 
 ### 14.3 Integration smoke tests (CI; Docker)
-- **Matrix** (`.github/smoke-matrix.json`): `jellyfin/jellyfin:10.11.0` and `10.11.11` with the 1.x zip; `12.0` and `12.2` with the 2.x zip. Each also runs a variant with BaseUrl `/jf`. A release runs only the entries marked `release` (§13.5).
+- **Matrix** (`.github/smoke-matrix.json`): the latest image of each track, `jellyfin/jellyfin:10.11.11` with the 1.x zip and `12.2` with the 2.x zip, each also with BaseUrl `/jf`, plus `12.2` with the 1.x zip (F8). The owner narrowed it to these images on 2026-10-21; 10.11.0 and 12.0 are no longer tested. A release runs only the entries marked `release` (§13.5).
 - **Setup:**
   1. Unpack the zip into the container's `plugins/TgJelly_<ver>/` and start the container with `TGJELLY_BOT_API_BASE_URL=http://stub:8081`.
   2. Complete the startup wizard through `/Startup/*` and authenticate.
