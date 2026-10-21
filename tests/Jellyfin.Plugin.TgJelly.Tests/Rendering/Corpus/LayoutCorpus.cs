@@ -173,6 +173,7 @@ internal static class LayoutCorpus
         Movie1("movie-poster-off", i => Movie(i), new MessageOptions { ShowPoster = false });
         Movie1("movie-overview-3000", i => Movie(i, overview: Words(3000)));
         Movie1("movie-overview-5000", i => Movie(i, overview: Words(5000)));
+        Movie1("movie-overview-20000", i => Movie(i, overview: Words(20000)));
         Movie1("movie-overview-dropped", i => Movie(i, name: Words(915, "title"), overview: Words(300)));
         Movie1("movie-upgraded", i => Movie(i), tweak: m => m.Upgraded = true);
         Movie1("movie-no-library", i => Movie(i), library: string.Empty);
@@ -434,6 +435,11 @@ internal static class LayoutCorpus
         cases.Add(Alert("update-available-no-url", "server.update_available", new() { [EventFields.Version] = "12.3.0", [EventFields.Current] = "12.2.0" }));
         cases.Add(Alert("plugin-installed", "server.plugin_installed", new() { [EventFields.Plugin] = "Trakt", [EventFields.Version] = "26.0.0.0" }));
         cases.Add(Alert("plugin-uninstalled", "server.plugin_uninstalled", new() { [EventFields.Plugin] = "Trakt", [EventFields.Version] = "26.0.0.0" }));
+        cases.Add(Alert("plugin-updated-changelog-2000-lines", "server.plugin_updated", new()
+        {
+            [EventFields.Plugin] = "Trakt", [EventFields.Version] = "26.0.0.0",
+            [EventFields.Changelog] = string.Join('\n', Enumerable.Range(1, 2000).Select(i => $"- change {i} with <tags> & more")),
+        }));
         cases.Add(Alert("plugin-updated-changelog-6000", "server.plugin_updated", new()
         {
             [EventFields.Plugin] = "Trakt", [EventFields.Version] = "26.0.0.0", [EventFields.Changelog] = Words(6000, "fix&"),

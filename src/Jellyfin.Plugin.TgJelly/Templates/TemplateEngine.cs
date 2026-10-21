@@ -21,8 +21,9 @@ public sealed class TemplateEngine
     private const int Depth = 20;
     private const int TextLimit = 16384;
 
-    // How Scriban starts the message of an OutputLimit failure.
+    // How Scriban words the failures of the output limit and of the string limit (a value or a joined string too long).
     private const string OutputLimitMessage = "Rendered output exceeds OutputLimit";
+    private const string StringLimitWord = "LimitToString";
 
     private static readonly TimeSpan DefaultTimeout = TimeSpan.FromSeconds(2);
 
@@ -146,7 +147,8 @@ public sealed class TemplateEngine
         }
         catch (ScriptRuntimeException ex)
         {
-            var tooLong = ex.OriginalMessage.StartsWith(OutputLimitMessage, StringComparison.Ordinal);
+            var tooLong = ex.OriginalMessage.StartsWith(OutputLimitMessage, StringComparison.Ordinal)
+                || ex.OriginalMessage.Contains(StringLimitWord, StringComparison.Ordinal);
             return new TemplateRenderResult(null, ToError(ex.OriginalMessage, ex.Span), tooLong);
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)

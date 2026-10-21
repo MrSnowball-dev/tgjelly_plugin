@@ -43,7 +43,7 @@ public static class TemplateFitter
         TemplateError? error = null;
         TemplateError? tooLong = null;
 
-        // Output over the engine's limit is far over any message limit: it does not fit, and a shorter model may.
+        // Output or a value over the engine's limits is far over any message limit: it does not fit, and a shorter model may.
         string? Render(string? text, int kept)
         {
             var result = render(model.With(text, kept));

@@ -145,6 +145,18 @@ public sealed class TemplateFitterTests
     }
 
     [Fact]
+    public void Fit_TextOverTheEngineStringLimit_IsShortened()
+    {
+        var model = TemplateModel.Of(Values("T", string.Concat(Enumerable.Repeat("word ", 5000))), "overview", null, null);
+
+        var result = TemplateFitter.Fit(model, Renderer("{{ title }}\n\n{{ overview }}"), Limit);
+
+        Assert.Null(result.Error);
+        Assert.False(result.Truncated);
+        Assert.EndsWith("word…", result.Html, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Fit_MinListKeptZero_CanKeepNoItem()
     {
         var values = new Dictionary<string, object?> { ["items"] = new List<object?> { new string('a', 2000), "b" }, ["items_more"] = 0L };

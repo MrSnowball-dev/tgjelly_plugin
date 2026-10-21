@@ -81,6 +81,17 @@ public sealed class TemplateEngineTests
     }
 
     [Fact]
+    public void StringLimit_IsTooLong()
+    {
+        var model = new Dictionary<string, object?> { ["text"] = new string('x', 20000) };
+
+        var result = Engine().Render("k", "{{ text }}", model, strict: false);
+
+        Assert.False(result.Ok);
+        Assert.True(result.TooLong);
+    }
+
+    [Fact]
     public void OtherErrors_AreNotTooLong()
     {
         Assert.False(Engine().Render("k", "{{ for i in 1..2000 }}x{{ end }}", Empty, strict: false).TooLong);
