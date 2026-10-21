@@ -2,6 +2,8 @@ using System;
 using System.IO;
 using System.Linq;
 using System.Text;
+using Jellyfin.Plugin.TgJelly.State.Documents;
+using Jellyfin.Plugin.TgJelly.Templates;
 using Xunit;
 
 namespace Jellyfin.Plugin.TgJelly.Tests.Rendering.Corpus;
@@ -9,6 +11,9 @@ namespace Jellyfin.Plugin.TgJelly.Tests.Rendering.Corpus;
 public class LayoutCorpusTests
 {
     public static TheoryData<string> Names() => [.. LayoutCorpus.Cases.Select(c => c.Name)];
+
+    /// <summary>The cases whose key has a built-in template, as <see cref="TemplateRenderer.Covers"/> decides.</summary>
+    public static TheoryData<string> TemplateNames() => [.. LayoutCorpus.Cases.Where(c => TemplateRenderer.HasBuiltIn(c.Model.EventKey)).Select(c => c.Name)];
 
     [Fact]
     public void Write_WhenRequested()
@@ -46,5 +51,27 @@ public class LayoutCorpusTests
 
         Assert.Equal(File.ReadAllText(LayoutCorpus.GoldenPath(name, "caption")), caption);
         Assert.Equal(File.ReadAllText(LayoutCorpus.GoldenPath(name, "text")), text);
+    }
+
+    [Theory]
+    [MemberData(nameof(TemplateNames))]
+    public void Templates_MatchGolden(string name)
+    {
+        var c = LayoutCorpus.Cases.Single(x => x.Name == name);
+
+        var (caption, text) = CorpusRig.RenderTemplates(c);
+
+        Assert.Equal(File.ReadAllText(LayoutCorpus.GoldenPath(name, "caption")), caption);
+        Assert.Equal(File.ReadAllText(LayoutCorpus.GoldenPath(name, "text")), text);
+    }
+
+    [Fact]
+    public void Templates_CoverEveryMediaCase()
+    {
+        // A media case with a key that has no template would drop out of Templates_MatchGolden unnoticed.
+        var media = LayoutCorpus.Cases.Where(c => c.Model.Kind == RenderKind.Media).ToList();
+
+        Assert.NotEmpty(media);
+        Assert.All(media, c => Assert.True(TemplateRenderer.HasBuiltIn(c.Model.EventKey), c.Name));
     }
 }

@@ -20,12 +20,16 @@ public sealed class NotificationRendererTests : IDisposable
     public NotificationRendererTests()
     {
         var formatter = new Formatter(_h.Strings);
+        var engine = new Jellyfin.Plugin.TgJelly.Templates.TemplateEngine(TimeProvider.System);
+        var models = new Jellyfin.Plugin.TgJelly.Templates.TemplateModelBuilder(_library, new LinkBuilder(new FakeServerInfo()), _h.Settings, formatter, _h.Time);
+        var flags = new Jellyfin.Plugin.TgJelly.Templates.TemplateFlags(_h.State, _h.Settings, _h.Time);
         _renderer = new NotificationRenderer(
             new MediaLayouts(formatter, new LinkBuilder(new FakeServerInfo()), _library, _h.Settings),
             new AlertLayouts(formatter, new FakeTimeProvider(_h.Time.GetUtcNow())),
-            new Jellyfin.Plugin.TgJelly.Templates.TemplateEngine(TimeProvider.System),
-            new Jellyfin.Plugin.TgJelly.Templates.TemplateModelBuilder(_library, new LinkBuilder(new FakeServerInfo()), _h.Settings, formatter, _h.Time),
-            new Jellyfin.Plugin.TgJelly.Templates.TemplateFlags(_h.State, _h.Settings, _h.Time),
+            new Jellyfin.Plugin.TgJelly.Templates.TemplateRenderer(engine, models, flags, _h.Settings, _h.Strings, Microsoft.Extensions.Logging.Abstractions.NullLogger<Jellyfin.Plugin.TgJelly.Templates.TemplateRenderer>.Instance),
+            engine,
+            models,
+            flags,
             _h.Settings,
             _h.Strings);
         _movie = _library.Add(new MediaItem { Id = Guid.NewGuid(), Kind = MediaKind.Movie, Name = "Arrival" });

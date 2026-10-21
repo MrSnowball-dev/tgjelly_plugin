@@ -82,6 +82,7 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddRedactedLogger<PluginUpdatedConsumer>();
         serviceCollection.AddRedactedLogger<PluginUninstalledConsumer>();
         serviceCollection.AddRedactedLogger<PluginInstallFailedConsumer>();
+        serviceCollection.AddRedactedLogger<Templates.TemplateRenderer>();
         serviceCollection.AddSingleton(sp => new DataPaths(sp.GetRequiredService<IApplicationPaths>().PluginConfigurationsPath));
         serviceCollection.AddSingleton(sp => CompatGuard.Evaluate(sp.GetRequiredService<IServerApplicationHost>().ApplicationVersion));
         serviceCollection.AddSingleton(_ => StringTable.LoadEmbedded());
@@ -135,6 +136,7 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<Templates.TemplateEngine>();
         serviceCollection.AddSingleton<Templates.TemplateModelBuilder>();
         serviceCollection.AddSingleton<Templates.TemplateFlags>();
+        serviceCollection.AddSingleton<Templates.TemplateRenderer>();
         serviceCollection.AddSingleton<IntakeQueues>();
         serviceCollection.AddSingleton<PendingIdSet>();
         serviceCollection.AddSingleton<LibraryWatcher>();

@@ -1,0 +1,9 @@
+<b>{{ artist }} — {{ album }}</b>{{ if year }} ({{ year }}){{ end }}
+{{ tracks_text }} {{ plural tracks "track" "tracks" }}
+{{- if upgraded || library }}
+
+{{ end }}
+{{- if upgraded }}♻️ Upgraded{{ end }}
+{{- if upgraded && library }}
+{{ end }}
+{{- if library }}📁 {{ library }}{{ end -}}

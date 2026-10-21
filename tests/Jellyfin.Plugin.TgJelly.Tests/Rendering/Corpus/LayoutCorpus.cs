@@ -8,7 +8,9 @@ using Jellyfin.Plugin.TgJelly.Intake;
 using Jellyfin.Plugin.TgJelly.Library;
 using Jellyfin.Plugin.TgJelly.Rendering;
 using Jellyfin.Plugin.TgJelly.State.Documents;
+using Jellyfin.Plugin.TgJelly.Templates;
 using Jellyfin.Plugin.TgJelly.Tests.Fakes;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Time.Testing;
 using Xunit;
 
@@ -20,10 +22,48 @@ internal sealed record CorpusCase(string Name, RenderModel Model, IReadOnlyList<
 /// <summary>Renders corpus cases through the production renderer.</summary>
 internal static class CorpusRig
 {
+    /// <summary>Renders a case with v0.2's C# layouts only, never a template.</summary>
     public static (string Caption, string Text) RenderV02(CorpusCase c)
     {
         ArgumentNullException.ThrowIfNull(c);
         using var h = new BotTestHarness();
+        var (library, time, formatter, link) = Setup(h, c);
+        var media = new MediaLayouts(formatter, link, library, h.Settings);
+        var message = c.Model.Kind switch
+        {
+            RenderKind.Media => media.Render(c.Model),
+            RenderKind.Digest => media.RenderDigest(c.Model),
+            _ => new AlertLayouts(formatter, time).Render(c.Model),
+        } ?? throw new InvalidOperationException($"Case {c.Name} rendered nothing.");
+        return (message.Caption, message.Text);
+    }
+
+    /// <summary>Renders a case through the production renderer, which uses the built-in templates where they exist.</summary>
+    public static (string Caption, string Text) RenderTemplates(CorpusCase c)
+    {
+        ArgumentNullException.ThrowIfNull(c);
+        using var h = new BotTestHarness();
+        var (library, time, formatter, link) = Setup(h, c);
+        var engine = new TemplateEngine(TimeProvider.System);
+        var models = new TemplateModelBuilder(library, link, h.Settings, formatter, time);
+        var flags = new TemplateFlags(h.State, h.Settings, time);
+        var renderer = new NotificationRenderer(
+            new MediaLayouts(formatter, link, library, h.Settings),
+            new AlertLayouts(formatter, time),
+            new TemplateRenderer(engine, models, flags, h.Settings, h.Strings, NullLogger<TemplateRenderer>.Instance),
+            engine,
+            models,
+            flags,
+            h.Settings,
+            h.Strings);
+        var message = renderer.Render(c.Model, new Destination { Id = "d1" })
+            ?? throw new InvalidOperationException($"Case {c.Name} rendered nothing.");
+        Assert.Empty(h.State.Read(s => s.Status.TemplateFlags.Keys.ToList()));
+        return (message.Caption, message.Text);
+    }
+
+    private static (FakeLibrary Library, FakeTimeProvider Time, Formatter Formatter, LinkBuilder Link) Setup(BotTestHarness h, CorpusCase c)
+    {
         var library = new FakeLibrary();
         foreach (var item in c.Items)
         {
@@ -41,20 +81,7 @@ internal static class CorpusRig
             s.Message.AnnounceUpgrades = c.Options.AnnounceUpgrades;
         });
         Assert.Equal(SettingsUpdateStatus.Saved, saved.Status);
-        var time = new FakeTimeProvider(c.Now);
-        var formatter = new Formatter(h.Strings);
-        var link = new LinkBuilder(new FakeServerInfo());
-        var renderer = new NotificationRenderer(
-            new MediaLayouts(formatter, link, library, h.Settings),
-            new AlertLayouts(formatter, time),
-            new Jellyfin.Plugin.TgJelly.Templates.TemplateEngine(TimeProvider.System),
-            new Jellyfin.Plugin.TgJelly.Templates.TemplateModelBuilder(library, link, h.Settings, formatter, time),
-            new Jellyfin.Plugin.TgJelly.Templates.TemplateFlags(h.State, h.Settings, time),
-            h.Settings,
-            h.Strings);
-        var message = renderer.Render(c.Model, new Destination { Id = "d1" })
-            ?? throw new InvalidOperationException($"Case {c.Name} rendered nothing.");
-        return (message.Caption, message.Text);
+        return (library, new FakeTimeProvider(c.Now), new Formatter(h.Strings), new LinkBuilder(new FakeServerInfo()));
     }
 }
 
@@ -160,7 +187,7 @@ internal static class LayoutCorpus
             Id = ids.Next(), Kind = MediaKind.MusicVideo, Name = "Paranoid Android", Year = 1997, Overview = "A video.",
             CommunityRating = 8.5f, RunTime = TimeSpan.FromMinutes(6), Genres = ["Rock"], AlbumArtist = "Radiohead",
         };
-        cases.Add(Add("musicvideo-full", Group("Music Videos", "media.music_video", video), [video]));
+        cases.Add(Add("musicvideo-full", Group("Music Videos", "media.musicvideo", video), [video]));
 
         ids = new Ids();
         var book = new MediaItem
@@ -178,15 +205,15 @@ internal static class LayoutCorpus
         var parts = Enumerable.Range(1, 3)
             .Select(i => new MediaItem { Id = ids.Next(), Kind = MediaKind.AudioBook, Name = $"Part {i}", ParentId = folder.Id, ParentName = "The Hobbit" })
             .ToList();
-        var withFolder = Group("Audiobooks", "media.audiobook", [.. parts]);
+        var withFolder = Group("Audiobooks", "media.book", [.. parts]);
         withFolder.ContainerId = folder.Id.ToString("N");
         cases.Add(Add("audiobook-three-parts-folder", withFolder, [folder, .. parts]));
 
-        var noFolder = Group("Audiobooks", "media.audiobook", [.. parts]);
+        var noFolder = Group("Audiobooks", "media.book", [.. parts]);
         cases.Add(Add("audiobook-no-folder-parent-name", noFolder, parts));
 
         var anon = parts.Select(p => new MediaItem { Id = p.Id, Kind = p.Kind, Name = p.Name }).ToList();
-        cases.Add(Add("audiobook-no-folder-item-name", Group("Audiobooks", "media.audiobook", [.. anon]), anon));
+        cases.Add(Add("audiobook-no-folder-item-name", Group("Audiobooks", "media.book", [.. anon]), anon));
 
         // Albums.
         MediaItem Album(string name, int? year, int tracks) => new()
@@ -225,7 +252,7 @@ internal static class LayoutCorpus
 
         public CorpusCase Case(string name, List<MediaItem> episodes, bool newSeries = false)
         {
-            var model = Group("Shows", "media.episode", [.. episodes]);
+            var model = Group("Shows", "media.episodes", [.. episodes]);
             model.NewSeries = newSeries;
             return Add(name, model, [Series, Season, .. episodes]);
         }
@@ -276,15 +303,15 @@ internal static class LayoutCorpus
         var all = new List<MediaItem> { show.Series, show.Season, bear.Series, bear.Season, folder, album, book, book2, bearEp, arrival, dune, primer, orphan };
         all.AddRange(multi);
 
-        var audiobook = Group("Audiobooks", "media.audiobook", book, book2);
+        var audiobook = Group("Audiobooks", "media.book", book, book2);
         audiobook.ContainerId = folder.Id.ToString("N");
 
         cases.Add(Add(
             "digest-three-groups-two-libraries-other",
-            DigestOf([Group("Movies", "media.movie", arrival), Group("Shows", "media.episode", [.. multi]), Group(string.Empty, "media.movie", orphan)]),
+            DigestOf([Group("Movies", "media.movie", arrival), Group("Shows", "media.episodes", [.. multi]), Group(string.Empty, "media.movie", orphan)]),
             all));
-        cases.Add(Add("digest-single-episode", DigestOf([Group("Shows", "media.episode", bearEp), Group("Movies", "media.movie", arrival)]), all));
-        cases.Add(Add("digest-multi-episode", DigestOf([Group("Shows", "media.episode", [.. multi]), Group("Movies", "media.movie", arrival)]), all));
+        cases.Add(Add("digest-single-episode", DigestOf([Group("Shows", "media.episodes", bearEp), Group("Movies", "media.movie", arrival)]), all));
+        cases.Add(Add("digest-multi-episode", DigestOf([Group("Shows", "media.episodes", [.. multi]), Group("Movies", "media.movie", arrival)]), all));
         cases.Add(Add("digest-album", DigestOf([Group("Music", "media.album", album), Group("Movies", "media.movie", arrival)]), all));
         cases.Add(Add("digest-audiobook", DigestOf([audiobook, Group("Movies", "media.movie", arrival)]), all));
         cases.Add(Add("digest-year", DigestOf([Group("Movies", "media.movie", dune), Group("Movies", "media.movie", primer)]), all));

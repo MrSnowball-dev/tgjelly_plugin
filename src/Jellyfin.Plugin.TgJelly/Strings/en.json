@@ -346,6 +346,7 @@
   "templates.willShorten": "will be shortened when sent with a poster",
   "templates.tooLong": "The message is {length} characters; Telegram allows at most {limit}.",
   "templates.empty": "The template produced no text",
+  "templates.digestLabel": "Digest",
   "templates.emptyWarning": "With some of the sample values this template produces no text. Then the default message is sent instead.",
   "templates.html.notAllowed": "Tag <{tag}> is not allowed",
   "templates.html.outOfOrder": "Tag </{tag}> closes out of order",

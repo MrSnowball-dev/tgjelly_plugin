@@ -271,7 +271,7 @@ public sealed class OutboxDelivery
                 return (entry, migrated);
             case DeliveryErrorKind.ParseError when !message.PlainText:
                 if (message.TemplateKey is { } templateKey
-                    && _settings.Current.Templates.FirstOrDefault(t => t.EventKey == templateKey) is { Enabled: true } template)
+                    && _settings.Current.Templates.FirstOrDefault(t => t.EventKey == templateKey) is { } template)
                 {
                     _templateFlags.Flag(templateKey, "error", error.Description, TemplateText.Hash(template.Text));
                 }

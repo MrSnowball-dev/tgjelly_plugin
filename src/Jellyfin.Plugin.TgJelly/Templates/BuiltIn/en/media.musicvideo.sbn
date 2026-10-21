@@ -1,0 +1,25 @@
+<b>{{ title }}</b>{{ if year }} ({{ year }}){{ end }}
+{{- details = []
+    if rating_text
+      details = details | array.add ("★ " + rating_text)
+    end
+    if runtime_text
+      details = details | array.add runtime_text
+    end
+    if genres.size > 0
+      details = details | array.add (genres | array.join ", ")
+    end }}
+{{- if details.size > 0 }}
+{{ details | array.join " · " }}
+{{- end }}
+{{- if overview }}
+
+{{ overview }}
+{{- end }}
+{{- if upgraded || library }}
+
+{{ end }}
+{{- if upgraded }}♻️ Upgraded{{ end }}
+{{- if upgraded && library }}
+{{ end }}
+{{- if library }}📁 {{ library }}{{ end -}}

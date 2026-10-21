@@ -1,5 +1,4 @@
 using System;
-using System.Globalization;
 using System.Linq;
 using Jellyfin.Plugin.TgJelly.Configuration;
 using Jellyfin.Plugin.TgJelly.State.Documents;
@@ -10,14 +9,16 @@ using Telegram.Bot.Extensions;
 namespace Jellyfin.Plugin.TgJelly.Rendering;
 
 /// <summary>
-/// Renders a model for one destination (spec §8): picks the layout by <see cref="RenderModel.Kind"/> and applies the
-/// destination's silent groups (§8.4). A custom template (§8.5) replaces the caption and text when it renders cleanly
-/// to some text; otherwise the default layout is kept and the template is flagged.
+/// Renders a model for one destination (spec §8): picks the layout by <see cref="RenderModel.Kind"/> for the poster and
+/// buttons, and applies the destination's silent groups (§8.4). A key with a built-in template takes its caption and
+/// text from <see cref="TemplateRenderer"/>. Any other key keeps the layout's text, which an enabled custom template
+/// (§8.5) replaces when it renders cleanly to some text; otherwise the layout's text is kept and the template is flagged.
 /// </summary>
 public sealed class NotificationRenderer
 {
     private readonly MediaLayouts _media;
     private readonly AlertLayouts _alerts;
+    private readonly TemplateRenderer _templates;
     private readonly TemplateEngine _engine;
     private readonly TemplateModelBuilder _models;
     private readonly TemplateFlags _flags;
@@ -29,15 +30,17 @@ public sealed class NotificationRenderer
     /// </summary>
     /// <param name="media">The media layouts.</param>
     /// <param name="alerts">The security and server layouts.</param>
+    /// <param name="templates">The template renderer, for the keys with a built-in template.</param>
     /// <param name="engine">The template engine.</param>
     /// <param name="models">The template model builder.</param>
     /// <param name="flags">The template flags.</param>
     /// <param name="settings">The settings, for the template overrides.</param>
     /// <param name="strings">The string table, for the flag messages.</param>
-    public NotificationRenderer(MediaLayouts media, AlertLayouts alerts, TemplateEngine engine, TemplateModelBuilder models, TemplateFlags flags, SettingsStore settings, StringTable strings)
+    public NotificationRenderer(MediaLayouts media, AlertLayouts alerts, TemplateRenderer templates, TemplateEngine engine, TemplateModelBuilder models, TemplateFlags flags, SettingsStore settings, StringTable strings)
     {
         _media = media;
         _alerts = alerts;
+        _templates = templates;
         _engine = engine;
         _models = models;
         _flags = flags;
@@ -63,7 +66,14 @@ public sealed class NotificationRenderer
         };
         if (message is not null)
         {
-            if (model.Kind != RenderKind.Digest)
+            if (_templates.Covers(model.EventKey))
+            {
+                var text = _templates.Render(model, message.PosterPath is not null)!;
+                message.Caption = text.Caption;
+                message.Text = text.Text;
+                message.TemplateKey = text.TemplateKey;
+            }
+            else if (model.Kind != RenderKind.Digest)
             {
                 ApplyTemplate(model, message);
             }
@@ -92,7 +102,7 @@ public sealed class NotificationRenderer
             var result = _engine.Render(key, template.Text, _models.Build(model).Values, strict: false);
             if (!result.Ok)
             {
-                _flags.Flag(key, "error", Describe(result.Error!), hash);
+                _flags.Flag(key, "error", TemplateRenderer.Describe(result.Error!), hash);
                 return;
             }
 
@@ -135,9 +145,4 @@ public sealed class NotificationRenderer
             }
         }
     }
-
-    private static string Describe(TemplateError error)
-        => error.Line is { } line && error.Column is { } column
-            ? string.Create(CultureInfo.InvariantCulture, $"line {line}, column {column}: {error.Message}")
-            : error.Message;
 }

@@ -1,0 +1,250 @@
+using System;
+using System.Linq;
+using Jellyfin.Plugin.TgJelly.Configuration;
+using Jellyfin.Plugin.TgJelly.Library;
+using Jellyfin.Plugin.TgJelly.Rendering;
+using Jellyfin.Plugin.TgJelly.State.Documents;
+using Jellyfin.Plugin.TgJelly.Templates;
+using Jellyfin.Plugin.TgJelly.Tests.Fakes;
+using Microsoft.Extensions.Logging;
+using Scriban;
+using Telegram.Bot.Extensions;
+using Xunit;
+
+namespace Jellyfin.Plugin.TgJelly.Tests.Templates;
+
+public sealed class TemplateRendererTests : IDisposable
+{
+    private const string Key = "media.movie";
+    private readonly BotTestHarness _h = new();
+    private readonly FakeLibrary _library = new();
+    private readonly ListLogger<TemplateRenderer> _logger = new();
+
+    public void Dispose() => _h.Dispose();
+
+    [Fact]
+    public void Covers_KeysWithABuiltIn()
+    {
+        var renderer = Renderer();
+
+        Assert.True(renderer.Covers("media.movie"));
+        Assert.True(renderer.Covers("media.episodes"));
+        Assert.False(renderer.Covers("media.nope"));
+        Assert.Null(renderer.Render(new RenderModel { Kind = RenderKind.Media, EventKey = "media.nope" }, hasPoster: false));
+    }
+
+    [Fact]
+    public void BuiltIn_NotKeyedNotFlagged()
+    {
+        var result = Renderer().Render(Movie(), hasPoster: true)!;
+
+        Assert.Equal("<b>Arrival</b> (2016)\n\nA linguist works with the military to talk to alien visitors.", result.Text);
+        Assert.Equal(result.Text, result.Caption);
+        Assert.Null(result.TemplateKey);
+        Assert.Null(StoredFlag());
+    }
+
+    [Fact]
+    public void Edited_UsedAndKeyed()
+    {
+        // Enabled is ignored: an override with text is the template in use.
+        Set("<b>New: {{ title }}</b>", enabled: false);
+
+        var result = Renderer().Render(Movie(), hasPoster: true)!;
+
+        Assert.Equal("<b>New: Arrival</b>", result.Caption);
+        Assert.Equal("<b>New: Arrival</b>", result.Text);
+        Assert.Equal(Key, result.TemplateKey);
+        Assert.Null(StoredFlag());
+    }
+
+    [Fact]
+    public void Edited_Blank_UsesBuiltIn()
+    {
+        var builtIn = Renderer().Render(Movie(), hasPoster: false)!;
+        Set("  \n ");
+
+        var result = Renderer().Render(Movie(), hasPoster: false)!;
+
+        Assert.Equal(builtIn, result);
+        Assert.Null(StoredFlag());
+    }
+
+    [Fact]
+    public void EditedFails_FallsBackToBuiltInAndFlags()
+    {
+        var builtIn = Renderer().Render(Movie(), hasPoster: false)!;
+        Set("line one\n{{ if }}");
+
+        var result = Renderer().Render(Movie(), hasPoster: false)!;
+
+        Assert.Equal(builtIn, result);
+        Assert.Null(result.TemplateKey);
+        var flag = StoredFlag()!;
+        Assert.Equal("error", flag.Kind);
+        Assert.StartsWith("line 2, column ", flag.Error, StringComparison.Ordinal);
+        Assert.Equal(TemplateText.Hash("line one\n{{ if }}"), flag.TextHash);
+    }
+
+    [Fact]
+    public void EditedForbiddenTag_FallsBackAndFlagsTheTableText()
+    {
+        var builtIn = Renderer().Render(Movie(), hasPoster: false)!;
+        Set("<h1>{{ title }}</h1>");
+
+        var result = Renderer().Render(Movie(), hasPoster: false)!;
+
+        Assert.Equal(builtIn, result);
+        Assert.Equal(_h.Strings.Get("templates.html.notAllowed", ("tag", "h1")), StoredFlag()!.Error);
+    }
+
+    [Theory]
+    [InlineData("{{ if false }}x{{ end }}")]
+    [InlineData("{{ if false }}x{{ end }}  \n  ")]
+    [InlineData("<b> </b>")]
+    [InlineData("{{ nope }}")]
+    public void EditedEmptyOutput_FallsBack(string text)
+    {
+        var builtIn = Renderer().Render(Movie(), hasPoster: false)!;
+        Set(text);
+
+        var result = Renderer().Render(Movie(), hasPoster: false)!;
+
+        Assert.Equal(builtIn, result);
+        var flag = StoredFlag()!;
+        Assert.Equal("error", flag.Kind);
+        Assert.Equal(_h.Strings.Get("templates.empty"), flag.Error);
+    }
+
+    [Fact]
+    public void EditedTruncated_FlagsTruncated()
+    {
+        Set(new string('a', 2000));
+
+        var result = Renderer().Render(Movie(), hasPoster: true)!;
+
+        Assert.Equal(Key, result.TemplateKey);
+        Assert.True(HtmlText.PlainLength(result.Caption) <= MessageFitter.CaptionLimit - MessageFitter.DelayedReserve);
+        Assert.EndsWith("…", result.Caption, StringComparison.Ordinal);
+        Assert.Equal(2000, result.Text.Length);
+        var flag = StoredFlag()!;
+        Assert.Equal("truncated", flag.Kind);
+        Assert.Equal(string.Empty, flag.Error);
+    }
+
+    [Fact]
+    public void EditedOverCaption_NoPoster_NotFlagged()
+    {
+        Set(new string('a', 2000));
+
+        var result = Renderer().Render(Movie(), hasPoster: false)!;
+
+        Assert.Equal(2000, result.Text.Length);
+        Assert.Null(StoredFlag());
+    }
+
+    [Fact]
+    public void EditedOverview_ShortenedByTheFitter_NotFlagged()
+    {
+        Set("<b>{{ title }}</b>\n{{ overview }}");
+
+        var result = Renderer().Render(Movie(overview: new string('o', 3000)), hasPoster: true)!;
+
+        Assert.Equal(Key, result.TemplateKey);
+        Assert.EndsWith("o…", result.Caption, StringComparison.Ordinal);
+        Assert.Null(StoredFlag());
+    }
+
+    [Fact]
+    public void BuiltInTruncated_NotFlagged()
+    {
+        var result = Renderer().Render(Movie(name: new string('t', 3000)), hasPoster: true)!;
+
+        Assert.True(HtmlText.PlainLength(result.Caption) <= MessageFitter.CaptionLimit - MessageFitter.DelayedReserve);
+        Assert.Contains("…", result.Caption, StringComparison.Ordinal);
+        Assert.Null(result.TemplateKey);
+        Assert.Null(StoredFlag());
+    }
+
+    [Fact]
+    public void BuiltInFails_LastResortText()
+    {
+        var builtIn = BuiltInTemplates.Get(Key, "en")!;
+        var engine = new TemplateEngine(
+            TimeProvider.System,
+            TimeSpan.FromSeconds(2),
+            text => text == builtIn ? throw new InvalidOperationException("parser broke") : Template.Parse(text));
+
+        var result = Renderer(engine).Render(Movie(name: "Tom & Jerry"), hasPoster: true)!;
+
+        Assert.Equal("<b>Media: Movies</b>\nTom &amp; Jerry", result.Caption);
+        Assert.Equal(result.Caption, result.Text);
+        Assert.Null(result.TemplateKey);
+        Assert.Null(StoredFlag());
+        var warning = Assert.Single(_logger.Entries, e => e.Level == LogLevel.Warning);
+        Assert.Contains(Key, warning.Message, StringComparison.Ordinal);
+        Assert.Contains("parser broke", warning.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void EditedAndBuiltInFail_FlagsTheEditedAndSendsLastResort()
+    {
+        var builtIn = BuiltInTemplates.Get(Key, "en")!;
+        var engine = new TemplateEngine(
+            TimeProvider.System,
+            TimeSpan.FromSeconds(2),
+            text => text == builtIn ? throw new InvalidOperationException("parser broke") : Template.Parse(text));
+        Set("{{ if }}");
+
+        var result = Renderer(engine).Render(Movie(), hasPoster: false)!;
+
+        Assert.Equal("<b>Media: Movies</b>\nArrival", result.Text);
+        Assert.Equal("error", StoredFlag()!.Kind);
+    }
+
+    [Fact]
+    public void ThrowingModelBuilder_LastResortLabelOnly()
+    {
+        var model = Movie();
+        _library.GetItemOverride = _ => throw new InvalidOperationException("library broke");
+
+        var result = Renderer().Render(model, hasPoster: false)!;
+
+        Assert.Equal("<b>Media: Movies</b>", result.Text);
+        Assert.Equal(result.Text, result.Caption);
+        Assert.Contains("library broke", Assert.Single(_logger.Entries, e => e.Level == LogLevel.Warning).Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Plural_UsesTheConfiguredLanguage()
+    {
+        // Only English has a rule; another language falls back to it and to the English built-in.
+        _h.Settings.Update(null, c => c.Language = "xx");
+        var item = _library.Add(new MediaItem { Id = Guid.NewGuid(), Kind = MediaKind.MusicAlbum, Name = "Kid A", AlbumArtist = "Radiohead", ChildCount = 1 });
+
+        var result = Renderer().Render(new RenderModel { Kind = RenderKind.Media, EventKey = "media.album", ItemIds = [item.Id.ToString("N")] }, hasPoster: false)!;
+
+        Assert.Equal("<b>Radiohead — Kid A</b>\n1 track", result.Text);
+    }
+
+    private TemplateRenderer Renderer(TemplateEngine? engine = null)
+    {
+        var formatter = new Formatter(_h.Strings);
+        var models = new TemplateModelBuilder(_library, new LinkBuilder(new FakeServerInfo()), _h.Settings, formatter, _h.Time);
+        return new TemplateRenderer(engine ?? new TemplateEngine(TimeProvider.System), models, new TemplateFlags(_h.State, _h.Settings, _h.Time), _h.Settings, _h.Strings, _logger);
+    }
+
+    private RenderModel Movie(string name = "Arrival", string? overview = "A linguist works with the military to talk to alien visitors.")
+    {
+        var item = _library.Add(new MediaItem { Id = Guid.NewGuid(), Kind = MediaKind.Movie, Name = name, Year = 2016, Overview = overview });
+        return new RenderModel { Kind = RenderKind.Media, EventKey = Key, At = _h.Time.GetUtcNow(), ItemIds = [item.Id.ToString("N")] };
+    }
+
+    private TemplateFlag? StoredFlag()
+        => _h.State.Read(s => s.Status.TemplateFlags.TryGetValue(Key, out var f) ? f : null);
+
+    private void Set(string text, bool enabled = true)
+        => Assert.Equal(
+            SettingsUpdateStatus.Saved,
+            _h.Settings.Update(null, c => c.Templates = [new TemplateOverride { EventKey = Key, Enabled = enabled, Text = text }]).Status);
+}
