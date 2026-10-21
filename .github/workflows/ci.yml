@@ -1,8 +1,10 @@
 name: CI
 
+# A change is tested in full once, on its PR. A push to main only builds and runs the unit tests, and a release
+# (release.yml) smoke-tests its own zips on one Jellyfin per track.
 on:
   push:
-    branches: ['**']
+    branches: [main]
   pull_request:
   workflow_dispatch:
   workflow_call:
@@ -23,6 +25,9 @@ jobs:
   build:
     name: Build, test, package
     runs-on: ubuntu-latest
+    outputs:
+      smoke: ${{ steps.smoke.outputs.matrix }}
+      smoke-any: ${{ steps.smoke.outputs.any }}
     steps:
       - uses: actions/checkout@v7
 
@@ -76,6 +81,21 @@ jobs:
       - name: List publish output (spec §15 Q7)
         run: ls -1 artifacts/publish/net9.0 artifacts/publish/net10.0
 
+      # .github/smoke-matrix.json lists every smoke run; a release keeps the entries marked "release", a push to main none.
+      - name: Choose the smoke runs
+        id: smoke
+        env:
+          MODE: ${{ (inputs.release != '' && inputs.release != '0.0') && 'release' || github.event_name == 'push' && 'none' || 'full' }}
+        run: |
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json, os
+          mode = os.environ["MODE"]
+          runs = json.load(open(".github/smoke-matrix.json"))
+          keep = [] if mode == "none" else [r for r in runs if mode == "full" or r.get("release")]
+          print("matrix=" + json.dumps({"include": [{k: r[k] for k in ("image", "track", "args")} for r in keep]}))
+          print("any=" + ("true" if keep else "false"))
+          PY
+
       - uses: actions/upload-artifact@v7
         with:
           name: packages
@@ -86,40 +106,14 @@ jobs:
   smoke:
     name: Smoke ${{ matrix.image }} track ${{ matrix.track }} ${{ matrix.args }}
     needs: build
+    if: needs.build.outputs.smoke-any == 'true'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       # A track, not a file name: a release run packages tgjelly_<track>.X.Y.0.zip, and smoke.py finds it (--track).
-      matrix:
-        include:
-          - image: jellyfin/jellyfin:10.11.0
-            track: 1
-            args: --stub
-          - image: jellyfin/jellyfin:10.11.0
-            track: 1
-            args: --stub --base-url /jf
-          - image: jellyfin/jellyfin:10.11.11
-            track: 1
-            args: --stub
-          - image: jellyfin/jellyfin:10.11.11
-            track: 1
-            args: --stub --base-url /jf
-          - image: jellyfin/jellyfin:12.0
-            track: 2
-            args: --stub
-          - image: jellyfin/jellyfin:12.0
-            track: 2
-            args: --stub --base-url /jf
-          - image: jellyfin/jellyfin:12.2
-            track: 2
-            args: --stub
-          - image: jellyfin/jellyfin:12.2
-            track: 2
-            args: --stub --base-url /jf
-          # Spec F8: after a 10.11 -> 12 upgrade the old build keeps loading until it is updated.
-          - image: jellyfin/jellyfin:12.2
-            track: 1
-            args: --expect-incompatible
+      # Spec F8's entry (12.2 with track 1, --expect-incompatible): after a 10.11 -> 12 upgrade the old build keeps
+      # loading until it is updated.
+      matrix: ${{ fromJSON(needs.build.outputs.smoke) }}
     steps:
       - uses: actions/checkout@v7
 
