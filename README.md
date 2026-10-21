@@ -52,11 +52,11 @@ You can also limit a destination to some libraries, send media, security or serv
 
 <!-- screenshot: the destination editor with the event switches -->
 
-## Custom templates
+## Message templates
 
-You can replace the text of a message with your own template. Templates are optional and live in the Advanced section. The poster and buttons keep following their own switches. See [docs/templates.md](docs/templates.md) for the syntax and the fields you can use.
+Every message is a template, and you can change any of them. Open the event in the dashboard's Message templates section. The editor shows the built-in template, so you start from what you already get. A live preview shows how it will look in Telegram. Press Send test to send it to a destination, and Reset to go back to the built-in one. The poster and buttons keep following their own switches. See [docs/templates.md](docs/templates.md) for the syntax, the fields you can use, and the built-in templates.
 
-<!-- screenshot: the custom template editor with its preview -->
+<!-- screenshot: the Message templates section with its live preview -->
 
 ## Privacy
 

@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Text;
@@ -23,11 +24,20 @@ internal static class TemplateDocs
         A template uses the Scriban language. Write plain text and put fields in double braces, like `{{ title }}`.
         You can use `if`, `for` and the other Scriban statements.
 
+        ### Start from the built-in template
+
+        Every message is a template. Even the default messages are built-in templates.
+        To change a message, open the event in the dashboard's **Message templates** section.
+        The editor shows the built-in template. Start there and change what you want.
+        You see a live preview of the result as you type. Press **Send test** to send it to a destination.
+        Press **Reset** to go back to the built-in template.
+        The built-in templates are also listed at the end of this page.
+
         ### What a template replaces
 
         A template replaces only the text of the message, or its caption when a poster is sent.
         The poster and the buttons still follow your message settings.
-        Digests always use the default layout, and a template does not change them.
+        Digests are templates too, and you can edit them like any other message.
         Updates to a message, such as a new episode joining a group, render the same template again with the new data.
 
         ### Escaping and `raw`
@@ -38,22 +48,37 @@ internal static class TemplateDocs
         Every tag must be closed.
         To print a value without escaping it, write `{{ raw value }}`. Use this only for text you trust.
 
+        ### Plural words
+
+        Use `plural` to pick the right word for a number: `{{ plural count "episode" "episodes" }}`.
+        The first word is for one, the second for all other numbers.
+
         ### Limits
 
         Each render may run for at most 2 seconds and print at most 16384 characters.
         A loop may run at most 1000 times, and calls may nest at most 20 levels deep.
         Telegram allows 1024 characters in a caption and 4096 in a text message.
-        A longer result is cut to fit.
 
-        ### Checks, flags and fallbacks
+        ### When a message is too long
 
-        Press **Validate** in the dashboard to check a template. Saving does not check it.
-        Validate renders the template twice, once with a full sample and once with missing data.
-        It reports unknown fields, tags Telegram doesn't allow, and a result with no text.
-        When a template fails while a message is sent, the default layout is sent instead, and the template is flagged with the error.
+        A long message is shortened, once for the caption and once for the text. The plugin leaves 40 characters of room for the delayed-delivery line.
+        It shortens in this order:
+
+        1. The long text is cut and ends with `…`. This is the `overview` of a movie, music video or book, the `changelog` of a plugin update, or the `error` of a failed install or task. If less than 20 characters would be left, the text is dropped.
+        2. The list keeps as many items as fit. A count field tells you how many were left out, so you can print "+N more". The fields are `episodes_more` for `episodes`, `reasons_more` for `reasons`, and `more` for the digest's `libraries`. A digest can end up with no entries at all.
+        3. If it is still too long, the whole text is cut.
+
+        Your template does not need to handle this. It only needs to print the count field if you want a "+N more" line.
+        A result cut in step 3 is flagged "truncated" when the template is yours.
+
+        ### Previews, flags and fallbacks
+
+        The dashboard renders your template live and shows what it would look like in Telegram, with errors and warnings. Saving does not block on errors.
+        There are no Validate or Sample buttons any more. The live preview and **Send test** replace them.
+        When an edited template fails while a message is sent, the built-in template is sent instead, and your template is flagged with the error.
         A template that produces no text counts as failed.
-        A template whose result is cut is flagged "truncated".
-        A flag clears when you change the template's text or turn it on or off.
+        If the built-in template fails too, the plugin sends a minimal text with the event name and the item or user name.
+        A flag clears when you change the template's text or reset it.
 
         ### Field types
 
@@ -88,16 +113,29 @@ internal static class TemplateDocs
         ["server.plugin_updated"] = "Plugin <b>{{ plugin }}</b> is now {{ version }}.\n<blockquote>{{ changelog }}</blockquote>",
         ["server.plugin_install_failed"] = "Plugin <b>{{ plugin }}</b> {{ version }} failed to install.\n<blockquote>{{ error }}</blockquote>",
         ["server.task_failed"] = "Task <b>{{ task }}</b> failed.\n<blockquote>{{ error }}</blockquote>",
-        ["server.restart_pending"] = "A restart is needed:\n{{ for r in reasons }}- {{ r }}\n{{ end }}",
+        ["media.digest"] = "<b>{{ count_text }} new {{ plural count \"item\" \"items\" }}</b>\n{{ for l in libraries }}{{ l.name ?? \"Other\" }}: {{ for e in l.entries }}{{ e.title }} {{ end }}\n{{ end }}{{ if more > 0 }}and {{ more }} more{{ end }}",
+        ["server.restart_pending"] = "A restart is needed:\n{{ for r in reasons }}- {{ r }}\n{{ end }}{{ if reasons_more > 0 }}+{{ reasons_more }} more{{ end }}",
     };
 
     public static string Example(string eventKey) => Examples[eventKey];
+
+    private static int LongestRun(string text, char c)
+    {
+        int best = 0, run = 0;
+        foreach (var ch in text)
+        {
+            run = ch == c ? run + 1 : 0;
+            best = Math.Max(best, run);
+        }
+
+        return best;
+    }
 
     public static string Render()
     {
         var text = new StringBuilder(Intro.ReplaceLineEndings("\n"));
         text.Append("\n## Events\n\n");
-        foreach (var key in EventCatalog.AllKeys)
+        foreach (var key in TemplateKeys.All)
         {
             text.Append(CultureInfo.InvariantCulture, $"### `{key}`\n\n");
             text.Append("| Field | Type | Optional | Description |\n| --- | --- | --- | --- |\n");
@@ -107,6 +145,15 @@ internal static class TemplateDocs
             }
 
             text.Append("\nExample:\n\n```\n").Append(Examples[key]).Append("\n```\n\n");
+        }
+
+        text.Append("## Built-in templates\n\n");
+        text.Append("These are the templates the plugin uses when you have not edited a message. Copy one into the editor and change it.\n\n");
+        foreach (var key in TemplateKeys.All)
+        {
+            var builtIn = (BuiltInTemplates.Get(key, "en") ?? string.Empty).TrimEnd('\n');
+            var fence = new string('`', Math.Max(3, LongestRun(builtIn, '`') + 1));
+            text.Append(CultureInfo.InvariantCulture, $"### `{key}`\n\n{fence}\n{builtIn}\n{fence}\n\n");
         }
 
         return text.ToString().TrimEnd('\n') + "\n";
