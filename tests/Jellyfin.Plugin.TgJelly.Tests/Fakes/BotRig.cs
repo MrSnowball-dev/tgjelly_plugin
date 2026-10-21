@@ -39,10 +39,10 @@ public sealed class BotRig
         Status = new StatusScreen(h.Connection, PipelineRig.Compatible, gate, h.Settings, h.State, Health, Readiness, Outbox, h.Strings, formatter, h.Time);
         Library = new FakeLibrary();
         var tester = new DestinationTester(h.Connection, Health, h.Strings, NullLogger<DestinationTester>.Instance);
-        var advanced = new AdvancedScreen(h.Connection, h.Strings, formatter);
+        var advanced = new AdvancedScreen(h.Strings, formatter);
         var destinations = new DestinationScreens(h.Settings, Health, tester, Library, Outbox, h.Connection, h.Strings, formatter, NullLogger<DestinationScreens>.Instance);
         Server = new FakeServerInfo();
-        var settingsScreens = new SettingsScreens(h.Settings, h.State, new LinkBuilder(Server), Memory, h.Connection, h.Strings, formatter);
+        var settingsScreens = new SettingsScreens(h.Settings, h.State, new LinkBuilder(Server), Memory, h.Strings, formatter);
         var checker = new DestinationChecker(h.Connection, h.Strings);
         Retrier = new ChatCheckRetrier(checker, h.Time)
         {
@@ -54,7 +54,7 @@ public sealed class BotRig
         };
         var creator = new DestinationCreator(h.Settings, Health, tester, Memory, NullLogger<DestinationCreator>.Instance);
         var screens = new ScreenSender(h.Connection);
-        var topics = new TopicFlow(h.Connection, Memory, screens, Retrier, checker, h.Strings, formatter, h.Time, NullLogger<TopicFlow>.Instance);
+        var topics = new TopicFlow(h.Connection, Memory, screens, Retrier, checker, h.Strings, formatter, NullLogger<TopicFlow>.Instance);
         Onboarding = new OnboardingFlow(h.Connection, Memory, screens, h.Settings, Retrier, topics, checker, creator, Health, destinations, menus, h.Strings, formatter, h.Time, NullLogger<OnboardingFlow>.Instance);
         var detected = new DetectedChatFlow(Memory, h.Settings, checker, Onboarding, screens, menus, h.Strings, formatter, NullLogger<DetectedChatFlow>.Instance);
         Queue = new BotWorkQueue(NullLogger<BotWorkQueue>.Instance);

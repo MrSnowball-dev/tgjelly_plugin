@@ -427,9 +427,9 @@ export function renderConnect(ui, S, links, settings = null) {
     const result = ui.result;
     const busy = ui.saving;
     if (result && result.kind === 'Connected') {
-        return `<div class="verticalSection"><p>${t(S, 'web.connect.connected', { bot: result.username })}</p>`
-            + (result.webhookDeleted ? `<p class="fieldDescription">${t(S, 'web.connect.webhookRemoved')}</p>` : '')
-            + `${telegramLink(links && links.OpenBot, t(S, 'web.connect.open', { bot: result.username }))}</div>`;
+        return result.webhookDeleted
+            ? `<div class="verticalSection"><p class="fieldDescription">${t(S, 'web.connect.webhookRemoved')}</p></div>`
+            : '';
     }
 
     if (ui.hasToken && !ui.changingToken) {
@@ -492,9 +492,9 @@ export function renderBot(status, links, S, ui) {
         : button(t(S, 'web.bot.disconnect'), 'disconnect', { disabled: busy });
     return '<div class="verticalSection">'
         + `<h2 class="sectionTitle">${t(S, 'web.bot.title')}</h2>`
-        + `<p>@${esc(bot)}</p>`
-        + `<p class="fieldDescription">${t(S, 'web.bot.access', { bot })}</p>`
-        + `<div>${telegramLink(links && links.OpenBot, t(S, 'web.connect.open', { bot }))}`
+        + `<p><b>@${esc(bot)}</b></p>`
+        + `<p class="fieldDescription">${t(S, 'web.bot.access')}</p>`
+        + `<div>${telegramLink(links && links.OpenBot, t(S, 'web.bot.open'))}`
         + `${button(t(S, 'web.bot.change'), 'changeToken', { disabled: busy })}${disconnect}</div></div>`;
 }
 

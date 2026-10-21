@@ -23,25 +23,34 @@ public sealed class AdvancedScreenTests : IDisposable, IAsyncLifetime
     public void Dispose() => _h.Dispose();
 
     [Fact]
-    public async Task Advanced_HasTheFourOptions_WithTheSpecLinks()
+    public async Task Options_HasTopicAndDashboardOnly()
     {
         await Click("1|ox", 77);
 
         var edit = Assert.Single(_h.Api.CallsTo("editMessageText"));
         Assert.Equal(77, (int)edit.Body["message_id"]!);
         var buttons = Buttons(edit);
-        Assert.Equal(["Add to a group", "Add to a channel", "Use an existing topic", "Open dashboard"], buttons.Select(b => (string)b["text"]!));
-        Assert.Equal("https://t.me/tgjelly_test_bot?startgroup=add", (string)buttons[0]["url"]!);
-        Assert.Equal("https://t.me/tgjelly_test_bot?startchannel&admin=post_messages+edit_messages", (string)buttons[1]["url"]!);
-        Assert.StartsWith("1|", (string)buttons[2]["callback_data"]!, StringComparison.Ordinal);
-        Assert.StartsWith("1|", (string)buttons[3]["callback_data"]!, StringComparison.Ordinal);
+        Assert.Equal(["Use an existing topic", "Open dashboard"], buttons.Select(b => (string)b["text"]!));
+        Assert.Equal(["1|ol", "1|od"], buttons.Select(b => (string)b["callback_data"]!));
+    }
+
+    [Fact]
+    public async Task AdvancedOptions_ExplainsEachButton()
+    {
+        await Click("1|ox", 77);
+
+        var edit = Assert.Single(_h.Api.CallsTo("editMessageText"));
+        edit.Explains("Use an existing topic", "Open dashboard");
+        var text = (string)edit.Body["text"]!;
+        Assert.Contains("post in a topic you already have; you'll send me its link", text, StringComparison.Ordinal);
+        Assert.Contains("add a chat by its ID in the Jellyfin dashboard", text, StringComparison.Ordinal);
     }
 
     [Fact]
     public async Task OpenDashboard_ShowsThePath()
     {
         await Click("1|ox", 77);
-        var data = (string)Buttons(_h.Api.CallsTo("editMessageText").Last())[3]["callback_data"]!;
+        var data = (string)Buttons(_h.Api.CallsTo("editMessageText").Last())[1]["callback_data"]!;
 
         await Click(data, 77);
 
@@ -65,14 +74,13 @@ public sealed class AdvancedScreenTests : IDisposable, IAsyncLifetime
         AddForum();
         _h.Api.On("sendChatAction", _ => FakeBotApi.Error(400, "Bad Request: message thread not found"));
         await Text("/start add");
-        var request = int.Parse(_rig.Memory.GetFlow(Manager)!.Params["requestGroup"], CultureInfo.InvariantCulture);
-        await _rig.Deliver(TelegramFixtures.Update("chat_shared", ("request_id", request.ToString(CultureInfo.InvariantCulture)), ("chat_id", Group.ToString(CultureInfo.InvariantCulture)), ("message_id", "300")));
+        await _rig.Deliver(TelegramFixtures.Update("my_chat_member_group_member", ("chat_id", Group.ToString(CultureInfo.InvariantCulture))));
         var wizard = _rig.Memory.GetFlow(Manager)!.WizardMessageId!.Value;
         await Click("1|te", wizard);
         await Text("https://t.me/c/5550001/9"); // fails: the topic is gone
         _h.Api.On("sendChatAction", _ => FakeBotApi.Ok("true"));
         await Click("1|ox", wizard);
-        var existing = (string)Buttons(_h.Api.CallsTo("editMessageText").Last())[2]["callback_data"]!;
+        var existing = (string)Buttons(_h.Api.CallsTo("editMessageText").Last())[0]["callback_data"]!;
 
         await Click(existing, wizard);
         await Text("https://t.me/c/999/9");
@@ -91,11 +99,11 @@ public sealed class AdvancedScreenTests : IDisposable, IAsyncLifetime
     {
         AddForum();
         await Click("1|ox", 77);
-        var existing = (string)Buttons(_h.Api.CallsTo("editMessageText").Last())[2]["callback_data"]!;
+        var existing = (string)Buttons(_h.Api.CallsTo("editMessageText").Last())[0]["callback_data"]!;
 
         await Click(existing, 77);
 
-        var prompt = Sent().Last();
+        var prompt = _h.Api.CallsTo("editMessageText").Last();
         Assert.Contains("Copy link", (string)prompt.Body["text"]!, StringComparison.Ordinal);
         Assert.Contains(SetupFailureKind.TopicNotPickable, _h.State.Read(s => s.SetupFailures.Select(f => f.Kind).ToList()));
 
@@ -108,12 +116,26 @@ public sealed class AdvancedScreenTests : IDisposable, IAsyncLifetime
     }
 
     [Fact]
+    public async Task AdvancedTopic_AsksInPlace_WithCancelBackToAdvanced()
+    {
+        AddForum();
+
+        await Click("1|ol", 9);
+
+        var edit = Assert.Single(_h.Api.CallsTo("editMessageText"));
+        Assert.Equal(9, (int)edit.Body["message_id"]!);
+        Assert.Contains("Send me the topic's link as a message.", (string)edit.Body["text"]!, StringComparison.Ordinal);
+        Assert.Equal(["1|ox"], Buttons(edit).Select(b => (string)b["callback_data"]!));
+        Assert.Empty(_h.Api.CallsTo("sendMessage"));
+    }
+
+    [Fact]
     public async Task ExistingTopic_WithNoPickedChat_AlreadyADestination_SaysSo()
     {
         _h.AddDestination(Group, threadId: 9);
         AddForum(); // after the destination, which registers a plain supergroup
         await Click("1|ox", 77);
-        await Click((string)Buttons(_h.Api.CallsTo("editMessageText").Last())[2]["callback_data"]!, 77);
+        await Click((string)Buttons(_h.Api.CallsTo("editMessageText").Last())[0]["callback_data"]!, 77);
 
         await Text("https://t.me/c/5550001/9");
 
@@ -127,7 +149,7 @@ public sealed class AdvancedScreenTests : IDisposable, IAsyncLifetime
         AddForum();
         _h.Api.On("sendChatAction", _ => FakeBotApi.Error(400, "Bad Request: message thread not found"));
         await Click("1|ox", 77);
-        await Click((string)Buttons(_h.Api.CallsTo("editMessageText").Last())[2]["callback_data"]!, 77);
+        await Click((string)Buttons(_h.Api.CallsTo("editMessageText").Last())[0]["callback_data"]!, 77);
 
         await Text("https://t.me/c/5550001/9");
 

@@ -34,7 +34,7 @@ public class CallbackDataTests
     {
         {
             var rows = new Dictionary<string, string[]>(StringComparer.Ordinal);
-            foreach (var a in new[] { "m", "st", "noop", "s", "sm", "su", "sut", "sum", "sp", "spu", "spt", "spc", "ocd", "oa", "ot", "ox", "ol", "od", "tg", "tc", "te" })
+            foreach (var a in new[] { "m", "st", "noop", "s", "sm", "su", "sut", "sum", "sp", "spu", "spt", "spc", "ocd", "oa", "ot", "oh", "on", "ox", "ol", "od", "tg", "tc", "te", "tb", "tk" })
             {
                 rows[a] = [];
             }
@@ -49,10 +49,10 @@ public class CallbackDataTests
                 rows[a] = [Id];
             }
 
-            foreach (var a in new[] { "de", "dlb" })
-            {
-                rows[a] = [Id, Page];
-            }
+            rows["de"] = [Id];
+            rows["dlb"] = [Id, Page];
+            rows["deg"] = [Id, "security"];
+            rows["ocg"] = ["security"];
 
             rows["det"] = [Id, LongestEvent];
             rows["dlt"] = [Id, LibraryId];

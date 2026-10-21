@@ -43,7 +43,7 @@ public sealed class DetectedChatFlowTests : IDisposable, IAsyncLifetime
 
         var list = Assert.Single(_h.Api.CallsTo("editMessageText"));
         Assert.Contains("Detected: <b>Family</b>, set it up?", (string)list.Body["text"]!, StringComparison.Ordinal);
-        Assert.Equal(["Set up Family", "Dismiss Family", "‹ Back"], Labels(list));
+        Assert.Equal(["Set up Family", "Dismiss Family", "Back"], Labels(list));
         Assert.Equal(["1|xs|-1005550002", "1|xd|-1005550002", "1|m"], Data(list));
     }
 
@@ -58,22 +58,33 @@ public sealed class DetectedChatFlowTests : IDisposable, IAsyncLifetime
     }
 
     [Fact]
-    public async Task WhilePickerWaits_NotRecorded()
+    public async Task AddMatchingAPrompt_IsNotRecorded()
     {
         await Text("/start add");
-        Assert.NotEmpty(_rig.Memory.GetFlow(Manager)!.PickerRequestIds);
 
         await Added(NewGroup);
 
         _h.Time.Advance(TimeSpan.FromMinutes(1));
         Assert.Empty(Visible());
+        Assert.False(_rig.Memory.IsDetected(NewGroup));
     }
 
     [Fact]
-    public async Task AfterThePickerIsAnswered_AChatIsRecordedAgain()
+    public async Task AddByAnotherUser_WhileAPromptWaits_IsRecorded()
     {
         await Text("/start add");
-        await Text("Cancel");
+
+        await Deliver("my_chat_member_group_member", ("chat_id", Num(NewGroup)), ("user_id", "99"));
+
+        _h.Time.Advance(TimeSpan.FromSeconds(30));
+        Assert.Equal(NewGroup, Assert.Single(Visible()).ChatId);
+    }
+
+    [Fact]
+    public async Task AfterThePromptIsCancelled_AChatIsRecordedAgain()
+    {
+        await Text("/start add");
+        await Click("1|on", PromptId());
 
         await Added(NewGroup);
 
@@ -178,6 +189,22 @@ public sealed class DetectedChatFlowTests : IDisposable, IAsyncLifetime
     }
 
     [Fact]
+    public async Task DetectedList_ExplainsSetUpAndDismiss_Once()
+    {
+        await Added(NewGroup);
+        await Added(-1005550003);
+        _h.Time.Advance(TimeSpan.FromSeconds(30));
+
+        await Click("1|xl|0", 55);
+
+        var text = (string)Assert.Single(_h.Api.CallsTo("editMessageText")).Body["text"]!;
+        Assert.Equal(1, Count(text, "<b>Set up …</b> — add the chat as a destination"));
+        Assert.Equal(1, Count(text, "<b>Dismiss …</b> — hide it from this list; I stay in the chat"));
+    }
+
+    private static int Count(string text, string part) => text.Split(part).Length - 1;
+
+    [Fact]
     public async Task Dismiss_RemovesIt()
     {
         await Added(NewGroup);
@@ -231,10 +258,11 @@ public sealed class DetectedChatFlowTests : IDisposable, IAsyncLifetime
         await Added(NewGroup);
         _h.Time.Advance(TimeSpan.FromSeconds(30));
         await Text("/start add");
+        var prompt = PromptId();
 
-        await Text("Cancel");
+        await Click("1|on", prompt);
 
-        Assert.Contains("Chats added outside setup (1)", Labels(Sent().Last()));
+        Assert.Contains("Chats added outside setup (1)", Labels(_h.Api.CallsTo("editMessageText").Last()));
     }
 
     [Fact]
@@ -253,6 +281,8 @@ public sealed class DetectedChatFlowTests : IDisposable, IAsyncLifetime
     private static string Num(long value) => value.ToString(CultureInfo.InvariantCulture);
 
     private System.Collections.Generic.IReadOnlyList<Jellyfin.Plugin.TgJelly.State.Documents.DetectedChat> Visible() => _rig.Memory.VisibleDetected([]);
+
+    private int PromptId() => _rig.Memory.GetFlow(Manager)!.WizardMessageId!.Value;
 
     private Task Added(long chatId) => Deliver("my_chat_member_group_member", ("chat_id", Num(chatId)));
 

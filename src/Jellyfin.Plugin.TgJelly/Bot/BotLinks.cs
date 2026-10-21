@@ -25,5 +25,10 @@ public static class BotLinks
     /// <returns>The link.</returns>
     public static string StartChannel(string bot) => Base(bot) + "?startchannel&admin=post_messages+edit_messages";
 
+    /// <summary>Gets the link that asks to make the bot an admin of a group who can manage topics.</summary>
+    /// <param name="bot">The bot's username.</param>
+    /// <returns>The link.</returns>
+    public static string PromoteForTopics(string bot) => Base(bot) + "?startgroup=topics&admin=manage_topics";
+
     private static string Base(string bot) => "https://t.me/" + bot;
 }

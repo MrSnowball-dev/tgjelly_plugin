@@ -100,7 +100,7 @@ public interface ITelegramSender
     /// <returns>A task.</returns>
     Task SetChannelAdminRightsAsync(CancellationToken ct);
 
-    /// <summary>Calls <c>sendMessage</c> in HTML with a reply keyboard, keyboard removal or force-reply markup.</summary>
+    /// <summary>Calls <c>sendMessage</c> in HTML with reply-area markup (only <c>ReplyKeyboardRemove</c>, for stale v0.1 keyboards).</summary>
     /// <param name="prompt">The prompt.</param>
     /// <param name="ct">Cancels the call.</param>
     /// <returns>The sent message.</returns>

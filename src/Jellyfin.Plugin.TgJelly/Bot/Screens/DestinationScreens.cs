@@ -82,9 +82,12 @@ public sealed class DestinationScreens
             case "d":
                 return Detail(id);
             case "de":
-                return Events(id, PageOf(arg));
+                return Events(id);
+            case "deg":
+                return EventGroup(id, arg);
             case "det":
-                return Events(id, ToggleEvent(id, arg));
+                ToggleEvent(id, arg);
+                return EventCatalog.IsKnown(arg) ? EventGroup(id, EventCatalog.GroupOf(arg)) : Events(id);
             case "dlb":
                 return Libraries(id, PageOf(arg));
             case "dlt":
@@ -115,14 +118,14 @@ public sealed class DestinationScreens
     /// </summary>
     /// <param name="page">The zero-based page.</param>
     /// <returns>The screen.</returns>
-    public Screen List(int page) => Listing(page, "menu.destinations.title", "d", "dl", "m");
+    public Screen List(int page) => Listing(page, "menu.destinations.title", "menu.destinations.pick", "d", "dl", "m");
 
     /// <summary>
     /// Builds one page of the <c>/test</c> picker.
     /// </summary>
     /// <param name="page">The zero-based page.</param>
     /// <returns>The screen.</returns>
-    public Screen Picker(int page) => Listing(page, "dest.picker.title", "dt", "tp", "m");
+    public Screen Picker(int page) => Listing(page, "dest.picker.title", "dest.picker.pick", "dt", "tp", "m");
 
     private static int PageOf(string? text)
         => int.TryParse(text, NumberStyles.None, CultureInfo.InvariantCulture, out var page) ? page : 0;
@@ -140,11 +143,11 @@ public sealed class DestinationScreens
     private static InlineKeyboardButton[] Row(string text, string action, params string[] args)
         => [InlineKeyboardButton.WithCallbackData(text, CallbackData.Format(action, args))];
 
-    private Screen Listing(int page, string titleKey, string pick, string pageAction, string backAction)
+    private Screen Listing(int page, string titleKey, string pickKey, string pick, string pageAction, string backAction)
     {
         var destinations = _settings.Current.Destinations;
         var shown = Paging.Page(destinations, page);
-        var html = new StringBuilder("<b>").Append(_strings.Get(titleKey)).Append("</b>");
+        var html = new StringBuilder("<b>").Append(Icons.Heading(_strings, _formatter, titleKey)).Append("</b>");
         if (destinations.Length == 0)
         {
             html.Append("\n\n").Append(_strings.Get("menu.destinations.empty"));
@@ -161,7 +164,12 @@ public sealed class DestinationScreens
             rows.Add(nav);
         }
 
-        rows.Add(Row(_strings.Get("menu.back"), backAction));
+        rows.Add([Button("menu.back", backAction)]);
+        if (destinations.Length > 0)
+        {
+            html.Append("\n\n").Append(_formatter.Escape(_strings.Get(pickKey)));
+        }
+
         return new Screen(html.ToString(), new InlineKeyboardMarkup(rows));
     }
 
@@ -185,32 +193,58 @@ public sealed class DestinationScreens
             html.Append("\n\n").Append(note);
         }
 
+        var pauseKey = d.Enabled ? "dest.btn.pause" : "dest.btn.resume";
+        html.Append(ButtonGuide.Lines(
+            _strings,
+            _formatter,
+            ("dest.btn.events", "dest.btn.events.about"),
+            ("dest.btn.libraries", "dest.btn.libraries.about"),
+            ("dest.btn.silent", "dest.btn.silent.about"),
+            ("dest.btn.test", "dest.btn.test.about"),
+            ("dest.btn.check", "dest.btn.check.about"),
+            (pauseKey, pauseKey + ".about"),
+            ("dest.btn.remove", "dest.btn.remove.about")));
         var rows = new List<InlineKeyboardButton[]>
         {
-            new[] { Button("dest.btn.events", "de", d.Id, "0"), Button("dest.btn.libraries", "dlb", d.Id, "0") },
+            new[] { Button("dest.btn.events", "de", d.Id), Button("dest.btn.libraries", "dlb", d.Id, "0") },
             new[] { Button("dest.btn.silent", "dsg", d.Id), Button("dest.btn.test", "dt", d.Id) },
-            new[] { Button("dest.btn.check", "dc", d.Id), Button(d.Enabled ? "dest.btn.pause" : "dest.btn.resume", "dp", d.Id) },
+            new[] { Button("dest.btn.check", "dc", d.Id), Button(pauseKey, "dp", d.Id) },
             new[] { Button("dest.btn.remove", "dr", d.Id) },
             new[] { Button("menu.back", "dl", "0") },
         };
         return new Screen(html.ToString(), new InlineKeyboardMarkup(rows));
     }
 
-    private Screen Events(string id, int page)
+    private Screen Events(string id)
     {
         if (Find(id) is not { } d)
         {
             return Gone();
         }
 
-        var keys = EventCatalog.AllKeys;
-        var shown = Paging.Page(keys, page);
-        var rows = shown
-            .Select(k => Row(Mark(d.Events.Contains(k, StringComparer.Ordinal)) + " " + _strings.Get("dest.event." + k), "det", d.Id, k))
-            .ToList();
-        AddNav(rows, page, keys.Count, "de", d.Id);
-        rows.Add(Row(_strings.Get("menu.back"), "d", d.Id));
-        return new Screen(Heading("dest.events.title", d), new InlineKeyboardMarkup(rows));
+        var rows = EventPicker.GroupRows(_strings, d.Events, g => CallbackData.Format("deg", d.Id, g));
+        rows.Add([Button("menu.back", "d", d.Id)]);
+        var html = Heading("dest.events.title", d) + "\n\n" + _formatter.Escape(_strings.Get("events.choose"))
+            + ButtonGuide.Lines(_strings, _formatter, [.. EventCatalog.Groups.Select(g => ("events.group." + g, "events.group." + g + ".about"))]);
+        return new Screen(html, new InlineKeyboardMarkup(rows));
+    }
+
+    private Screen EventGroup(string id, string group)
+    {
+        if (Find(id) is not { } d)
+        {
+            return Gone();
+        }
+
+        if (!EventCatalog.Groups.Contains(group, StringComparer.Ordinal))
+        {
+            return Events(id);
+        }
+
+        var rows = EventPicker.ToggleRows(_strings, group, d.Events, key => CallbackData.Format("det", d.Id, key));
+        rows.Add([Button("menu.back", "de", d.Id)]);
+        var name = Icons.Heading(_strings, _formatter, "events.group." + group);
+        return new Screen(Heading("dest.events.title", d) + "\n\n<b>" + name + "</b>\n\n" + _formatter.Escape(_strings.Get("dest.events.pick")), new InlineKeyboardMarkup(rows));
     }
 
     private Screen Libraries(string id, int page)
@@ -228,10 +262,18 @@ public sealed class DestinationScreens
             html.Append('\n').Append(_formatter.Escape(_strings.Get("dest.libraries.removed", ("id", gone))));
         }
 
-        var rows = new List<InlineKeyboardButton[]> { Row(Mark(d.LibraryIds.Length == 0) + " " + _strings.Get("dest.libraries.all"), "dlt", d.Id, "all") };
+        html.Append(ButtonGuide.Lines(_strings, _formatter, ("dest.libraries.all", "dest.libraries.all.about")));
+        if (folders.Count > 0)
+        {
+            html.Append("\n\n").Append(_formatter.Escape(_strings.Get("dest.libraries.pick")));
+        }
+
+        var all = Button("dest.libraries.all", "dlt", d.Id, "all");
+        all.Text = Mark(d.LibraryIds.Length == 0) + " " + all.Text;
+        var rows = new List<InlineKeyboardButton[]> { new[] { all } };
         rows.AddRange(Paging.Page(folders, page).Select(f => Row(MenuScreens.Label(Mark(d.LibraryIds.Contains(f.Id.ToString("N"), StringComparer.Ordinal)) + " " + f.Name), "dlt", d.Id, f.Id.ToString("N"))));
         AddNav(rows, page, folders.Count, "dlb", d.Id);
-        rows.Add(Row(_strings.Get("menu.back"), "d", d.Id));
+        rows.Add([Button("menu.back", "d", d.Id)]);
         return new Screen(html.ToString(), new InlineKeyboardMarkup(rows));
     }
 
@@ -242,11 +284,11 @@ public sealed class DestinationScreens
             return Gone();
         }
 
-        var html = Heading("dest.silent.title", d) + "\n\n" + _strings.Get("dest.silent.hint");
+        var html = Heading("dest.silent.title", d) + "\n\n" + _strings.Get("dest.silent.hint") + "\n\n" + _formatter.Escape(_strings.Get("dest.silent.pick"));
         var rows = EventCatalog.Groups
             .Select(g => Row((d.SilentGroups.Contains(g, StringComparer.Ordinal) ? "🔕" : "🔔") + " " + _strings.Get("groups." + g), "dsgt", d.Id, g))
             .ToList();
-        rows.Add(Row(_strings.Get("menu.back"), "d", d.Id));
+        rows.Add([Button("menu.back", "d", d.Id)]);
         return new Screen(html, new InlineKeyboardMarkup(rows));
     }
 
@@ -257,7 +299,8 @@ public sealed class DestinationScreens
             return Gone();
         }
 
-        var html = "<b>" + _formatter.Escape(d.Title) + "</b>\n\n" + _formatter.Escape(_strings.Get("dest.remove.ask"));
+        var html = "<b>" + _formatter.Escape(d.Title) + "</b>\n\n" + _formatter.Escape(_strings.Get("dest.remove.ask"))
+            + ButtonGuide.Lines(_strings, _formatter, ("dest.btn.remove", "dest.remove.only.about"), ("dest.btn.removeLeave", "dest.btn.removeLeave.about"), ("dest.btn.cancel", "dest.btn.cancel.about"));
         var rows = new List<InlineKeyboardButton[]>
         {
             new[] { Button("dest.btn.remove", "drx", d.Id, "0"), Button("dest.btn.removeLeave", "drx", d.Id, "1") },
@@ -327,12 +370,12 @@ public sealed class DestinationScreens
         return List(0);
     }
 
-    /// <summary>Flips an event and returns the page the event is on.</summary>
-    private int ToggleEvent(string id, string key)
+    /// <summary>Flips an event; an unknown key changes nothing.</summary>
+    private void ToggleEvent(string id, string key)
     {
         if (!EventCatalog.IsKnown(key))
         {
-            return 0;
+            return;
         }
 
         Change(id, d =>
@@ -343,7 +386,6 @@ public sealed class DestinationScreens
                 .Cast<PresetKind?>()
                 .FirstOrDefault(p => EventCatalog.Expand(p!.Value).SequenceEqual(d.Events, StringComparer.Ordinal)) ?? PresetKind.Custom;
         });
-        return Math.Max(0, EventCatalog.AllKeys.ToList().IndexOf(key)) / Paging.PageSize;
     }
 
     /// <summary>Flips a library, or clears the filter for <c>all</c>; returns page 0.</summary>
@@ -381,13 +423,13 @@ public sealed class DestinationScreens
     private Destination? Find(string id) => _settings.Current.Destinations.FirstOrDefault(d => d.Id == id);
 
     private Screen Gone()
-        => new(_strings.Get("dest.gone"), new InlineKeyboardMarkup(Row(_strings.Get("menu.back"), "dl", "0")));
+        => new(_strings.Get("dest.gone"), new InlineKeyboardMarkup(Button("menu.back", "dl", "0")));
 
     private InlineKeyboardButton Button(string textKey, string action, params string[] args)
-        => InlineKeyboardButton.WithCallbackData(_strings.Get(textKey), CallbackData.Format(action, args));
+        => Buttons.Callback(_strings, textKey, CallbackData.Format(action, args));
 
     private string Heading(string titleKey, Destination d)
-        => "<b>" + _strings.Get(titleKey) + "</b>\n" + _formatter.Escape(d.Title);
+        => "<b>" + Icons.Heading(_strings, _formatter, titleKey) + "</b>\n" + _formatter.Escape(d.Title);
 
     private void AddNav(List<InlineKeyboardButton[]> rows, int page, int count, string action, string id)
     {

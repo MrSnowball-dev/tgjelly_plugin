@@ -38,7 +38,7 @@ public sealed class MenuScreens
     /// <param name="destinations">The number of destinations.</param>
     /// <param name="detected">The number of chats added outside setup; shown only when above 0.</param>
     /// <returns>The screen.</returns>
-    public Screen Main(int destinations, int detected) => Build(_strings.Get("menu.title"), destinations, detected);
+    public Screen Main(int destinations, int detected) => Build(Icons.Heading(_strings, _formatter, "menu.title"), destinations, detected);
 
     /// <summary>
     /// Builds the main menu headed by how many destinations are set up, for people who open the bot again.
@@ -46,7 +46,7 @@ public sealed class MenuScreens
     /// <param name="destinations">The number of destinations.</param>
     /// <param name="detected">The number of chats added outside setup; shown only when above 0.</param>
     /// <returns>The screen.</returns>
-    public Screen SetUp(int destinations, int detected) => Build(_strings.Plural("menu.setUp", destinations), destinations, detected);
+    public Screen SetUp(int destinations, int detected) => Build(_formatter.Escape(_strings.Plural("menu.setUp", destinations)), destinations, detected);
 
     /// <summary>
     /// Cuts a title to a button label: at most 40 code points, ending in <c>…</c> when cut. Button text is plain, so
@@ -72,23 +72,28 @@ public sealed class MenuScreens
         return cut.Append('…').ToString();
     }
 
-    private Screen Build(string heading, int destinations, int detected)
+    private Screen Build(string headingHtml, int destinations, int detected)
     {
+        var lines = new List<string>
+        {
+            ButtonGuide.Line(_formatter, _strings.Get("menu.destinations", ("count", destinations)), _strings.Get("menu.destinations.about")),
+            ButtonGuide.Line(_strings, _formatter, "menu.add", "menu.add.about"),
+            ButtonGuide.Line(_strings, _formatter, "menu.settings", "menu.settings.about"),
+            ButtonGuide.Line(_strings, _formatter, "menu.status", "menu.status.about"),
+        };
         var rows = new List<InlineKeyboardButton[]>
         {
-            Row(_strings.Get("menu.destinations", ("count", destinations)), "dl", "0"),
-            Row(_strings.Get("menu.add"), "oa"),
-            Row(_strings.Get("menu.settings"), "s"),
-            Row(_strings.Get("menu.status"), "st"),
+            new[] { Buttons.Callback(_strings, "menu.destinations", CallbackData.Format("dl", "0"), ("count", destinations)) },
+            new[] { Buttons.Callback(_strings, "menu.add", CallbackData.Format("oa")) },
+            new[] { Buttons.Callback(_strings, "menu.settings", CallbackData.Format("s")) },
+            new[] { Buttons.Callback(_strings, "menu.status", CallbackData.Format("st")) },
         };
         if (detected > 0)
         {
-            rows.Add(Row(_strings.Get("menu.detected", ("count", detected)), "xl", "0"));
+            rows.Add([Buttons.Callback(_strings, "menu.detected", CallbackData.Format("xl", "0"), ("count", detected))]);
+            lines.Add(ButtonGuide.Line(_formatter, _strings.Get("menu.detected", ("count", detected)), _strings.Get("menu.detected.about")));
         }
 
-        return new Screen("<b>" + _formatter.Escape(heading) + "</b>", new InlineKeyboardMarkup(rows));
+        return new Screen("<b>" + headingHtml + "</b>" + ButtonGuide.Block([.. lines]), new InlineKeyboardMarkup(rows));
     }
-
-    private static InlineKeyboardButton[] Row(string text, string action, params string[] args)
-        => [InlineKeyboardButton.WithCallbackData(text, CallbackData.Format(action, args))];
 }

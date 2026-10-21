@@ -246,7 +246,7 @@ public sealed class BotSupervisor : BackgroundService, ISupervisorControl
             _client = client;
         }
 
-        var sender = new TelegramSender(client);
+        var sender = new TelegramSender(client, _logger);
         var backoff = new Backoff(TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(60));
 
         User me;

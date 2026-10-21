@@ -94,22 +94,6 @@ public sealed class BotMemory
     public void ClearFlow(long chatId) => _state.Update(s => s.Flows.Remove(Key(chatId)));
 
     /// <summary>
-    /// Hands out the next request ID for a chat picker button.
-    /// </summary>
-    /// <returns>An increasing positive number.</returns>
-    public int NextRequestId()
-    {
-        var id = 0;
-        _state.Update(s =>
-        {
-            // Wraps back to 1 rather than going negative.
-            s.Telegram.LastRequestId = s.Telegram.LastRequestId >= int.MaxValue || s.Telegram.LastRequestId < 0 ? 1 : s.Telegram.LastRequestId + 1;
-            id = s.Telegram.LastRequestId;
-        });
-        return id;
-    }
-
-    /// <summary>
     /// Notes that a manager just used the bot.
     /// </summary>
     /// <param name="chatId">The manager's private chat ID.</param>
@@ -298,9 +282,7 @@ public sealed class BotMemory
             {
                 if (flow.PromptSentAt is { } sent && sent + PromptTtl <= now)
                 {
-                    flow.PromptMessageId = null;
                     flow.PromptSentAt = null;
-                    flow.PickerRequestIds = [];
                     s.SetupFailures.Add(new SetupFailure { Kind = SetupFailureKind.PromptExpired, At = now });
                     if (long.TryParse(key, NumberStyles.Integer, CultureInfo.InvariantCulture, out var chatId))
                     {
@@ -333,10 +315,7 @@ public sealed class BotMemory
         Screen = f.Screen,
         Params = new Dictionary<string, string>(f.Params, StringComparer.Ordinal),
         WizardMessageId = f.WizardMessageId,
-        PromptMessageId = f.PromptMessageId,
-        CheckingMessageId = f.CheckingMessageId,
         PromptSentAt = f.PromptSentAt,
-        PickerRequestIds = [.. f.PickerRequestIds],
         UpdatedAt = f.UpdatedAt,
     };
 

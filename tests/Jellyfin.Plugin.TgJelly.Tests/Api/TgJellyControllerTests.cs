@@ -143,7 +143,7 @@ public class TgJellyControllerTests
     }
 
     [Fact]
-    public async Task Status_ShowsConnectionState_BotUsername_AndCounts()
+    public async Task Status_WhenConnected_SaysConnected_WithoutTheUsername_AndShowsCounts()
     {
         using var h = new BotTestHarness();
         h.Connect();
@@ -159,7 +159,7 @@ public class TgJellyControllerTests
 
         var status = controller.GetStatus().Value!;
 
-        Assert.Equal(("Connected", "Connected as @tgjelly_test_bot", FakeBotApi.BotUsername), (status.ConnectionState, status.ConnectionMessage, status.BotUsername));
+        Assert.Equal(("Connected", "Connected to Telegram", FakeBotApi.BotUsername), (status.ConnectionState, status.ConnectionMessage, status.BotUsername));
         Assert.Equal((1, 1), (status.OutboxCount, status.UnhealthyDestinations));
         Assert.False(status.HasToken);
     }

@@ -26,7 +26,7 @@ function status(overrides = {}) {
         LoadWarnings: [],
         LastErrors: [],
         ConnectionState: 'Connected',
-        ConnectionMessage: 'Connected as @jf_bot',
+        ConnectionMessage: 'Connected to Telegram',
         BotUsername: 'jf_bot',
         HasToken: true,
         Counters: { DroppedIntake: 0, DroppedOutbox: 0, Evictions: 0 },
@@ -248,7 +248,7 @@ test('viewshow loads strings and status, and renders the status', async () => {
         'GET /jf/TgJelly/Libraries',
         'GET /jf/TgJelly/Templates',
     ]);
-    assert.ok(el('tgj-status').innerHTML.includes('Connected as @jf_bot'));
+    assert.ok(el('tgj-status').innerHTML.includes('Connected to Telegram'));
     assert.equal(el('tgj-advanced-title').innerHTML, m.t(EN, 'web.advanced'));
     assert.equal(el('tgj-advanced').hidden, false);
 });
@@ -618,10 +618,11 @@ test('token input is type=password and never pre-filled', async () => {
     assert.ok(html.includes("Let TgJelly set up this bot's profile: description, command menu and default admin rights (replaces the current ones)"));
 });
 
-test('Connected shows open link from Links.OpenBot', async () => {
+test('Connected closes the connect card; the Bot section names the bot once', async () => {
+    let saved = false;
     const { view, api, el } = mount({
-        'GET TgJelly/Status': noToken(),
-        'POST TgJelly/Token': { Outcome: 'Connected', Message: '', BotUsername: 'jf_bot', WebhookDeleted: false },
+        'GET TgJelly/Status': () => (saved ? status() : noToken()),
+        'POST TgJelly/Token': () => { saved = true; return { Outcome: 'Connected', Message: '', BotUsername: 'jf_bot', WebhookDeleted: false }; },
     });
     await show(view);
     await click(view, 'connectExisting');
@@ -629,12 +630,18 @@ test('Connected shows open link from Links.OpenBot', async () => {
     await click(view, 'saveToken');
 
     assert.deepEqual(posted(api, 'Token'), [{ Token: '123:secret', SetProfile: true, ConfirmSwitch: false }]);
-    const html = el('tgj-connect').innerHTML;
-    assert.ok(html.includes('Connected as @jf_bot'));
+    assert.equal(el('tgj-connect').innerHTML, '');
+    const html = el('tgj-bot').innerHTML;
+    assert.equal(html.split('@jf_bot').length, 2);
     assert.ok(html.includes('href="https://t.me/jf_bot?start=setup"'));
-    assert.ok(html.includes('Open @jf_bot'));
-    assert.ok(!html.includes('removed'), 'no webhook note');
+    assert.ok(html.includes('Open in Telegram'));
     assert.ok(!html.includes('123:secret'));
+});
+
+test('Bot section access line does not repeat the username', () => {
+    const html = m.renderBot(status(), { OpenBot: 'https://t.me/jf_bot?start=setup' }, EN, {});
+    assert.ok(html.includes('Anyone who can open this bot'));
+    assert.equal(html.split('@jf_bot').length, 2);
 });
 
 test('a removed webhook is mentioned after Connected', async () => {
@@ -710,7 +717,7 @@ test('NeedsConfirm then Switch sends ConfirmSwitch', async () => {
         { Token: '9:z', SetProfile: true, ConfirmSwitch: false },
         { Token: '9:z', SetProfile: true, ConfirmSwitch: true },
     ]);
-    assert.ok(el('tgj-connect').innerHTML.includes('Connected as @new'));
+    assert.equal(el('tgj-connect').innerHTML, '');
 });
 
 test('Cancel after NeedsConfirm forgets the token', async () => {
@@ -761,7 +768,7 @@ test('the Bot section shows the username, the access reminder and the buttons', 
     await show(view);
     const html = el('tgj-bot').innerHTML;
     assert.ok(html.includes('@jf_bot'));
-    assert.ok(html.includes('Anyone who can open @jf_bot can manage notifications. Keep it restricted in BotFather.'));
+    assert.ok(html.includes('Anyone who can open this bot can manage notifications. Keep it restricted in BotFather.'));
     assert.ok(html.includes('Change token') && html.includes('Disconnect bot'));
 });
 
@@ -1656,8 +1663,11 @@ test('every t(…) key used in tgjelly.js exists in en.json', () => {
     assert.ok(!/\bt\((?!S, )[a-z]/.test(SOURCE.replace(/function t\(/, '')), 'every t( call passes S first');
 });
 
+// Sent by TgJellyController as the Connected status message, not rendered by the page itself.
+const SERVER_SIDE_KEY = 'web.status.connected';
+
 test('every web.* key in en.json is used by tgjelly.js', () => {
-    for (const key of Object.keys(EN).filter(k => k.startsWith('web.'))) {
+    for (const key of Object.keys(EN).filter(k => k.startsWith('web.') && k !== SERVER_SIDE_KEY)) {
         const base = key.replace(/\.(one|other)$/, '');
         assert.ok(SOURCE.includes(`'${base}'`), key);
     }

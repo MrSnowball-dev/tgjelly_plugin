@@ -11,21 +11,23 @@ using Jellyfin.Plugin.TgJelly.State.Documents;
 using Jellyfin.Plugin.TgJelly.Strings;
 using Microsoft.Extensions.Logging;
 using Telegram.Bot.Types;
-using Telegram.Bot.Types.Enums;
 using Telegram.Bot.Types.ReplyMarkups;
 
 namespace Jellyfin.Plugin.TgJelly.Bot.Flows;
 
 /// <summary>
-/// The forum step of onboarding (spec §6.2 step 3, §6.5 "Use an existing topic"): where in the forum to post. Each
-/// handler returns the <see cref="TopicChoice"/> once a topic is chosen, and <c>null</c> while it still waits (for the
-/// promotion or for the link) or after it ended with its own message. Steps key off their own markers in the chat's
-/// flow, never off <see cref="FlowState.Screen"/> alone.
+/// The forum step of onboarding (spec §6.2 step 3, §6.5 "Use an existing topic"): where in the forum to post, all in
+/// the wizard message. Each handler returns the <see cref="TopicChoice"/> once a topic is chosen, and <c>null</c> while
+/// it still waits (for the promotion or for the link) or after it ended with its own message. Steps key off their own
+/// markers in the chat's flow, never off <see cref="FlowState.Screen"/> alone.
 /// </summary>
 public sealed class TopicFlow
 {
     private const string TopicKey = "topic";
-    private const string PromotionKey = "promotionRequest";
+    private const string PromotionKey = "promotion";
+
+    /// <summary>v0.1's marker of a pending promotion through the chat picker, which also left <c>creating</c> set.</summary>
+    private const string LegacyPromotionKey = "promotionRequest";
     private const string InputKey = "input";
     private const string LinkInput = "topicLink";
     private const string AnyChatKey = "anyChat";
@@ -38,7 +40,6 @@ public sealed class TopicFlow
     private readonly DestinationChecker _checker;
     private readonly StringTable _strings;
     private readonly Formatter _formatter;
-    private readonly TimeProvider _time;
     private readonly ILogger<TopicFlow> _logger;
 
     /// <summary>
@@ -51,9 +52,8 @@ public sealed class TopicFlow
     /// <param name="checker">Checks an existing topic.</param>
     /// <param name="strings">The string table.</param>
     /// <param name="formatter">The formatter, for escaping.</param>
-    /// <param name="time">The clock.</param>
     /// <param name="logger">The logger.</param>
-    public TopicFlow(BotConnection connection, BotMemory memory, ScreenSender screens, ChatCheckRetrier retrier, DestinationChecker checker, StringTable strings, Formatter formatter, TimeProvider time, ILogger<TopicFlow> logger)
+    public TopicFlow(BotConnection connection, BotMemory memory, ScreenSender screens, ChatCheckRetrier retrier, DestinationChecker checker, StringTable strings, Formatter formatter, ILogger<TopicFlow> logger)
     {
         _connection = connection;
         _memory = memory;
@@ -62,7 +62,6 @@ public sealed class TopicFlow
         _checker = checker;
         _strings = strings;
         _formatter = formatter;
-        _time = time;
         _logger = logger;
     }
 
@@ -79,23 +78,20 @@ public sealed class TopicFlow
     }
 
     /// <summary>
-    /// Whether a picked chat answers the topic-promotion prompt.
+    /// Whether a flow is on the topic-promotion screen, waiting for the bot to be allowed to manage topics. The screen
+    /// has no expiry (spec §6.2 step 3).
     /// </summary>
     /// <param name="flow">The chat's flow.</param>
-    /// <param name="requestId">The <c>request_id</c> of the <c>chat_shared</c>.</param>
-    /// <returns><c>true</c> when the flow's live promotion picker has this request ID.</returns>
-    public static bool IsPromotionRequest(FlowState flow, int requestId)
+    /// <returns><c>true</c> when it is on the topic step and waits for the promotion.</returns>
+    public static bool AwaitsPromotion(FlowState flow)
     {
         ArgumentNullException.ThrowIfNull(flow);
-        return flow.Params.ContainsKey(TopicKey)
-            && flow.PickerRequestIds.Contains(requestId)
-            && flow.Params.TryGetValue(PromotionKey, out var promotion)
-            && promotion == Text(requestId);
+        return flow.Params.ContainsKey(TopicKey) && flow.Params.TryGetValue(PromotionKey, out var promotion) && promotion == "1";
     }
 
     /// <summary>
     /// Asks where to post: <c>[General topic] [Create a "Jellyfin" topic] [Use an existing topic…]</c>, as the wizard
-    /// message (new, or edited when <paramref name="wizardMessageId"/> is given). The "Checking…" message is deleted.
+    /// message (new, or edited when <paramref name="wizardMessageId"/> is given).
     /// </summary>
     /// <param name="privateChatId">The private chat.</param>
     /// <param name="check">The passing check of the forum.</param>
@@ -105,13 +101,7 @@ public sealed class TopicFlow
     public async Task AskAsync(long privateChatId, ChatCheckResult check, int? wizardMessageId, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(check);
-        var previous = _memory.GetFlow(privateChatId);
         var flow = new FlowState { Screen = OnboardingFlow.FlowScreen };
-        if (previous is not null && previous.Params.TryGetValue(OnboardingFlow.AnswerKey, out var answer))
-        {
-            flow.Params[OnboardingFlow.AnswerKey] = answer;
-        }
-
         flow.Params[TopicKey] = "1";
         flow.Params[OnboardingFlow.ChatIdKey] = Text(check.ChatId);
         flow.Params[OnboardingFlow.TitleKey] = check.Title;
@@ -125,10 +115,10 @@ public sealed class TopicFlow
             new[] { Button("topic.create", "tc") },
             new[] { Button("topic.existing", "te") },
         };
-        var html = "<b>" + _formatter.Escape(check.Title) + "</b>\n" + _formatter.Escape(_strings.Get("topic.ask"));
+        var html = "<b>" + _formatter.Escape(check.Title) + "</b>\n" + _formatter.Escape(_strings.Get("topic.ask"))
+            + ButtonGuide.Lines(_strings, _formatter, ("topic.general", "topic.general.about"), ("topic.create", "topic.create.about"), ("topic.existing", "topic.existing.about"));
         flow.WizardMessageId = await _screens.ShowAsync(privateChatId, new Screen(html, new InlineKeyboardMarkup(rows)), wizardMessageId, ct).ConfigureAwait(false);
         _memory.SaveFlow(privateChatId, flow);
-        await DeleteAsync(privateChatId, previous?.CheckingMessageId, ct).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -159,17 +149,17 @@ public sealed class TopicFlow
     /// <param name="flow">The wizard's flow.</param>
     /// <param name="ct">Cancels the work.</param>
     /// <returns>The choice.</returns>
-    public async Task<TopicChoice?> OnGeneralAsync(long chatId, FlowState flow, CancellationToken ct)
+    public Task<TopicChoice?> OnGeneralAsync(long chatId, FlowState flow, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(flow);
-        await SpendAsync(chatId, flow, ct).ConfigureAwait(false);
-        return new TopicChoice(Rebuild(flow), 0, flow.WizardMessageId);
+        Spend(chatId, flow);
+        return Task.FromResult<TopicChoice?>(new TopicChoice(Rebuild(flow), 0, flow.WizardMessageId));
     }
 
     /// <summary>
-    /// Create a "Jellyfin" topic (<c>tc</c>): creates it when the bot can manage topics, otherwise sends the throwaway
-    /// promotion prompt. A second press while this runs does nothing; one while the prompt waits (or after it expired)
-    /// replaces the prompt with a fresh one.
+    /// Create a "Jellyfin" topic (<c>tc</c>): creates it when the bot can manage topics, otherwise edits the wizard to
+    /// the promotion screen and waits (spec §6.2 step 3). A second press while a creation runs does nothing; the
+    /// promotion screen has no Create button.
     /// </summary>
     /// <param name="chatId">The private chat.</param>
     /// <param name="flow">The wizard's flow.</param>
@@ -178,16 +168,17 @@ public sealed class TopicFlow
     public async Task<TopicChoice?> OnCreateAsync(long chatId, FlowState flow, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(flow);
+
+        // A v0.1 flow caught mid-promotion at the upgrade: its creating marker belongs to the old chat-picker
+        // promotion, which can no longer finish, so it is dropped and Create starts afresh.
+        if (flow.Params.Remove(LegacyPromotionKey))
+        {
+            flow.Params.Remove(OnboardingFlow.CreatingKey);
+        }
+
         if (flow.Params.ContainsKey(OnboardingFlow.CreatingKey))
         {
-            // A promotion prompt that is still waiting, expired or was cancelled in Telegram: spend it and ask afresh.
-            // Without one, a creation is still running and this press does nothing.
-            if (!flow.Params.ContainsKey(PromotionKey))
-            {
-                return null;
-            }
-
-            await SpendAsync(chatId, flow, ct).ConfigureAwait(false);
+            return null;
         }
 
         flow.Params[OnboardingFlow.CreatingKey] = "1";
@@ -210,70 +201,38 @@ public sealed class TopicFlow
             return await CreateTopicAsync(chatId, flow, check, ct).ConfigureAwait(false);
         }
 
-        var requestId = _memory.NextRequestId();
-        var keyboard = new ReplyKeyboardMarkup([[OnboardingFlow.PickerButton(PickerKind.TopicPromotion, requestId, _strings.Get("topic.allow"))]]) { ResizeKeyboard = true };
-        Message prompt;
-        try
-        {
-            prompt = await _connection.RequireSender()
-                .SendPromptAsync(new OutgoingPrompt(chatId, _formatter.Escape(_strings.Get("topic.allowPrompt")), keyboard), ct).ConfigureAwait(false);
-        }
-        catch
-        {
-            // Nothing is awaited, so Create must stay available.
-            flow.Params.Remove(OnboardingFlow.CreatingKey);
-            _memory.SaveFlow(chatId, flow);
-            throw;
-        }
-
-        flow.PromptMessageId = prompt.MessageId;
-        flow.PromptSentAt = _time.GetUtcNow();
-        flow.PickerRequestIds = [requestId];
-        flow.Params[PromotionKey] = Text(requestId);
-        _memory.SaveFlow(chatId, flow);
+        flow.Params.Remove(OnboardingFlow.CreatingKey);
+        flow.Params[PromotionKey] = "1";
+        await ShowPromotionAsync(chatId, flow, null, ct).ConfigureAwait(false);
         return null;
     }
 
     /// <summary>
-    /// The picked chat answered the promotion prompt: re-checks the forum and the bot's rights, deletes the prompt and
-    /// creates the topic. A different chat is rejected and the prompt stays live.
+    /// The bot may have been promoted in the flow's forum: its <c>my_chat_member</c> made it an admin there, a group
+    /// <c>/start@bot</c> came from there, or Check again (<c>tk</c>) was pressed. The wizard shows "Checking…" while
+    /// the forum and the bot's rights are re-checked with retries; with the rights the topic is created, without them
+    /// the promotion screen says so and keeps waiting.
     /// </summary>
     /// <param name="chatId">The private chat.</param>
-    /// <param name="flow">The chat's flow, on the promotion step.</param>
-    /// <param name="message">The private message carrying <see cref="Message.ChatShared"/>.</param>
+    /// <param name="flow">The chat's flow, on the promotion screen.</param>
     /// <param name="ct">Cancels the work.</param>
-    /// <returns>The choice once the topic exists; <c>null</c> after a rejection or a failure.</returns>
-    public async Task<TopicChoice?> OnPromotionSharedAsync(long chatId, FlowState flow, Message message, CancellationToken ct)
+    /// <returns>The choice once the topic exists; <c>null</c> while it still waits or after a failure.</returns>
+    public async Task<TopicChoice?> OnPromotedAsync(long chatId, FlowState flow, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(flow);
-        ArgumentNullException.ThrowIfNull(message);
         var check = Rebuild(flow);
-        if (message.ChatShared!.ChatId != check.ChatId)
-        {
-            var wrong = new OutgoingText(chatId, 0, _formatter.Escape(_strings.Get("topic.wrongChat")), ParseMode.Html, null, null, false);
-            await _connection.RequireSender().SendTextAsync(wrong, ct).ConfigureAwait(false);
-            return null;
-        }
-
-        // The prompt is spent: remember the answer so a redelivery is ignored, remove the reply keyboard with a short
-        // message (kept as the "Checking…" message) and delete the prompt.
-        var prompt = flow.PromptMessageId;
-        flow.Params[OnboardingFlow.AnswerKey] = Text(message.MessageId);
-        ClearPrompt(flow);
+        var checking = new Screen(_strings.Get("onboard.checking", ("title", _formatter.Escape(check.Title))), null);
+        flow.WizardMessageId = await _screens.ShowAsync(chatId, checking, flow.WizardMessageId, ct).ConfigureAwait(false);
         _memory.SaveFlow(chatId, flow);
-        var checking = _strings.Get("onboard.checking", ("title", _formatter.Escape(check.Title)));
-        var sent = await _connection.RequireSender().SendPromptAsync(new OutgoingPrompt(chatId, checking, new ReplyKeyboardRemove()), ct).ConfigureAwait(false);
-        flow.CheckingMessageId = sent.MessageId;
-        _memory.SaveFlow(chatId, flow);
-        await DeleteAsync(chatId, prompt, ct).ConfigureAwait(false);
 
         ChatCheckResult fresh;
+        var canManage = false;
         try
         {
             fresh = await _retrier.CheckAsync(check.ChatId, retry: true, ct).ConfigureAwait(false);
-            if (fresh.Passed && !await _retrier.UntilAsync(() => CanManageTopicsAsync(check.ChatId, ct), ct).ConfigureAwait(false))
+            if (fresh.Passed)
             {
-                return await FailAsync(chatId, flow, null, ct).ConfigureAwait(false);
+                canManage = await _retrier.UntilAsync(() => CanManageTopicsAsync(check.ChatId, ct), ct).ConfigureAwait(false);
             }
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -282,9 +241,39 @@ public sealed class TopicFlow
             return await FailAsync(chatId, flow, null, ct).ConfigureAwait(false);
         }
 
-        return fresh.Passed
-            ? await CreateTopicAsync(chatId, flow, fresh, ct).ConfigureAwait(false)
-            : await FailAsync(chatId, flow, fresh.Message, ct).ConfigureAwait(false);
+        if (!fresh.Passed)
+        {
+            return await FailAsync(chatId, flow, fresh.Message, ct).ConfigureAwait(false);
+        }
+
+        if (!canManage)
+        {
+            await ShowPromotionAsync(chatId, flow, _strings.Get("topic.stillNoRights", ("title", check.Title)), ct).ConfigureAwait(false);
+            return null;
+        }
+
+        flow.Params.Remove(PromotionKey);
+        flow.Params[OnboardingFlow.CreatingKey] = "1";
+        _memory.SaveFlow(chatId, flow);
+        return await CreateTopicAsync(chatId, flow, fresh, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// The bot's rights changed in a chat other than the flow's forum while the promotion screen waits: the screen says
+    /// so and keeps waiting.
+    /// </summary>
+    /// <param name="chatId">The private chat.</param>
+    /// <param name="flow">The chat's flow, on the promotion screen.</param>
+    /// <param name="other">The chat the rights changed in.</param>
+    /// <param name="ct">Cancels the work.</param>
+    /// <returns>A task.</returns>
+    public Task OnOtherChatAsync(long chatId, FlowState flow, Chat other, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(flow);
+        ArgumentNullException.ThrowIfNull(other);
+        var name = string.IsNullOrEmpty(other.Title) ? Text(other.Id) : other.Title;
+        var note = _strings.Get("topic.otherGroup", ("other", name), ("title", Rebuild(flow).Title));
+        return ShowPromotionAsync(chatId, flow, note, ct);
     }
 
     /// <summary>
@@ -298,9 +287,24 @@ public sealed class TopicFlow
     public async Task<TopicChoice?> OnExistingAsync(long chatId, FlowState flow, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(flow);
-        await SpendAsync(chatId, flow, ct).ConfigureAwait(false);
+        Spend(chatId, flow);
         _memory.RecordFailure(SetupFailureKind.TopicNotPickable);
         await AskForLinkAsync(chatId, flow, null, ct).ConfigureAwait(false);
+        return null;
+    }
+
+    /// <summary>
+    /// Cancel on the link prompt (<c>tb</c>): drops the link input and asks the topic question again in the wizard message.
+    /// </summary>
+    /// <param name="chatId">The private chat.</param>
+    /// <param name="flow">The wizard's flow.</param>
+    /// <param name="ct">Cancels the work.</param>
+    /// <returns><c>null</c>: the topic is still to be chosen.</returns>
+    public async Task<TopicChoice?> OnBackAsync(long chatId, FlowState flow, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(flow);
+        Spend(chatId, flow);
+        await AskAsync(chatId, Rebuild(flow), flow.WizardMessageId, ct).ConfigureAwait(false);
         return null;
     }
 
@@ -399,14 +403,6 @@ public sealed class TopicFlow
 
     private static string Text(long value) => value.ToString(CultureInfo.InvariantCulture);
 
-    private static void ClearPrompt(FlowState flow)
-    {
-        flow.PickerRequestIds = [];
-        flow.PromptMessageId = null;
-        flow.PromptSentAt = null;
-        flow.Params.Remove(PromotionKey);
-    }
-
     /// <summary>The picked forum, rebuilt from the flow (it passed the check before the question was asked).</summary>
     private static ChatCheckResult Rebuild(FlowState flow)
         => new(
@@ -443,70 +439,87 @@ public sealed class TopicFlow
     }
 
     /// <summary>
-    /// Ends a live promotion prompt or link question when another answer is chosen: its picker is spent and its prompt
-    /// deleted.
+    /// Ends a waiting promotion screen or link question when another answer is chosen.
     /// </summary>
-    private async Task SpendAsync(long chatId, FlowState flow, CancellationToken ct)
+    private void Spend(long chatId, FlowState flow)
     {
-        var prompt = flow.PromptMessageId;
-        ClearPrompt(flow);
+        flow.Params.Remove(PromotionKey);
         flow.Params.Remove(InputKey);
         flow.Params.Remove(OnboardingFlow.CreatingKey);
         _memory.SaveFlow(chatId, flow);
-        await DeleteAsync(chatId, prompt, ct).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// The promotion screen (spec §6.2 step 3), in the wizard message: Allow topic creation opens Telegram's group
+    /// chooser asking for the right to manage topics, then Check again, General topic and Advanced options. A note
+    /// (rights still missing, or changed in another chat) goes above the explanation of the buttons.
+    /// </summary>
+    private async Task ShowPromotionAsync(long chatId, FlowState flow, string? note, CancellationToken ct)
+    {
+        var rows = new[]
+        {
+            new[] { Buttons.Url(_strings, "topic.allow", BotLinks.PromoteForTopics(_connection.BotUsername)) },
+            new[] { Button("topic.checkAgain", "tk") },
+            new[] { Button("topic.general", "tg") },
+            new[] { Button("onboard.advanced", "ox") },
+        };
+        var html = _strings.Get("topic.allowPrompt", ("title", _formatter.Escape(Rebuild(flow).Title)));
+        if (note is not null)
+        {
+            html += "\n\n" + _formatter.Escape(note);
+        }
+
+        html += ButtonGuide.Lines(
+            _strings,
+            _formatter,
+            ("topic.allow", "topic.allow.about"),
+            ("topic.checkAgain", "topic.checkAgain.about"),
+            ("topic.general", "topic.general.about"),
+            ("onboard.advanced", "onboard.advanced.about"));
+        flow.WizardMessageId = await _screens.ShowAsync(chatId, new Screen(html, new InlineKeyboardMarkup(rows)), flow.WizardMessageId, ct).ConfigureAwait(false);
+        _memory.SaveFlow(chatId, flow);
+    }
+
+    /// <summary>
+    /// Asks for the topic's link inline, with Cancel (back to Advanced options without a picked chat, otherwise to the
+    /// topic question). The first ask edits the wizard message; a repeat after a problem is a new message, which later
+    /// steps then edit.
+    /// </summary>
     private async Task AskForLinkAsync(long chatId, FlowState flow, string? problem, CancellationToken ct)
     {
         flow.Params[InputKey] = LinkInput;
         _memory.SaveFlow(chatId, flow);
         var html = problem is null ? string.Empty : _formatter.Escape(problem) + "\n\n";
-        html += _formatter.Escape(_strings.Get("topic.linkPrompt"));
-        await _connection.RequireSender().SendPromptAsync(new OutgoingPrompt(chatId, html, new ForceReplyMarkup()), ct).ConfigureAwait(false);
+        html += _formatter.Escape(_strings.Get("topic.linkPrompt")) + ButtonGuide.Lines(_strings, _formatter, ("input.cancel", "input.cancel.about"));
+        var cancel = Button("input.cancel", flow.Params.ContainsKey(AnyChatKey) ? "ox" : "tb");
+        var screen = new Screen(html, new InlineKeyboardMarkup(cancel));
+        flow.WizardMessageId = await _screens.ShowAsync(chatId, screen, problem is null ? flow.WizardMessageId : null, ct).ConfigureAwait(false);
+        _memory.SaveFlow(chatId, flow);
     }
 
     /// <summary>
     /// A failed promotion, check or creation (spec §6.2 step 3): records <see cref="SetupFailureKind.TopicFailed"/> and
-    /// edits the wizard to <c>[General topic] [Advanced options]</c>. General still works on the same wizard.
+    /// edits the wizard to <c>[General topic] [Advanced options]</c>, each explained. General still works on the same
+    /// wizard.
     /// </summary>
     private async Task<TopicChoice?> FailAsync(long chatId, FlowState flow, string? message, CancellationToken ct)
     {
-        var checking = flow.CheckingMessageId;
-        var prompt = flow.PromptMessageId;
-        ClearPrompt(flow);
+        flow.Params.Remove(PromotionKey);
         flow.Params.Remove(InputKey);
-        flow.CheckingMessageId = null;
-        _memory.SaveFlow(chatId, flow);
-        await DeleteAsync(chatId, checking, ct).ConfigureAwait(false);
-        await DeleteAsync(chatId, prompt, ct).ConfigureAwait(false);
 
         // Without a picked chat there is no General topic to fall back to.
         var anyChat = flow.Params.Remove(AnyChatKey);
         var buttons = new InlineKeyboardMarkup(anyChat ? [Button("onboard.advanced", "ox")] : new[] { Button("topic.general", "tg"), Button("onboard.advanced", "ox") });
-        var html = _formatter.Escape(string.IsNullOrEmpty(message) ? _strings.Get("topic.failed") : message);
+        var html = _formatter.Escape(string.IsNullOrEmpty(message) ? _strings.Get("topic.failed") : message)
+            + (anyChat
+                ? ButtonGuide.Lines(_strings, _formatter, ("onboard.advanced", "onboard.advanced.about"))
+                : ButtonGuide.Lines(_strings, _formatter, ("topic.general", "topic.general.about"), ("onboard.advanced", "onboard.advanced.about")));
         flow.WizardMessageId = await _screens.ShowAsync(chatId, new Screen(html, buttons), flow.WizardMessageId, ct).ConfigureAwait(false);
         _memory.SaveFlow(chatId, flow);
         _memory.RecordFailure(SetupFailureKind.TopicFailed);
         return null;
     }
 
-    private async Task DeleteAsync(long chatId, int? messageId, CancellationToken ct)
-    {
-        if (messageId is not { } id)
-        {
-            return;
-        }
-
-        try
-        {
-            await _connection.RequireSender().DeleteMessageAsync(chatId, id, ct).ConfigureAwait(false);
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            _logger.LogWarning(ex, "TgJelly could not delete a topic step message");
-        }
-    }
-
     private InlineKeyboardButton Button(string textKey, string action)
-        => InlineKeyboardButton.WithCallbackData(_strings.Get(textKey), CallbackData.Format(action));
+        => Buttons.Callback(_strings, textKey, CallbackData.Format(action));
 }

@@ -68,8 +68,8 @@ public sealed class FlowEngineTests : IDisposable, IAsyncLifetime
         await _rig.Deliver(TelegramFixtures.Update("private_text", ("text", "/menu")));
 
         var call = Assert.Single(_h.Api.CallsTo("sendMessage"));
-        Assert.Contains("🏠 Menu", (string)call.Body["text"]!, StringComparison.Ordinal);
-        Assert.Contains("📬 Destinations (1)", ButtonTexts(call), StringComparison.Ordinal);
+        Assert.Contains("<tg-emoji emoji-id=\"5875271289605722323\">🏠</tg-emoji> Menu", (string)call.Body["text"]!, StringComparison.Ordinal);
+        Assert.Contains("Destinations (1)", ButtonTexts(call), StringComparison.Ordinal);
         Assert.Equal([Manager], _rig.Memory.RecentManagers());
     }
 
@@ -91,8 +91,9 @@ public sealed class FlowEngineTests : IDisposable, IAsyncLifetime
         await _rig.Deliver(TelegramFixtures.Update("private_command_start"));
 
         var call = Assert.Single(_h.Api.CallsTo("sendMessage"));
-        Assert.Equal("Where should notifications go?", (string)call.Body["text"]!);
-        Assert.NotNull(call.Body["reply_markup"]!["keyboard"]);
+        Assert.StartsWith("Where should notifications go?", (string)call.Body["text"]!, StringComparison.Ordinal);
+        Assert.NotNull(call.Body["reply_markup"]!["inline_keyboard"]);
+        Assert.Null(call.Body["reply_markup"]!["keyboard"]);
     }
 
     [Fact]
@@ -127,7 +128,7 @@ public sealed class FlowEngineTests : IDisposable, IAsyncLifetime
         var sent = _h.Api.CallsTo("sendMessage").ToList();
         Assert.Equal(2, sent.Count);
         Assert.Equal("That menu expired", (string)sent[0].Body["text"]!);
-        Assert.Contains("🏠 Menu", (string)sent[1].Body["text"]!, StringComparison.Ordinal);
+        Assert.Contains("<tg-emoji emoji-id=\"5875271289605722323\">🏠</tg-emoji> Menu", (string)sent[1].Body["text"]!, StringComparison.Ordinal);
         Assert.Empty(_h.Api.CallsTo("editMessageText"));
     }
 

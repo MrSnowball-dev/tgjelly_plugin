@@ -9,38 +9,34 @@ namespace Jellyfin.Plugin.TgJelly.Bot.Screens;
 /// </summary>
 public sealed class AdvancedScreen
 {
-    private readonly BotConnection _connection;
     private readonly StringTable _strings;
     private readonly Formatter _formatter;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="AdvancedScreen"/> class.
     /// </summary>
-    /// <param name="connection">The bot connection, for the bot's username.</param>
     /// <param name="strings">The string table.</param>
     /// <param name="formatter">The formatter, for escaping.</param>
-    public AdvancedScreen(BotConnection connection, StringTable strings, Formatter formatter)
+    public AdvancedScreen(StringTable strings, Formatter formatter)
     {
-        _connection = connection;
         _strings = strings;
         _formatter = formatter;
     }
 
     /// <summary>
-    /// Builds the options: add to a group or channel (links), use an existing topic, open the dashboard.
+    /// Builds the options: use an existing topic, open the dashboard. Adding to a group or channel is on the setup
+    /// prompt itself, so it isn't repeated here.
     /// </summary>
     /// <returns>The screen.</returns>
     public Screen Options()
     {
-        var bot = _connection.BotUsername;
         var rows = new[]
         {
-            new[] { InlineKeyboardButton.WithUrl(_strings.Get("advanced.group"), BotLinks.StartGroup(bot)) },
-            new[] { InlineKeyboardButton.WithUrl(_strings.Get("advanced.channel"), BotLinks.StartChannel(bot)) },
-            new[] { InlineKeyboardButton.WithCallbackData(_strings.Get("advanced.topic"), CallbackData.Format("ol")) },
-            new[] { InlineKeyboardButton.WithCallbackData(_strings.Get("advanced.dashboard"), CallbackData.Format("od")) },
+            new[] { Buttons.Callback(_strings, "advanced.topic", CallbackData.Format("ol")) },
+            new[] { Buttons.Callback(_strings, "advanced.dashboard", CallbackData.Format("od")) },
         };
-        return new Screen(_formatter.Escape(_strings.Get("advanced.title")), new InlineKeyboardMarkup(rows));
+        var guide = ButtonGuide.Lines(_strings, _formatter, ("advanced.topic", "advanced.topic.about"), ("advanced.dashboard", "advanced.dashboard.about"));
+        return new Screen(_formatter.Escape(_strings.Get("advanced.title")) + guide, new InlineKeyboardMarkup(rows));
     }
 
     /// <summary>
@@ -49,7 +45,7 @@ public sealed class AdvancedScreen
     /// <returns>The screen.</returns>
     public Screen Dashboard()
     {
-        var back = new InlineKeyboardMarkup(new[] { InlineKeyboardButton.WithCallbackData(_strings.Get("menu.back"), CallbackData.Format("ox")) });
+        var back = new InlineKeyboardMarkup(new[] { Buttons.Callback(_strings, "menu.back", CallbackData.Format("ox")) });
         return new Screen(_formatter.Escape(_strings.Get("advanced.dashboardPath")), back);
     }
 }

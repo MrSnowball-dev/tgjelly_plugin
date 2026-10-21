@@ -60,9 +60,10 @@ public sealed class DetectedChatFlow
     }
 
     /// <summary>
-    /// Follows the bot's own membership change: a group, supergroup or channel it joined is recorded unless it is a
-    /// destination or the person who added it has a chat picker waiting; one it left is forgotten. A person who
-    /// blocks the bot stops being a manager, and one who unblocks it is a manager again (spec §6.5).
+    /// Follows the bot's own membership change that no setup flow took (an add matched to a waiting prompt never gets
+    /// here): a group, supergroup or channel it joined is recorded unless it is a destination; one it left is
+    /// forgotten. A person who blocks the bot stops being a manager, and one who unblocks it is a manager again
+    /// (spec §6.5).
     /// </summary>
     /// <param name="update">The membership change.</param>
     public void OnChatMember(ChatMemberUpdated update)
@@ -93,8 +94,7 @@ public sealed class DetectedChatFlow
         }
         else if (joined
             && Kind(chat.Type) is { } kind
-            && _settings.Current.Destinations.All(d => d.ChatId != chat.Id)
-            && _memory.GetFlow(update.From.Id) is not { PickerRequestIds.Count: > 0 })
+            && _settings.Current.Destinations.All(d => d.ChatId != chat.Id))
         {
             _memory.RecordDetected(chat.Id, string.IsNullOrEmpty(chat.Title) ? chat.Id.ToString(CultureInfo.InvariantCulture) : chat.Title, kind);
         }
@@ -123,8 +123,8 @@ public sealed class DetectedChatFlow
             var id = chat.ChatId.ToString(CultureInfo.InvariantCulture);
             rows.Add(
             [
-                InlineKeyboardButton.WithCallbackData(_strings.Get("detected.setUp", ("title", title)), CallbackData.Format("xs", id)),
-                InlineKeyboardButton.WithCallbackData(_strings.Get("detected.dismiss", ("title", title)), CallbackData.Format("xd", id)),
+                Buttons.Callback(_strings, "detected.setUp", CallbackData.Format("xs", id), ("title", title)),
+                Buttons.Callback(_strings, "detected.dismiss", CallbackData.Format("xd", id), ("title", title)),
             ]);
         }
 
@@ -133,8 +133,11 @@ public sealed class DetectedChatFlow
             rows.Add(nav);
         }
 
-        rows.Add([InlineKeyboardButton.WithCallbackData(_strings.Get("menu.back"), CallbackData.Format("m"))]);
-        var html = "<b>" + _formatter.Escape(_strings.Get("detected.title")) + "</b>\n\n" + string.Join('\n', lines);
+        rows.Add([Buttons.Callback(_strings, "menu.back", CallbackData.Format("m"))]);
+        var guide = ButtonGuide.Block(
+            ButtonGuide.Line(_formatter, _strings.Get("detected.setUp", ("title", "…")), _strings.Get("detected.setUp.about")),
+            ButtonGuide.Line(_formatter, _strings.Get("detected.dismiss", ("title", "…")), _strings.Get("detected.dismiss.about")));
+        var html = "<b>" + Icons.Heading(_strings, _formatter, "detected.title") + "</b>\n\n" + string.Join('\n', lines) + guide;
         return new Screen(html, new InlineKeyboardMarkup(rows));
     }
 
@@ -173,7 +176,7 @@ public sealed class DetectedChatFlow
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             _logger.LogWarning(ex, "TgJelly could not check the detected chat {Chat}", chatId);
-            var back = new InlineKeyboardMarkup(InlineKeyboardButton.WithCallbackData(_strings.Get("menu.back"), CallbackData.Format("xl", "0")));
+            var back = new InlineKeyboardMarkup(Buttons.Callback(_strings, "menu.back", CallbackData.Format("xl", "0")));
             await _screens.ShowAsync(privateChatId, new Screen(_formatter.Escape(_strings.Get("token.unreachable")), back), messageId, ct).ConfigureAwait(false);
             return true;
         }

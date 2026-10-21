@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.TgJelly.Bot.Flows;
@@ -81,9 +82,9 @@ public sealed class FlowEngine : IBotFlows, IDisposable
     /// </summary>
     public static IReadOnlyList<string> Actions { get; } =
     [
-        "m", "st", "dl", "noop", "d", "de", "det", "dlb", "dlt", "dsg", "dsgt", "dt", "dc", "dp", "dr", "drx", "tp",
-        "s", "sm", "smt", "su", "sut", "sum", "sp", "spu", "spt", "spc", "op", "oc", "ocd", "oa", "ot", "ox", "ol", "od",
-        "tg", "tc", "te", "xl", "xs", "xd",
+        "m", "st", "dl", "noop", "d", "de", "deg", "det", "dlb", "dlt", "dsg", "dsgt", "dt", "dc", "dp", "dr", "drx", "tp",
+        "s", "sm", "smt", "su", "sut", "sum", "sp", "spu", "spt", "spc", "op", "oc", "ocg", "ocd", "oa", "ot", "oh", "on", "ox", "ol", "od",
+        "tg", "tc", "te", "tb", "tk", "xl", "xs", "xd",
     ];
 
     /// <inheritdoc />
@@ -92,7 +93,7 @@ public sealed class FlowEngine : IBotFlows, IDisposable
         ArgumentNullException.ThrowIfNull(message);
         var chatId = message.Chat.Id;
         _memory.TouchManager(chatId);
-        if (await OnPickerAnswerAsync(message, ct).ConfigureAwait(false))
+        if (await OnLegacyReplyAsync(message, ct).ConfigureAwait(false))
         {
             return;
         }
@@ -135,7 +136,7 @@ public sealed class FlowEngine : IBotFlows, IDisposable
                 await ShowAsync(chatId, new Screen(_strings.Get("help.text"), null), null, ct).ConfigureAwait(false);
                 break;
             case "/start" when StartsOnboarding(message.Text):
-                await _onboarding.StartAsync(chatId, ct).ConfigureAwait(false);
+                await _onboarding.StartAsync(chatId, null, ct).ConfigureAwait(false);
                 break;
             default:
                 await ShowAsync(chatId, SetUpMenu(), null, ct).ConfigureAwait(false);
@@ -176,8 +177,16 @@ public sealed class FlowEngine : IBotFlows, IDisposable
                 await ShowAsync(chatId, _status.Build(), message.MessageId, ct).ConfigureAwait(false);
                 break;
             case "oa":
+                await _onboarding.StartAsync(chatId, message.MessageId, ct).ConfigureAwait(false);
+                break;
             case "ot":
-                await _onboarding.StartAsync(chatId, ct).ConfigureAwait(false);
+                await _onboarding.OnTryAgainAsync(query, ct).ConfigureAwait(false);
+                break;
+            case "oh":
+                await _onboarding.OnRightHereAsync(query, ct).ConfigureAwait(false);
+                break;
+            case "on":
+                await _onboarding.OnCancelAsync(query, ct).ConfigureAwait(false);
                 break;
             case "ox":
                 await ShowAsync(chatId, _advanced.Options(), message.MessageId, ct).ConfigureAwait(false);
@@ -194,9 +203,14 @@ public sealed class FlowEngine : IBotFlows, IDisposable
             case "oc":
                 await _onboarding.OnCustomToggleAsync(query, args.Count > 0 ? args[0] : string.Empty, ct).ConfigureAwait(false);
                 break;
+            case "ocg":
+                await _onboarding.OnCustomGroupAsync(query, args.Count > 0 ? args[0] : null, ct).ConfigureAwait(false);
+                break;
             case "tg":
             case "tc":
             case "te":
+            case "tb":
+            case "tk":
                 await _onboarding.OnTopicAsync(query, action, ct).ConfigureAwait(false);
                 break;
             case "ocd":
@@ -231,17 +245,26 @@ public sealed class FlowEngine : IBotFlows, IDisposable
     }
 
     /// <inheritdoc />
-    public Task OnChatMemberAsync(ChatMemberUpdated update, CancellationToken ct)
+    public async Task OnChatMemberAsync(ChatMemberUpdated update, CancellationToken ct)
     {
-        _detected.OnChatMember(update);
-        return Task.CompletedTask;
+        if (!await _onboarding.OnChatMemberAsync(update, ct).ConfigureAwait(false))
+        {
+            _detected.OnChatMember(update);
+        }
     }
 
     /// <inheritdoc />
-    public Task TickAsync(CancellationToken ct)
+    public Task OnGroupStartAsync(Message message, CancellationToken ct) => _onboarding.OnGroupStartAsync(message, ct);
+
+    /// <inheritdoc />
+    public async Task TickAsync(CancellationToken ct)
     {
-        _memory.Prune();
-        return _notifier.NotifyAsync(ct);
+        foreach (var chatId in _memory.Prune())
+        {
+            await _onboarding.ExpireAsync(chatId, ct).ConfigureAwait(false);
+        }
+
+        await _notifier.NotifyAsync(ct).ConfigureAwait(false);
     }
 
     /// <inheritdoc />
@@ -264,15 +287,17 @@ public sealed class FlowEngine : IBotFlows, IDisposable
         return (at < 0 ? word : word[..at]).ToLowerInvariant();
     }
 
-    /// <summary>The prompt's answers (a picked chat, "💬 Right here", Cancel) go to onboarding before any other text.</summary>
+    /// <summary>
+    /// Stale input from a v0.1 client goes to onboarding before any other text: a chat picked in its native picker
+    /// (<c>chat_shared</c>) and the texts of its reply keyboard. The bot sends no reply keyboards any more.
+    /// </summary>
     /// <returns>True when the message was one of them.</returns>
-    private async Task<bool> OnPickerAnswerAsync(Message message, CancellationToken ct)
+    private async Task<bool> OnLegacyReplyAsync(Message message, CancellationToken ct)
     {
         Func<Message, CancellationToken, Task>? handler = message switch
         {
-            { ChatShared: not null } => _onboarding.OnChatSharedAsync,
-            { Text: { } text } when text == _strings.Get("onboard.here") => _onboarding.OnRightHereAsync,
-            { Text: { } text } when text == _strings.Get("onboard.cancel") => _onboarding.OnCancelAsync,
+            { ChatShared: not null } => _onboarding.OnLegacyReplyAsync,
+            { Text: { } text } when OnboardingFlow.LegacyReplyTexts.Contains(text, StringComparer.Ordinal) => _onboarding.OnLegacyReplyAsync,
             _ => null,
         };
         if (handler is null)

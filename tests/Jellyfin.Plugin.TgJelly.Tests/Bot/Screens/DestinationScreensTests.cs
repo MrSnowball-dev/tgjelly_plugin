@@ -36,7 +36,7 @@ public sealed class DestinationScreensTests : IDisposable, IAsyncLifetime
         await Click("1|dl|0");
 
         var labels = Labels(LastEdit());
-        Assert.Equal(["✅ " + ok.Title, "⛔ " + lost.Title, "✅⏸ " + paused.Title, "⛔⏸ " + pausedLost.Title, "‹ Back"], labels);
+        Assert.Equal(["✅ " + ok.Title, "⛔ " + lost.Title, "✅⏸ " + paused.Title, "⛔⏸ " + pausedLost.Title, "Back"], labels);
     }
 
     [Fact]
@@ -85,7 +85,125 @@ public sealed class DestinationScreensTests : IDisposable, IAsyncLifetime
         Assert.Contains(d.Title, text, StringComparison.Ordinal);
         Assert.Contains("OK", text, StringComparison.Ordinal);
         Assert.Contains("Everything", text, StringComparison.Ordinal);
-        Assert.Equal(["Events", "Libraries", "Silent groups", "Send test", "Check again", "Pause", "Remove", "‹ Back"], Labels(edit));
+        Assert.Equal(["Events", "Libraries", "Silent groups", "Send test", "Check again", "Pause", "Remove", "Back"], Labels(edit));
+    }
+
+    [Fact]
+    public async Task Detail_ButtonsCarryTheirIcons()
+    {
+        var d = _h.AddDestination(-1001);
+
+        await Click("1|d|" + d.Id);
+
+        Assert.Equal(
+            [Icons.Bell, Icons.Folder, Icons.BellOff, Icons.Send, Icons.Refresh, Icons.Block, Icons.Trash, Icons.Back],
+            IconIds(LastEdit()));
+        Assert.StartsWith("<b>" + d.Title, (string)LastEdit().Body["text"]!, StringComparison.Ordinal);
+
+        await Click("1|de|" + d.Id);
+        Assert.StartsWith("<b><tg-emoji emoji-id=\"" + Icons.Bell + "\">🔔</tg-emoji> Events</b>", (string)LastEdit().Body["text"]!, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Switches_HaveNoIcons()
+    {
+        var d = _h.AddDestination(-1001);
+        _rig.Library.VirtualFolders.Add(new LibraryRef(Guid.NewGuid(), "Movies", "movies"));
+
+        await Click("1|deg|" + d.Id + "|media");
+        var events = IconIds(LastEdit());
+        await Click("1|dlb|" + d.Id + "|0");
+        var libraries = IconIds(LastEdit());
+
+        // On the event screen only Back has an icon; on the library screen it is All libraries, the library switch, Back.
+        Assert.All(events[..^1], Assert.Null);
+        Assert.Equal(Icons.Back, events[^1]);
+        Assert.Equal([Icons.Layers, null, Icons.Back], libraries);
+    }
+
+    [Fact]
+    public async Task EventGroups_CarryTheirIcons_AndTheGroupHeadingShowsOne()
+    {
+        var d = ThreeEvents();
+
+        await Click("1|de|" + d.Id);
+        Assert.Equal([Icons.Video, Icons.Lock, Icons.Server, Icons.Back], IconIds(LastEdit()));
+
+        await Click("1|deg|" + d.Id + "|server");
+        Assert.Contains("<b><tg-emoji emoji-id=\"" + Icons.Server + "\">🖥</tg-emoji> Server</b>", (string)LastEdit().Body["text"]!, StringComparison.Ordinal);
+    }
+
+    private Destination ThreeEvents()
+    {
+        var d = _h.AddDestination(-1001);
+        _h.Settings.Update(null, c => c.Destinations.First(x => x.Id == d.Id).Events = ["media.movie", "media.episodes", "server.started"]);
+        return d;
+    }
+
+    [Fact]
+    public async Task Events_ShowsOneButtonPerGroup_WithCounts()
+    {
+        var d = ThreeEvents();
+
+        await Click("1|de|" + d.Id);
+
+        var edit = LastEdit();
+        Assert.Equal(["Media 2/5", "Security 0/6", "Server 1/8", "Back"], Labels(edit));
+        Assert.Equal(["1|deg|" + d.Id + "|media", "1|deg|" + d.Id + "|security", "1|deg|" + d.Id + "|server", "1|d|" + d.Id], Data(edit));
+        var text = (string)edit.Body["text"]!;
+        Assert.Contains("Pick a group to switch its events.", text, StringComparison.Ordinal);
+        edit.Explains("Media", "Security", "Server");
+        Assert.Contains("Media</b> — new movies, episodes, albums, music videos and books", text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task EventGroup_ShowsOnlyItsSwitches_AndBackToTheGroups()
+    {
+        var d = ThreeEvents();
+
+        await Click("1|deg|" + d.Id + "|security");
+
+        var edit = LastEdit();
+        var labels = Labels(edit);
+        Assert.Equal(7, labels.Length);
+        Assert.All(labels.Take(6), l => Assert.StartsWith("▫️ ", l, StringComparison.Ordinal));
+        Assert.Equal(EventCatalog.AllKeys.Where(k => k.StartsWith("security.", StringComparison.Ordinal)).Select(k => "1|det|" + d.Id + "|" + k), Data(edit).Take(6));
+        Assert.Equal("1|de|" + d.Id, Data(edit)[^1]);
+    }
+
+    [Fact]
+    public async Task EventSwitch_StaysOnItsGroup_AndRecomputesThePreset()
+    {
+        var d = ThreeEvents();
+
+        await Click("1|det|" + d.Id + "|server.task_failed");
+
+        var edit = LastEdit();
+        Assert.Equal(9, Labels(edit).Length);
+        Assert.StartsWith("✅ ", Labels(edit)[Data(edit).ToList().IndexOf("1|det|" + d.Id + "|server.task_failed")], StringComparison.Ordinal);
+        var saved = _h.Settings.Current.Destinations.Single();
+        Assert.Contains("server.task_failed", saved.Events);
+        Assert.Equal(PresetKind.Custom, saved.Preset);
+    }
+
+    [Fact]
+    public async Task OldPagedEventsButton_OpensTheGroups()
+    {
+        var d = ThreeEvents();
+
+        await Click("1|de|" + d.Id + "|1");
+
+        Assert.Equal(["Media 2/5", "Security 0/6", "Server 1/8", "Back"], Labels(LastEdit()));
+    }
+
+    [Fact]
+    public async Task UnknownGroup_OpensTheGroups()
+    {
+        var d = ThreeEvents();
+
+        await Click("1|deg|" + d.Id + "|nope");
+
+        Assert.Equal(["Media 2/5", "Security 0/6", "Server 1/8", "Back"], Labels(LastEdit()));
     }
 
     [Fact]
@@ -130,7 +248,7 @@ public sealed class DestinationScreensTests : IDisposable, IAsyncLifetime
         await Click("1|dlb|" + d.Id + "|0");
 
         var edit = LastEdit();
-        Assert.Equal(["▫️ All libraries", "✅ Movies", "▫️ Shows", "‹ Back"], Labels(edit));
+        Assert.Equal(["▫️ All libraries", "✅ Movies", "▫️ Shows", "Back"], Labels(edit));
         Assert.Contains("(removed)", (string)edit.Body["text"]!, StringComparison.Ordinal);
 
         await Click("1|dlt|" + d.Id + "|" + shows.Id.ToString("N"));
@@ -208,7 +326,7 @@ public sealed class DestinationScreensTests : IDisposable, IAsyncLifetime
         await Click("1|drx|" + d.Id + "|1");
 
         Assert.Empty(_h.Settings.Current.Destinations);
-        Assert.Contains("📬 Destinations", (string)LastEdit().Body["text"]!, StringComparison.Ordinal);
+        Assert.Contains("Destinations</b>", (string)LastEdit().Body["text"]!, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -217,7 +335,7 @@ public sealed class DestinationScreensTests : IDisposable, IAsyncLifetime
         await Click("1|d|zzzzzzzz");
         var edit = LastEdit();
         Assert.Contains("This destination was removed.", (string)edit.Body["text"]!, StringComparison.Ordinal);
-        Assert.Equal(["‹ Back"], Labels(edit));
+        Assert.Equal(["Back"], Labels(edit));
 
         await Click("1|dp|zzzzzzzz");
         Assert.Contains("This destination was removed.", (string)LastEdit().Body["text"]!, StringComparison.Ordinal);
@@ -265,6 +383,102 @@ public sealed class DestinationScreensTests : IDisposable, IAsyncLifetime
         Assert.Equal(["1|dt|" + a.Id, "1|dt|" + b.Id, "1|m"], data);
     }
 
+    [Fact]
+    public async Task DestinationList_SaysWhatTappingDoes()
+    {
+        _h.AddDestination(-1001);
+        for (var i = 2; i <= 10; i++)
+        {
+            _h.AddDestination(-1000 - i);
+        }
+
+        await Click("1|dl|0");
+
+        var text = (string)LastEdit().Body["text"]!;
+        Assert.Contains("Tap a destination to open it.", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("<b>‹ Prev</b>", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("<b>Next ›</b>", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("<b>Back</b>", text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task TestPicker_SaysWhatTappingDoes()
+    {
+        _h.AddDestination(-1001);
+
+        await _rig.Deliver(TelegramFixtures.Update("private_text", ("text", "/test")));
+
+        Assert.Contains("Tap a destination to send it a test message.", (string)_h.Api.CallsTo("sendMessage").Last().Body["text"]!, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Detail_ExplainsEachButton()
+    {
+        var d = _h.AddDestination(-1001);
+
+        await Click("1|d|" + d.Id);
+
+        var edit = LastEdit();
+        edit.Explains("Events", "Libraries", "Silent groups", "Send test", "Check again", "Pause", "Remove");
+        var text = (string)edit.Body["text"]!;
+        Assert.Contains("<b>Pause</b> — stop sending here for now; nothing is deleted", text, StringComparison.Ordinal);
+        Assert.Contains("<b>Remove</b> — stop sending here and forget this chat", text, StringComparison.Ordinal);
+        Assert.Contains("<b>Check again</b> — check again that I can still post here", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("<b>Back</b>", text, StringComparison.Ordinal);
+
+        await Click("1|dp|" + d.Id);
+        Assert.Contains("<b>Resume</b> — start sending here again", (string)LastEdit().Body["text"]!, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ConfirmRemove_ExplainsEachChoice()
+    {
+        var d = _h.AddDestination(-1001);
+
+        await Click("1|dr|" + d.Id);
+
+        var text = (string)LastEdit().Body["text"]!;
+        Assert.Contains("<b>Remove</b> — forget this chat; I stay in it", text, StringComparison.Ordinal);
+        Assert.Contains("<b>Remove and leave</b> — forget this chat and leave it", text, StringComparison.Ordinal);
+        Assert.Contains("<b>Cancel</b> — keep this destination", text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task EventGroup_SaysWhatTappingDoes()
+    {
+        var d = _h.AddDestination(-1001);
+
+        await Click("1|deg|" + d.Id + "|media");
+
+        Assert.EndsWith("\n\nTap an event to switch it on (✅) or off (▫️).", (string)LastEdit().Body["text"]!, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Libraries_ExplainsAllAndTheSwitches()
+    {
+        var d = _h.AddDestination(-1001);
+        _rig.Library.VirtualFolders.Add(new LibraryRef(Guid.NewGuid(), "Movies", "movies"));
+
+        await Click("1|dlb|" + d.Id + "|0");
+
+        var edit = LastEdit();
+        edit.Explains("All libraries");
+        var text = (string)edit.Body["text"]!;
+        Assert.Contains("<b>All libraries</b> — post new media from every library", text, StringComparison.Ordinal);
+        Assert.Contains("Tap a library to include it (✅) or leave it out (▫️).", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("<b>Movies</b>", text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task SilentGroups_SaysWhatTappingDoes()
+    {
+        var d = _h.AddDestination(-1001);
+
+        await Click("1|dsg|" + d.Id);
+
+        Assert.Contains("Tap a group to switch it between 🔔 with sound and 🔕 silent.", (string)LastEdit().Body["text"]!, StringComparison.Ordinal);
+    }
+
     private async Task Click(string data) => await _rig.Deliver(TelegramFixtures.Update("callback_query", ("data", data), ("message_id", "55")));
 
     private async Task<string> ClickText(string data)
@@ -277,6 +491,12 @@ public sealed class DestinationScreensTests : IDisposable, IAsyncLifetime
 
     private static string[] Labels(BotApiCall call)
         => call.Body["reply_markup"]!["inline_keyboard"]!.AsArray().SelectMany(r => r!.AsArray()).Select(b => (string)b!["text"]!).ToArray();
+
+    private static string?[] IconIds(BotApiCall call)
+        => [.. call.Body["reply_markup"]!["inline_keyboard"]!.AsArray().SelectMany(row => row!.AsArray()).Select(b => (string?)b!["icon_custom_emoji_id"])];
+
+    private static string[] Data(BotApiCall call)
+        => call.Body["reply_markup"]!["inline_keyboard"]!.AsArray().SelectMany(r => r!.AsArray()).Select(b => (string)b!["callback_data"]!).ToArray();
 
     private static string[] NavLabels(BotApiCall call)
         => Labels(call).Where(l => l is "‹ Prev" or "Next ›").ToArray();
