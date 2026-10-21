@@ -152,4 +152,19 @@ public sealed class TemplateEngineTests
         var hash = TemplateText.Hash("abc");
         Assert.Equal("ba7816bf8f01cfea", hash);
     }
+
+    [Fact]
+    public void Plural_Function()
+    {
+        Assert.Equal("items", Engine().Render("k", "{{ plural 3 \"item\" \"items\" }}", Empty, strict: true).Output);
+        Assert.Equal("item", Engine().Render("k", "{{ plural 1 \"item\" \"items\" }}", Empty, strict: true).Output);
+    }
+
+    [Fact]
+    public void Plural_CannotBeReplacedByModelKey()
+    {
+        var result = Engine().Render("k", "{{ plural 1 \"a\" \"b\" }}", Model("plural", "x"), strict: true);
+
+        Assert.Equal("a", result.Output);
+    }
 }
