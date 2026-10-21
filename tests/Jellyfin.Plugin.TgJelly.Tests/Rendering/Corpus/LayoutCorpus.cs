@@ -355,6 +355,9 @@ internal static class LayoutCorpus
         {
             [EventFields.User] = "alice", [EventFields.Client] = "Infuse", [EventFields.Device] = "iPhone",
         }));
+        cases.Add(Alert("login-succeeded-bare-ip", "security.login_succeeded", new() { [EventFields.User] = "alice", [EventFields.Ip] = "203.0.113.5" }));
+        cases.Add(Alert("login-succeeded-bare", "security.login_succeeded", new() { [EventFields.User] = "alice" }));
+        cases.Add(Alert("login-succeeded-client-only", "security.login_succeeded", new() { [EventFields.User] = "alice", [EventFields.Client] = "Infuse" }));
         cases.Add(Alert("user-created", "security.user_created", new() { [EventFields.User] = "carol <&>" }));
         cases.Add(Alert("user-deleted", "security.user_deleted", new() { [EventFields.User] = "carol" }));
         cases.Add(Alert("password-changed", "security.password_changed", new() { [EventFields.User] = "carol" }));
