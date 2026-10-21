@@ -35,6 +35,8 @@ The repository has one build for Jellyfin 10.11 and one for Jellyfin 12. Jellyfi
 
 You never type a chat ID. The Advanced section of the dashboard has manual options for the rare case where the main way fails.
 
+The custom icons on the bot's buttons and headings show only when the bot owner's Telegram account has Premium; otherwise the bot shows plain labels.
+
 ## Events and presets
 
 Each destination has event switches. A preset sets them for you:

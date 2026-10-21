@@ -302,7 +302,7 @@ The whole flow is **one inline wizard message** that gets edited. There are no r
   - Their labels carry no plain emoji.
   - State marks stay plain emoji.
   - Custom emoji need Telegram Premium on the bot owner's account; without it they don't show.
-  - If Telegram rejects a message because of them, the bot resends it without icons and stops using them until it reconnects.
+  - If Telegram rejects a message that has them with any 400 error (Telegram's wording varies) other than "message is not modified" or a gone edit target, the bot resends it once without icons. If that resend goes through, the bot stops using icons until it reconnects; if it fails too, its error stands and the icons stay on.
   - Notification posts get none.
 - **Every button is explained.** Every bot screen explains each of its buttons in its text, one line per button, `Label — what it does`. Lists of items or switches get one shared line saying what tapping an item does. Back, Prev and Next need no line.
 - `/status` and `/test` (pick a destination) are shortcuts. `/help` gives a short description and the dashboard path.
@@ -1020,6 +1020,7 @@ They are parsed with Telegram.Bot and passed to `UpdateRouter`, FlowEngine and t
 - **Chat lifecycle:** kicking the bot, removing its rights, `[Check again]`, upgrading a group to a supergroup, switching to a different bot.
 - **Server lifecycle:** an in-process server restart (no duplicate polling; `server.started` once), and a 10.11 → 12 server upgrade (CompatGuard, then auto-update).
 - **Late edits:** editing a late-episode message several hours after it was sent.
+- **Icons** on a bot whose owner has no Telegram Premium: every screen still sends; icons absent or stripped (TelegramSender fallback).
 
 ### 14.5 Process
 Implementation follows test-driven development: write a failing test first for every unit in §14.1.
