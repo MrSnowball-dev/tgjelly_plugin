@@ -1,7 +1,7 @@
-# Custom message templates
+# Message templates
 
-This page lists what you can use in a custom template for each event.
-Templates are for advanced use. The default messages need no setup.
+To change a message, open the event in the dashboard's Message templates section and change the built-in template.
+This page lists the fields you can use in each template, and the built-in templates.
 The tables below are generated from the plugin's field list, so they always match the plugin.
 
 ## How templates work
@@ -46,11 +46,11 @@ Telegram allows 1024 characters in a caption and 4096 in a text message.
 
 ### When a message is too long
 
-A long message is shortened, once for the caption and once for the text. The plugin leaves 40 characters of room for the delayed-delivery line.
+A long message is shortened. A caption is cut to 1024 characters and a text message to 4096. The plugin leaves 40 characters of room for the delayed-delivery line.
 It shortens in this order:
 
 1. The long text is cut and ends with `…`. This is the `overview` of a movie, music video or book, the `changelog` of a plugin update, or the `error` of a failed install or task. If less than 20 characters would be left, the text is dropped.
-2. The list keeps as many items as fit. A count field tells you how many were left out, so you can print "+N more". The fields are `episodes_more` for `episodes`, `reasons_more` for `reasons`, and `more` for the digest's `libraries`. A digest can end up with no entries at all.
+2. The list keeps as many items as fit. A count field tells you how many were left out, so you can print "+N more". The fields are `episodes_more` for `episodes`, `reasons_more` for `reasons`, and `more` for the digest's `libraries`. A digest can end up with no entries at all. If a library is named "Other" and some items have no library, the digest shows two "Other" lines.
 3. If it is still too long, the whole text is cut.
 
 Your template does not need to handle this. It only needs to print the count field if you want a "+N more" line.
@@ -59,7 +59,6 @@ A result cut in step 3 is flagged "truncated" when the template is yours.
 ### Previews, flags and fallbacks
 
 The dashboard renders your template live and shows what it would look like in Telegram, with errors and warnings. Saving does not block on errors.
-There are no Validate or Sample buttons any more. The live preview and **Send test** replace them.
 When an edited template fails while a message is sent, the built-in template is sent instead, and your template is flagged with the error.
 A template that produces no text counts as failed.
 If the built-in template fails too, the plugin sends a minimal text with the event name and the item or user name.

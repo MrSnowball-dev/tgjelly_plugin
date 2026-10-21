@@ -17,7 +17,7 @@ TgJelly is a Jellyfin server plugin with a built-in Telegram bot. Version 1 is a
 - v1 event groups: **new media**, **security/accounts**, **server/admin**. The owner explicitly added **"server started"**.
 - Must support **Jellyfin 10.11 and 12.x**. Released **publicly** through a plugin repository.
 - **English only, but i18n-ready.**
-- Messages: **polished default layouts with toggles, plus an optional hidden custom template for each event**. Templates use **Scriban**.
+- Messages: **every message is rendered from a template (built-in or edited), with toggles; see the [templates design](2026-10-21-tgjelly-templates-design.md)**. Templates use **Scriban**.
 - Posters are sent **as-is**, without resizing.
 - Setup corrections the owner gave during review:
   1. Start by asking whether to create a new bot or use an existing one, and accept a pasted token.
@@ -73,7 +73,7 @@ TgJelly is a Jellyfin server plugin with a built-in Telegram bot. Version 1 is a
 | D4 | Only the admin configures; the bot sends to chats, groups and channels | Owner's choice |
 | D5 | **Trust the BotFather restriction**; no pairing and no claim lock | Owner's decision. The owner has used the restriction on regular bots. §6.4 |
 | D6 | Destinations are added through inline `startchannel` / `startgroup` deep-link buttons, which open Telegram's chat chooser. The bot matches the resulting `my_chat_member` to the admin's flow. Manual methods are under Advanced and appear only after a failure | Owner's setup correction; rev. 3: inline buttons only, no reply keyboards (owner, 2026-10-21). `request_chat` exists only on reply keyboards |
-| D7 | Default layouts with toggles, plus an optional Scriban template per event that replaces only the text or caption | Templates per event: owner's choice. Limiting them to the text: presented in design section 3 and approved |
+| D7 | Every message is rendered from a Scriban template (built-in or edited) that replaces only the text or caption, with toggles; amended by Plan 7, see the [templates design](2026-10-21-tgjelly-templates-design.md) | Templates per event: owner's choice. Limiting them to the text: presented in design section 3 and approved |
 | D8 | Posters uploaded as-is; text-only fallback | Owner's decision |
 | D9 | The token and proxy credentials live in `secrets.json`, not in the Jellyfin config XML | The generic config GET returns the whole XML to admins, and a failed load overwrites it with defaults (F9) |
 | D10 | The dashboard uses only TgJelly's own API endpoints (fine-grained updates with a revision check) | The generic POST replaces the whole config (F9) |
@@ -186,7 +186,7 @@ Telegram (private chats) ──────┘        │
 | **MediaReadiness** | Item filter, pending set, readiness, timeouts, upgrade detection, and library resolution (puts the library IDs and names on each `MediaReady` event). Owns the **pending-ID set** that LibraryWatcher reads | read-only |
 | **Router** | For each event, finds the destinations whose rules match: event key, library filter, `Enabled` | — (pure) |
 | **Aggregator** | Group batching, the per-destination release buffer with digests, late-arrival edits, security coalescing (§7.4, §7.5). Reads scan state only through the injected `IScanState` | — (pure, uses `TimeProvider` and `IScanState`, both faked in tests) |
-| **Renderer** | Default layouts, toggles, Scriban templates, Telegram-HTML escaping, validation and truncation, `PosterPicker`, `LinkBuilder` | read-only (items, images) |
+| **Renderer** | Rendering every message from its template (built-in or edited), toggles, Telegram-HTML escaping, validation and shortening (see the [templates design](2026-10-21-tgjelly-templates-design.md)), `PosterPicker`, `LinkBuilder` | read-only (items, images) |
 | **Outbox** | Send queues per destination, priority, pacing, retries, the error classifier, fallbacks, destination health and re-checks, edits, file_id cache | — |
 | `ITelegramSender` | A thin wrapper over Telegram.Bot that calls methods with **named arguments**. Apart from BotSupervisor's GetUpdates loop, the only place that calls Telegram.Bot API methods (send, edit, get*) | — |
 | **Bot** | `BotSupervisor` (client lifecycle and the GetUpdates loop, §9.2), `UpdateRouter`, `FlowEngine`, screens (§6.3) | read-only (`CoreStartupHasCompleted`, virtual folders) |
@@ -538,7 +538,7 @@ Groups: `media.*` = **media**, `security.*` = **security**, `server.*` = **serve
   - `security.login_failed`: `user`, `attempts`, `ip_count`, `last_ip`, `client`, `device`, `last_attempt_unix`, `locked`.
   - `server.task_failed`: `task`, `error`.
 
-  The full list per key lives in `docs/templates.md`, which is written during implementation, and is also shown in the editor.
+  The full list per key lives in `docs/templates.md`, which is generated from the field catalog and lists the built-in templates, and is also shown in the editor.
 - **Escaping:** `TelegramTemplateContext : TemplateContext` overrides `Write(SourceSpan, object?)`:
   - values of type `RawHtml` are written unchanged,
   - every other expression result goes through `HtmlText.Escape`.
@@ -708,7 +708,7 @@ Destinations: Destination[] = []
                 Events: string[]; LibraryIds: string[] (empty = all); SilentGroups: string[] }
   (ChatId, ThreadId) is unique across Destinations.
 Templates: TemplateOverride[] = []
-  TemplateOverride { EventKey: string; Enabled: bool (ignored since Plan 7; overrides with Enabled=false are dropped on load); Text: string = "" }
+  TemplateOverride { EventKey: string; Enabled: bool (ignored since Plan 7; a disabled or empty v0.2 override is dropped on load); Text: string = "" }
 ```
 - Arrays are initialized to `Array.Empty<T>()` (F9), and enums are serialized by name.
 - `PUT Settings` returns 400 with per-field errors for values outside the ranges.
