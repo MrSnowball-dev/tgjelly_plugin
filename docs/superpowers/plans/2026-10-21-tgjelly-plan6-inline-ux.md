@@ -983,7 +983,7 @@ def test_url_button_finds_by_url(self):
 - [ ] **Step 3: Push and open the PR.** Push `feat/plan6-inline-ux` (pre-approved for feature branches), then open the PR into `main`: `gh pr create --title "Plan 6: inline-only bot UX, events submenus, dashboard dedupe"`. The body should hold:
   - a summary per task;
   - the Review Focus list;
-  - the unverified F42 / Q10;
+  - the unverified F43 / Q10 (spec numbering; F41 was already Scriban);
   - `🤖 Generated with [Claude Code](https://claude.com/claude-code)`.
 - [ ] **Step 4: Wait for CI**, including the Docker smoke matrix with the new onboarding check. A smoke failure is debugged on the branch.
 - [ ] **Step 5: Owner gate.** Ask the owner to:
