@@ -1,11 +1,15 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Jellyfin.Plugin.TgJelly.Bot.Screens;
+using Microsoft.Extensions.Logging;
 using Telegram.Bot;
 using Telegram.Bot.Exceptions;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
+using Telegram.Bot.Types.ReplyMarkups;
 
 namespace Jellyfin.Plugin.TgJelly.Bot;
 
@@ -17,15 +21,19 @@ public sealed class TelegramSender : ITelegramSender
     private static readonly LinkPreviewOptions NoPreview = new() { IsDisabled = true };
 
     private readonly ITelegramBotClient _client;
+    private readonly ILogger? _logger;
+    private volatile bool _iconsBlocked;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="TelegramSender"/> class.
     /// </summary>
     /// <param name="client">The client.</param>
-    public TelegramSender(ITelegramBotClient client)
+    /// <param name="logger">Logs the warning when Telegram rejects the custom icons; optional.</param>
+    public TelegramSender(ITelegramBotClient client, ILogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(client);
         _client = client;
+        _logger = logger;
     }
 
     /// <inheritdoc />
@@ -45,19 +53,23 @@ public sealed class TelegramSender : ITelegramSender
         => _client.GetChatMember(chatId: chat, userId: userId, cancellationToken: ct);
 
     /// <inheritdoc />
-    public Task<Message> SendTextAsync(OutgoingText message, CancellationToken ct)
+    public async Task<Message> SendTextAsync(OutgoingText message, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(message);
-        return _client.SendMessage(
-            chatId: message.ChatId,
-            text: message.Text,
-            parseMode: message.ParseMode,
-            replyParameters: Reply(message.ReplyToMessageId),
-            replyMarkup: message.Buttons,
-            linkPreviewOptions: NoPreview,
-            messageThreadId: Thread(message.ThreadId),
-            disableNotification: message.Silent,
-            cancellationToken: ct);
+        if (_iconsBlocked)
+        {
+            message = Plain(message);
+        }
+
+        try
+        {
+            return await SendCoreAsync(message, ct).ConfigureAwait(false);
+        }
+        catch (ApiRequestException ex) when (RejectsIcons(ex) && HasIcons(message.Text, message.Buttons))
+        {
+            BlockIcons();
+            return await SendCoreAsync(Plain(message), ct).ConfigureAwait(false);
+        }
     }
 
     /// <inheritdoc />
@@ -77,17 +89,23 @@ public sealed class TelegramSender : ITelegramSender
     }
 
     /// <inheritdoc />
-    public Task EditTextAsync(MessageEdit edit, CancellationToken ct)
+    public async Task EditTextAsync(MessageEdit edit, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(edit);
-        return _client.EditMessageText(
-            chatId: edit.ChatId,
-            messageId: edit.MessageId,
-            text: edit.Html,
-            parseMode: edit.ParseMode,
-            replyMarkup: edit.Buttons,
-            linkPreviewOptions: NoPreview,
-            cancellationToken: ct);
+        if (_iconsBlocked)
+        {
+            edit = Plain(edit);
+        }
+
+        try
+        {
+            await EditCoreAsync(edit, ct).ConfigureAwait(false);
+        }
+        catch (ApiRequestException ex) when (RejectsIcons(ex) && HasIcons(edit.Html, edit.Buttons))
+        {
+            BlockIcons();
+            await EditCoreAsync(Plain(edit), ct).ConfigureAwait(false);
+        }
     }
 
     /// <inheritdoc />
@@ -171,7 +189,74 @@ public sealed class TelegramSender : ITelegramSender
         return topic.MessageThreadId;
     }
 
+    private static bool RejectsIcons(ApiRequestException ex)
+        => ex.ErrorCode == 400 && ex.Message.Contains("emoji", StringComparison.OrdinalIgnoreCase);
+
+    private static bool HasIcons(string html, InlineKeyboardMarkup? markup)
+        => html.Contains("<tg-emoji", StringComparison.Ordinal)
+            || (markup is not null && markup.InlineKeyboard.Any(row => row.Any(b => b.IconCustomEmojiId is not null)));
+
+    private static InlineKeyboardMarkup? WithoutIcons(InlineKeyboardMarkup? markup)
+    {
+        if (markup is null)
+        {
+            return null;
+        }
+
+        return new InlineKeyboardMarkup(markup.InlineKeyboard.Select(row => row.Select(b => new InlineKeyboardButton(b.Text)
+        {
+            CallbackData = b.CallbackData,
+            Url = b.Url,
+            WebApp = b.WebApp,
+            LoginUrl = b.LoginUrl,
+            SwitchInlineQuery = b.SwitchInlineQuery,
+            SwitchInlineQueryCurrentChat = b.SwitchInlineQueryCurrentChat,
+            SwitchInlineQueryChosenChat = b.SwitchInlineQueryChosenChat,
+            CopyText = b.CopyText,
+            CallbackGame = b.CallbackGame,
+            Pay = b.Pay,
+            Style = b.Style,
+        })));
+    }
+
+    private static OutgoingText Plain(OutgoingText m)
+        => m with { Text = Icons.StripHtml(m.Text), Buttons = WithoutIcons(m.Buttons) };
+
+    private static MessageEdit Plain(MessageEdit e)
+        => e with { Html = Icons.StripHtml(e.Html), Buttons = WithoutIcons(e.Buttons) };
+
     private static int? Thread(int threadId) => threadId == 0 ? null : threadId;
+
+    private Task<Message> SendCoreAsync(OutgoingText message, CancellationToken ct)
+        => _client.SendMessage(
+            chatId: message.ChatId,
+            text: message.Text,
+            parseMode: message.ParseMode,
+            replyParameters: Reply(message.ReplyToMessageId),
+            replyMarkup: message.Buttons,
+            linkPreviewOptions: NoPreview,
+            messageThreadId: Thread(message.ThreadId),
+            disableNotification: message.Silent,
+            cancellationToken: ct);
+
+    private Task EditCoreAsync(MessageEdit edit, CancellationToken ct)
+        => _client.EditMessageText(
+            chatId: edit.ChatId,
+            messageId: edit.MessageId,
+            text: edit.Html,
+            parseMode: edit.ParseMode,
+            replyMarkup: edit.Buttons,
+            linkPreviewOptions: NoPreview,
+            cancellationToken: ct);
+
+    private void BlockIcons()
+    {
+        if (!_iconsBlocked)
+        {
+            _iconsBlocked = true;
+            _logger?.LogWarning("TgJelly's custom icons were rejected, so messages are sent without them. Custom emoji need Telegram Premium on the bot owner's account.");
+        }
+    }
 
     private static ReplyParameters? Reply(int? messageId)
         => messageId is { } id ? new ReplyParameters { MessageId = id, AllowSendingWithoutReply = true } : null;

@@ -123,8 +123,8 @@ public sealed class DetectedChatFlow
             var id = chat.ChatId.ToString(CultureInfo.InvariantCulture);
             rows.Add(
             [
-                InlineKeyboardButton.WithCallbackData(_strings.Get("detected.setUp", ("title", title)), CallbackData.Format("xs", id)),
-                InlineKeyboardButton.WithCallbackData(_strings.Get("detected.dismiss", ("title", title)), CallbackData.Format("xd", id)),
+                Buttons.Callback(_strings, "detected.setUp", CallbackData.Format("xs", id), ("title", title)),
+                Buttons.Callback(_strings, "detected.dismiss", CallbackData.Format("xd", id), ("title", title)),
             ]);
         }
 
@@ -133,8 +133,8 @@ public sealed class DetectedChatFlow
             rows.Add(nav);
         }
 
-        rows.Add([InlineKeyboardButton.WithCallbackData(_strings.Get("menu.back"), CallbackData.Format("m"))]);
-        var html = "<b>" + _formatter.Escape(_strings.Get("detected.title")) + "</b>\n\n" + string.Join('\n', lines);
+        rows.Add([Buttons.Callback(_strings, "menu.back", CallbackData.Format("m"))]);
+        var html = "<b>" + Icons.Heading(_strings, _formatter, "detected.title") + "</b>\n\n" + string.Join('\n', lines);
         return new Screen(html, new InlineKeyboardMarkup(rows));
     }
 
@@ -173,7 +173,7 @@ public sealed class DetectedChatFlow
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             _logger.LogWarning(ex, "TgJelly could not check the detected chat {Chat}", chatId);
-            var back = new InlineKeyboardMarkup(InlineKeyboardButton.WithCallbackData(_strings.Get("menu.back"), CallbackData.Format("xl", "0")));
+            var back = new InlineKeyboardMarkup(Buttons.Callback(_strings, "menu.back", CallbackData.Format("xl", "0")));
             await _screens.ShowAsync(privateChatId, new Screen(_formatter.Escape(_strings.Get("token.unreachable")), back), messageId, ct).ConfigureAwait(false);
             return true;
         }

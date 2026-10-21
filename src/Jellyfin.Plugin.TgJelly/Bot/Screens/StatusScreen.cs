@@ -71,7 +71,7 @@ public sealed class StatusScreen
     /// <returns>The screen.</returns>
     public Screen Build()
     {
-        var html = new StringBuilder("<b>").Append(_strings.Get("status.title")).Append("</b>\n\n");
+        var html = new StringBuilder("<b>").Append(Icons.Heading(_strings, _formatter, "status.title")).Append("</b>\n\n");
         html.Append(_formatter.Escape(_strings.Get("status.connection", ("state", ConnectionText())))).Append('\n');
         html.Append(_formatter.Escape(_strings.Get("status.compat", ("message", _compat.IsCompatible ? _strings.Get("status.compat.ok") : _compat.Message)))).Append("\n\n");
 
@@ -129,7 +129,7 @@ public sealed class StatusScreen
 
         html.Append('\n').Append(tail);
 
-        var back = InlineKeyboardButton.WithCallbackData(_strings.Get("menu.back"), CallbackData.Format("m"));
+        var back = Buttons.Callback(_strings, "menu.back", CallbackData.Format("m"));
         return new Screen(html.ToString().TrimEnd(), new InlineKeyboardMarkup(back));
     }
 

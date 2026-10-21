@@ -99,8 +99,8 @@ public sealed class ManagerNotifier
                 var text = _strings.Get("notify.problem", ("title", HtmlText.Escape(destination.Title)), ("problem", HtmlText.Escape(ProblemText(health))));
                 var buttons = new InlineKeyboardMarkup(new[]
                 {
-                    InlineKeyboardButton.WithCallbackData(_strings.Get("notify.btn.open"), CallbackData.Format("d", destination.Id)),
-                    InlineKeyboardButton.WithCallbackData(_strings.Get("dest.btn.check"), CallbackData.Format("dc", destination.Id)),
+                    Buttons.Callback(_strings, "notify.btn.open", CallbackData.Format("d", destination.Id)),
+                    Buttons.Callback(_strings, "dest.btn.check", CallbackData.Format("dc", destination.Id)),
                 });
                 foreach (var chatId in pending)
                 {

@@ -33,7 +33,7 @@ public sealed class OnboardingFlowTests : IDisposable, IAsyncLifetime
         var prompt = Assert.Single(Sent());
         Assert.Equal("Where should notifications go?", (string)prompt.Body["text"]!);
         var keyboard = prompt.Body["reply_markup"]!["keyboard"]!.AsArray().Select(r => r!.AsArray()).ToList();
-        Assert.Equal(["📢 Choose a channel", "👥 Choose a group", "💬 Right here", "Cancel"], keyboard.Select(r => (string)Assert.Single(r)!["text"]!));
+        Assert.Equal(["Choose a channel", "Choose a group", "Right here", "Cancel"], keyboard.Select(r => (string)Assert.Single(r)!["text"]!));
 
         var channel = keyboard[0][0]!["request_chat"]!;
         Assert.True((bool)channel["chat_is_channel"]!);
@@ -204,7 +204,7 @@ public sealed class OnboardingFlowTests : IDisposable, IAsyncLifetime
         Assert.True(_rig.Memory.HasRecentFailure());
 
         await Text("/menu");
-        Assert.Contains("🏠 Menu", (string)Sent().Last().Body["text"]!, StringComparison.Ordinal);
+        Assert.Contains("<tg-emoji emoji-id=\"5875271289605722323\">🏠</tg-emoji> Menu", (string)Sent().Last().Body["text"]!, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -368,7 +368,7 @@ public sealed class OnboardingFlowTests : IDisposable, IAsyncLifetime
         await Start();
         var promptId = _rig.Memory.GetFlow(Manager)!.PromptMessageId!.Value;
 
-        await Text("💬 Right here");
+        await Text("Right here");
 
         var sent = Sent().Skip(1).ToList();
         Assert.Equal("Right here.", (string)sent[0].Body["text"]!);
@@ -398,7 +398,7 @@ public sealed class OnboardingFlowTests : IDisposable, IAsyncLifetime
         var sent = Sent().Skip(1).ToList();
         Assert.Equal(2, sent.Count);
         Assert.True((bool)sent[0].Body["reply_markup"]!["remove_keyboard"]!);
-        Assert.Contains("🏠 Menu", (string)sent[1].Body["text"]!, StringComparison.Ordinal);
+        Assert.Contains("<tg-emoji emoji-id=\"5875271289605722323\">🏠</tg-emoji> Menu", (string)sent[1].Body["text"]!, StringComparison.Ordinal);
         Assert.Equal([promptId], Deleted());
         Assert.Null(_rig.Memory.GetFlow(Manager));
     }
@@ -407,7 +407,7 @@ public sealed class OnboardingFlowTests : IDisposable, IAsyncLifetime
     public async Task ExpiredPicker_SaysExpired_WithKeyboardRemove()
     {
         await Shared(5);
-        await Text("💬 Right here");
+        await Text("Right here");
         await Start();
         await Shared(_rig.Memory.GetFlow(Manager)!.PickerRequestIds.Max() + 1);
 
@@ -415,7 +415,7 @@ public sealed class OnboardingFlowTests : IDisposable, IAsyncLifetime
         Assert.Equal(3, expired.Count);
         Assert.All(expired, c => Assert.True((bool)c.Body["reply_markup"]!["remove_keyboard"]!));
         var all = Sent().ToList();
-        Assert.All(expired, c => Assert.Contains("➕ Add destination", Labels(all[all.IndexOf(c) + 1])));
+        Assert.All(expired, c => Assert.Contains("Add destination", Labels(all[all.IndexOf(c) + 1])));
         Assert.Empty(_h.Api.CallsTo("getChat"));
         Assert.NotEmpty(_rig.Memory.GetFlow(Manager)!.PickerRequestIds);
     }

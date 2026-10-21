@@ -36,7 +36,7 @@ public sealed class DestinationScreensTests : IDisposable, IAsyncLifetime
         await Click("1|dl|0");
 
         var labels = Labels(LastEdit());
-        Assert.Equal(["✅ " + ok.Title, "⛔ " + lost.Title, "✅⏸ " + paused.Title, "⛔⏸ " + pausedLost.Title, "‹ Back"], labels);
+        Assert.Equal(["✅ " + ok.Title, "⛔ " + lost.Title, "✅⏸ " + paused.Title, "⛔⏸ " + pausedLost.Title, "Back"], labels);
     }
 
     [Fact]
@@ -85,7 +85,40 @@ public sealed class DestinationScreensTests : IDisposable, IAsyncLifetime
         Assert.Contains(d.Title, text, StringComparison.Ordinal);
         Assert.Contains("OK", text, StringComparison.Ordinal);
         Assert.Contains("Everything", text, StringComparison.Ordinal);
-        Assert.Equal(["Events", "Libraries", "Silent groups", "Send test", "Check again", "Pause", "Remove", "‹ Back"], Labels(edit));
+        Assert.Equal(["Events", "Libraries", "Silent groups", "Send test", "Check again", "Pause", "Remove", "Back"], Labels(edit));
+    }
+
+    [Fact]
+    public async Task Detail_ButtonsCarryTheirIcons()
+    {
+        var d = _h.AddDestination(-1001);
+
+        await Click("1|d|" + d.Id);
+
+        Assert.Equal(
+            [Icons.Bell, Icons.Folder, Icons.BellOff, Icons.Send, Icons.Refresh, Icons.Block, Icons.Trash, Icons.Back],
+            IconIds(LastEdit()));
+        Assert.StartsWith("<b>" + d.Title, (string)LastEdit().Body["text"]!, StringComparison.Ordinal);
+
+        await Click("1|de|" + d.Id + "|0");
+        Assert.StartsWith("<b><tg-emoji emoji-id=\"" + Icons.Bell + "\">🔔</tg-emoji> Events</b>", (string)LastEdit().Body["text"]!, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Switches_HaveNoIcons()
+    {
+        var d = _h.AddDestination(-1001);
+        _rig.Library.VirtualFolders.Add(new LibraryRef(Guid.NewGuid(), "Movies", "movies"));
+
+        await Click("1|de|" + d.Id + "|0");
+        var events = IconIds(LastEdit());
+        await Click("1|dlb|" + d.Id + "|0");
+        var libraries = IconIds(LastEdit());
+
+        // On the event screen only Back has an icon; on the library screen it is All libraries, the library switch, Back.
+        Assert.All(events[..^1], Assert.Null);
+        Assert.Equal(Icons.Back, events[^1]);
+        Assert.Equal([Icons.Layers, null, Icons.Back], libraries);
     }
 
     [Fact]
@@ -130,7 +163,7 @@ public sealed class DestinationScreensTests : IDisposable, IAsyncLifetime
         await Click("1|dlb|" + d.Id + "|0");
 
         var edit = LastEdit();
-        Assert.Equal(["▫️ All libraries", "✅ Movies", "▫️ Shows", "‹ Back"], Labels(edit));
+        Assert.Equal(["▫️ All libraries", "✅ Movies", "▫️ Shows", "Back"], Labels(edit));
         Assert.Contains("(removed)", (string)edit.Body["text"]!, StringComparison.Ordinal);
 
         await Click("1|dlt|" + d.Id + "|" + shows.Id.ToString("N"));
@@ -208,7 +241,7 @@ public sealed class DestinationScreensTests : IDisposable, IAsyncLifetime
         await Click("1|drx|" + d.Id + "|1");
 
         Assert.Empty(_h.Settings.Current.Destinations);
-        Assert.Contains("📬 Destinations", (string)LastEdit().Body["text"]!, StringComparison.Ordinal);
+        Assert.Contains("Destinations</b>", (string)LastEdit().Body["text"]!, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -217,7 +250,7 @@ public sealed class DestinationScreensTests : IDisposable, IAsyncLifetime
         await Click("1|d|zzzzzzzz");
         var edit = LastEdit();
         Assert.Contains("This destination was removed.", (string)edit.Body["text"]!, StringComparison.Ordinal);
-        Assert.Equal(["‹ Back"], Labels(edit));
+        Assert.Equal(["Back"], Labels(edit));
 
         await Click("1|dp|zzzzzzzz");
         Assert.Contains("This destination was removed.", (string)LastEdit().Body["text"]!, StringComparison.Ordinal);
@@ -277,6 +310,9 @@ public sealed class DestinationScreensTests : IDisposable, IAsyncLifetime
 
     private static string[] Labels(BotApiCall call)
         => call.Body["reply_markup"]!["inline_keyboard"]!.AsArray().SelectMany(r => r!.AsArray()).Select(b => (string)b!["text"]!).ToArray();
+
+    private static string?[] IconIds(BotApiCall call)
+        => [.. call.Body["reply_markup"]!["inline_keyboard"]!.AsArray().SelectMany(row => row!.AsArray()).Select(b => (string?)b!["icon_custom_emoji_id"])];
 
     private static string[] NavLabels(BotApiCall call)
         => Labels(call).Where(l => l is "‹ Prev" or "Next ›").ToArray();

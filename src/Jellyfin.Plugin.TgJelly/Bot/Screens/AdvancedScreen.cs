@@ -35,10 +35,10 @@ public sealed class AdvancedScreen
         var bot = _connection.BotUsername;
         var rows = new[]
         {
-            new[] { InlineKeyboardButton.WithUrl(_strings.Get("advanced.group"), BotLinks.StartGroup(bot)) },
-            new[] { InlineKeyboardButton.WithUrl(_strings.Get("advanced.channel"), BotLinks.StartChannel(bot)) },
-            new[] { InlineKeyboardButton.WithCallbackData(_strings.Get("advanced.topic"), CallbackData.Format("ol")) },
-            new[] { InlineKeyboardButton.WithCallbackData(_strings.Get("advanced.dashboard"), CallbackData.Format("od")) },
+            new[] { Buttons.Url(_strings, "advanced.group", BotLinks.StartGroup(bot)) },
+            new[] { Buttons.Url(_strings, "advanced.channel", BotLinks.StartChannel(bot)) },
+            new[] { Buttons.Callback(_strings, "advanced.topic", CallbackData.Format("ol")) },
+            new[] { Buttons.Callback(_strings, "advanced.dashboard", CallbackData.Format("od")) },
         };
         return new Screen(_formatter.Escape(_strings.Get("advanced.title")), new InlineKeyboardMarkup(rows));
     }
@@ -49,7 +49,7 @@ public sealed class AdvancedScreen
     /// <returns>The screen.</returns>
     public Screen Dashboard()
     {
-        var back = new InlineKeyboardMarkup(new[] { InlineKeyboardButton.WithCallbackData(_strings.Get("menu.back"), CallbackData.Format("ox")) });
+        var back = new InlineKeyboardMarkup(new[] { Buttons.Callback(_strings, "menu.back", CallbackData.Format("ox")) });
         return new Screen(_formatter.Escape(_strings.Get("advanced.dashboardPath")), back);
     }
 }

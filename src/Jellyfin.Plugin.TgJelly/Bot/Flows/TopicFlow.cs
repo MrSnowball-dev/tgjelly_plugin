@@ -508,5 +508,5 @@ public sealed class TopicFlow
     }
 
     private InlineKeyboardButton Button(string textKey, string action)
-        => InlineKeyboardButton.WithCallbackData(_strings.Get(textKey), CallbackData.Format(action));
+        => Buttons.Callback(_strings, textKey, CallbackData.Format(action));
 }

@@ -121,7 +121,7 @@ public sealed class TopicFlowTests : IDisposable, IAsyncLifetime
         var prompt = Sent().Last();
         var keyboard = prompt.Body["reply_markup"]!["keyboard"]!.AsArray().Select(r => r!.AsArray()).ToList();
         var button = Assert.Single(Assert.Single(keyboard))!;
-        Assert.Equal("🗂 Allow topic creation", (string)button["text"]!);
+        Assert.Equal("Allow topic creation", (string)button["text"]!);
         var request = button["request_chat"]!;
         Assert.True((bool)request["chat_is_forum"]!);
         Assert.False((bool?)request["chat_is_channel"] ?? false);

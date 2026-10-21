@@ -144,7 +144,7 @@ public sealed class DestinationScreens
     {
         var destinations = _settings.Current.Destinations;
         var shown = Paging.Page(destinations, page);
-        var html = new StringBuilder("<b>").Append(_strings.Get(titleKey)).Append("</b>");
+        var html = new StringBuilder("<b>").Append(Icons.Heading(_strings, _formatter, titleKey)).Append("</b>");
         if (destinations.Length == 0)
         {
             html.Append("\n\n").Append(_strings.Get("menu.destinations.empty"));
@@ -161,7 +161,7 @@ public sealed class DestinationScreens
             rows.Add(nav);
         }
 
-        rows.Add(Row(_strings.Get("menu.back"), backAction));
+        rows.Add([Button("menu.back", backAction)]);
         return new Screen(html.ToString(), new InlineKeyboardMarkup(rows));
     }
 
@@ -209,7 +209,7 @@ public sealed class DestinationScreens
             .Select(k => Row(Mark(d.Events.Contains(k, StringComparer.Ordinal)) + " " + _strings.Get("dest.event." + k), "det", d.Id, k))
             .ToList();
         AddNav(rows, page, keys.Count, "de", d.Id);
-        rows.Add(Row(_strings.Get("menu.back"), "d", d.Id));
+        rows.Add([Button("menu.back", "d", d.Id)]);
         return new Screen(Heading("dest.events.title", d), new InlineKeyboardMarkup(rows));
     }
 
@@ -228,10 +228,12 @@ public sealed class DestinationScreens
             html.Append('\n').Append(_formatter.Escape(_strings.Get("dest.libraries.removed", ("id", gone))));
         }
 
-        var rows = new List<InlineKeyboardButton[]> { Row(Mark(d.LibraryIds.Length == 0) + " " + _strings.Get("dest.libraries.all"), "dlt", d.Id, "all") };
+        var all = Button("dest.libraries.all", "dlt", d.Id, "all");
+        all.Text = Mark(d.LibraryIds.Length == 0) + " " + all.Text;
+        var rows = new List<InlineKeyboardButton[]> { new[] { all } };
         rows.AddRange(Paging.Page(folders, page).Select(f => Row(MenuScreens.Label(Mark(d.LibraryIds.Contains(f.Id.ToString("N"), StringComparer.Ordinal)) + " " + f.Name), "dlt", d.Id, f.Id.ToString("N"))));
         AddNav(rows, page, folders.Count, "dlb", d.Id);
-        rows.Add(Row(_strings.Get("menu.back"), "d", d.Id));
+        rows.Add([Button("menu.back", "d", d.Id)]);
         return new Screen(html.ToString(), new InlineKeyboardMarkup(rows));
     }
 
@@ -246,7 +248,7 @@ public sealed class DestinationScreens
         var rows = EventCatalog.Groups
             .Select(g => Row((d.SilentGroups.Contains(g, StringComparer.Ordinal) ? "🔕" : "🔔") + " " + _strings.Get("groups." + g), "dsgt", d.Id, g))
             .ToList();
-        rows.Add(Row(_strings.Get("menu.back"), "d", d.Id));
+        rows.Add([Button("menu.back", "d", d.Id)]);
         return new Screen(html, new InlineKeyboardMarkup(rows));
     }
 
@@ -381,13 +383,13 @@ public sealed class DestinationScreens
     private Destination? Find(string id) => _settings.Current.Destinations.FirstOrDefault(d => d.Id == id);
 
     private Screen Gone()
-        => new(_strings.Get("dest.gone"), new InlineKeyboardMarkup(Row(_strings.Get("menu.back"), "dl", "0")));
+        => new(_strings.Get("dest.gone"), new InlineKeyboardMarkup(Button("menu.back", "dl", "0")));
 
     private InlineKeyboardButton Button(string textKey, string action, params string[] args)
-        => InlineKeyboardButton.WithCallbackData(_strings.Get(textKey), CallbackData.Format(action, args));
+        => Buttons.Callback(_strings, textKey, CallbackData.Format(action, args));
 
     private string Heading(string titleKey, Destination d)
-        => "<b>" + _strings.Get(titleKey) + "</b>\n" + _formatter.Escape(d.Title);
+        => "<b>" + Icons.Heading(_strings, _formatter, titleKey) + "</b>\n" + _formatter.Escape(d.Title);
 
     private void AddNav(List<InlineKeyboardButton[]> rows, int page, int count, string action, string id)
     {

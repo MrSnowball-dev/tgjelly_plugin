@@ -1,4 +1,5 @@
 using System.IO;
+using Jellyfin.Plugin.TgJelly.Bot.Screens;
 using System.Linq;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.TgJelly.Bot;
@@ -100,6 +101,79 @@ public sealed class TelegramSenderTests : System.IDisposable
         Assert.Equal(429, ex.ErrorCode);
         Assert.Equal(7, ex.Parameters!.RetryAfter);
         Assert.Single(_api.CallsTo("sendMessage")); // RetryThreshold = 0: Telegram.Bot did not retry
+    }
+
+    private static OutgoingText WithIcon()
+        => new(
+            42,
+            0,
+            "<b><tg-emoji emoji-id=\"5875271289605722323\">🏠</tg-emoji> Menu</b>",
+            ParseMode.Html,
+            new InlineKeyboardMarkup(new InlineKeyboardButton("Settings") { CallbackData = "1|s", IconCustomEmojiId = Icons.Settings }),
+            null,
+            false);
+
+    [Fact]
+    public async Task RejectedIcons_AreDroppedAndResent_ThenSkipped()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var message = FakeBotApi.Ok("""{"message_id":9,"date":0,"chat":{"id":42,"type":"private"}}""");
+        _api.OnSequence("sendMessage", FakeBotApi.Error(400, "Bad Request: custom emoji entities can't be used"), message, message);
+        var sender = Sender;
+
+        await sender.SendTextAsync(WithIcon(), ct);
+
+        var calls = _api.CallsTo("sendMessage").ToArray();
+        Assert.Equal(2, calls.Length);
+        Assert.Contains("tg-emoji", (string)calls[0].Body["text"]!, System.StringComparison.Ordinal);
+        Assert.Contains("icon_custom_emoji_id", calls[0].Body["reply_markup"]!.ToJsonString(), System.StringComparison.Ordinal);
+        Assert.Equal("<b>🏠 Menu</b>", (string)calls[1].Body["text"]!);
+        Assert.DoesNotContain("icon_custom_emoji_id", calls[1].Body["reply_markup"]!.ToJsonString(), System.StringComparison.Ordinal);
+        Assert.Equal("1|s", (string)calls[1].Body["reply_markup"]!["inline_keyboard"]![0]![0]!["callback_data"]!);
+
+        await sender.SendTextAsync(WithIcon(), ct);
+
+        var third = _api.CallsTo("sendMessage").ElementAt(2);
+        Assert.Equal("<b>🏠 Menu</b>", (string)third.Body["text"]!);
+        Assert.DoesNotContain("icon_custom_emoji_id", third.Body["reply_markup"]!.ToJsonString(), System.StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task RejectedIcons_InAnEdit_AreDroppedAndResent()
+    {
+        _api.OnSequence(
+            "editMessageText",
+            FakeBotApi.Error(400, "Bad Request: DOCUMENT_INVALID emoji"),
+            FakeBotApi.Ok("""{"message_id":5,"date":0,"chat":{"id":42,"type":"private"}}"""));
+        var text = WithIcon();
+
+        await Sender.EditTextAsync(new MessageEdit(42, 5, text.Text, ParseMode.Html, text.Buttons), TestContext.Current.CancellationToken);
+
+        var calls = _api.CallsTo("editMessageText").ToArray();
+        Assert.Equal(2, calls.Length);
+        Assert.Equal("<b>🏠 Menu</b>", (string)calls[1].Body["text"]!);
+        Assert.DoesNotContain("icon_custom_emoji_id", calls[1].Body["reply_markup"]!.ToJsonString(), System.StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task OtherBadRequests_AreNotRetried()
+    {
+        _api.On("sendMessage", _ => FakeBotApi.Error(400, "Bad Request: chat not found"));
+
+        await Assert.ThrowsAsync<ApiRequestException>(() => Sender.SendTextAsync(WithIcon(), TestContext.Current.CancellationToken));
+
+        Assert.Single(_api.CallsTo("sendMessage"));
+    }
+
+    [Fact]
+    public async Task MessagesWithoutIcons_AreNotRetried()
+    {
+        _api.On("sendMessage", _ => FakeBotApi.Error(400, "Bad Request: custom emoji entities can't be used"));
+
+        await Assert.ThrowsAsync<ApiRequestException>(() =>
+            Sender.SendTextAsync(new OutgoingText(42, 0, "plain", ParseMode.None, null, null, false), TestContext.Current.CancellationToken));
+
+        Assert.Single(_api.CallsTo("sendMessage"));
     }
 
     [Fact]

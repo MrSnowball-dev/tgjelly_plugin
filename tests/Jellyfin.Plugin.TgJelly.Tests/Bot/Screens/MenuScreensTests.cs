@@ -25,7 +25,19 @@ public class MenuScreensTests
 
         var labels = Labels(_menus.Main(2, 3));
         Assert.Equal("1|xl|0", _menus.Main(2, 3).Buttons!.InlineKeyboard.SelectMany(r => r).Last().CallbackData);
-        Assert.Equal(["📬 Destinations (2)", "➕ Add destination", "⚙️ Settings", "🩺 Status", "Chats added outside setup (3)"], labels);
+        Assert.Equal(["Destinations (2)", "Add destination", "Settings", "Status", "Chats added outside setup (3)"], labels);
+    }
+
+    [Fact]
+    public void MainMenu_ButtonsAndHeadingCarryTheirIcons()
+    {
+        var screen = _menus.Main(2, 0);
+
+        Assert.Equal(["Destinations (2)", "Add destination", "Settings", "Status"], Labels(screen));
+        Assert.Equal(
+            [Icons.Chats, Icons.Add, Icons.Settings, Icons.Status],
+            screen.Buttons!.InlineKeyboard.SelectMany(r => r).Select(b => b.IconCustomEmojiId).ToArray());
+        Assert.StartsWith("<b><tg-emoji emoji-id=\"5875271289605722323\">🏠</tg-emoji> Menu</b>", screen.Html, StringComparison.Ordinal);
     }
 
     private static string[] Labels(Screen screen)

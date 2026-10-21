@@ -56,7 +56,7 @@ public sealed class SettingsScreensTests : IDisposable, IAsyncLifetime
     {
         await Click("1|s");
 
-        Assert.Equal(["🎨 Message style", "🔔 Update checks", "🔗 Public URL", "‹ Back"], Labels(LastEdit()));
+        Assert.Equal(["Message style", "Update checks", "Public URL", "Back"], Labels(LastEdit()));
     }
 
     [Fact]

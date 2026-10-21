@@ -43,7 +43,7 @@ public sealed class DetectedChatFlowTests : IDisposable, IAsyncLifetime
 
         var list = Assert.Single(_h.Api.CallsTo("editMessageText"));
         Assert.Contains("Detected: <b>Family</b>, set it up?", (string)list.Body["text"]!, StringComparison.Ordinal);
-        Assert.Equal(["Set up Family", "Dismiss Family", "‹ Back"], Labels(list));
+        Assert.Equal(["Set up Family", "Dismiss Family", "Back"], Labels(list));
         Assert.Equal(["1|xs|-1005550002", "1|xd|-1005550002", "1|m"], Data(list));
     }
 

@@ -205,6 +205,9 @@ public sealed class SettingsScreens
     private static InlineKeyboardButton[] Row(string text, string action, params string[] args)
         => [InlineKeyboardButton.WithCallbackData(text, CallbackData.Format(action, args))];
 
+    private InlineKeyboardButton[] Button(string labelKey, string action)
+        => [Buttons.Callback(_strings, labelKey, CallbackData.Format(action))];
+
     private bool AwaitsUrl(long chatId)
         => _memory.GetFlow(chatId) is { } flow && flow.Params.TryGetValue(InputKey, out var input) && input == PublicUrlInput;
 
@@ -222,10 +225,10 @@ public sealed class SettingsScreens
 
     private Screen Menu()
         => Titled("settings.title", null, [
-            Row(_strings.Get("settings.messages"), "sm"),
-            Row(_strings.Get("settings.updates"), "su"),
-            Row(_strings.Get("settings.url"), "sp"),
-            Row(_strings.Get("menu.back"), "m"),
+            Button("settings.messages", "sm"),
+            Button("settings.updates", "su"),
+            Button("settings.url", "sp"),
+            Button("menu.back", "m"),
         ]);
 
     private Screen Messages()
@@ -237,7 +240,7 @@ public sealed class SettingsScreens
             rows.Add(Row(Mark(Get(options, name)) + _strings.Get("settings.msg." + name), "smt", name));
         }
 
-        rows.Add(Row(_strings.Get("menu.back"), "s"));
+        rows.Add(Button("menu.back", "s"));
         return Titled("settings.messages.title", "settings.messages.hint", rows);
     }
 
@@ -251,7 +254,7 @@ public sealed class SettingsScreens
             rows.Add(Row((check.Mode == mode ? "🔘 " : "⚪ ") + _strings.Get("settings.updates.mode." + name), "sum", name));
         }
 
-        rows.Add(Row(_strings.Get("menu.back"), "s"));
+        rows.Add(Button("menu.back", "s"));
         return Titled("settings.updates.title", "settings.updates.hint", rows);
     }
 
@@ -259,7 +262,7 @@ public sealed class SettingsScreens
     {
         var current = _settings.Current.PublicUrl;
         var suggested = _links.Suggest();
-        var html = new StringBuilder("<b>").Append(_formatter.Escape(_strings.Get("settings.url.title"))).Append("</b>\n")
+        var html = new StringBuilder("<b>").Append(Icons.Heading(_strings, _formatter, "settings.url.title")).Append("</b>\n")
             .Append(_formatter.Escape(_strings.Get("settings.url.hint"))).Append("\n\n");
         if (current.Length == 0)
         {
@@ -278,22 +281,22 @@ public sealed class SettingsScreens
         if (suggested is not null && suggested != current)
         {
             html.Append("\n\n").Append(_formatter.Escape(_strings.Get("settings.url.suggested", ("url", suggested))));
-            rows.Add(Row(_strings.Get("settings.url.use"), "spu"));
+            rows.Add(Button("settings.url.use", "spu"));
         }
 
-        rows.Add(Row(_strings.Get("settings.url.type"), "spt"));
+        rows.Add(Button("settings.url.type", "spt"));
         if (current.Length > 0)
         {
-            rows.Add(Row(_strings.Get("settings.url.clear"), "spc"));
+            rows.Add(Button("settings.url.clear", "spc"));
         }
 
-        rows.Add(Row(_strings.Get("menu.back"), "s"));
+        rows.Add(Button("menu.back", "s"));
         return new Screen(html.ToString(), new InlineKeyboardMarkup(rows));
     }
 
     private Screen Titled(string titleKey, string? hintKey, IEnumerable<InlineKeyboardButton[]> rows)
     {
-        var html = "<b>" + _formatter.Escape(_strings.Get(titleKey)) + "</b>";
+        var html = "<b>" + Icons.Heading(_strings, _formatter, titleKey) + "</b>";
         if (hintKey is not null)
         {
             html += "\n" + _formatter.Escape(_strings.Get(hintKey));
