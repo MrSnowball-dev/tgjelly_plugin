@@ -1,7 +1,7 @@
 # TgJelly v1: design spec
 
-- **Status:** draft rev. 2 (after adversarial review), waiting for owner review
-- **Date:** 2026-10-16
+- **Status:** draft rev. 3 (2026-10-21, inline-only bot UX after v0.1 testing), waiting for owner review
+- **Date:** 2026-10-16 (rev. 3: 2026-10-21)
 - **Repo:** `github.com/MrSnowball-dev/tgjelly_plugin` (GPL-3.0)
 
 TgJelly is a Jellyfin server plugin with a built-in Telegram bot. Version 1 is a **notifier**. It sends Jellyfin events (new media, security/account events, server/admin events) to Telegram chats, groups and channels that the server's admin chooses. Setup is easy to follow and can be done both from the Jellyfin dashboard and from inside the bot.
@@ -22,7 +22,7 @@ TgJelly is a Jellyfin server plugin with a built-in Telegram bot. Version 1 is a
 - Setup corrections the owner gave during review:
   1. Start by asking whether to create a new bot or use an existing one, and accept a pasted token.
   2. No "connect your Telegram account" step. One personal bot is the normal case. When a new bot is created, point the owner to **restrict the bot to themselves (or whoever they choose) in @BotFather**. The owner has used this restriction on regular bots.
-  3. Add destinations through **Telegram's native chat picker**. Manual setup appears only in Advanced settings, and only when the main flow fails.
+  3. Add destinations through **Telegram's own chat chooser, opened from the bot's inline buttons**. Manual setup appears only in Advanced settings, and only when the main flow fails.
 - Access model: **trust the BotFather restriction**. Anyone who can open the bot's private chat can manage it. The owner rejected an invisible "first /start claims the bot" lock.
 - The owner explicitly kept three behaviors that the review suggested changing:
   - late episodes are added to the earlier message by a silent edit,
@@ -36,7 +36,7 @@ TgJelly is a Jellyfin server plugin with a built-in Telegram bot. Version 1 is a
 - Most installs sit behind NAT or in Docker without a public HTTPS endpoint. That is why the bot uses long polling and uploads posters instead of linking to them.
 
 ### 1.3 Success criteria
-1. **From a fresh install to the first notification takes only a token paste plus a few taps:** choose new or existing bot → paste the token → Open bot → pick a chat in the native picker → pick a preset. No chat IDs, templates or config files.
+1. **From a fresh install to the first notification takes only a token paste plus a few taps:** choose new or existing bot → paste the token → Open bot → pick a chat in Telegram's own chat chooser, opened from the bot's inline buttons → pick a preset. No chat IDs, templates or config files.
 2. The **same zip format and the same code** run on Jellyfin 10.11.x and 12.x. Each server automatically gets the build that matches it.
 3. **The plugin never harms Jellyfin and never modifies the library.** No unhandled exception, slow handler or Telegram outage may break, block or stop the server.
 4. **A scan that produces more than `DigestThreshold` (default 10) media groups for a destination results in one digest for that destination** (scans running longer than 2 h: one digest per 2 h). Smaller scans produce one message per group (a movie, a season batch, an album).
@@ -72,7 +72,7 @@ TgJelly is a Jellyfin server plugin with a built-in Telegram bot. Version 1 is a
 | D3 | Two builds: net9.0 / ABI 10.11.0.0 / version 1.x, and net10.0 / ABI 12.0.0.0 / version 2.x | Jellyfin 12 moved to .NET 10, and its compatibility check only enforces an upper bound (F7) |
 | D4 | Only the admin configures; the bot sends to chats, groups and channels | Owner's choice |
 | D5 | **Trust the BotFather restriction**; no pairing and no claim lock | Owner's decision. The owner has used the restriction on regular bots. §6.4 |
-| D6 | Destinations are added through the native `request_chat` picker; manual methods are under Advanced and appear only after a failure | Owner's setup correction |
+| D6 | Destinations are added through inline `startchannel` / `startgroup` deep-link buttons, which open Telegram's chat chooser. The bot matches the resulting `my_chat_member` to the admin's flow. Manual methods are under Advanced and appear only after a failure | Owner's setup correction; rev. 3: inline buttons only, no reply keyboards (owner, 2026-10-21). `request_chat` exists only on reply keyboards |
 | D7 | Default layouts with toggles, plus an optional Scriban template per event that replaces only the text or caption | Templates per event: owner's choice. Limiting them to the text: presented in design section 3 and approved |
 | D8 | Posters uploaded as-is; text-only fallback | Owner's decision |
 | D9 | The token and proxy credentials live in `secrets.json`, not in the Jellyfin config XML | The generic config GET returns the whole XML to admins, and a failed load overwrites it with defaults (F9) |
@@ -130,7 +130,7 @@ These facts were checked against Jellyfin **v10.11.11** and **v12.2** server sou
 **Telegram / Telegram.Bot**
 - F31. `my_chat_member` is delivered by default. Always send an explicit `allowed_updates`. Updates are kept for **24 h**. In private chats, `my_chat_member` arrives only when the user blocks or unblocks the bot.
 - F32. Three kinds of 409: a webhook is active, "terminated by other getUpdates request", and "terminated by setWebhook request".
-- F33. `KeyboardButtonRequestChat` works only in private chats with the bot. It can add the bot to the chosen chat with the requested admin rights (`bot_administrator_rights`, plus `user_administrator_rights` that must be a superset; `bot_is_member` for groups). The bot then receives a `chat_shared` message: request_id, chat_id, plus title if requested. **Chat type and `is_forum` need `getChat`.**
+- F33. (No longer used since rev. 3.) `KeyboardButtonRequestChat` works only in private chats with the bot. It can add the bot to the chosen chat with the requested admin rights (`bot_administrator_rights`, plus `user_administrator_rights` that must be a superset; `bot_is_member` for groups). The bot then receives a `chat_shared` message: request_id, chat_id, plus title if requested. **Chat type and `is_forum` need `getChat`.**
 - F34. A message that has (or ever had) a non-inline reply_markup, including `ReplyKeyboardRemove`, **cannot be edited**. A message carries exactly one reply_markup.
 - F35. The Bot API has no method to list forum topics. `createForumTopic` needs an admin with `can_manage_topics`. A topic's link (`t.me/c/<id>/<topic>` or `t.me/<username>/<topic>`) carries its thread ID.
 - F36. Limits: text 4096 and caption 1024 **code points after entity parsing**, photo upload ≤ 10 MB, `sendMediaGroup` has **no** reply_markup. Rate guidance: about 1 msg/s per chat, 20 msg/min per group, about 30 msg/s overall. Groups may block members from sending media ("not enough rights to send photos to the chat").
@@ -143,6 +143,8 @@ These facts were checked against Jellyfin **v10.11.11** and **v12.2** server sou
   - The token is part of every request URL, so it must never be logged.
 - F40. Access settings: Bot API 10.0 (2026-05-08) added `BotAccessSettings` (only selected users plus the owner can access the bot; up to 10 users). The API docs describe it only for managed bots. **The owner confirms that BotFather offers it for ordinary bots.** A bot cannot read its own access settings or find out who its owner is.
 - F41. Scriban ≥ 7.2.6 fixes the 2026 advisories. It is not a security boundary for reflected objects, so templates only get plain data. Relevant `TemplateContext` members: `LoopLimit`, `RecursiveLimit`, `ObjectRecursionLimit`, `LimitToString`, `OutputLimit` (int?, UTF-16 chars), `OnOutputLimit`/`OnStringLimit` (`ScriptLimitBehavior.Truncate|Throw`), `RegexTimeOut`, `StrictVariables`, `EnableRelaxedMemberAccess`, `CancellationToken`, and `virtual Write(SourceSpan, object?)`.
+- F42. `https://t.me/<bot>?startgroup=<payload>` and `?startchannel&admin=<rights>` open the client's chat chooser and add the bot, with the rights for a channel. The bot receives `my_chat_member` with `from` = the user who added it. `admin=` on `startgroup` asks for those rights for the bot (`manage_topics` for topic promotion).
+- F43 (unverified, §15 Q10). After a `startgroup` add, the client sends `/start@<bot> <payload>` into the group from that user, possibly even when the bot is already a member.
 
 ---
 
@@ -235,23 +237,24 @@ A single card: **"Connect a Telegram bot"** with `[Create a new bot]` `[I alread
      - `setMyDefaultAdministratorRights`: for channels post + edit messages.
 
      The choice and any calls still pending are stored in `state.telegram.profile` and retried when the supervisor next starts, until each one succeeds. Failures are shown in Status and never fail the save.
-- Result: **"Connected as @MyJellyBot"** and **[Open @MyJellyBot]** (`https://t.me/<username>?start=setup`).
+- Result: the connect card closes. The Bot section (§6.6) shows @MyJellyBot with **[Open in Telegram]** (`https://t.me/<username>?start=setup`).
 - If `getMe` fails with a network error, a **"Can't reach Telegram?"** panel opens with the proxy settings (§9.1). Otherwise proxy settings stay under Advanced.
 
-### 6.2 Bot onboarding: the main flow, native picker only
+### 6.2 Bot onboarding: the main flow, inline buttons only
 Triggered by `/start setup`, `/start add`, a plain `/start` when there are no destinations yet, or **Add destination** in `/menu`.
 
-1. **Prompt.** The bot sends a prompt message with a **reply keyboard**: "Where should notifications go?"
-   - `📢 Choose a channel`: `request_chat` with `chat_is_channel=true`, `bot_administrator_rights` = {can_post_messages, can_edit_messages}, `user_administrator_rights` = the same, `request_title=true`.
-   - `👥 Choose a group`: `request_chat` with `chat_is_channel=false`, `bot_is_member=true`, `request_title=true`.
-   - `💬 Right here`: a plain text button; the destination is this private chat.
-   - `Cancel`.
+1. **Prompt.** The prompt is one inline wizard message: "Where should notifications go?" plus the hint. Its buttons:
+   - `Add to a channel` (URL, `BotLinks.StartChannel`: `https://t.me/<bot>?startchannel&admin=post_messages+edit_messages`),
+   - `Add to a group` (URL, `BotLinks.StartGroup`: `https://t.me/<bot>?startgroup=add`),
+   - `Right here` (callback): the destination is this private chat,
+   - up to 3 `[Set up <Title>]` rows for detected chats that are not set up yet (§6.5),
+   - `Cancel` (callback).
 
-   Each picker button gets a fresh `request_id`, saved in the chat's flow along with `promptMessageId` and `promptSentAt`.
-2. **Check.** On `chat_shared` with a matching `request_id`:
-   1. Send a short **"Checking *Title*…"** message carrying `ReplyKeyboardRemove`. It is never edited (F34). Its ID is kept in the flow (`checkingMessageId`). It is deleted right after the next wizard message has been sent, or on failure.
-   2. Delete the prompt message.
-   3. Call `getChat` (type, `is_forum`, title, `permissions`) and `getChatMember(chat, botId)` at t = 0, 1.5, 3 and 5 s, stopping at the first pass. `my_chat_member` may arrive late, so a few tries are allowed.
+   Both URL buttons open Telegram's own chat chooser (F42). The prompt is sent as a new message for `/start`. It edits the pressed message for Add destination, Add another place and Try again. The flow stores `wizardMessageId`, `promptSentAt` and `await=chat`.
+2. **Check.**
+   - **Trigger.** A `my_chat_member` whose `from.id` has a live prompt, and whose change counts as an add. A change counts as an add when the new status is member, administrator, or restricted with `is_member`, **and** either the bot was left or kicked before (a fresh add), or the new status is administrator (rights granted in a chat the bot was already in, e.g. `startchannel` on a channel it is in). A group `/start@bot` from that user (F43) counts the same. A matched add is not recorded as a detected chat.
+   - The wizard message is edited to "Checking *Title*…", and the check runs:
+     1. Call `getChat` (type, `is_forum`, title, `permissions`) and `getChatMember(chat, botId)` at t = 0, 1.5, 3 and 5 s, stopping at the first pass. `my_chat_member` may arrive late, so a few tries are allowed.
 
    Passing means:
    - **Channel:** `administrator` with `can_post_messages`.
@@ -260,47 +263,61 @@ Triggered by `/start setup`, `/start add`, a plain `/start` when there are no de
 
    **Duplicate:** for a non-forum chat, if that chat is already a destination, the bot says "*Title* is already set up", runs a re-check, and opens that destination's screen. Nothing new is created. For forums, the same rule is applied to (chat, topic) in step 3, once the topic is known.
 
-   **On failure:** the "Checking…" message is deleted. A new inline message explains what's missing, offers `[Try again] [Advanced options]` (§6.5), and records a setup failure (§6.5).
-3. **Forum supergroup** (`is_forum`). An inline wizard message (new, inline keyboard only) offers `[General topic] [Create a "Jellyfin" topic] [Use an existing topic…]`. The duplicate rule is checked for the chosen (chat, topic) before anything is created.
+   **On failure:** the wizard message is edited to an explanation of what's missing, with `[Try again] [Advanced options]` (§6.5), and a setup failure is recorded (§6.5). `[Try again]` re-checks the same chat once (no retries), in place, and continues; a failed check keeps its chat in the spent flow for this. It offers a fresh prompt only when there is no chat.
+3. **Forum supergroup** (`is_forum`). The wizard message is edited to offer `[General topic] [Create a "Jellyfin" topic] [Use an existing topic…]`. The duplicate rule is checked for the chosen (chat, topic) before anything is created.
    - **Create, when the bot already has `can_manage_topics`:** `createForumTopic("Jellyfin")`, and the destination uses the returned thread ID.
-   - **Create, when it doesn't:** the bot sends a new throwaway reply-keyboard prompt with a single native picker button, `🗂 Allow topic creation`: `request_chat` with `chat_is_channel=false`, `chat_is_forum=true`, `bot_administrator_rights={can_manage_topics}`, `user_administrator_rights={can_manage_topics}`, `request_title=true`. The admin picks the same group again, Telegram promotes the bot (F33), and the bot creates the topic. If the promotion or the creation fails, the bot falls back to `[General topic]` plus `[Advanced options]`.
+   - **Create, when it doesn't:** the wizard is edited to "To create a topic, I need permission to manage topics…" with these buttons:
+     - `Allow topic creation` (URL `https://t.me/<bot>?startgroup=topics&admin=manage_topics`),
+     - `[Check again]`,
+     - `[General topic]`,
+     - `[Advanced options]`.
+
+     **Promotion detected:** a `my_chat_member` → administrator in that forum from the same user, a group `/start@bot` there, or `[Check again]` finding `can_manage_topics`. The bot then creates the topic. **Promotion in another group:** said on the wizard, and the bot keeps waiting. **Rights still missing on Check again:** said on the wizard, and the bot keeps waiting. This screen has no expiry. If the creation fails, the bot falls back to `[General topic]` plus `[Advanced options]`.
    - **Use an existing topic…**: Telegram has no topic picker (F35), so this is the one place where the main flow hands over to the manual path. The bot records a setup failure of kind `topic_not_pickable` (§6.5) and asks for the topic's link (§6.5, "Use an existing topic").
    - **General** is stored as `ThreadId = 0` (no `message_thread_id`). This is provisional until §15 Q4 is answered.
 4. **Preset.** "What should I send there?" `[Everything] [New media] [Admin alerts] [Custom…]` (§7.2). *Custom…* opens the event switches with nothing selected.
 5. **Done.** The bot sends a test message to the new destination ("✅ TgJelly test: this chat will receive *groups*"). It then edits the wizard message to "✅ Done: *Title* will receive *groups*. `[Add another place] [Menu]`".
 
-Steps 3–5 happen in **one inline-keyboard wizard message** that gets edited. Reply-keyboard prompts are separate, throwaway messages.
+The whole flow is **one inline wizard message** that gets edited. There are no reply keyboards and no throwaway prompts.
 
 **Stale or unexpected input in a private chat:**
 - A plain `/start` when destinations exist, an unknown `/start` payload, or unrecognised text or a command → the `/menu` screen headed "TgJelly is set up: N destinations".
-- A `chat_shared` or "💬 Right here" with no live matching flow → a message with `ReplyKeyboardRemove` saying "That picker expired", plus `[Add destination]`.
-- A prompt that gets no answer within 10 min expires. That counts as a setup failure (§6.5).
+- A v0.1 reply-keyboard text or a `chat_shared` → "That menu expired" with `ReplyKeyboardRemove` (the only non-inline markup the bot still sends, to clear a keyboard the client still shows), then the menu.
+- A prompt unanswered for 10 min → edited to "That setup prompt expired." `[Add destination]`. It counts as a setup failure (§6.5).
 
 ### 6.3 Bot menus (`/menu`)
 ```
 🏠 Menu
-├─ 📬 Destinations (n) ─► <destination> ─► Events · Libraries · Silent groups · Send test · Check again ·
+├─ 📬 Destinations (n) ─► <destination> ─► Events (Media · Security · Server, each its own screen) · Libraries · Silent groups · Send test · Check again ·
 │                       │                  Pause/Resume · Remove (asks "Also make the bot leave the chat?")
 │                       └─ Chats added outside setup (n)   ← shown only when n > 0 (§6.5)
 ├─ ➕ Add destination ─► §6.2
 ├─ ⚙️ Settings ─► Message style (§8.4) · Update checks (on/off, mode) ·
-│                Public URL (shows current/suggested; [Use suggested] [Type another] (ForceReply, validated §8.3) [Clear])
+│                Public URL (shows current/suggested; [Use suggested] [Type another] (inline prompt with [Cancel], validated §8.3) [Clear])
 └─ 🩺 Status ─► connection, compat, destination health, pending media, outbox sizes, last errors
    (Advanced options: reachable only from a failed setup step, §6.5)
 ```
+- Long lists of related switches are grouped into submenus (Events); long lists of items page (destinations, libraries, detected chats).
+- **Icons.** Action buttons and screen headings show custom emoji from the `TgAndroidIcons` pack: `icon_custom_emoji_id` on buttons, and `<tg-emoji>` with the old emoji as fallback in headings.
+  - Their labels carry no plain emoji.
+  - State marks stay plain emoji.
+  - Custom emoji need Telegram Premium on the bot owner's account; without it they don't show.
+  - If Telegram rejects a message because of them, the bot resends it without icons and stops using them until it reconnects.
+  - Notification posts get none.
+- **Every button is explained.** Every bot screen explains each of its buttons in its text, one line per button, `Label — what it does`. Lists of items or switches get one shared line saying what tapping an item does. Back, Prev and Next need no line.
 - `/status` and `/test` (pick a destination) are shortcuts. `/help` gives a short description and the dashboard path.
 - **Dashboard only:** entering and changing the token, proxy settings, batching values, templates, adding a chat by ID or topic link, diagnostics, disconnect, `[Take over]` for a webhook conflict.
 
 ### 6.4 Access model
 - **Anyone who can open the bot's private chat can manage it** (D5). Telegram enforces the BotFather restriction (F40). The plugin can't check it, so:
   - both setup paths push the restriction (§6.1),
-  - the dashboard's Bot section always shows: "Anyone who can open @bot can manage notifications. Keep it restricted in BotFather."
-- **In groups and channels the bot ignores every command and message.** It only acts on `my_chat_member`, service messages it needs (e.g. supergroup migration), and its own sends.
+  - the dashboard's Bot section always shows: "Anyone who can open this bot can manage notifications. Keep it restricted in BotFather."
+- **In groups and channels the bot ignores every command and message.** It only acts on `my_chat_member`, service messages it needs (e.g. supergroup migration), and its own sends. The one exception is `/start@<bot> …` from a user (F43), used for correlation only (§6.2 step 2). The bot never replies in the group.
 - **"Managers"**: the private chats that used `/menu` or the onboarding in the last 90 days. They are used only to tell people about destination problems (§9.4).
 
 ### 6.5 Fallbacks (Advanced; shown only after the main flow fails)
 **When they appear.** The manual options appear only when one of these holds (`state.setupFailures` keeps the last 7 days):
-- a picker check failed (§6.2 step 2),
+- a chat check failed (§6.2 step 2),
 - a prompt expired unanswered,
 - a topic promotion or creation failed, or the admin chose `Use an existing topic…` (§6.2 step 3),
 - some destination is unhealthy,
@@ -309,16 +326,14 @@ Steps 3–5 happen in **one inline-keyboard wizard message** that gets edited. R
 At that point the dashboard's Destinations section shows "Telegram setup didn't work? **Set up manually**", which opens the manual block under Advanced. The bot shows `[Advanced options]` on its failure messages. The gate only controls what the two UIs show; the API accepts manual adds from admins at any time (§11.2).
 
 **Bot "Advanced options" screen:**
-- `Add to a group` (URL `https://t.me/<bot>?startgroup=add`),
-- `Add to a channel` (URL `https://t.me/<bot>?startchannel&admin=post_messages+edit_messages`),
-- `Use an existing topic`: asks, in the private chat, for the topic's link (long-press the topic → Copy link). It checks that the link's chat is the picked chat, then makes a test send to that `message_thread_id`,
+- `Use an existing topic`: asks with an inline prompt with `[Cancel]`, in the private chat, for the topic's link (long-press the topic → Copy link). It checks that the link's chat is the picked chat, then makes a test send to that `message_thread_id`,
 - `Open dashboard`: the dashboard path, for add by ID.
 
 **Dashboard manual block:** "Add chat by ID": a chat ID, or a topic link, plus a preset. It is checked with `getChat`/`getChatMember` before saving, and the same duplicate rule as §6.2 applies.
 
 **Detected chats.**
 - **When one is recorded:** a `my_chat_member` update (left/kicked → member/administrator) for a **group, supergroup or channel** that isn't a destination, except when:
-  - a picker flow is waiting for a `chat_shared` from `my_chat_member.from.id`, or
+  - the add matches a setup flow of `my_chat_member.from.id` (§6.2 step 2), or
   - the chat becomes a destination within 30 s.
 - **Where it shows:** under "Chats added outside setup (n)" in the bot and in the dashboard's manual block, labelled "Detected: *Title*, set it up?" `[Set up] [Dismiss]`. *Set up* runs the §6.2 step 2 check (without retries), then continues at step 3/4.
 - **When it is removed:** when the chat becomes a destination, is dismissed, or `my_chat_member` reports left or kicked.
@@ -326,8 +341,8 @@ At that point the dashboard's Destinations section shows "Telegram setup didn't 
 
 ### 6.6 Dashboard page after setup
 Sections, top to bottom:
-1. **Status:** connection state (Connected as @x / Token rejected / Another app is polling this bot / Another app set a webhook `[Take over]` / Telegram unreachable, check proxy / Wrong build for this server / Waiting for the previous instance to stop), last errors, counts (pending media, outbox, dropped), notices (backup restored, template flagged, public URL flagged, update check failing, removed libraries in a filter), each with `[Dismiss]`.
-2. **Bot:** @username, the access reminder (§6.4), `[Change token]`, `[Disconnect bot]` (confirm → §10.4).
+1. **Status:** connection state (Connected / Token rejected / Another app is polling this bot / Another app set a webhook `[Take over]` / Telegram unreachable, check proxy / Wrong build for this server / Waiting for the previous instance to stop), last errors, counts (pending media, outbox, dropped), notices (backup restored, template flagged, public URL flagged, update check failing, removed libraries in a filter), each with `[Dismiss]`.
+2. **Bot:** @username (shown only here), the access reminder (§6.4), `[Open in Telegram]`, `[Change token]`, `[Disconnect bot]` (confirm → §10.4).
 3. **Destinations:** a list with health badges (OK / Photos blocked / Needs permissions / Topic missing / Lost) and a **Pause/Resume** switch (`Enabled`). The editor covers event switches with the preset, a library multi-select, and silent groups, plus `[Send test]` `[Check again]` `[Remove]` (with a "Bot leaves the chat" checkbox → `leaveChat`). `[Add destination]` opens `https://t.me/<bot>?start=add`. The "Set up manually" link appears per §6.5.
 4. **Messages:** public URL (pre-filled with a suggestion marked "verify", §8.3) and the toggles in §8.4.
 5. **Advanced** (`<details>`): proxy (§9.1), batching values (§7.4, with the ranges in §10.1), update checks (on/off, mode), custom templates (§8.5), the manual block (§6.5, only when it is unlocked), `[Copy diagnostics]`.
@@ -703,7 +718,7 @@ Templates: TemplateOverride[] = []
 | Section | Contents | Cap → on overflow |
 |---|---|---|
 | `telegram` | `botId`, `botUsername`, `profile` {`setProfile`, `pendingCalls[]`} (the update offset is in memory only, §9.2) | — |
-| `flows` | per private chat: screen, params (incl. `targetChatId`), `wizardMessageId`, `promptMessageId`, `checkingMessageId`, `promptSentAt`, `pickerRequestIds`, `updatedAt` (expires 24 h) | 200 → evict least recently updated |
+| `flows` | per private chat: screen, params (incl. `targetChatId`), `wizardMessageId`, `promptSentAt`, `params.await` (chat), `updatedAt` (expires 24 h) | 200 → evict least recently updated |
 | `managers` | private chat ID → `lastUsedAt` (90 days) | 50 → evict oldest |
 | `detectedChats` | chat ID, title, kind, `detectedAt` | 50 → evict oldest |
 | `setupFailures` | kind, `at` (7 days) | 50 → evict oldest |
@@ -748,7 +763,7 @@ Every eviction increments `status.counters.evictions`.
     - store the new bot ID and username (the in-memory update offset restarts with the supervisor),
     - clear `flows`, `managers`, `detectedChats`, `setupFailures`, `sentMessages`, `fileIdCache` and `telegram.profile`. Queued edits then can't resolve their `targetKey` and go out as new messages (§9.3),
     - set every destination's health to **Lost** ("bot changed: add @new to this chat"). Its outbox entries are held.
-    - Adding the new bot to a destination's chat (through the picker, which matches the existing destination per the duplicate rule in §6.2, or by hand) triggers a re-check, which brings it back to OK.
+    - Adding the new bot to a destination's chat (through the inline add links, which match the existing destination per the duplicate rule in §6.2, or by hand) triggers a re-check, which brings it back to OK.
     - Settings, `pendingMedia`, `openGroups`, `releaseBuffers` and `dedupe` are kept.
 - **Disconnect bot:**
   - clears `botToken` (proxy credentials are kept),
@@ -942,11 +957,11 @@ README.md (setup with screenshots, BotFather restriction, GitHub contact for upd
 - **Poll loop:** no offset on the first poll, offset confirmation afterwards, the best-effort confirmation on graceful stop, and handlers tolerating a redelivered batch.
 - **FlowEngine:**
   - callback data ≤ 64 bytes and versioned,
-  - expired menus and pickers,
-  - `request_id` correlation, `chat_shared` before and after `my_chat_member`,
+  - expired menus and prompts, stale v0.1 reply keyboards,
+  - `my_chat_member` correlation by `from.id` (two admins, adds by others, redelivery, rights re-grant, group `/start@bot`),
+  - events submenus,
   - the duplicate destination rule (non-forum in step 2, forum after the topic is chosen),
   - `Use an existing topic…` recording `topic_not_pickable` and opening the link prompt,
-  - the Checking… message being deleted on success and on failure,
   - the topic promotion path,
   - topic link parsing,
   - detected-chat rules,
@@ -959,7 +974,7 @@ README.md (setup with screenshots, BotFather restriction, GitHub contact for upd
 ### 14.2 Telegram fixtures
 Recorded Bot API JSON for:
 - `my_chat_member` (channel, group, kicked, private block and unblock),
-- `chat_shared`, `getChat` (forum and non-forum, with permissions), `getChatMember` (member, restricted without photos, administrator with and without `can_manage_topics`),
+- `chat_shared` (legacy), `my_chat_member` promotion (member → administrator with `can_manage_topics`) and rights-grant (administrator → administrator) fixtures, `getChat` (forum and non-forum, with permissions), `getChatMember` (member, restricted without photos, administrator with and without `can_manage_topics`),
 - `forum_topic_created`, `createForumTopic`, callback queries,
 - every error in Appendix A.
 
@@ -990,13 +1005,15 @@ They are parsed with Telegram.Bot and passed to `UpdateRouter`, FlowEngine and t
   4. Copy a sample movie into the library and call `POST /Library/Refresh`.
   5. Assert that a `sendPhoto` or `sendMessage` for that movie reaches the stub **within 180 s**.
   6. `POST Destinations {chatId: <second>, preset:"AdminAlerts"}`, then `POST /System/Restart`. Assert that **exactly one** `server.started` message for the second chat reaches the stub within 120 s of the restart. This also exercises the in-process restart path (F4).
+  7. `/start setup` → find the `startchannel` URL button → push `my_chat_member` (channel, left → administrator, from the admin) → press New media → the destination exists, its test message arrived, and the wizard was edited to Done.
 
 ### 14.4 Manual pre-release checklist (real Telegram)
 - **BotFather:** create a new bot and restrict it in BotFather. Record the exact menu path for the README. Verify that:
-  - (a) the native picker can still add the restricted bot to a channel and a group,
+  - (a) the inline add links can still add the restricted bot to a channel and a group,
   - (b) members and subscribers who aren't on the allow-list see its posts,
   - (c) an unlisted user's `/start` produces no update.
-- **Native picker** on Android, iOS and Desktop: channel, group (with and without media permissions for members), forum (General, a created topic, the "Allow topic creation" promotion, an existing topic via link).
+- **Inline add links** on Android, iOS and Desktop: channel, group (with and without media permissions for members), forum (General, a created topic, the "Allow topic creation" promotion, an existing topic via link), and a chat the bot is already in.
+- **Already a member:** does a group receive `/start@bot add` when the bot is already a member (Q10)?
 - **Posters:** different sizes and formats, including a > 10 MB file falling back to text.
 - **Buttons:** with a LAN IP public URL and with a public HTTPS URL.
 - **Conflicts and proxies:** a second app polling with the same token; a webhook set by another app (`[Take over]`); SOCKS5 and HTTP proxies.
@@ -1013,7 +1030,7 @@ Implementation follows test-driven development: write a failing test first for e
 1. BotFather's exact menu path for the access restriction, and the three behaviours in §14.4 (a)–(c).
 2. Does Telegram reject `http://` or private-IP URLs in inline buttons (`BUTTON_URL_INVALID`)? Only TDLib's "no dot" rule is verified. The result decides whether PublicUrl validation also rejects private IPs.
    **Answered (real bot, 2026-10-19):** `http://192.168.1.5:8096/…`, `http://10.0.0.5:8096/…`, `http://jellyfin.lan:8096/…` and `https://jf.example.com/web/#/details?…` are accepted. `http://localhost:8096/…` fails with `Bad Request: inline keyboard button URL 'http://localhost:8096/web/' is invalid: Wrong HTTP URL`. IPv6 literals fail, both `[fd00::1]` and `[2001:4860:4860::8888]`, with `Bad Request: BUTTON_URL_INVALID`. So private IPv4 stays valid, and IPv6 literals are now rejected (§8.3).
-3. What does `request_chat` look like on current clients, including the `chat_is_forum` promotion prompt, and do users see a confirmation before the bot gets admin rights? (Handled either way by the check in §6.2 step 2.)
+3. What does `request_chat` look like on current clients, including the `chat_is_forum` promotion prompt, and do users see a confirmation before the bot gets admin rights? (Handled either way by the check in §6.2 step 2.) **Superseded by rev. 3:** `request_chat` is no longer used.
 4. How should the General topic of a forum be targeted: no `message_thread_id` (current choice) or thread 1?
    **Answered (real bot, 2026-10-19):** no `message_thread_id`. A send without it lands in General; `message_thread_id: 1` fails with `Bad Request: message thread not found`. `ThreadId = 0` stays. Also observed: a bot that is only a plain member of a supergroup can delete its own messages there.
 5. Which exact `Content-Type` does 10.11 serve for embedded `.js`? (Checked by the smoke test.)
@@ -1028,6 +1045,7 @@ Implementation follows test-driven development: write a failing test first for e
    **Answered (owner, from experience running bots):** there is no age limit; a bot can edit its own messages at any time. The 0–24 range of `LateEditHours` stays as a product choice (a late edit is silent, so very old messages shouldn't change unnoticed), not a Telegram constraint.
 9. The exact Bot API descriptions of an HTML parse error and of "can't initiate conversation", recorded into Appendix A and the fixtures. The classifier already matches several variants.
    **Partly answered (real bot, 2026-10-19):** the parse error is `Bad Request: can't parse entities: Can't find end tag corresponding to start tag "b"`, which classifier row 6 matches. "Can't initiate conversation" needs a user who knows the bot but never pressed Start; a user ID the bot has never seen gives `Bad Request: chat not found` instead, which row 2 also treats as Lost.
+10. Does a group receive `/start@bot <payload>` from the adding user after a `startgroup` add, including when the bot is already a member (F43)? If clients don't send it, nothing breaks: the detected-chat rows on the prompt remain.
 
 ---
 
