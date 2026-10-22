@@ -66,6 +66,9 @@ public sealed class TemplateEngine
         _parse = parse;
     }
 
+    /// <summary>Gets the clock the render timeouts run on.</summary>
+    internal TimeProvider Time => _time;
+
     /// <summary>Gets the number of cached parsed templates.</summary>
     internal int CachedCount => _cache.Count;
 

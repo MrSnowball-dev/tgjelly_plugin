@@ -19,6 +19,10 @@ namespace Jellyfin.Plugin.TgJelly.Templates;
 public sealed class TemplateRenderer
 {
     private const string BuiltInLanguage = "en";
+
+    // One render may take the engine's timeout, and fitting a message can take about 50 renders: this bounds the whole fit.
+    private static readonly TimeSpan FitDeadline = TimeSpan.FromSeconds(5);
+
     private static readonly string[] LastResortFields = ["title", "series", "album", "user", "plugin", "task"];
 
     private readonly TemplateEngine _engine;
@@ -160,7 +164,8 @@ public sealed class TemplateRenderer
 
     /// <summary>
     /// Fits a template to both limits. The problem is the first render error, HTML whitelist problem or empty part.
-    /// The digest is sent as text only, so its caption stays empty, as in v0.2.
+    /// The digest is sent as text only, so its caption stays empty, as in v0.2. A fit that runs past
+    /// <see cref="FitDeadline"/> in all fails with "the template took too long".
     /// </summary>
     /// <param name="key">The template key.</param>
     /// <param name="text">The template text.</param>
@@ -169,8 +174,15 @@ public sealed class TemplateRenderer
     /// <returns>The caption and text fits, or the problem.</returns>
     internal (FitResult? Caption, FitResult? Text, TemplateError? Problem) FitBoth(string key, string text, TemplateModel values, string language)
     {
+        var time = _engine.Time;
+        var started = time.GetTimestamp();
         TemplateRenderResult Render(IReadOnlyDictionary<string, object?> variant)
-            => _engine.Render(key, text, variant, strict: false, language);
+        {
+            var result = _engine.Render(key, text, variant, strict: false, language);
+            return time.GetElapsedTime(started) > FitDeadline
+                ? new TemplateRenderResult(null, new TemplateError(_strings.Get("templates.tooSlow"), null, null))
+                : result;
+        }
 
         var caption = new FitResult(string.Empty, false, null);
         if (key != TemplateKeys.Digest)
@@ -207,7 +219,7 @@ public sealed class TemplateRenderer
 
     private RenderedText LastResort(string key, TemplateModel? values)
     {
-        var label = _strings.Get(key == TemplateKeys.Digest ? "templates.digestLabel" : "dest.event." + key);
+        var label = TemplateKeys.Label(_strings, key);
         var html = "<b>" + HtmlText.Escape(label) + "</b>";
         var name = values is null
             ? null

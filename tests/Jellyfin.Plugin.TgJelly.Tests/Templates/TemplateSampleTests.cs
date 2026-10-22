@@ -49,6 +49,37 @@ public sealed class TemplateSampleTests : IDisposable
         Assert.Contains(update.Buttons.SelectMany(r => r), b => b.Text == "Release notes" && b.Url.StartsWith("https://github.com/", StringComparison.Ordinal));
     }
 
+    [Theory]
+    [InlineData("security.login_failed")]
+    [InlineData("server.started")]
+    [InlineData("server.update_available")]
+    [InlineData("media.digest")]
+    public void AlertsAndDigest_NoOpenOrProviderButtons(string key)
+    {
+        // Real alerts and digests never carry these rows, so neither does their preview or test send.
+        var buttons = _sample.Build(key, "x").Buttons.SelectMany(r => r).Select(b => b.Text).ToList();
+
+        Assert.DoesNotContain("Open in Jellyfin", buttons);
+        Assert.DoesNotContain("IMDb", buttons);
+        Assert.DoesNotContain("TMDb", buttons);
+    }
+
+    [Fact]
+    public void AlertWithoutReleaseNotes_HasNoButtons()
+    {
+        Assert.Empty(_sample.Build("security.login_failed", "x").Buttons);
+        Assert.Empty(_sample.Build("server.started", "x").Buttons);
+        Assert.Empty(_sample.Build("media.digest", "x").Buttons);
+        Assert.Equal(["Release notes"], _sample.Build("server.update_available", "x").Buttons.SelectMany(r => r).Select(b => b.Text));
+    }
+
+    [Fact]
+    public void OtherMedia_OpenButOnlyMovieAndEpisodesGetProviders()
+    {
+        Assert.Equal(["Open in Jellyfin"], _sample.Build("media.album", "x").Buttons.SelectMany(r => r).Select(b => b.Text));
+        Assert.Equal(["Open in Jellyfin"], _sample.Build("media.book", "x").Buttons.SelectMany(r => r).Select(b => b.Text));
+    }
+
     [Fact]
     public void NoPublicUrl_NoOpenButton()
     {

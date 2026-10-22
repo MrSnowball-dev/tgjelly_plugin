@@ -100,7 +100,7 @@ public sealed class NoticeBuilder
             }
 
             var id = "template:" + key + ":" + templateFlag.At.ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture);
-            var label = _strings.Get("dest.event." + key);
+            var label = TemplateKeys.Label(_strings, key);
             var text = templateFlag.Kind == "error"
                 ? _strings.Get("notice.templateError", ("event", label), ("error", templateFlag.Error))
                 : _strings.Get("notice.templateTruncated", ("event", label));

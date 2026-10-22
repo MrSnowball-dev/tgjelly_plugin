@@ -65,13 +65,16 @@ public sealed class TemplateSample
     {
         var rows = new List<IReadOnlyList<OutboxButton>>();
         var options = config.Message;
-        if (options.ShowOpenInJellyfin && LinkBuilder.Normalize(config.PublicUrl) is { } root)
+
+        // As sent: media messages carry the Open and provider rows; alerts and the digest have none of them.
+        var media = TemplateFieldCatalog.IsMedia(eventKey) && eventKey != TemplateKeys.Digest;
+        if (media && options.ShowOpenInJellyfin && LinkBuilder.Normalize(config.PublicUrl) is { } root)
         {
             rows.Add([new OutboxButton { Text = _strings.Get("button.open"), Url = root + "/web/" }]);
         }
 
         var sample = TemplateFieldCatalog.SampleFull(eventKey);
-        if (options.ShowProviderLinks && eventKey is "media.movie" or "media.episodes")
+        if (media && options.ShowProviderLinks && eventKey is "media.movie" or "media.episodes")
         {
             var row = new List<OutboxButton>(2);
             if (sample.TryGetValue("imdb_id", out var imdb) && imdb is string imdbId && imdbId.Length > 0)

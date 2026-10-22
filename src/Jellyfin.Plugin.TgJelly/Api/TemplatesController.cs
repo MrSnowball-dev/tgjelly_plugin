@@ -28,8 +28,6 @@ namespace Jellyfin.Plugin.TgJelly.Api;
 public class TemplatesController : ControllerBase
 {
     private const int MaxText = 16384;
-    private const int CaptionLimit = 1024;
-    private const int MessageLimit = 4096;
 
     private readonly SettingsStore _settings;
     private readonly StateStore _state;
@@ -262,13 +260,16 @@ public class TemplatesController : ControllerBase
 
     private (TemplateValidationDto Dto, SampleMessage? Sample) Check(string key, string text)
     {
-        var config = _settings.Current;
-        var poster = key != TemplateKeys.Digest && TemplateFieldCatalog.IsMedia(key) && config.Message.ShowPoster;
-        var limit = poster ? CaptionLimit : MessageLimit;
+        // The sample is the message as sent: toggled by the message settings and fitted. Its poster flag, limit and
+        // unfitted length are what the dashboard shows, so the length line matches the preview.
+        var sample = _sample.Build(key, text);
+        var poster = sample.Poster;
+        var limit = sample.Limit;
+        var length = sample.Length;
         var parse = _engine.Parse(text);
         if (parse.Count > 0)
         {
-            return (new TemplateValidationDto { Errors = [.. parse.Select(ToDto)], Limit = limit, Caption = poster, Poster = poster }, null);
+            return (new TemplateValidationDto { Errors = [.. parse.Select(ToDto)], Limit = limit, Caption = sample.Caption, Poster = poster }, null);
         }
 
         var errors = new List<TemplateErrorDto>();
@@ -285,7 +286,6 @@ public class TemplatesController : ControllerBase
 
         var warnings = new List<string>();
         var preview = full.Output ?? string.Empty;
-        var length = HtmlText.PlainLength(preview);
         if ((full.Ok && IsEmpty(full.Output)) || (sparse.Ok && IsEmpty(sparse.Output)))
         {
             // At send time an empty result keeps the built-in template and flags the override.
@@ -295,11 +295,11 @@ public class TemplatesController : ControllerBase
         if (full.Ok)
         {
             errors.AddRange(TelegramHtmlValidator.Validate(preview).Select(p => new TemplateErrorDto { Message = p.Describe(_strings) }));
-            if (length > MessageLimit)
+            if (length > TemplateFitter.TextLimit)
             {
-                errors.Add(new TemplateErrorDto { Message = _strings.Get("templates.tooLong", ("length", length), ("limit", MessageLimit)) });
+                errors.Add(new TemplateErrorDto { Message = _strings.Get("templates.tooLong", ("length", length), ("limit", TemplateFitter.TextLimit)) });
             }
-            else if (poster && length > CaptionLimit)
+            else if (sample.Caption && length > limit)
             {
                 warnings.Add(_strings.Get("templates.willShorten"));
             }
@@ -307,10 +307,9 @@ public class TemplatesController : ControllerBase
 
         if (errors.Count > 0)
         {
-            return (new TemplateValidationDto { Errors = errors, Warnings = warnings, Preview = preview, Length = length, Limit = limit, Caption = poster, Poster = poster }, null);
+            return (new TemplateValidationDto { Errors = errors, Warnings = warnings, Preview = preview, Length = length, Limit = limit, Caption = sample.Caption, Poster = poster }, null);
         }
 
-        var sample = _sample.Build(key, text);
         var dto = new TemplateValidationDto
         {
             // An empty result is only a warning (the built-in template takes over at send time); the test send still refuses it.
@@ -318,10 +317,10 @@ public class TemplatesController : ControllerBase
             Warnings = warnings,
             Preview = preview,
             Length = length,
-            Limit = sample.Limit,
+            Limit = limit,
             Html = sample.Html ?? string.Empty,
             Caption = sample.Caption,
-            Poster = sample.Poster,
+            Poster = poster,
             Buttons = [.. sample.Buttons.Select(row => (IReadOnlyList<TemplateButtonDto>)[.. row.Select(b => new TemplateButtonDto { Text = b.Text, Url = b.Url })])],
         };
         return (dto, sample);
@@ -338,7 +337,7 @@ public class TemplatesController : ControllerBase
             return new TemplateItemDto
             {
                 EventKey = key,
-                Label = _strings.Get(key == TemplateKeys.Digest ? "templates.digestLabel" : "dest.event." + key),
+                Label = TemplateKeys.Label(_strings, key),
                 Media = TemplateFieldCatalog.IsMedia(key) && key != TemplateKeys.Digest,
                 Text = template?.Text ?? builtIn,
                 BuiltIn = builtIn,

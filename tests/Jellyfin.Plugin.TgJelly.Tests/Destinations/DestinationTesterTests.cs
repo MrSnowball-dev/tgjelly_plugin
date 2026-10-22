@@ -113,6 +113,40 @@ public sealed class DestinationTesterTests : IDisposable
     }
 
     [Fact]
+    public async Task SendSample_FirstPhotoRefusal_MarksPhotosBlockedAndSendsTheTextOnce()
+    {
+        // The chat check passes, but Telegram refuses the photo itself.
+        var d = _h.AddDestination(-1001);
+        _h.Api.On("sendPhoto", _ => FakeBotApi.Error(400, "Bad Request: not enough rights to send photos to the chat"));
+
+        var result = await _tester.SendSampleAsync(d, Sample(poster: true), TestContext.Current.CancellationToken);
+
+        Assert.True(result.Sent);
+        Assert.Null(result.Error);
+        Assert.Single(_h.Api.CallsTo("sendPhoto"));
+        var body = Assert.Single(_h.Api.CallsTo("sendMessage")).Body;
+        Assert.Equal("<b>text</b>", (string)body["text"]!);
+        Assert.Contains("Open", body["reply_markup"]!.ToString(), StringComparison.Ordinal);
+        Assert.True(_health.Get(d.Id).PhotosBlocked);
+        Assert.True(result.Health.PhotosBlocked);
+        Assert.Equal(HealthStatus.Ok, result.Health.Status);
+    }
+
+    [Fact]
+    public async Task SendSample_PhotoRefusedAndTextFails_ReportsTheTextError()
+    {
+        var d = _h.AddDestination(-1001);
+        _h.Api.On("sendPhoto", _ => FakeBotApi.Error(400, "Bad Request: not enough rights to send photos to the chat"));
+        _h.Api.On("sendMessage", _ => FakeBotApi.Error(403, "Forbidden: bot was kicked from the supergroup chat"));
+
+        var result = await _tester.SendSampleAsync(d, Sample(poster: true), TestContext.Current.CancellationToken);
+
+        Assert.False(result.Sent);
+        Assert.Single(_h.Api.CallsTo("sendMessage"));
+        Assert.Equal(HealthStatus.Lost, result.Health.Status);
+    }
+
+    [Fact]
     public async Task SendSample_NoPoster_SendsText_NotSilentForOtherGroups()
     {
         var d = _h.AddDestination(-1001);

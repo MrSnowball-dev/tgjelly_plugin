@@ -240,6 +240,48 @@ public sealed class TemplatesControllerTests : IAsyncLifetime
     }
 
     [Fact]
+    public void Validate_Length_IsTheToggledRender()
+    {
+        // The length line describes the preview, which the message toggles shape.
+        _h.Settings.Update(null, c =>
+        {
+            c.Message.ShowOverview = false;
+            c.Message.ShowRatingGenres = false;
+        });
+        const string Text = "<b>{{ title }}</b> {{ overview }} {{ rating_text }} {{ genres | array.join \", \" }}";
+        var toggled = new System.Collections.Generic.Dictionary<string, object?>(TemplateFieldCatalog.SampleFull("media.movie"))
+        {
+            ["overview"] = null,
+            ["rating"] = null,
+            ["rating_text"] = null,
+            ["genres"] = new System.Collections.Generic.List<object?>(),
+        };
+        var engine = new TemplateEngine(_h.Time);
+        var expected = HtmlTextLength(engine.Render("media.movie", Text, toggled, strict: false).Output!);
+        var untoggled = HtmlTextLength(engine.Render("media.movie", Text, TemplateFieldCatalog.SampleFull("media.movie"), strict: false).Output!);
+
+        var dto = Validate("media.movie", Text);
+
+        Assert.Empty(dto.Errors);
+        Assert.NotEqual(untoggled, expected);
+        Assert.Equal(expected, dto.Length);
+        Assert.Equal(expected, HtmlTextLength(dto.Html));
+    }
+
+    [Fact]
+    public void Validate_PosterWarning_UsesTheToggledLength()
+    {
+        // Untoggled the overview pushes the text over the caption limit; with Show overview off it fits.
+        _h.Settings.Update(null, c => c.Message.ShowOverview = false);
+
+        var dto = Validate("media.movie", "{{ title }} {{ overview }}" + new string('a', 990));
+
+        Assert.Empty(dto.Errors);
+        Assert.Empty(dto.Warnings);
+        Assert.True(dto.Length <= 1024);
+    }
+
+    [Fact]
     public void Validate_ShowPosterOff_TextLimit()
     {
         _h.Settings.Update(null, c => c.Message.ShowPoster = false);

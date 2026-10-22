@@ -73,9 +73,18 @@ public sealed class DestinationTester
         var buttons = sample.Buttons.Count == 0
             ? null
             : new InlineKeyboardMarkup(sample.Buttons.Select(row => row.Select(b => InlineKeyboardButton.WithUrl(b.Text, b.Url))));
+        Task SendText(ITelegramSender sender, CancellationToken token)
+            => sender.SendTextAsync(new OutgoingText(destination.ChatId, destination.ThreadId, sample.TextHtml ?? sample.Html ?? string.Empty, ParseMode.Html, buttons, null, silent), token);
+
         async Task Send(ITelegramSender sender, CancellationToken token)
         {
-            if (sample.Poster && !_health.Get(destination.Id).PhotosBlocked)
+            if (!sample.Poster || _health.Get(destination.Id).PhotosBlocked)
+            {
+                await SendText(sender, token).ConfigureAwait(false);
+                return;
+            }
+
+            try
             {
                 var stream = typeof(DestinationTester).Assembly.GetManifestResourceStream(PosterResource)
                     ?? throw new InvalidOperationException("The sample poster is missing from the plugin.");
@@ -85,10 +94,11 @@ public sealed class DestinationTester
                     await sender.SendPhotoAsync(photo, token).ConfigureAwait(false);
                 }
             }
-            else
+            catch (Exception ex) when (ex is not OperationCanceledException && TelegramErrorClassifier.ClassifyDelivery(ex).Kind == DeliveryErrorKind.PhotosBlocked)
             {
-                var text = new OutgoingText(destination.ChatId, destination.ThreadId, sample.TextHtml ?? sample.Html ?? string.Empty, ParseMode.Html, buttons, null, silent);
-                await sender.SendTextAsync(text, token).ConfigureAwait(false);
+                // A first-time photo refusal, as delivery handles it: remember it and send the text once instead.
+                _health.SetPhotosBlocked(destination.Id);
+                await SendText(sender, token).ConfigureAwait(false);
             }
         }
 

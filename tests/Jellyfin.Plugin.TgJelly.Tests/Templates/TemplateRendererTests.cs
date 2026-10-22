@@ -1,5 +1,6 @@
 using System;
 using System.Linq;
+using System.Threading;
 using Jellyfin.Plugin.TgJelly.Configuration;
 using Jellyfin.Plugin.TgJelly.Library;
 using Jellyfin.Plugin.TgJelly.Rendering;
@@ -202,6 +203,50 @@ public sealed class TemplateRendererTests : IDisposable
     }
 
     [Fact]
+    public void EditedPastTheFitDeadline_FallsBackToBuiltInAndFlagsTooSlow()
+    {
+        // Each render takes a second on the stepping clock. The built-in fits in 2 renders; this one needs many,
+        // because its long literal never fits a caption and the fitter keeps trying shorter overviews.
+        var engine = new TemplateEngine(new SteppingTime(TimeSpan.FromSeconds(1)));
+        var builtIn = Renderer(engine).Render(Movie(), hasPoster: true)!;
+        Set("{{ overview }}" + new string('a', 2000));
+
+        var result = Renderer(engine).Render(Movie(), hasPoster: true)!;
+
+        Assert.Equal(builtIn, result);
+        Assert.Null(result.TemplateKey);
+        var flag = StoredFlag()!;
+        Assert.Equal("error", flag.Kind);
+        Assert.Equal(_h.Strings.Get("templates.tooSlow"), flag.Error);
+    }
+
+    [Fact]
+    public void EditedWithinTheFitDeadline_IsUsed()
+    {
+        var engine = new TemplateEngine(new SteppingTime(TimeSpan.FromSeconds(1)));
+        Set("<b>New: {{ title }}</b>");
+
+        var result = Renderer(engine).Render(Movie(), hasPoster: true)!;
+
+        Assert.Equal(Key, result.TemplateKey);
+        Assert.Null(StoredFlag());
+    }
+
+    [Fact]
+    public void BuiltInPastTheFitDeadline_LastResortText()
+    {
+        // A 3000-character overview makes the built-in search for the caption's overview length: many renders.
+        var engine = new TemplateEngine(new SteppingTime(TimeSpan.FromSeconds(1)));
+
+        var result = Renderer(engine).Render(Movie(overview: new string('o', 3000)), hasPoster: true)!;
+
+        Assert.Equal("<b>Media: Movies</b>\nArrival", result.Text);
+        Assert.Null(result.TemplateKey);
+        var warning = Assert.Single(_logger.Entries, e => e.Level == LogLevel.Warning);
+        Assert.Contains(_h.Strings.Get("templates.tooSlow"), warning.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void ThrowingModelBuilder_LastResortLabelOnly()
     {
         var model = Movie();
@@ -270,4 +315,14 @@ public sealed class TemplateRendererTests : IDisposable
         => Assert.Equal(
             SettingsUpdateStatus.Saved,
             _h.Settings.Update(null, c => c.Templates = [new TemplateOverride { EventKey = Key, Enabled = enabled, Text = text }]).Status);
+
+    // A clock that moves on each time it is read, so a fit that renders many times runs out of time deterministically.
+    private sealed class SteppingTime(TimeSpan step) : TimeProvider
+    {
+        private long _ticks;
+
+        public override long TimestampFrequency => TimeSpan.TicksPerSecond;
+
+        public override long GetTimestamp() => Interlocked.Add(ref _ticks, step.Ticks);
+    }
 }
