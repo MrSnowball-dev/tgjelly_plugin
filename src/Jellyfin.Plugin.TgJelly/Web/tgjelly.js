@@ -8,7 +8,10 @@
 //
 // Sibling modules are imported by the URL Jellyfin serves them under (plan 8); tests/web/jellyfin-resolve.mjs maps it
 // to the file for Node.
-import { esc, stateLabel, card, row, actionButton, inlineConfirm, notice, emptyState, textField } from './configurationpage?name=tgjelly-ui.js';
+import {
+    esc, stateLabel, card, row, actionButton, inlineConfirm, notice, emptyState, textField, switchControl, selectField, numberField,
+} from './configurationpage?name=tgjelly-ui.js';
+import { createAutosave, CONFLICT_KEY } from './configurationpage?name=tgjelly-autosave.js';
 
 // esc lives in tgjelly-ui.js; it stays a named export here for the page's callers and tests.
 export { esc };
@@ -386,52 +389,47 @@ function telegramLink(url, label) {
 }
 
 /**
- * The proxy form (spec §6.6 item 5, §9.1): used under Advanced and in the "Can't reach Telegram?" panel.
+ * The proxy card (spec §6.6 item 5, §9.1; design §6.1): under Advanced, and inside the "Can't reach Telegram?" panel.
+ * Its fields auto-save together, as one save keyed 'proxy', when the focus leaves the card (every proxy save restarts
+ * the bot session); so they all carry data-tgj-save="proxy", and the card has one cue, beside the mode.
  * @param {object | null} settings the SettingsDto (null until it loads)
  * @param {Record<string, string>} S
- * @param {{ form?: { local: object, changed: string[] }, proxyErrors?: string[], saving?: boolean }} ui form is the
- *   editor state: local.Mode and local.Url. The proxy username and password are not part of it.
+ * @param {{ form?: { local: object } }} ui form is the editor state: local.Mode and local.Url. The proxy username and
+ *   password are not part of it.
+ * @param {{ nested?: boolean }} [options] nested: inside another card (the connect panel), so no card of its own
  * @returns {string} HTML
  */
-export function renderProxyForm(settings, S, ui) {
+export function renderProxyForm(settings, S, ui, { nested = false } = {}) {
     if (!settings || !ui.form) {
         return '';
     }
 
     const local = ui.form.local;
-    const changed = path => (ui.form.changed.includes(path) ? ' tgj-changed' : '');
-    const modes = [
-        ['System', t(S, 'web.proxy.modeSystem')],
-        ['None', t(S, 'web.proxy.modeNone')],
-        ['Http', t(S, 'web.proxy.modeHttp')],
-        ['Socks5', t(S, 'web.proxy.modeSocks5')],
-    ];
-    const options = modes.map(([value, label]) => `<option value="${value}"${local.Mode === value ? ' selected' : ''}>${label}</option>`);
+    const modes = ['System', 'None', 'Http', 'Socks5'].map(value => ({ value, label: text(S, PROXY_MODE_LABELS[value]) }));
+    const save = { 'data-tgj-save': 'proxy', autocomplete: 'off' };
     // Username and password are never written into the HTML (spec §10.2): the controller puts typed text back into the
     // inputs after a render.
-    const field = (name, path, label, saved, type, value) => `<div class="inputContainer${changed(path)}">`
-        + `<input is="emby-input" type="${type}" label="${label}" autocomplete="off" data-tgj-input="${name}"`
-        + `${saved ? ` placeholder="${t(S, 'web.proxy.saved')}"` : ''}${value === undefined ? '' : ` value="${esc(value)}"`} /></div>`;
-    const withAddress = local.Mode === 'Http' || local.Mode === 'Socks5';
-    const parts = [
-        `<h3>${t(S, 'web.proxy.title')}</h3>`,
-        `<div class="selectContainer${changed('Mode')}"><select is="emby-select" class="emby-select-withcolor emby-select" `
-        + `label="${t(S, 'web.proxy.mode')}" data-tgj-input="proxyMode">${options.join('')}</select></div>`,
-    ];
-    if (withAddress) {
-        parts.push(field('proxyUrl', 'Url', t(S, 'web.proxy.url'), false, 'text', local.Url ?? ''));
+    const field = (input, labelKey, type, value, placeholder = '') => row({
+        label: text(S, labelKey),
+        control: textField({ input, value, type, placeholder, attrs: { ...save, 'aria-label': text(S, labelKey) } }),
+    });
+    const rows = [row({
+        label: text(S, 'web.proxy.mode'),
+        cueKey: 'proxy',
+        control: selectField({ input: 'proxyMode', value: local.Mode, options: modes, attrs: { 'data-tgj-save': 'proxy', 'aria-label': text(S, 'web.proxy.mode') } }),
+    })];
+    if (local.Mode === 'Http' || local.Mode === 'Socks5') {
+        rows.push(field('proxyUrl', 'web.proxy.url', 'text', local.Url ?? ''));
     }
 
-    parts.push(field('proxyUsername', 'Username', t(S, 'web.proxy.username'), settings.HasProxyUsername, 'text'));
-    parts.push(field('proxyPassword', 'Password', t(S, 'web.proxy.password'), settings.HasProxyPassword, 'password'));
-
-    for (const message of ui.proxyErrors ?? []) {
-        parts.push(`<p class="tgj-error">${message}</p>`);
-    }
-
-    parts.push(button(t(S, 'web.proxy.save'), 'saveProxy', { primary: true, disabled: ui.saving }));
-    return `<div class="verticalSection tgj-proxy-form">${parts.join('')}</div>`;
+    rows.push(field('proxyUsername', 'web.proxy.username', 'text', '', settings.HasProxyUsername ? text(S, 'web.proxy.saved') : ''));
+    rows.push(field('proxyPassword', 'web.proxy.password', 'password', '', settings.HasProxyPassword ? text(S, 'web.proxy.saved') : ''));
+    return nested
+        ? `<div class="tgj-proxy-form"><h3 class="tgj-subtitle">${t(S, 'web.proxy.title')}</h3>${rows.join('')}</div>`
+        : card({ title: text(S, 'web.proxy.title'), body: rows.join(''), extraClass: 'tgj-proxy-form' });
 }
+
+const PROXY_MODE_LABELS = { System: 'web.proxy.modeSystem', None: 'web.proxy.modeNone', Http: 'web.proxy.modeHttp', Socks5: 'web.proxy.modeSocks5' };
 
 /**
  * The token form (spec §6.1): a password input that is never pre-filled, the two notes for an existing bot, the
@@ -509,7 +507,7 @@ export function renderConnect(ui, S, links, settings = null) {
 
     if (ui.unreachable) {
         parts.push(`<div class="tgj-unreachable"><h3>${t(S, 'web.connect.unreachableTitle')}</h3>`
-            + `<p class="tgj-row-hint">${t(S, 'web.connect.unreachableHint')}</p>${renderProxyForm(settings, S, ui.proxy ?? {})}</div>`);
+            + `<p class="tgj-row-hint">${t(S, 'web.connect.unreachableHint')}</p>${renderProxyForm(settings, S, ui.proxy ?? {}, { nested: true })}</div>`);
     }
 
     return card({ title, body: parts.join('') });
@@ -783,15 +781,12 @@ export function renderDestinations(dto, libraries, links, S, ui) {
 }
 
 
-/** A preset select for the manual block; data is the extra attribute text that says which control it is. */
-function presetSelect(S, input, selected, extra = '') {
-    const options = PRESETS.filter(p => p !== 'Custom').map(p => `<option value="${p}"${selected === p ? ' selected' : ''}>${t(S, `dest.preset.${p}`)}</option>`);
-    return `<div class="selectContainer"><select is="emby-select" class="emby-select-withcolor emby-select" label="${t(S, 'web.dest.preset')}" `
-        + `data-tgj-input="${input}"${extra}>${options.join('')}</select></div>`;
-}
+/** The preset choices for the manual block: every preset but Custom. */
+const presetOptions = S => PRESETS.filter(p => p !== 'Custom').map(p => ({ value: p, label: text(S, `dest.preset.${p}`) }));
 
 /**
- * The manual block under Advanced (spec §6.5): "Add chat by ID" and the detected chats. Only when the gate is unlocked.
+ * The manual card under Advanced (spec §6.5): "Add chat by ID" and the detected chats. Only when the gate is unlocked.
+ * These are actions (Add, Set up, Dismiss), not settings: nothing here auto-saves.
  * @param {object | null} dto the DestinationsDto
  * @param {Record<string, string>} S
  * @param {{ input?: string, preset?: string, result?: string, detectedPresets?: Record<string, string>, busy?: boolean }} ui
@@ -803,35 +798,47 @@ export function renderManual(dto, S, ui) {
         return '';
     }
 
-    const parts = [`<h2 class="sectionTitle">${t(S, 'web.manual.title')}</h2>`,
-        `<div class="inputContainer"><input is="emby-input" type="text" label="${t(S, 'web.manual.label')}" autocomplete="off" `
-        + `data-tgj-input="manualInput" value="${esc(ui.input ?? '')}" /></div>`,
-        presetSelect(S, 'manualPreset', ui.preset ?? 'Everything'),
-        `<div>${button(t(S, 'web.manual.add'), 'manualAdd', { primary: true })}</div>`];
+    const parts = [
+        row({
+            label: text(S, 'web.manual.label'),
+            extraClass: 'tgj-row--stack',
+            control: textField({ input: 'manualInput', value: ui.input ?? '', attrs: { autocomplete: 'off', 'aria-label': text(S, 'web.manual.label') } }),
+        }),
+        row({
+            label: text(S, 'web.dest.preset'),
+            control: selectField({ input: 'manualPreset', value: ui.preset ?? 'Everything', options: presetOptions(S), attrs: { 'aria-label': text(S, 'web.dest.preset') } }),
+        }),
+        `<div class="tgj-actions">${actionButton({ label: text(S, 'web.manual.add'), act: 'manualAdd', kind: 'primary' })}</div>`,
+    ];
     if (ui.result) {
         parts.push(`<div class="tgj-manual-result">${ui.result}</div>`);
     }
 
     const detected = dto.DetectedChats ?? [];
     if (detected.length > 0) {
-        parts.push(`<h3>${t(S, 'detected.title')}</h3>`);
+        parts.push(`<h3 class="tgj-subtitle">${t(S, 'detected.title')}</h3>`);
         for (const chat of detected) {
             const id = String(chat.ChatId);
-            parts.push(`<div class="tgj-detected"><p>${t(S, 'detected.line', { title: chat.Title })}</p>`
-                + presetSelect(S, 'detectedPreset', (ui.detectedPresets ?? {})[id] ?? 'Everything', ` data-tgj-id="${esc(id)}"`)
-                + `<div>${button(t(S, 'web.manual.setUp'), 'detectedSetUp', { primary: true, id })}`
-                + `${button(t(S, 'web.manual.dismiss'), 'detectedDismiss', { id })}</div></div>`);
+            parts.push(row({
+                label: text(S, 'detected.line', { title: chat.Title }),
+                extraClass: 'tgj-detected',
+                control: selectField({
+                    input: 'detectedPreset',
+                    value: (ui.detectedPresets ?? {})[id] ?? 'Everything',
+                    options: presetOptions(S),
+                    attrs: { 'data-tgj-id': id, 'aria-label': text(S, 'web.dest.preset') },
+                })
+                    + actionButton({ label: text(S, 'web.manual.setUp'), act: 'detectedSetUp', kind: 'primary', id })
+                    + actionButton({ label: text(S, 'web.manual.dismiss'), act: 'detectedDismiss', id }),
+            }));
         }
     }
 
-    return `<div class="verticalSection">${parts.join('')}</div>`;
+    return card({ title: text(S, 'web.manual.title'), body: parts.join('') });
 }
-
 
 const MESSAGE_TOGGLES = ['ShowPoster', 'ShowOverview', 'ShowRatingGenres', 'ShowOpenInJellyfin', 'ShowProviderLinks', 'AnnounceUpgrades'];
 const UPDATE_MODES = ['SameMajor', 'AnyNewer'];
-const SAVE_LABELS = { messages: 'web.messages.save', batching: 'web.batching.save', updates: 'web.updates.save' };
-const SETTINGS_SECTIONS = ['messages', 'batching', 'updates'];
 
 /** The batching fields with their allowed ranges (spec §10.1) and the strings that label and describe them. */
 const BATCHING_FIELDS = [
@@ -842,15 +849,6 @@ const BATCHING_FIELDS = [
     { key: 'LateEditHours', min: 0, max: 24, label: 'web.batching.lateEdit.label', hint: 'web.batching.lateEdit.hint' },
     { key: 'ReadyTimeoutMinutes', min: 1, max: 120, label: 'web.batching.readyTimeout.label', hint: 'web.batching.readyTimeout.hint' },
 ];
-
-/** Which section shows an error for a settings field path ('' when none of the three does). */
-function settingsSectionOf(field) {
-    if (field === 'PublicUrl' || String(field).startsWith('Message.')) {
-        return 'messages';
-    }
-
-    return String(field).startsWith('Batching.') ? 'batching' : String(field).startsWith('UpdateCheck.') ? 'updates' : '';
-}
 
 /**
  * The settings editor's data from a SettingsDto: the fields PUT Settings takes. Mode may arrive as a name or a number.
@@ -869,32 +867,42 @@ export function settingsFormData(settings) {
     };
 }
 
-/** The top-level settings fields each section owns (spec §6.6): the paths its Save sends from the form. */
-const SECTION_FIELDS = { messages: ['PublicUrl', 'Message'], batching: ['Batching'], updates: ['UpdateCheck'] };
+/** The value at a dotted path ('Message.ShowPoster') of a nested object; undefined when a part is missing. */
+function pathValue(obj, path) {
+    return path.split('.').reduce((node, part) => (isPlainObject(node) ? node[part] : undefined), obj);
+}
 
-/** Copies the fields one section owns from source onto a copy of target (both settings form data). */
-function overlaySection(target, source, section) {
+/** A copy of target with the value at each dotted path taken from source (both settings form data). */
+function overlayPaths(target, source, paths) {
     const out = structuredClone(target);
-    for (const field of SECTION_FIELDS[section]) {
-        out[field] = structuredClone(source[field]);
+    for (const path of paths) {
+        const parts = path.split('.');
+        let node = out;
+        for (const part of parts.slice(0, -1)) {
+            node = node[part] = isPlainObject(node[part]) ? node[part] : {};
+        }
+
+        node[parts.at(-1)] = structuredClone(pathValue(source, path));
     }
 
     return out;
 }
 
 /**
- * The PUT Settings body for one section's Save: that section's fields from the form's values laid over the saved ones
- * (the form's base), so edits waiting in the other sections are not sent. Also the client-side errors that stop it
- * (a batching value that isn't a whole number). Ranges are checked by the server.
+ * The PUT Settings body for an auto-save: the form's values at the given dotted paths (the field that changed) laid
+ * over the saved ones (the form's base), so edits still waiting in other fields are not sent with it. Also the
+ * client-side errors that stop it (a batching value that isn't a whole number); see batchingError for the ranges.
  * @param {{ base: object, local: object }} form
- * @param {string} section messages | batching | updates
- * @returns {{ body: object | null, errors: { Field: string, Html: string }[] }}
+ * @param {string[]} paths e.g. ['Message.ShowPoster']
+ * @param {number} revision the Revision the page last saw (ExpectedRevision)
+ * @param {Record<string, string>} S
+ * @returns {{ body: object | null, errors: { Field: string, Message: string }[] }} Message is plain text
  */
-export function settingsRequest(form, section, revision, S) {
-    const data = overlaySection(form.base, form.local, section);
-    const errors = section !== 'batching' ? [] : BATCHING_FIELDS
+export function settingsRequest(form, paths, revision, S) {
+    const data = overlayPaths(form.base, form.local, paths);
+    const errors = BATCHING_FIELDS
         .filter(f => !Number.isInteger(data.Batching[f.key]))
-        .map(f => ({ Field: `Batching.${f.key}`, Html: t(S, 'web.settings.notNumber') }));
+        .map(f => ({ Field: `Batching.${f.key}`, Message: text(S, 'web.settings.notNumber') }));
     return errors.length > 0
         ? { body: null, errors }
         : {
@@ -909,25 +917,55 @@ export function settingsRequest(form, section, revision, S) {
         };
 }
 
-/** The shared pieces of the three settings sections: highlight, error lines under a field, and the section's own errors. */
-function settingsHelpers(ui, section) {
-    const errors = ui.errors ?? [];
-    const line = e => `<p class="tgj-error">${e.Html ?? esc(e.Message)}</p>`;
-    return {
-        changed: path => ((ui.form.changed ?? []).includes(path) ? ' tgj-changed' : ''),
-        fieldErrors: path => errors.filter(e => e.Field === path).map(line).join(''),
-        // An error for a field this section doesn't show goes under the Save the user pressed.
-        general: () => (ui.section === section ? errors.filter(e => settingsSectionOf(e.Field) !== section).map(line).join('') : ''),
-        save: S => button(t(S, SAVE_LABELS[section]), 'saveSettings', { primary: true, disabled: ui.saving, id: section }),
-    };
+/**
+ * Whether a public URL can be used for the "Open in Jellyfin" buttons: a port of the server's PublicUrlRules.IsValid
+ * (an absolute http or https URL whose host contains a dot and is not an IPv6 literal). Empty text is valid: it turns
+ * the buttons off. The server saves any string, so the page checks before it saves (design §6.3).
+ * @param {unknown} value
+ * @returns {boolean}
+ */
+export function validatePublicUrl(value) {
+    const url = String(value ?? '').trim();
+    if (url === '') {
+        return true;
+    }
+
+    if (!/^https?:\/\//i.test(url)) {
+        return false;
+    }
+
+    let parsed;
+    try {
+        parsed = new URL(url);
+    } catch {
+        return false;
+    }
+
+    return (parsed.protocol === 'http:' || parsed.protocol === 'https:') && !parsed.hostname.startsWith('[') && parsed.hostname.includes('.');
 }
 
 /**
- * The Messages section (spec §6.6 item 4, §8.3, §8.4): the public URL and the six message toggles.
+ * Why a batching value can't be saved (plain text), or null: the server's range rules (SettingsValidator), checked
+ * before the save. The longest hold against the quiet window is the server's to say.
+ * @param {{ min: number, max: number }} field one of BATCHING_FIELDS
+ * @param {unknown} value a number, or the text typed when it isn't a whole number
+ * @param {Record<string, string>} S
+ * @returns {string | null}
+ */
+export function batchingError(field, value, S) {
+    if (!Number.isInteger(value)) {
+        return text(S, 'web.settings.notNumber');
+    }
+
+    return value < field.min || value > field.max ? text(S, 'web.settings.range', { min: field.min, max: field.max }) : null;
+}
+
+/**
+ * The Messages card (spec §6.6 item 4, §8.3, §8.4; design §6.1): the public URL, which saves when the field is left
+ * or on Enter, and the six message switches, which save at once. Each row has the cue spot of its own save.
  * @param {object | null} settings the SettingsDto
  * @param {Record<string, string>} S
- * @param {{ form?: { local: object, changed: string[] }, errors?: { Field: string, Message?: string, Html?: string }[],
- *   saving?: boolean, section?: string }} ui form is state.forms.settings
+ * @param {{ form?: { local: object } }} ui form is state.forms.settings
  * @returns {string} HTML
  */
 export function renderMessages(settings, S, ui) {
@@ -935,37 +973,55 @@ export function renderMessages(settings, S, ui) {
         return '';
     }
 
-    const h = settingsHelpers(ui, 'messages');
     const local = ui.form.local;
     const url = String(local.PublicUrl ?? '');
-    const parts = [`<h2 class="sectionTitle">${t(S, 'web.messages.title')}</h2>`,
-        `<div class="inputContainer${h.changed('PublicUrl')}"><input is="emby-input" type="text" label="${t(S, 'web.messages.url')}" autocomplete="off" `
-        + `data-tgj-input="publicUrl" data-tgj-field="PublicUrl" value="${esc(url)}" />`
-        + `<div class="fieldDescription">${t(S, 'web.messages.urlHint')}</div></div>`,
-        h.fieldErrors('PublicUrl')];
+    const rows = [row({
+        label: text(S, 'web.messages.url'),
+        hint: text(S, 'web.messages.urlHint'),
+        extraClass: 'tgj-row--stack',
+        cueKey: 'PublicUrl',
+        control: textField({
+            input: 'publicUrl',
+            value: url,
+            type: 'url',
+            attrs: { 'data-tgj-field': 'PublicUrl', 'data-tgj-save': 'PublicUrl', autocomplete: 'off', spellcheck: 'false', 'aria-label': text(S, 'web.messages.url') },
+        }),
+    })];
     const suggestion = settings.PublicUrlSuggestion;
     if (suggestion && suggestion !== url) {
-        parts.push(`<p class="fieldDescription">${t(S, 'web.messages.suggested', { url: suggestion })} <strong>${t(S, 'web.messages.verify')}</strong> `
-            + `${button(t(S, 'web.messages.useSuggested'), 'useSuggested')}</p>`);
+        rows.push(notice({
+            kind: 'info',
+            html: `${t(S, 'web.messages.suggested', { url: suggestion })} <strong>${t(S, 'web.messages.verify')}</strong> `
+                + actionButton({ label: text(S, 'web.messages.useSuggested'), act: 'useSuggested' }),
+        }));
     }
 
     // The server judged the saved value; once the user types another one, that verdict no longer applies.
     if (settings.PublicUrl && !settings.PublicUrlValid && url === settings.PublicUrl) {
-        parts.push(`<p class="tgj-error">${t(S, 'web.messages.urlInvalid')}</p>`);
+        rows.push(notice({ kind: 'error', html: t(S, 'web.messages.urlInvalid') }));
     }
 
     for (const key of MESSAGE_TOGGLES) {
-        parts.push(`<label class="emby-checkbox-label${h.changed(`Message.${key}`)}"><input is="emby-checkbox" type="checkbox" data-tgj-input="msgToggle" `
-            + `data-tgj-key="${key}" data-tgj-field="Message.${key}"${local.Message && local.Message[key] ? ' checked' : ''} />`
-            + `<span>${t(S, `settings.msg.${key}`)}</span></label>${h.fieldErrors(`Message.${key}`)}`);
+        const label = text(S, `settings.msg.${key}`);
+        const path = `Message.${key}`;
+        rows.push(row({
+            label,
+            cueKey: path,
+            control: switchControl({
+                input: 'msgToggle',
+                checked: Boolean(local.Message && local.Message[key]),
+                label,
+                attrs: { 'data-tgj-key': key, 'data-tgj-field': path, 'data-tgj-save': path },
+            }),
+        }));
     }
 
-    parts.push(h.general(), `<div>${h.save(S)}</div>`);
-    return `<div class="verticalSection">${parts.join('')}</div>`;
+    return card({ title: text(S, 'web.messages.title'), body: rows.join('') });
 }
 
 /**
- * The batching form under Advanced (spec §10.1): six numeric fields, each with its range in the description.
+ * The batching card under Advanced (spec §10.1): six whole-number fields, each with its range in the explanation.
+ * Each saves 800 ms after the last keystroke, or when the field is left.
  * @param {object | null} settings
  * @param {Record<string, string>} S
  * @param {object} ui as for renderMessages
@@ -976,22 +1032,26 @@ export function renderBatching(settings, S, ui) {
         return '';
     }
 
-    const h = settingsHelpers(ui, 'batching');
-    const parts = [`<h3>${t(S, 'web.batching.title')}</h3>`];
-    for (const f of BATCHING_FIELDS) {
+    const rows = BATCHING_FIELDS.map(f => {
         const path = `Batching.${f.key}`;
-        parts.push(`<div class="inputContainer${h.changed(path)}"><input is="emby-input" type="number" label="${t(S, f.label)}" `
-            + `min="${f.min}" max="${f.max}" step="1" data-tgj-input="batching" data-tgj-key="${f.key}" data-tgj-field="${path}" `
-            + `value="${esc(ui.form.local.Batching[f.key])}" />`
-            + `<div class="fieldDescription">${t(S, f.hint, { min: f.min, max: f.max })}</div></div>${h.fieldErrors(path)}`);
-    }
-
-    parts.push(h.general(), `<div>${h.save(S)}</div>`);
-    return `<div class="verticalSection">${parts.join('')}</div>`;
+        return row({
+            label: text(S, f.label),
+            hint: text(S, f.hint, { min: f.min, max: f.max }),
+            cueKey: path,
+            control: numberField({
+                input: 'batching',
+                value: ui.form.local.Batching[f.key],
+                min: f.min,
+                max: f.max,
+                attrs: { 'data-tgj-key': f.key, 'data-tgj-field': path, 'data-tgj-save': path, 'aria-label': text(S, f.label) },
+            }),
+        });
+    });
+    return card({ title: text(S, 'web.batching.title'), body: rows.join('') });
 }
 
 /**
- * The update-check form under Advanced (spec §7.6): the enabled checkbox and the mode.
+ * The update-check card under Advanced (spec §7.6): the switch and the mode, each saved at once.
  * @param {object | null} settings
  * @param {Record<string, string>} S
  * @param {object} ui as for renderMessages
@@ -1002,20 +1062,28 @@ export function renderUpdates(settings, S, ui) {
         return '';
     }
 
-    const h = settingsHelpers(ui, 'updates');
     const local = ui.form.local.UpdateCheck;
-    const options = UPDATE_MODES.map(mode => `<option value="${mode}"${local.Mode === mode ? ' selected' : ''}>${t(S, `settings.updates.mode.${mode}`)}</option>`);
-    const parts = [`<h3>${t(S, 'web.updates.title')}</h3>`,
-        `<p class="fieldDescription">${t(S, 'settings.updates.hint')}</p>`,
-        `<label class="emby-checkbox-label${h.changed('UpdateCheck.Enabled')}"><input is="emby-checkbox" type="checkbox" data-tgj-input="updEnabled" `
-        + `data-tgj-field="UpdateCheck.Enabled"${local.Enabled ? ' checked' : ''} /><span>${t(S, 'settings.updates.enabled')}</span></label>`,
-        h.fieldErrors('UpdateCheck.Enabled'),
-        `<div class="selectContainer${h.changed('UpdateCheck.Mode')}"><select is="emby-select" class="emby-select-withcolor emby-select" `
-        + `label="${t(S, 'web.updates.mode')}" data-tgj-input="updMode" data-tgj-field="UpdateCheck.Mode">${options.join('')}</select></div>`,
-        h.fieldErrors('UpdateCheck.Mode'),
-        h.general(),
-        `<div>${h.save(S)}</div>`];
-    return `<div class="verticalSection">${parts.join('')}</div>`;
+    const enabled = text(S, 'settings.updates.enabled');
+    const body = row({
+        label: enabled,
+        cueKey: 'UpdateCheck.Enabled',
+        control: switchControl({
+            input: 'updEnabled',
+            checked: Boolean(local.Enabled),
+            label: enabled,
+            attrs: { 'data-tgj-field': 'UpdateCheck.Enabled', 'data-tgj-save': 'UpdateCheck.Enabled' },
+        }),
+    }) + row({
+        label: text(S, 'web.updates.mode'),
+        cueKey: 'UpdateCheck.Mode',
+        control: selectField({
+            input: 'updMode',
+            value: local.Mode,
+            options: UPDATE_MODES.map(mode => ({ value: mode, label: text(S, `settings.updates.mode.${mode}`) })),
+            attrs: { 'data-tgj-field': 'UpdateCheck.Mode', 'data-tgj-save': 'UpdateCheck.Mode', 'aria-label': text(S, 'web.updates.mode') },
+        }),
+    });
+    return card({ title: text(S, 'web.updates.title'), description: text(S, 'settings.updates.hint'), body });
 }
 
 const TEMPLATES_DOCS = 'https://github.com/MrSnowball-dev/tgjelly_plugin/blob/main/docs/templates.md';
@@ -1320,17 +1388,17 @@ export function renderTemplates(dto, S, ui) {
  * @returns {string} HTML
  */
 export function renderDiagnostics(S, ui) {
-    const parts = [`<h3>${t(S, 'web.diag.title')}</h3>`, `<div>${button(t(S, 'web.diag.copy'), 'copyDiagnostics')}</div>`];
+    const parts = [`<div class="tgj-actions">${actionButton({ label: text(S, 'web.diag.copy'), act: 'copyDiagnostics' })}</div>`];
     if (ui.copied) {
-        parts.push(`<p class="fieldDescription">${t(S, 'web.diag.copied')}</p>`);
+        parts.push(`<p class="tgj-row-hint">${t(S, 'web.diag.copied')}</p>`);
     }
 
     if (ui.text) {
-        parts.push(`<p class="fieldDescription">${t(S, 'web.diag.manual')}</p>`
-            + `<textarea id="tgj-diagnostics-text" readonly rows="12" style="width:100%">${esc(ui.text)}</textarea>`);
+        parts.push(`<p class="tgj-row-hint">${t(S, 'web.diag.manual')}</p>`
+            + `<textarea id="tgj-diagnostics-text" class="tgj-field tgj-diag-text" readonly rows="12">${esc(ui.text)}</textarea>`);
     }
 
-    return `<div class="verticalSection">${parts.join('')}</div>`;
+    return card({ title: text(S, 'web.diag.title'), body: parts.join('') });
 }
 
 // --- the shell (plan 8, design §5.1-5.2): header, sidebar, one section shown at a time ---
@@ -1479,12 +1547,16 @@ export function fieldSelector(el) {
     return parts.length > 0 ? parts.join('') : null;
 }
 
+/** An input, textarea or select, or a switch (a button with role=switch): what a section write must not take away. */
+const isField = el => FIELD_TAGS.has(String(el.tagName).toUpperCase())
+    || (typeof el.getAttribute === 'function' && el.getAttribute('role') === 'switch');
+
 const isTyped = el => el.tagName === 'TEXTAREA' || (el.tagName === 'INPUT' && TYPED_INPUTS.has(String(el.type || 'text').toLowerCase()));
 
 /**
  * Runs a write that may replace fields inside rootEl, so that typing is never interrupted (design §4, generalising
  * v0.3's template caret fix):
- * - a focused input, textarea or select inside rootEl is focused again in its new copy, with the same selection and
+ * - a focused input, textarea, select or switch inside rootEl is focused again in its new copy, with the same selection and
  *   scroll; a typed field keeps what the admin typed since the last render (its value differs from its defaultValue);
  * - a field in pending (selectors from fieldSelector, e.g. a change whose auto-save hasn't gone out) keeps the value it
  *   had before the write, and does not take the focus.
@@ -1502,7 +1574,7 @@ export function keepFocus(rootEl, write, { pending = [] } = {}) {
     const doc = rootEl.ownerDocument || globalThis.document;
     const active = doc ? doc.activeElement : null;
     const kept = new Map();
-    if (active && FIELD_TAGS.has(String(active.tagName).toUpperCase()) && typeof rootEl.contains === 'function' && rootEl.contains(active)) {
+    if (active && isField(active) && typeof rootEl.contains === 'function' && rootEl.contains(active)) {
         const key = fieldSelector(active);
         if (key) {
             kept.set(key, {
@@ -1626,9 +1698,6 @@ export default function TgJellyPage(view, params) {
             result: null,
             unreachable: false,
             confirmDisconnect: false,
-            // The proxy form (§9.1): its own messages and in-flight flag.
-            proxyErrors: [],
-            proxySaving: false,
             // The destinations section (§6.6.3): the open editor, the remove confirm, and the last test/check outcome per id.
             destEditing: null,
             destConfirm: null,
@@ -1639,10 +1708,6 @@ export default function TgJellyPage(view, params) {
             manualPreset: 'Everything',
             manualResult: '',
             detectedPresets: {},
-            // The settings sections (§6.6.4-5): the last save's field errors, the section whose Save was pressed, in flight.
-            settingsErrors: [],
-            settingsSection: '',
-            settingsSaving: false,
             // Diagnostics: the text when the clipboard refused it, and whether the last copy worked.
             diagText: '',
             diagCopied: false,
@@ -1675,6 +1740,8 @@ export default function TgJellyPage(view, params) {
     let tplTimer = null;
     // Fields whose change hasn't been saved yet, by fieldSelector: a section write keeps their values (keepFocus).
     const pendingFields = new Set();
+    // How many section writes are running (see renderSection and the focusout listener).
+    let writing = 0;
     // The shell: written once, at the first render after the strings and the stylesheet; then the shown section.
     let shellDrawn = false;
     let activeSection = 'overview';
@@ -1698,11 +1765,7 @@ export default function TgJellyPage(view, params) {
 
     /** The connect card's view of the state: the ui flags, whether a token is stored, and the proxy form's ui. */
     const connectUi = () => ({ ...state.ui, hasToken: Boolean(state.status && state.status.HasToken), proxy: proxyUi() });
-    const proxyUi = () => ({
-        form: state.forms.proxy,
-        proxyErrors: state.ui.proxyErrors,
-        saving: state.ui.proxySaving,
-    });
+    const proxyUi = () => ({ form: state.forms.proxy });
 
     /** Takes a SettingsDto into the shared settings state and its editor forms (keeping unsaved edits). */
     const takeSettings = dto => {
@@ -1712,12 +1775,7 @@ export default function TgJellyPage(view, params) {
     };
 
     /** The settings sections' views of the state. */
-    const settingsUi = () => ({
-        form: state.forms.settings,
-        errors: state.ui.settingsErrors,
-        saving: state.ui.settingsSaving,
-        section: state.ui.settingsSection,
-    });
+    const settingsUi = () => ({ form: state.forms.settings });
 
     // Every section that edits the settings model loads it together: one request while it runs.
     let settingsLoad = null;
@@ -2079,7 +2137,15 @@ export default function TgJellyPage(view, params) {
     const renderSection = name => {
         drawShell();
         const section = sections[name];
-        keepFocus(byId(section.id), () => setHtml(section.id, section.render() + sectionError(name)), { pending: pendingFields });
+        // While the write runs, a focused field it replaces may fire focusout: that is not the admin leaving the field.
+        writing++;
+        try {
+            keepFocus(byId(section.id), () => setHtml(section.id, section.render() + sectionError(name)), { pending: pendingFields });
+        } finally {
+            writing--;
+        }
+
+        paintCues();
         renderChrome();
 
         if (name === 'destinations') {
@@ -2323,105 +2389,306 @@ export default function TgJellyPage(view, params) {
         }
     };
 
-    /** Saves the proxy form (spec §9.1, §10.4): an untouched username/password is omitted, a cleared one is "". */
-    const saveProxy = async () => {
-        const ui = state.ui;
+    // --- auto-save (plan 8, design §6): the one page-wide queue, the cues, and the saves of Messages and Advanced ---
+    //
+    // The pattern every auto-saved field follows (Tasks 7 and 8 reuse it):
+    // - the control carries data-tgj-input (its handler, and how keepFocus finds it again) and data-tgj-save="<key>",
+    //   the key of its save; its row passes the same key as cueKey, so the cue shows beside it;
+    // - its input handler records the edit in the form (markDirty), then calls queueSave({ key, mode, fields, validate,
+    //   send }) with the field's fieldSelector in fields;
+    // - send() builds today's request from the form at the time it runs, with the current Revision, and maps the reply
+    //   with saveResult(): 200 'saved', 409 'conflict' with a retry that takes body.Current and sends again, 400
+    //   'invalid' with the server's message, anything else 'failed';
+    // - focusout flushes the save named by data-tgj-save, unless the focus moves to another field with the same key (the
+    //   proxy card's fields share one); Enter in an input does too; leaving the page flushes everything.
+
+    /** The cue each data-tgj-cue spot shows, by key ({ state, text }), so a section write can paint it again. */
+    const cues = new Map();
+    // Per save key: the number of the newest change, the number of the change last sent (or found invalid), and the
+    // fields it holds in pendingFields until a save with nothing newer behind it settles.
+    const changeSeq = new Map();
+    const takenSeq = new Map();
+    const heldFields = new Map();
+
+    /** The words a cue shows: the cue states come from tgjelly-autosave.js, the text from the strings. */
+    const cueWords = cue => {
+        const S = state.strings;
+        if (cue.state === 'saved') {
+            return text(S, 'web.autosave.saved');
+        }
+
+        if (cue.state === 'saving') {
+            return text(S, 'web.autosave.saving');
+        }
+
+        if (cue.state === 'error') {
+            return text(S, 'web.autosave.notSaved', { reason: cue.text === CONFLICT_KEY ? text(S, 'web.autosave.conflict') : cue.text ?? '' });
+        }
+
+        return '';
+    };
+
+    /** Writes a key's cue into its spots, in place (the section is not written again). Idle clears class and text. */
+    const paintCue = key => {
+        if (typeof view.querySelectorAll !== 'function') {
+            return;
+        }
+
+        const cue = cues.get(key);
+        const className = cue ? `tgj-cue tgj-cue--${cue.state}` : 'tgj-cue';
+        const words = cue ? cueWords(cue) : '';
+        for (const spot of view.querySelectorAll(`[data-tgj-cue="${selectorValue(key)}"]`)) {
+            if (spot.className !== className) {
+                spot.className = className;
+            }
+
+            if (spot.textContent !== words) {
+                spot.textContent = words;
+            }
+        }
+    };
+
+    /** After a section write, the new cue spots show the cues that are still up. */
+    const paintCues = () => {
+        for (const key of cues.keys()) {
+            paintCue(key);
+        }
+    };
+
+    const onCue = (key, cue) => {
+        if (cue.state === 'idle') {
+            cues.delete(key);
+        } else {
+            cues.set(key, cue);
+        }
+
+        paintCue(key);
+    };
+
+    /** Lets go of the fields a save key holds in pendingFields. */
+    const releaseFields = key => {
+        for (const field of heldFields.get(key) ?? []) {
+            pendingFields.delete(field);
+        }
+
+        heldFields.delete(key);
+    };
+
+    const onSettled = (key, result) => {
+        // A change made while this save was in flight is still to save: its fields stay pending.
+        if (takenSeq.get(key) === changeSeq.get(key)) {
+            releaseFields(key);
+        }
+
+        if (result.status === 'saved') {
+            // Other sections hold the old Revision now (they share it); bring them up to date, keeping their edits.
+            syncRevisions().catch(err => console.error('TgJelly: could not catch up with the new revision', err));
+        }
+    };
+
+    const autosave = createAutosave({
+        clock: { now: () => Date.now(), setTimeout: (fn, ms) => setTimeout(fn, ms), clearTimeout: handle => clearTimeout(handle) },
+        onCue,
+        onSettled,
+    });
+
+    /**
+     * Queues the save of one change (design §6.1): mode 'now' (switches, selects), 'debounce' with delay (typed text and
+     * numbers; flushed on blur too), or 'blur' (fields whose save has side effects: sent only on blur or Enter).
+     * validate returns the reason (plain text) the value can't be saved, or null; a debounced value is checked when it is
+     * due, so a half-typed number doesn't flash an error. fields are fieldSelector keys: kept as typed across section
+     * writes (pendingFields) until the save settles.
+     * @param {{ key: string, mode: 'now' | 'debounce' | 'blur', delay?: number, fields?: (string | null)[],
+     *   validate?: () => string | null, send: () => Promise<object> }} job
+     */
+    const queueSave = ({ key, mode, delay, fields = [], validate = null, send }) => {
+        const seq = (changeSeq.get(key) ?? 0) + 1;
+        changeSeq.set(key, seq);
+        const held = heldFields.get(key) ?? new Set();
+        for (const field of fields.filter(Boolean)) {
+            held.add(field);
+            pendingFields.add(field);
+        }
+
+        heldFields.set(key, held);
+        const taken = () => takenSeq.set(key, seq);
+        const check = () => {
+            const reason = validate ? validate() : null;
+            if (reason) {
+                taken();
+            }
+
+            return reason;
+        };
+        const dueCheck = mode === 'debounce' && validate;
+        autosave.change({
+            key,
+            mode,
+            delay,
+            validate: dueCheck ? undefined : check,
+            send: async () => {
+                if (dueCheck) {
+                    const reason = check();
+                    if (reason) {
+                        return { status: 'invalid', message: reason };
+                    }
+                }
+
+                taken();
+                return send();
+            },
+        });
+    };
+
+    /** The plain-text reason a request failed, for a cue: the server's Message, or the status code. */
+    const failureText = result => (result.body && result.body.Message
+        ? String(result.body.Message)
+        : text(state.strings, 'web.requestFailed', { reason: result.status }));
+
+    /**
+     * Maps a save's reply to the queue's SaveResult: 200 with a body runs saved(body); 409 with Current gives a conflict
+     * whose retry runs conflict(Current) (take the server data, re-apply the change) and sends again; 400 with Errors is
+     * invalid with the server's messages (those for fields when any match them); anything else failed.
+     * @param {{ status: number, body: any }} result
+     * @param {{ saved: (body: any) => void, conflict: (current: any) => void, again: () => Promise<object>, fields?: string[] }} on
+     */
+    const saveResult = (result, { saved, conflict, again, fields = [] }) => {
+        if (result.status === 200 && result.body) {
+            saved(result.body);
+            return { status: 'saved' };
+        }
+
+        if (result.status === 409 && result.body && result.body.Current) {
+            return {
+                status: 'conflict',
+                retry: () => {
+                    conflict(result.body.Current);
+                    return again();
+                },
+            };
+        }
+
+        if (result.status === 400 && result.body && Array.isArray(result.body.Errors)) {
+            const errors = result.body.Errors;
+            const mine = errors.filter(e => fields.some(f => e.Field === f || String(e.Field).startsWith(`${f}.`)));
+            return { status: 'invalid', message: (mine.length > 0 ? mine : errors).map(e => String(e.Message ?? '')).join(' ') };
+        }
+
+        return { status: 'failed', message: failureText(result) };
+    };
+
+    /**
+     * Sends one auto-save of the settings model: the fields at paths, laid over the saved settings, with the current
+     * Revision (spec §10.4). Edits waiting in other fields stay edits, and so does a value typed while the request ran.
+     * @param {string[]} paths
+     */
+    const sendSettings = async paths => {
+        const form = state.forms.settings;
+        const S = state.strings;
+        if (!form || !state.settings) {
+            return { status: 'failed', message: text(S, 'web.requestFailed', { reason: 'no settings' }) };
+        }
+
+        const request = settingsRequest(form, paths, state.settings.Revision, S);
+        if (!request.body) {
+            return { status: 'invalid', message: request.errors.map(e => e.Message).join(' ') };
+        }
+
+        const sent = overlayPaths(form.base, form.local, paths);
+        return saveResult(await api.put('Settings', request.body), {
+            fields: paths,
+            saved: body => {
+                // The sent values are now the saved ones; anything else that differs from them is still an edit.
+                const now = state.forms.settings;
+                state.forms.settings = syncFormData({ base: overlayPaths(now.base, sent, paths), local: now.local, dirty: true, changed: [] }, settingsFormData(body));
+                takeSettings(body);
+                renderSettingsSections();
+            },
+            conflict: current => {
+                // The form keeps the admin's edits on top of the server data (syncFormData): the admin's value wins.
+                takeSettings(current);
+                renderSettingsSections();
+            },
+            again: () => sendSettings(paths),
+        });
+    };
+
+    /** Queues the save of one settings field (its dotted path is also its save and cue key). */
+    const saveSetting = (path, mode, el, { delay, validate } = {}) => queueSave({
+        key: path,
+        mode,
+        delay,
+        fields: el ? [fieldSelector(el)] : [],
+        validate,
+        send: () => sendSettings([path]),
+    });
+
+    /** Typed text and numbers save this long after the last keystroke (design §6.1). */
+    const TYPING_SAVE_MS = 800;
+
+    const publicUrlError = () => (validatePublicUrl(state.forms.settings && state.forms.settings.local.PublicUrl)
+        ? null
+        : text(state.strings, 'web.messages.urlInvalid'));
+
+    /** A switch's new state on click: the opposite of the form's value at path. */
+    const flipped = path => !pathValue(state.forms.settings && state.forms.settings.local, path);
+
+    const proxyError = () => {
+        const local = state.forms.proxy && state.forms.proxy.local;
+        const withAddress = Boolean(local) && (local.Mode === 'Http' || local.Mode === 'Socks5');
+        return withAddress && String(local.Url ?? '').trim() === '' ? text(state.strings, 'web.proxy.needsAddress') : null;
+    };
+
+    /**
+     * Sends the proxy card as one save (spec §9.1, §10.4): an untouched username/password is omitted, a cleared one is "".
+     * Every proxy save restarts the bot session, so it only runs when the focus leaves the card.
+     */
+    const sendProxy = async () => {
         const form = state.forms.proxy;
         if (!form || !state.settings) {
-            return undefined;
+            return { status: 'failed', message: text(state.strings, 'web.requestFailed', { reason: 'no settings' }) };
         }
 
         const local = form.local;
         const withAddress = local.Mode === 'Http' || local.Mode === 'Socks5';
         const body = { ExpectedRevision: state.settings.Revision, Mode: local.Mode, Url: withAddress ? String(local.Url ?? '').trim() : '' };
+        const secrets = { Username: typed.proxyUsername, Password: typed.proxyPassword };
         // An untouched field is omitted (the server keeps the stored value); a cleared one is "".
-        if (typed.proxyUsername !== undefined) {
-            body.Username = typed.proxyUsername;
+        for (const [name, value] of Object.entries(secrets)) {
+            if (value !== undefined) {
+                body[name] = value;
+            }
         }
 
-        if (typed.proxyPassword !== undefined) {
-            body.Password = typed.proxyPassword;
-        }
+        const sent = structuredClone(local);
+        return saveResult(await api.put('Proxy', body), {
+            fields: ['Proxy'],
+            saved: dto => {
+                // The proxy form starts over from the saved data, keeping a value typed while the request ran; the
+                // settings form keeps its unsaved edits on top of the fresh data.
+                state.forms.proxy = syncFormData({ base: sent, local: state.forms.proxy.local, dirty: true, changed: [] }, proxyFormData(dto));
+                takeSettings(dto);
+                if (typed.proxyUsername === secrets.Username) {
+                    typed.proxyUsername = undefined;
+                }
 
-        ui.proxySaving = true;
-        ui.proxyErrors = [];
-        renderProxyForms();
-        let result;
-        try {
-            result = await api.put('Proxy', body);
-        } finally {
-            ui.proxySaving = false;
-        }
+                if (typed.proxyPassword === secrets.Password) {
+                    typed.proxyPassword = undefined;
+                }
 
-        const S = state.strings;
-        if (result.status === 200 && result.body) {
-            // The proxy form starts over; the settings form keeps its unsaved edits on top of the fresh data.
-            resetForm('proxy', proxyFormData(result.body));
-            takeSettings(result.body);
-            typed.proxyUsername = undefined;
-            typed.proxyPassword = undefined;
-        } else if (result.status === 409 && result.body && result.body.Current) {
-            takeSettings(result.body.Current);
-            ui.proxyErrors = [t(S, 'web.proxy.conflict')];
-        } else if (result.status === 400 && result.body && Array.isArray(result.body.Errors)) {
-            ui.proxyErrors = result.body.Errors.map(e => esc(e.Message));
-        } else {
-            ui.proxyErrors = [requestError(S, result)];
-        }
-
-        renderProxyForms();
-        renderSettingsSections();
-        return undefined;
+                renderProxyForms();
+                renderSettingsSections();
+            },
+            conflict: current => {
+                takeSettings(current);
+                renderProxyForms();
+            },
+            again: sendProxy,
+        });
     };
 
-    /** Saves the settings form (spec §10.4): the one PUT Settings behind the Save of all three sections. */
-    const saveSettings = async section => {
-        const ui = state.ui;
-        const form = state.forms.settings;
-        if (!form || !state.settings) {
-            return undefined;
-        }
-
-        const S = state.strings;
-        const request = settingsRequest(form, section, state.settings.Revision, S);
-        ui.settingsSection = section;
-        ui.settingsErrors = request.errors;
-        if (!request.body) {
-            renderSettingsSections();
-            return undefined;
-        }
-
-        ui.settingsSaving = true;
-        renderSettingsSections();
-        let result;
-        try {
-            result = await api.put('Settings', request.body);
-        } finally {
-            ui.settingsSaving = false;
-        }
-
-        let failed;
-        if (result.status === 200 && result.body) {
-            // This section's fields are saved: the rest of the form keeps its edits, and so does a field of this section
-            // that was typed into while the request ran (its base is what was sent, so a later value counts as an edit).
-            const now = state.forms.settings;
-            const sent = overlaySection(form.base, form.local, section);
-            const others = Object.keys(SECTION_FIELDS).filter(name => name !== section).flatMap(name => SECTION_FIELDS[name]);
-            const kept = (now.changed ?? []).filter(path => others.includes(path.split('.')[0]));
-            state.forms.settings = syncFormData({ base: overlaySection(now.base, sent, section), local: now.local, dirty: true, changed: kept }, settingsFormData(result.body));
-            takeSettings(result.body);
-        } else if (result.status === 409 && result.body && result.body.Current) {
-            takeSettings(result.body.Current);
-            ui.settingsErrors = [{ Field: '', Html: t(S, 'web.settings.conflict') }];
-        } else if (result.status === 400 && result.body && Array.isArray(result.body.Errors)) {
-            ui.settingsErrors = result.body.Errors;
-        } else {
-            failed = result;
-        }
-
-        renderSettingsSections();
-        return failed;
-    };
+    /** Queues the proxy card's save: one job, saved when the focus leaves the card (or on Enter). */
+    const saveProxy = el => queueSave({ key: 'proxy', mode: 'blur', fields: [fieldSelector(el)], validate: proxyError, send: sendProxy });
 
     const destination = id => (state.destinations ? state.destinations.Items.find(d => d.Id === id) : undefined);
     const destKey = id => `dest:${id}`;
@@ -2566,7 +2833,6 @@ export default function TgJellyPage(view, params) {
                 state.ui.saving = false;
             }
         }),
-        saveProxy: () => runAction('proxy', saveProxy),
         edit: el => {
             const id = idOf(el);
             state.ui.destEditing = state.ui.destEditing === id ? null : id;
@@ -2680,16 +2946,15 @@ export default function TgJellyPage(view, params) {
             await reloadSection('destinations', { fresh: true });
             return undefined;
         }),
-        saveSettings: el => {
-            const section = SETTINGS_SECTIONS.includes(idOf(el)) ? idOf(el) : 'messages';
-            return runAction(section, () => saveSettings(section));
-        },
+        // A whole URL, chosen with a button: it saves at once (the field itself saves on blur or Enter).
         useSuggested: () => {
             if (state.settings && state.settings.PublicUrlSuggestion) {
                 markDirty('settings', 'PublicUrl', state.settings.PublicUrlSuggestion);
+                // The suggestion replaces whatever was typed and waiting, so the field shows it.
+                releaseFields('PublicUrl');
+                renderSection('messages');
+                saveSetting('PublicUrl', 'now', null, { validate: publicUrlError });
             }
-
-            renderSection('messages');
         },
         copyDiagnostics: () => runAction('diagnostics', async () => {
             Object.assign(state.ui, { diagText: '', diagCopied: false });
@@ -2834,18 +3099,25 @@ export default function TgJellyPage(view, params) {
         setProfile: el => {
             state.ui.setProfile = Boolean(el.checked);
         },
+        // The proxy fields save together when the focus leaves the card (see the focusout listener).
         proxyMode: (el, event) => {
             markDirty('proxy', 'Mode', el.value);
+            saveProxy(el);
             if (event.type === 'change') {
                 renderProxyForms();
             }
         },
-        proxyUrl: el => markDirty('proxy', 'Url', el.value),
+        proxyUrl: el => {
+            markDirty('proxy', 'Url', el.value);
+            saveProxy(el);
+        },
         proxyUsername: el => {
             typed.proxyUsername = String(el.value ?? '');
+            saveProxy(el);
         },
         proxyPassword: el => {
             typed.proxyPassword = String(el.value ?? '');
+            saveProxy(el);
         },
         destPreset: (el, event) => {
             const id = idOf(el);
@@ -2911,25 +3183,46 @@ export default function TgJellyPage(view, params) {
                 state.ui.detectedPresets[id] = el.value;
             }
         },
-        publicUrl: el => markDirty('settings', 'PublicUrl', String(el.value ?? '')),
-        msgToggle: el => {
+        // A partial URL can pass the rules, and would go live in message buttons: this saves on blur or Enter only.
+        publicUrl: el => {
+            markDirty('settings', 'PublicUrl', String(el.value ?? ''));
+            saveSetting('PublicUrl', 'blur', el, { validate: publicUrlError });
+        },
+        // Switches are buttons: they reach here on click.
+        msgToggle: (el, event) => {
             const key = el.getAttribute('data-tgj-key');
-            if (MESSAGE_TOGGLES.includes(key)) {
-                markDirty('settings', `Message.${key}`, Boolean(el.checked));
+            if (MESSAGE_TOGGLES.includes(key) && event.type === 'click') {
+                const path = `Message.${key}`;
+                markDirty('settings', path, flipped(path));
+                renderSection('messages');
+                saveSetting(path, 'now', el);
             }
         },
         batching: el => {
-            const key = el.getAttribute('data-tgj-key');
-            if (BATCHING_FIELDS.some(f => f.key === key)) {
-                const text = String(el.value ?? '').trim();
-                // A value that isn't a whole number stays text, so Save can say so instead of sending it.
-                markDirty('settings', `Batching.${key}`, /^-?\d+$/.test(text) ? Number(text) : text);
+            const field = BATCHING_FIELDS.find(f => f.key === el.getAttribute('data-tgj-key'));
+            if (field) {
+                const path = `Batching.${field.key}`;
+                const typedText = String(el.value ?? '').trim();
+                // A value that isn't a whole number stays text, so its save can say so instead of sending it.
+                markDirty('settings', path, /^-?\d+$/.test(typedText) ? Number(typedText) : typedText);
+                saveSetting(path, 'debounce', el, {
+                    delay: TYPING_SAVE_MS,
+                    validate: () => batchingError(field, pathValue(state.forms.settings.local, path), state.strings),
+                });
             }
         },
-        updEnabled: el => markDirty('settings', 'UpdateCheck.Enabled', Boolean(el.checked)),
-        updMode: el => {
-            if (UPDATE_MODES.includes(el.value)) {
+        updEnabled: (el, event) => {
+            if (event.type === 'click') {
+                markDirty('settings', 'UpdateCheck.Enabled', flipped('UpdateCheck.Enabled'));
+                renderSection('updates');
+                saveSetting('UpdateCheck.Enabled', 'now', el);
+            }
+        },
+        // A select fires input and then change; the change is the choice.
+        updMode: (el, event) => {
+            if (UPDATE_MODES.includes(el.value) && event.type === 'change') {
                 markDirty('settings', 'UpdateCheck.Mode', el.value);
+                saveSetting('UpdateCheck.Mode', 'now', el);
             }
         },
         // Typing only records the edit and, after a pause, refreshes the preview pane: re-rendering would move the caret.
@@ -3032,6 +3325,8 @@ export default function TgJellyPage(view, params) {
         visible = false;
         stopPolling();
         cancelTemplateTimer();
+        // Leaving the page saves what is still waiting (a debounce, or a field saved on blur that still has the focus).
+        autosave.flush().catch(logFailure);
     };
 
     /** Finds the handler for an event through the target's closest [attribute]; null when there is none. */
@@ -3073,6 +3368,42 @@ export default function TgJellyPage(view, params) {
     };
     view.addEventListener('change', onInput);
     view.addEventListener('input', onInput);
+
+    // A switch (a button with role=switch and data-tgj-input) goes to its input handler on click.
+    view.addEventListener('click', event => {
+        const found = findHandler(event, 'data-tgj-input', inputs);
+        if (found && found.el.getAttribute('role') === 'switch' && !found.el.disabled) {
+            event.preventDefault();
+            found.run().catch(logFailure);
+        }
+    });
+
+    /** The save key of the auto-saved field an event is on (its data-tgj-save), or null. */
+    const saveKeyOf = target => {
+        const el = target && target.closest ? target.closest('[data-tgj-save]') : null;
+        return el ? el.getAttribute('data-tgj-save') : null;
+    };
+
+    // Input handlers run a microtask after their event (findHandler), so a flush waits one too: the change it saves is
+    // queued first.
+    const flushSoon = key => Promise.resolve().then(() => autosave.flush(key)).catch(logFailure);
+
+    // Leaving an auto-saved field saves it now (design §6.1). Fields that share a key save when the focus leaves all
+    // of them: the proxy card saves once, when the focus leaves the card.
+    view.addEventListener('focusout', event => {
+        const key = writing > 0 || !state.strings ? null : saveKeyOf(event.target);
+        if (key && saveKeyOf(event.relatedTarget) !== key) {
+            flushSoon(key);
+        }
+    });
+
+    // Enter in a one-line field saves it too.
+    view.addEventListener('keydown', event => {
+        const key = event.key === 'Enter' && state.strings ? saveKeyOf(event.target) : null;
+        if (key && String(event.target.tagName).toUpperCase() === 'INPUT') {
+            flushSoon(key);
+        }
+    });
 
     // A spoiler in the template preview is revealed (and hidden again) on click, as in Telegram.
     view.addEventListener('click', event => {

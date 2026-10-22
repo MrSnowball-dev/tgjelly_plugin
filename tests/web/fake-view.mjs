@@ -43,11 +43,17 @@ export function makeView(ids) {
     const view = new EventTarget();
     const classes = new Set();
     const elements = new Map();
+    // The save cue spots (data-tgj-cue="key"): like a browser, each write that holds one makes a new, empty span.
+    const cues = new Map();
     const register = html => {
         for (const match of html.matchAll(/\sid="([^"]+)"/g)) {
             if (!elements.has(match[1])) {
                 elements.set(match[1], makeElement(match[1], register));
             }
+        }
+
+        for (const match of html.matchAll(/<span class="([^"]*)" data-tgj-cue="([^"]+)"/g)) {
+            cues.set(unescapeHtml(match[2]), { className: match[1], textContent: '' });
         }
     };
     for (const id of ids) {
@@ -64,10 +70,18 @@ export function makeView(ids) {
     // Inputs a test registers to stand for rendered form fields: querySelectorAll('[data-tgj-input="x"]') finds them by x.
     view.fields = [];
     view.querySelectorAll = selector => {
+        const cue = /^\[data-tgj-cue="((?:[^"\\]|\\.)*)"\]$/.exec(selector);
+        if (cue) {
+            const spot = cues.get(cue[1].replace(/\\(.)/g, '$1'));
+            return spot ? [spot] : [];
+        }
+
         const name = /data-tgj-input="(\w+)"/.exec(selector)?.[1];
         return view.fields.filter(field => field.name === name);
     };
     view.elements = elements;
+    // The newest cue spot for each key, as { className, textContent }.
+    view.cues = cues;
     return view;
 }
 
@@ -227,17 +241,37 @@ export function makeApiClient(routes) {
 
 /**
  * Fake setInterval/clearInterval that count the live intervals and run them on tick(), and fake setTimeout/clearTimeout
- * whose pending callbacks run (once) on runTimeouts().
+ * whose pending callbacks run (once) on runTimeouts(), or in time order as advance(ms) moves the fake clock on.
  */
 export function fakeTimers() {
     const live = new Map();
     const timeouts = new Map();
     let next = 1;
+    let now = 0;
     return {
         setTimeout: (fn, ms) => {
             const id = next++;
-            timeouts.set(id, { fn, ms });
+            timeouts.set(id, { fn, ms, due: now + (ms ?? 0) });
             return id;
+        },
+        // Moves the clock on by ms, running each timeout that falls due in time order, and letting the promise chains
+        // settle between them (a save's reply, then the cue it leads to).
+        advance: async ms => {
+            const end = now + ms;
+            for (;;) {
+                await flush();
+                const due = [...timeouts.entries()].filter(([, v]) => v.due <= end).sort((a, b) => a[1].due - b[1].due || a[0] - b[0])[0];
+                if (!due) {
+                    break;
+                }
+
+                timeouts.delete(due[0]);
+                now = Math.max(now, due[1].due);
+                due[1].fn();
+            }
+
+            now = end;
+            await flush();
         },
         clearTimeout: id => {
             timeouts.delete(id);
@@ -276,14 +310,11 @@ export async function flush() {
 }
 
 /**
- * Dispatches an event on the view whose target is a fake element carrying the given attributes, the way an event on a
- * rendered element bubbles to the view's delegated listeners. closest('[attr]') finds the element when it has attr.
- * @param {EventTarget} view
- * @param {string} type e.g. 'click', 'change', 'input'
+ * A fake rendered element carrying the given attributes: closest('[attr]') finds it when it has attr.
  * @param {Record<string, string>} attributes
- * @param {object} [extra] more properties for the target, e.g. { value: 'x' }
+ * @param {object} [extra] more properties, e.g. { value: 'x' }
  */
-export function dispatchOn(view, type, attributes, extra = {}) {
+export function fakeTarget(attributes, extra = {}) {
     const target = {
         disabled: false,
         ...extra,
@@ -293,8 +324,26 @@ export function dispatchOn(view, type, attributes, extra = {}) {
             return match && match[1] in attributes ? target : null;
         },
     };
+    return target;
+}
+
+/**
+ * Dispatches an event on the view whose target is a fake element carrying the given attributes, the way an event on a
+ * rendered element bubbles to the view's delegated listeners (see fakeTarget).
+ * @param {EventTarget} view
+ * @param {string} type e.g. 'click', 'change', 'input', 'focusout'
+ * @param {Record<string, string>} attributes
+ * @param {object} [extra] more properties for the target, e.g. { value: 'x' }
+ * @param {object} [eventProps] more properties for the event, e.g. { key: 'Enter' } or { relatedTarget }
+ */
+export function dispatchOn(view, type, attributes, extra = {}, eventProps = {}) {
+    const target = fakeTarget(attributes, extra);
     const event = new Event(type, { cancelable: true });
     Object.defineProperty(event, 'target', { value: target });
+    for (const [name, value] of Object.entries(eventProps)) {
+        Object.defineProperty(event, name, { value });
+    }
+
     view.dispatchEvent(event);
     return { event, target };
 }

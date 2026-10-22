@@ -921,3 +921,30 @@
 #tgjelly-root .tgj-version {
     margin: var(--tgj-space-3) 0 0;
 }
+
+/* ---- Messages and Advanced ---- */
+
+/* Under a full-width field, a reason reads from the field's start edge. */
+#tgjelly-root .tgj-row--stack .tgj-cue--error {
+    text-align: start;
+}
+
+#tgjelly-root .tgj-subtitle {
+    margin: var(--tgj-space-4) 0 var(--tgj-space-2);
+    font-size: var(--tgj-step-0);
+    font-weight: 600;
+}
+
+#tgjelly-root .tgj-card-body .tgj-notice {
+    margin: var(--tgj-space-2) 0;
+}
+
+#tgjelly-root .tgj-manual-result {
+    margin-top: var(--tgj-space-3);
+}
+
+#tgjelly-root .tgj-diag-text {
+    width: 100%;
+    margin-top: var(--tgj-space-2);
+    font-family: monospace;
+}
