@@ -1,4 +1,4 @@
-// Dashboard page tests (spec §11.1). Run: node --test 'tests/web/*.test.mjs'
+// Dashboard page tests (spec §11.1). Run: node --import ./tests/web/jellyfin-resolve.mjs --test 'tests/web/*.test.mjs'
 import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';

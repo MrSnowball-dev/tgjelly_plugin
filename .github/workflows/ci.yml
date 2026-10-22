@@ -50,7 +50,8 @@ jobs:
       - name: Dashboard page tests
         run: |
           node --check src/Jellyfin.Plugin.TgJelly/Web/tgjelly.js
-          node --test 'tests/web/*.test.mjs'
+          node --check src/Jellyfin.Plugin.TgJelly/Web/tgjelly-ui.js
+          node --import ./tests/web/jellyfin-resolve.mjs --test 'tests/web/*.test.mjs'
 
       - name: Script tests
         run: |

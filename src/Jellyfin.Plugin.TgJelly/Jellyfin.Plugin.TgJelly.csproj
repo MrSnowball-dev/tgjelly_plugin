@@ -46,6 +46,8 @@
   <ItemGroup>
     <EmbeddedResource Include="Web\tgjelly.html" />
     <EmbeddedResource Include="Web\tgjelly.js" />
+    <EmbeddedResource Include="Web\tgjelly-ui.js" />
+    <EmbeddedResource Include="Web\tgjelly.css" />
     <EmbeddedResource Include="Strings\en.json" />
     <EmbeddedResource Include="Templates/BuiltIn/**/*.sbn" WithCulture="false" />
     <EmbeddedResource Include="Templates/sample-poster.png" />

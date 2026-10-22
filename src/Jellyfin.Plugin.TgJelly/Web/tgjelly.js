@@ -5,6 +5,13 @@
 // - every render function returns HTML built only from esc()/t()/plural() output, so server text is always escaped;
 // - the default export is the page controller: it owns the state, the loaders, the click actions and the Status poller.
 // The strings table is always called S, so the key check in tests/web can find the key at every t() and plural() call.
+//
+// Sibling modules are imported by the URL Jellyfin serves them under (plan 8); tests/web/jellyfin-resolve.mjs maps it
+// to the file for Node.
+import { esc } from './configurationpage?name=tgjelly-ui.js';
+
+// esc lives in tgjelly-ui.js; it stays a named export here for the page's callers and tests.
+export { esc };
 
 const POLL_MS = 3000;
 // The template preview validates this long after the last keystroke.
@@ -12,17 +19,6 @@ const PREVIEW_DEBOUNCE_MS = 500;
 
 /** Connection states shown in the error color (the ConnectionState names from GET Status). */
 const PROBLEM_STATES = new Set(['TokenRejected', 'WebhookConflict', 'ConflictingInstance', 'Unreachable', 'InvalidBaseUrl', 'Incompatible']);
-
-const ESCAPES = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
-
-/**
- * Escapes a value for HTML text and attribute values. null and undefined give ''.
- * @param {unknown} value
- * @returns {string}
- */
-export function esc(value) {
-    return value === null || value === undefined ? '' : String(value).replace(/[&<>"']/g, c => ESCAPES[c]);
-}
 
 /**
  * Looks up a string and fills its {name} placeholders. The result is HTML: the text and the args are both escaped.

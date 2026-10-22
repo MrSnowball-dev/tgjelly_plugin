@@ -1,5 +1,6 @@
 """Tests for the smoke-test helpers. Run: python3 -m unittest discover -s tests/integration -p 'test_*.py' -v"""
 
+import re
 import sys
 import tempfile
 import unittest
@@ -51,6 +52,23 @@ class HelperTests(unittest.TestCase):
 
     def test_network_xml_sets_base_url(self):
         self.assertIn("<BaseUrl>/jf</BaseUrl>", smoke.network_xml("/jf"))
+
+
+class WebAssetTests(unittest.TestCase):
+    def test_every_registered_asset_is_checked(self):
+        plugin = (Path(__file__).resolve().parent.parent.parent / "src" / "Jellyfin.Plugin.TgJelly" / "Plugin.cs").read_text()
+        registered = re.findall(r'Name = "([^"]+\.(?:js|css))"', plugin)
+        self.assertEqual(sorted(registered), sorted(name for name, _ in smoke.WEB_ASSETS))
+
+    def test_scripts_need_javascript_and_the_stylesheet_css(self):
+        self.assertEqual(dict(smoke.WEB_ASSETS), {"tgjelly.js": "javascript", "tgjelly-ui.js": "javascript", "tgjelly.css": "css"})
+
+    def test_asset_served_checks_status_and_type(self):
+        self.assertTrue(smoke.asset_served(200, "text/css; charset=utf-8", "css"))
+        self.assertTrue(smoke.asset_served(200, "Application/JavaScript", "javascript"))
+        self.assertFalse(smoke.asset_served(200, "application/octet-stream", "css"))
+        self.assertFalse(smoke.asset_served(200, "", "javascript"))
+        self.assertFalse(smoke.asset_served(404, "text/css", "css"))
 
 
 class TrackZipTests(unittest.TestCase):
