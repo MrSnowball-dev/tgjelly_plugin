@@ -122,6 +122,10 @@ test('saving_cueOnlyAfter300ms', async () => {
     fast.resolve({ status: 'saved' });
     await clock.tick(0);
     assert.deepEqual(states(cues, 'fast'), ['saved']);
+    await clock.tick(1000);
+    assert.deepEqual(states(cues, 'fast'), ['saved']);
+    await clock.tick(1000);
+    assert.deepEqual(states(cues, 'fast'), ['saved', 'idle']);
     q.change({ key: 'slow', mode: 'now', send: () => slow.promise });
     await clock.tick(299);
     assert.deepEqual(states(cues, 'slow'), []);
@@ -185,4 +189,21 @@ test('throwingSend_isFailed_andCancelDropsPending', async () => {
     assert.equal(sent, 0);
     assert.deepEqual(cues.filter((c) => c[0] === 'a'), [['a', 'error', 'net down']]);
     assert.deepEqual(states(cues, 'b'), ['idle']);
+});
+
+test('staleIdle_doesNotReplaceNewerCue', async () => {
+    const { clock, q, cues } = setup();
+    q.change({ key: 'a', mode: 'now', send: async () => ({ status: 'saved' }) });
+    await clock.tick(500);
+    const slow = deferred();
+    q.change({ key: 'a', mode: 'now', send: () => slow.promise });
+    await clock.tick(1600);   // t=2100: past the first saved's idle at 2000, request in flight since 500
+    assert.deepEqual(states(cues, 'a'), ['saved', 'saving']);
+    slow.resolve({ status: 'saved' });
+    await clock.tick(0);
+    assert.deepEqual(states(cues, 'a'), ['saved', 'saving', 'saved']);
+    await clock.tick(1999);
+    assert.deepEqual(states(cues, 'a'), ['saved', 'saving', 'saved']);
+    await clock.tick(1);
+    assert.deepEqual(states(cues, 'a'), ['saved', 'saving', 'saved', 'idle']);
 });

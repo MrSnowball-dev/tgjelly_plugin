@@ -36,7 +36,11 @@ export function createAutosave({ clock, onCue, onSettled }) {
         clearIdle(key);
         cue(key, 'saved');
         // This idle cue is what removes the cue under prefers-reduced-motion, so it always fires.
-        idleTimers.set(key, clock.setTimeout(() => { idleTimers.delete(key); cue(key, 'idle'); }, SAVED_FOR_MS));
+        idleTimers.set(key, clock.setTimeout(() => {
+            idleTimers.delete(key);
+            // A newer cue (saving, error) that arrived meanwhile must not be replaced by a stale idle.
+            if (cueState.get(key) === 'saved') cue(key, 'idle');
+        }, SAVED_FOR_MS));
     }
 
     function showError(key, text) {
