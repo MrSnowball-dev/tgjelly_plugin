@@ -9,6 +9,8 @@
 //   onCue(key, { state: 'saving' | 'saved' | 'error' | 'idle', text? })   text only on 'error': the reason, or for a second
 //                                                                          conflict the string key 'web.autosave.conflict'
 //   onSettled(key, result)   the final result of a job (after any conflict retry)
+//   A job whose key changed again while it was in flight is outdated: its result still reaches onSettled, but it shows no
+//   cue, so the newer change's cue (say, an error from its validate) stays.
 
 export const SAVING_AFTER_MS = 300;
 export const SAVED_FOR_MS = 2000;
@@ -21,6 +23,7 @@ export function createAutosave({ clock, onCue, onSettled }) {
     let running = false;
     const idleTimers = new Map();   // key -> handle of the pending 'idle' cue
     const cueState = new Map();     // key -> last state emitted
+    const changes = new Map();      // key -> how many changes it has had: a sent job compares it to tell if it is outdated
     let drained = [];               // resolvers waiting for an empty queue
 
     function cue(key, state, text) {
@@ -81,6 +84,7 @@ export function createAutosave({ clock, onCue, onSettled }) {
 
     function change(job) {
         const { key } = job;
+        changes.set(key, (changes.get(key) ?? 0) + 1);
         dropWaiting(key);
         if (cueState.get(key) === 'error') { clearIdle(key); cue(key, 'idle'); }
         if (job.mode === 'blur') {
@@ -124,7 +128,11 @@ export function createAutosave({ clock, onCue, onSettled }) {
     }
 
     async function run({ key, job }) {
-        let savingTimer = clock.setTimeout(() => { savingTimer = undefined; cue(key, 'saving'); }, SAVING_AFTER_MS);
+        // A change to the same key made while this job is in flight is newer: its cue (an error, or none while it waits)
+        // must not be replaced by this job's outcome, which is about a value the admin has already changed.
+        const taken = changes.get(key);
+        const outdated = () => changes.get(key) !== taken;
+        let savingTimer = clock.setTimeout(() => { savingTimer = undefined; if (!outdated()) cue(key, 'saving'); }, SAVING_AFTER_MS);
         let result = await attempt(job.send);
         if (result.status === 'conflict') {
             // The caller took the newer server data and re-applies the pending change inside retry(); once only.
@@ -133,7 +141,9 @@ export function createAutosave({ clock, onCue, onSettled }) {
         }
         if (savingTimer !== undefined) clock.clearTimeout(savingTimer);
         onSettled(key, result);
-        if (result.status === 'saved') showSaved(key);
+        if (outdated()) {
+            if (cueState.get(key) === 'saving') cue(key, 'idle');
+        } else if (result.status === 'saved') showSaved(key);
         else showError(key, result.message ?? '');
     }
 

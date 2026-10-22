@@ -97,7 +97,8 @@ function dest(overrides = {}) {
 }
 
 function destinations(overrides = {}) {
-    return { Revision: 7, Items: [dest()], DetectedChats: [], ManualUnlocked: false, Catalog: CATALOG, ...overrides };
+    // One Revision for every section, as the server has (settings() is at 5 too).
+    return { Revision: 5, Items: [dest()], DetectedChats: [], ManualUnlocked: false, Catalog: CATALOG, ...overrides };
 }
 
 const saved = {};
@@ -1101,7 +1102,7 @@ test('pause toggle sends only Enabled with the revision', async () => {
     const { view, api } = mount({ 'PUT TgJelly/Destinations/d1': () => dest({ Enabled: false }) });
     await show(view);
     await destAct(view, 'enabled', { 'data-tgj-id': 'd1' });
-    assert.deepEqual(putBodies(api), [{ ExpectedRevision: 7, Enabled: false }]);
+    assert.deepEqual(putBodies(api), [{ ExpectedRevision: 5, Enabled: false }]);
 });
 
 test('preset change sends Preset', async () => {
@@ -1111,7 +1112,7 @@ test('preset change sends Preset', async () => {
     assert.ok(destEl(el).includes('data-tgj-input="destPreset"'));
     await destInput(view, 'destPreset', { 'data-tgj-id': 'd1' }, { value: 'NewMedia' });
     await destAct(view, 'saveDest', { 'data-tgj-id': 'd1' });
-    assert.deepEqual(putBodies(api), [{ ExpectedRevision: 7, Preset: 'NewMedia' }]);
+    assert.deepEqual(putBodies(api), [{ ExpectedRevision: 5, Preset: 'NewMedia' }]);
 });
 
 test('event toggle sends Events', async () => {
@@ -1120,7 +1121,7 @@ test('event toggle sends Events', async () => {
     await destAct(view, 'edit', { 'data-tgj-id': 'd1' });
     await destInput(view, 'destEvent', { 'data-tgj-id': 'd1', 'data-tgj-key': 'server.started' }, { checked: false });
     await destAct(view, 'saveDest', { 'data-tgj-id': 'd1' });
-    assert.deepEqual(putBodies(api), [{ ExpectedRevision: 7, Events: ['media.movie', 'media.episodes', 'security.login_failed'] }]);
+    assert.deepEqual(putBodies(api), [{ ExpectedRevision: 5, Events: ['media.movie', 'media.episodes', 'security.login_failed'] }]);
 });
 
 test('the editor lists events by group, libraries and silent groups', async () => {
@@ -1165,7 +1166,7 @@ test('picking Custom sends Preset Custom and keeps the events', async () => {
     await destInput(view, 'destPreset', { 'data-tgj-id': 'd1' }, { value: 'Custom' });
     assert.deepEqual(hooks.state.forms['dest:d1'].local.Events, KEYS);
     await destAct(view, 'saveDest', { 'data-tgj-id': 'd1' });
-    assert.deepEqual(putBodies(api), [{ ExpectedRevision: 7, Preset: 'Custom' }]);
+    assert.deepEqual(putBodies(api), [{ ExpectedRevision: 5, Preset: 'Custom' }]);
 });
 
 test('a 409 on a pause with nothing pending uses the neutral line', async () => {
@@ -1190,7 +1191,7 @@ test('a removed library is listed and removable', async () => {
     await destAct(view, 'removeLibrary', { 'data-tgj-id': 'd1', 'data-tgj-lib': ghost });
     assert.ok(!destEl(el).includes(ghost));
     await destAct(view, 'saveDest', { 'data-tgj-id': 'd1' });
-    assert.deepEqual(putBodies(api), [{ ExpectedRevision: 7, LibraryIds: [LIB_A] }]);
+    assert.deepEqual(putBodies(api), [{ ExpectedRevision: 5, LibraryIds: [LIB_A] }]);
 });
 
 test('a broken library filter says so', async () => {
@@ -1219,7 +1220,7 @@ test('remove needs a confirm and sends the leave flag', async () => {
     await destAct(view, 'removeYes', { 'data-tgj-id': 'd1' });
     const deletes = api.calls.filter(c => c.type === 'DELETE');
     assert.equal(deletes.length, 1);
-    assert.equal(deletes[0].url, '/jf/TgJelly/Destinations/d1?leave=true&expectedRevision=7');
+    assert.equal(deletes[0].url, '/jf/TgJelly/Destinations/d1?leave=true&expectedRevision=5');
 });
 
 test('send test and check again show their outcome', async () => {
@@ -1310,9 +1311,9 @@ test('integer input sends ChatId, link sends TopicLink', async () => {
     await destAct(view, 'manualAdd');
     const bodies = posts(api, 'Destinations').map(c => JSON.parse(c.data));
     assert.deepEqual(bodies, [
-        { ExpectedRevision: 7, ChatId: -100123456, Preset: 'NewMedia' },
-        { ExpectedRevision: 7, TopicLink: 'https://t.me/c/123456/7', Preset: 'NewMedia' },
-        { ExpectedRevision: 7, TopicLink: 'https://t.me/club/9', Preset: 'NewMedia' },
+        { ExpectedRevision: 5, ChatId: -100123456, Preset: 'NewMedia' },
+        { ExpectedRevision: 5, TopicLink: 'https://t.me/c/123456/7', Preset: 'NewMedia' },
+        { ExpectedRevision: 5, TopicLink: 'https://t.me/club/9', Preset: 'NewMedia' },
     ]);
 });
 
@@ -1342,7 +1343,7 @@ test('set up sends preset', async () => {
     await destAct(view, 'detectedSetUp', { 'data-tgj-id': '-100777' });
     const calls = posts(api, 'DetectedChats/-100777');
     assert.equal(calls.length, 1);
-    assert.deepEqual(JSON.parse(calls[0].data), { ExpectedRevision: 7, Preset: 'AdminAlerts' });
+    assert.deepEqual(JSON.parse(calls[0].data), { ExpectedRevision: 5, Preset: 'AdminAlerts' });
 });
 
 test('set up failure shows the error', async () => {
@@ -1494,7 +1495,7 @@ test('a server error on another field shows in the cue of the field that was sav
         'PUT TgJelly/Settings': { status: 400, body: { Errors: [{ Field: 'Batching.MaxHoldMinutes', Message: 'Too <long>.' }] } },
     });
     await show(view);
-    batchInput(view, 'QuietWindowSeconds', '3000');
+    batchInput(view, 'QuietWindowSeconds', '600');
     leave(view, batchAttrs('QuietWindowSeconds'));
     await flush();
     assert.deepEqual(cue(view, 'Batching.QuietWindowSeconds'), errorCue('Too <long>.'));
@@ -1584,7 +1585,7 @@ test('copy diagnostics falls back to a textarea when clipboard rejects', async (
 
 function templates(overrides = {}) {
     return {
-        Revision: 4,
+        Revision: 5,
         Items: [
             {
                 EventKey: 'movie.added', Label: 'Movie added', Media: true, Text: '<b>{{ title }}</b>', BuiltIn: '<b>{{ title }}</b>', Edited: false,
@@ -1846,7 +1847,7 @@ test('save sends the revision and the text', async () => {
     await click(view, 'tplSave');
     const put = api.calls.find(c => c.type === 'PUT');
     assert.equal(put.url, '/jf/TgJelly/Templates/movie.added');
-    assert.deepEqual(JSON.parse(put.data), { ExpectedRevision: 4, Text: 'New {{ title }}' });
+    assert.deepEqual(JSON.parse(put.data), { ExpectedRevision: 5, Text: 'New {{ title }}' });
 });
 
 test('409 keeps typed text', async () => {
@@ -1887,7 +1888,7 @@ test('reset asks inline, cancel keeps the template, confirm sends DELETE with th
     await click(view, 'tplReset');
     await click(view, 'tplResetConfirm');
     const del = api.calls.find(c => c.type === 'DELETE');
-    assert.equal(del.url, '/jf/TgJelly/Templates/media.digest?expectedRevision=4');
+    assert.equal(del.url, '/jf/TgJelly/Templates/media.digest?expectedRevision=5');
     const html = el('tgj-templates').innerHTML;
     assert.ok(html.includes('>Digest {{ count }}</textarea>'), html);
     assert.ok(html.includes(`<span class="tgj-badge">${m.t(EN, 'web.templates.builtIn')}</span>`));
@@ -2861,4 +2862,118 @@ test('the manual block and diagnostics are cards: their actions stay buttons', a
     assert.match(manualEl(el), /class="tgj-btn tgj-btn--primary" data-tgj-act="manualAdd"/);
     await click(view, 'copyDiagnostics');
     assert.match(el('tgj-diagnostics').innerHTML, /<textarea id="tgj-diagnostics-text" class="tgj-field tgj-diag-text" readonly rows="12">diag<\/textarea>/);
+});
+
+// --- Task 6 fix round 1 ---
+
+test('a save in flight does not cover a newer invalid change: its error stays, and the change stays pending', async () => {
+    const { view, api, hooks } = mount({ 'PUT TgJelly/Proxy': request => settings({ Revision: 6, ProxyMode: JSON.parse(request.data).Mode }) });
+    await show(view);
+    const hold = holdPuts(api);
+    proxyType(view, 'proxyUsername', 'bob');
+    leave(view, proxyAttrs('proxyUsername'));
+    await flush();
+    assert.equal(putProxy(api).length, 1, 'the username save is in flight');
+
+    proxyMode(view, 'Http');
+    leave(view, proxyAttrs('proxyMode'));
+    await flush();
+    assert.deepEqual(cue(view, 'proxy'), errorCue(EN['web.proxy.needsAddress']));
+
+    hold.release();
+    await flush();
+    assert.deepEqual(cue(view, 'proxy'), errorCue(EN['web.proxy.needsAddress']), 'the older save does not say Saved');
+    assert.equal(hooks.state.forms.proxy.local.Mode, 'Http', 'the Http choice is kept');
+    assert.ok(hooks.pendingFields.has('[data-tgj-input="proxyMode"]'), 'and stays pending, so a refresh keeps it');
+
+    view.dispatchEvent(new Event('viewbeforehide'));
+    await flush();
+    assert.equal(putProxy(api).length, 1, 'still not sent without an address');
+    assert.deepEqual(cue(view, 'proxy'), errorCue(EN['web.proxy.needsAddress']));
+});
+
+test('Enter, then the change a browser fires, then leaving the field: one save', async () => {
+    const { view, api } = mount({
+        'PUT TgJelly/Settings': echoSettings(),
+        'PUT TgJelly/Proxy': request => settings({ Revision: 6, ProxyMode: 'Http', ProxyUrl: JSON.parse(request.data).Url }),
+        'GET TgJelly/Settings': settings({ ProxyMode: 'Http', ProxyUrl: 'old:1' }),
+    });
+    await show(view);
+    const enterThenLeave = async (attrs, value) => {
+        dispatchOn(view, 'input', attrs, { value });
+        dispatchOn(view, 'keydown', attrs, { tagName: 'INPUT', value }, { key: 'Enter' });
+        await flush();
+        dispatchOn(view, 'change', attrs, { value });
+        leave(view, attrs);
+        await flush();
+    };
+
+    await enterThenLeave(proxyAttrs('proxyUrl'), 'new:2');
+    assert.deepEqual(putProxy(api).map(b => b.Url), ['new:2'], 'one bot restart, not two');
+    await enterThenLeave(URL_ATTRS, 'https://jf.example.com');
+    assert.deepEqual(putSettings(api).map(b => b.PublicUrl), ['https://jf.example.com']);
+    await enterThenLeave(batchAttrs('DigestThreshold'), '20');
+    assert.equal(putSettings(api).length, 2);
+});
+
+test('a save queued behind a settings save sends the revision that save moved to: no 409 from the page itself', async () => {
+    const server = oneRevisionServer();
+    const { view, api, hooks } = mount(server.routes);
+    await show(view);
+    assert.equal(hooks.pageRevision(), 5);
+    const results = [];
+    toggle(view, 'ShowPoster');
+    await Promise.resolve();
+    // A destination save (Task 7's kind) queued right behind it, built when it is sent.
+    hooks.queueSave({
+        key: 'dest:d1',
+        mode: 'now',
+        send: async () => {
+            const result = await hooks.api.put('Destinations/d1', { ExpectedRevision: hooks.pageRevision(), Enabled: false });
+            results.push(result.status);
+            return result.status === 200 ? { status: 'saved' } : { status: 'failed', message: String(result.status) };
+        },
+    });
+    await flush();
+
+    assert.deepEqual(api.calls.filter(c => c.type === 'PUT').map(c => JSON.parse(c.data).ExpectedRevision), [5, 6]);
+    assert.deepEqual(results, [200]);
+    assert.equal(server.revision, 7);
+    assert.equal(hooks.pageRevision(), 6, 'the destination reply carries no revision; the reload that follows brings 7');
+});
+
+test('validatePublicUrl matches System.Uri on hosts URL alone would accept', () => {
+    for (const bad of ['http://.', 'http://..', 'http://.a', 'http://a..b', 'http://.example.com', 'http://*.b', 'http://a%2eb']) {
+        assert.equal(m.validatePublicUrl(bad), false, bad);
+    }
+    for (const ok of ['http://a.b.', 'http://a_b.c', 'http://-a.b', 'http://user:pw@jf.example.com', 'http://1.2']) {
+        assert.equal(m.validatePublicUrl(ok), true, ok);
+    }
+});
+
+test('batching uses the server rules and messages, the longest hold against the quiet window too', async () => {
+    assert.equal(EN['web.settings.range'], 'Must be between {min} and {max}.');
+    assert.equal(EN['web.settings.maxHoldShort'], 'Must be at least as long as the quiet window.');
+    const { view, api, timers } = mount({ 'PUT TgJelly/Settings': echoSettings() });
+    await show(view);
+
+    batchInput(view, 'MaxHoldMinutes', '300');
+    await timers.advance(800);
+    assert.deepEqual(cue(view, 'Batching.MaxHoldMinutes'), errorCue('Must be between 1 and 240.'));
+
+    // Saved quiet window: 120 s. A 1 minute hold is shorter.
+    batchInput(view, 'MaxHoldMinutes', '1');
+    await timers.advance(800);
+    assert.deepEqual(cue(view, 'Batching.MaxHoldMinutes'), errorCue('Must be at least as long as the quiet window.'));
+    // Saved longest hold: 30 min. A 3600 s quiet window is longer.
+    batchInput(view, 'QuietWindowSeconds', '3600');
+    await timers.advance(800);
+    assert.deepEqual(cue(view, 'Batching.QuietWindowSeconds'), errorCue('Must be at least as long as the quiet window.'));
+    assert.equal(putSettings(api).length, 0, 'an invalid pair is not sent');
+
+    batchInput(view, 'MaxHoldMinutes', '60');
+    await timers.advance(800);
+    assert.equal(putSettings(api).length, 1);
+    assert.equal(putSettings(api)[0].Batching.MaxHoldMinutes, 60);
+    assert.equal(putSettings(api)[0].Batching.QuietWindowSeconds, 120, 'the quiet window edit is not sent with it');
 });

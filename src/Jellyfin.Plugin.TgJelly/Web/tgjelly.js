@@ -941,23 +941,41 @@ export function validatePublicUrl(value) {
         return false;
     }
 
-    return (parsed.protocol === 'http:' || parsed.protocol === 'https:') && !parsed.hostname.startsWith('[') && parsed.hostname.includes('.');
+    // System.Uri refuses a host with an empty label (".", ".a", "a..b"; one trailing dot is fine), with characters
+    // outside letters, digits, "-" and "_" ("*.b"), or with a %-escape ("a%2eb"), all of which URL accepts.
+    const host = parsed.hostname;
+    const rawHost = url.replace(/^https?:\/\//i, '').split(/[/?#]/)[0].replace(/^.*@/, '');
+    const labels = host.replace(/\.$/, '').split('.');
+    return (parsed.protocol === 'http:' || parsed.protocol === 'https:')
+        && !host.startsWith('[')
+        && host.includes('.')
+        && /^[a-z0-9._-]+$/.test(host)
+        && !rawHost.includes('%')
+        && labels.every(label => label !== '');
 }
 
 /**
- * Why a batching value can't be saved (plain text), or null: the server's range rules (SettingsValidator), checked
- * before the save. The longest hold against the quiet window is the server's to say.
- * @param {{ min: number, max: number }} field one of BATCHING_FIELDS
- * @param {unknown} value a number, or the text typed when it isn't a whole number
+ * Why a batching value can't be saved (plain text), or null: the server's rules (SettingsValidator) and its messages,
+ * checked before the save. batching is the Batching object as it would be sent: this field's value with the others.
+ * @param {{ key: string, min: number, max: number }} field one of BATCHING_FIELDS
+ * @param {Record<string, unknown>} batching numbers, or the text typed where it isn't a whole number
  * @param {Record<string, string>} S
  * @returns {string | null}
  */
-export function batchingError(field, value, S) {
+export function batchingError(field, batching, S) {
+    const value = batching[field.key];
     if (!Number.isInteger(value)) {
         return text(S, 'web.settings.notNumber');
     }
 
-    return value < field.min || value > field.max ? text(S, 'web.settings.range', { min: field.min, max: field.max }) : null;
+    if (value < field.min || value > field.max) {
+        return text(S, 'web.settings.range', { min: field.min, max: field.max });
+    }
+
+    const quiet = batching.QuietWindowSeconds;
+    const hold = batching.MaxHoldMinutes;
+    const pair = field.key === 'QuietWindowSeconds' || field.key === 'MaxHoldMinutes';
+    return pair && Number.isInteger(quiet) && Number.isInteger(hold) && hold * 60 < quiet ? text(S, 'web.settings.maxHoldShort') : null;
 }
 
 /**
@@ -1767,8 +1785,22 @@ export default function TgJellyPage(view, params) {
     const connectUi = () => ({ ...state.ui, hasToken: Boolean(state.status && state.status.HasToken), proxy: proxyUi() });
     const proxyUi = () => ({ form: state.forms.proxy });
 
+    // The one Revision every save sends (design §6.4: settings, destinations and templates share it). It is the newest
+    // Revision of any data the page took in: a section load, a save's reply or a 409's Current. So a save queued behind
+    // another one sends the Revision that save moved to, not its own section's older copy, which would 409 on the page's
+    // own change. The Status poll doesn't move it: a Revision the page holds no data for must still conflict.
+    let knownRevision = 0;
+    const noteRevision = dto => {
+        if (dto && typeof dto.Revision === 'number' && dto.Revision > knownRevision) {
+            knownRevision = dto.Revision;
+        }
+    };
+    /** The Revision to send as ExpectedRevision with any save. */
+    const pageRevision = () => knownRevision;
+
     /** Takes a SettingsDto into the shared settings state and its editor forms (keeping unsaved edits). */
     const takeSettings = dto => {
+        noteRevision(dto);
         state.settings = dto;
         syncForm('proxy', proxyFormData(dto));
         syncForm('settings', settingsFormData(dto));
@@ -1810,6 +1842,7 @@ export default function TgJellyPage(view, params) {
 
     /** Takes a DestinationsDto into the state and the per-destination editor forms (keeping unsaved edits). */
     const takeDestinations = dto => {
+        noteRevision(dto);
         state.destinations = dto;
         const live = new Set(dto.Items.map(d => `dest:${d.Id}`));
         for (const key of Object.keys(state.forms).filter(k => k.startsWith('dest:') && !live.has(k))) {
@@ -1841,6 +1874,7 @@ export default function TgJellyPage(view, params) {
 
     /** Takes a TemplatesDto into the state and one editor form per event key (keeping unsaved edits). */
     const takeTemplates = dto => {
+        noteRevision(dto);
         state.templates = dto;
         const live = new Set(dto.Items.map(i => `tpl:${i.EventKey}`));
         for (const key of Object.keys(state.forms).filter(k => k.startsWith('tpl:') && !live.has(k))) {
@@ -2404,10 +2438,9 @@ export default function TgJellyPage(view, params) {
 
     /** The cue each data-tgj-cue spot shows, by key ({ state, text }), so a section write can paint it again. */
     const cues = new Map();
-    // Per save key: the number of the newest change, the number of the change last sent (or found invalid), and the
-    // fields it holds in pendingFields until a save with nothing newer behind it settles.
+    // Per save key: the number of the newest change, and the fields it holds in pendingFields until the newest change is
+    // saved. An unsaved change (waiting, in flight, invalid or failed) keeps them: a refresh never replaces its value.
     const changeSeq = new Map();
-    const takenSeq = new Map();
     const heldFields = new Map();
 
     /** The words a cue shows: the cue states come from tgjelly-autosave.js, the text from the strings. */
@@ -2475,11 +2508,6 @@ export default function TgJellyPage(view, params) {
     };
 
     const onSettled = (key, result) => {
-        // A change made while this save was in flight is still to save: its fields stay pending.
-        if (takenSeq.get(key) === changeSeq.get(key)) {
-            releaseFields(key);
-        }
-
         if (result.status === 'saved') {
             // Other sections hold the old Revision now (they share it); bring them up to date, keeping their edits.
             syncRevisions().catch(err => console.error('TgJelly: could not catch up with the new revision', err));
@@ -2511,31 +2539,29 @@ export default function TgJellyPage(view, params) {
         }
 
         heldFields.set(key, held);
-        const taken = () => takenSeq.set(key, seq);
-        const check = () => {
-            const reason = validate ? validate() : null;
-            if (reason) {
-                taken();
+        // Once this change is saved, and no newer one came in meanwhile, its fields follow the server again. A conflict's
+        // retry is followed the same way.
+        const settle = result => {
+            if (result && result.status === 'conflict' && typeof result.retry === 'function') {
+                const retry = result.retry;
+                return { ...result, retry: async () => settle(await retry()) };
             }
 
-            return reason;
+            if (result && result.status === 'saved' && changeSeq.get(key) === seq) {
+                releaseFields(key);
+            }
+
+            return result;
         };
         const dueCheck = mode === 'debounce' && validate;
         autosave.change({
             key,
             mode,
             delay,
-            validate: dueCheck ? undefined : check,
+            validate: dueCheck ? undefined : validate ?? undefined,
             send: async () => {
-                if (dueCheck) {
-                    const reason = check();
-                    if (reason) {
-                        return { status: 'invalid', message: reason };
-                    }
-                }
-
-                taken();
-                return send();
+                const reason = dueCheck ? validate() : null;
+                return reason ? { status: 'invalid', message: reason } : settle(await send());
             },
         });
     };
@@ -2589,7 +2615,7 @@ export default function TgJellyPage(view, params) {
             return { status: 'failed', message: text(S, 'web.requestFailed', { reason: 'no settings' }) };
         }
 
-        const request = settingsRequest(form, paths, state.settings.Revision, S);
+        const request = settingsRequest(form, paths, pageRevision(), S);
         if (!request.body) {
             return { status: 'invalid', message: request.errors.map(e => e.Message).join(' ') };
         }
@@ -2651,7 +2677,7 @@ export default function TgJellyPage(view, params) {
 
         const local = form.local;
         const withAddress = local.Mode === 'Http' || local.Mode === 'Socks5';
-        const body = { ExpectedRevision: state.settings.Revision, Mode: local.Mode, Url: withAddress ? String(local.Url ?? '').trim() : '' };
+        const body = { ExpectedRevision: pageRevision(), Mode: local.Mode, Url: withAddress ? String(local.Url ?? '').trim() : '' };
         const secrets = { Username: typed.proxyUsername, Password: typed.proxyPassword };
         // An untouched field is omitted (the server keeps the stored value); a cleared one is "".
         for (const [name, value] of Object.entries(secrets)) {
@@ -2842,14 +2868,14 @@ export default function TgJellyPage(view, params) {
         enabled: el => runAction('destinations', () => {
             const dest = destination(idOf(el));
             return dest
-                ? putDestination(dest.Id, { ExpectedRevision: state.destinations.Revision, Enabled: !dest.Enabled }, { keepForm: true })
+                ? putDestination(dest.Id, { ExpectedRevision: pageRevision(), Enabled: !dest.Enabled }, { keepForm: true })
                 : undefined;
         }),
         saveDest: el => runAction('destinations', () => {
             const id = idOf(el);
             const form = state.forms[destKey(id)];
             const body = form && state.destinations
-                ? destinationChanges(destinationFormData(destination(id)), form.local, state.destinations.Revision)
+                ? destinationChanges(destinationFormData(destination(id)), form.local, pageRevision())
                 : null;
             return body ? putDestination(id, body) : undefined;
         }),
@@ -2898,7 +2924,7 @@ export default function TgJellyPage(view, params) {
         },
         removeYes: el => runAction('destinations', async () => {
             const id = idOf(el);
-            const revision = state.destinations ? state.destinations.Revision : 0;
+            const revision = pageRevision();
             const result = await api.del(`Destinations/${encodeURIComponent(id)}?leave=${state.ui.destLeave}&expectedRevision=${revision}`);
             state.ui.destConfirm = null;
             if (result.status === 204 || result.status === 200) {
@@ -2919,7 +2945,7 @@ export default function TgJellyPage(view, params) {
 
             state.ui.manualResult = '';
             const target = /^-?\d+$/.test(value) && Number.isSafeInteger(Number(value)) ? { ChatId: Number(value) } : { TopicLink: value };
-            return manualReply(await api.post('Destinations', { ExpectedRevision: state.destinations.Revision, ...target, Preset: state.ui.manualPreset }));
+            return manualReply(await api.post('Destinations', { ExpectedRevision: pageRevision(), ...target, Preset: state.ui.manualPreset }));
         }),
         detectedSetUp: el => runAction('manual', async () => {
             const id = detectedId(el);
@@ -2929,7 +2955,7 @@ export default function TgJellyPage(view, params) {
 
             state.ui.manualResult = '';
             const preset = state.ui.detectedPresets[id] ?? 'Everything';
-            return manualReply(await api.post(`DetectedChats/${id}`, { ExpectedRevision: state.destinations.Revision, Preset: preset }));
+            return manualReply(await api.post(`DetectedChats/${id}`, { ExpectedRevision: pageRevision(), Preset: preset }));
         }),
         detectedDismiss: el => runAction('manual', async () => {
             const id = detectedId(el);
@@ -2987,7 +3013,7 @@ export default function TgJellyPage(view, params) {
             let result;
             try {
                 result = await api.put(`Templates/${encodeURIComponent(key)}`,
-                    { ExpectedRevision: state.templates.Revision, Text: String(form.local.Text ?? '') });
+                    { ExpectedRevision: pageRevision(), Text: String(form.local.Text ?? '') });
             } finally {
                 state.ui.tplBusy = false;
             }
@@ -3033,7 +3059,7 @@ export default function TgJellyPage(view, params) {
             renderSection('templates');
             let result;
             try {
-                result = await api.del(`Templates/${encodeURIComponent(key)}?expectedRevision=${state.templates.Revision}`);
+                result = await api.del(`Templates/${encodeURIComponent(key)}?expectedRevision=${pageRevision()}`);
             } finally {
                 state.ui.tplBusy = false;
                 state.ui.tplResetAsk = false;
@@ -3107,17 +3133,25 @@ export default function TgJellyPage(view, params) {
                 renderProxyForms();
             }
         },
-        proxyUrl: el => {
-            markDirty('proxy', 'Url', el.value);
-            saveProxy(el);
+        // Typed fields act on input only: the change a browser fires on Enter or blur repeats a value already queued, and
+        // queueing it again after Enter's save would send it twice (a second bot restart, for the proxy).
+        proxyUrl: (el, event) => {
+            if (event.type === 'input') {
+                markDirty('proxy', 'Url', el.value);
+                saveProxy(el);
+            }
         },
-        proxyUsername: el => {
-            typed.proxyUsername = String(el.value ?? '');
-            saveProxy(el);
+        proxyUsername: (el, event) => {
+            if (event.type === 'input') {
+                typed.proxyUsername = String(el.value ?? '');
+                saveProxy(el);
+            }
         },
-        proxyPassword: el => {
-            typed.proxyPassword = String(el.value ?? '');
-            saveProxy(el);
+        proxyPassword: (el, event) => {
+            if (event.type === 'input') {
+                typed.proxyPassword = String(el.value ?? '');
+                saveProxy(el);
+            }
         },
         destPreset: (el, event) => {
             const id = idOf(el);
@@ -3184,9 +3218,11 @@ export default function TgJellyPage(view, params) {
             }
         },
         // A partial URL can pass the rules, and would go live in message buttons: this saves on blur or Enter only.
-        publicUrl: el => {
-            markDirty('settings', 'PublicUrl', String(el.value ?? ''));
-            saveSetting('PublicUrl', 'blur', el, { validate: publicUrlError });
+        publicUrl: (el, event) => {
+            if (event.type === 'input') {
+                markDirty('settings', 'PublicUrl', String(el.value ?? ''));
+                saveSetting('PublicUrl', 'blur', el, { validate: publicUrlError });
+            }
         },
         // Switches are buttons: they reach here on click.
         msgToggle: (el, event) => {
@@ -3198,16 +3234,17 @@ export default function TgJellyPage(view, params) {
                 saveSetting(path, 'now', el);
             }
         },
-        batching: el => {
+        batching: (el, event) => {
             const field = BATCHING_FIELDS.find(f => f.key === el.getAttribute('data-tgj-key'));
-            if (field) {
+            if (field && event.type === 'input') {
                 const path = `Batching.${field.key}`;
                 const typedText = String(el.value ?? '').trim();
                 // A value that isn't a whole number stays text, so its save can say so instead of sending it.
                 markDirty('settings', path, /^-?\d+$/.test(typedText) ? Number(typedText) : typedText);
                 saveSetting(path, 'debounce', el, {
                     delay: TYPING_SAVE_MS,
-                    validate: () => batchingError(field, pathValue(state.forms.settings.local, path), state.strings),
+                    // Checked as it would be sent: this value with the saved others (the server's cross-field rule too).
+                    validate: () => batchingError(field, overlayPaths(state.forms.settings.base, state.forms.settings.local, [path]).Batching, state.strings),
                 });
             }
         },
@@ -3422,5 +3459,5 @@ export default function TgJellyPage(view, params) {
         }
     });
 
-    return { api, state, sections, actions, inputs, reloadSection, runAction, syncForm, markDirty, resetForm, pendingFields };
+    return { api, state, sections, actions, inputs, reloadSection, runAction, syncForm, markDirty, resetForm, pendingFields, queueSave, pageRevision };
 }

@@ -207,3 +207,36 @@ test('staleIdle_doesNotReplaceNewerCue', async () => {
     await clock.tick(1);
     assert.deepEqual(states(cues, 'a'), ['saved', 'saving', 'saved', 'idle']);
 });
+
+test('outdatedResult_keepsTheNewerChangesCue', async () => {
+    const { clock, q, cues, settled } = setup();
+    const first = deferred();
+    q.change({ key: 'proxy', mode: 'now', send: () => first.promise });
+    await clock.tick(400);
+    assert.deepEqual(states(cues, 'proxy'), ['saving']);
+
+    // A newer change for the same key, invalid, while the first is in flight.
+    q.change({ key: 'proxy', mode: 'blur', validate: () => 'enter the proxy address', send: async () => ({ status: 'saved' }) });
+    q.flush('proxy');   // not awaited: it resolves once the queue is empty, and the first save is still in flight
+    await clock.tick(0);
+    assert.deepEqual(cues.at(-1), ['proxy', 'error', 'enter the proxy address']);
+
+    first.resolve({ status: 'saved' });
+    await clock.tick(5000);
+    assert.deepEqual(cues.at(-1), ['proxy', 'error', 'enter the proxy address'], 'the outdated Saved does not replace it');
+    assert.ok(!states(cues, 'proxy').includes('saved'));
+    assert.deepEqual(settled, [['proxy', 'invalid'], ['proxy', 'saved']], 'the result still reaches onSettled');
+});
+
+test('outdatedResult_clearsItsOwnSavingCue', async () => {
+    const { clock, q, cues } = setup();
+    const first = deferred();
+    q.change({ key: 'a', mode: 'now', send: () => first.promise });
+    await clock.tick(400);
+    q.change({ key: 'a', mode: 'blur', send: async () => ({ status: 'saved' }) });
+    first.resolve({ status: 'failed', message: 'x' });
+    await clock.tick(0);
+    assert.deepEqual(states(cues, 'a'), ['saving', 'idle'], 'no error for a value already changed; the waiting change has no cue yet');
+    await q.flush('a');
+    assert.deepEqual(states(cues, 'a'), ['saving', 'idle', 'saved']);
+});
