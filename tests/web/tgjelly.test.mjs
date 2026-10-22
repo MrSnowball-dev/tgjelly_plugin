@@ -2019,3 +2019,84 @@ test('a status poll with a higher revision reloads the sections, keeping unsaved
     await flush();
     assert.equal(gets(), before);
 });
+
+// --- the template textarea keeps its caret across section renders (final review M11) ---
+
+/**
+ * A fake template textarea. Like a browser, every write of the templates section replaces it with a new, unfocused
+ * one at the start; the returned textarea() gives the current one.
+ */
+function liveTextarea(view, doc) {
+    const make = () => ({
+        selectionStart: 0,
+        selectionEnd: 0,
+        selectionDirection: 'none',
+        scrollTop: 0,
+        scrollLeft: 0,
+        focusCalls: 0,
+        focus(options) {
+            this.focusCalls++;
+            this.focusOptions = options;
+            doc.activeElement = this;
+        },
+        setSelectionRange(start, end, direction) {
+            Object.assign(this, { selectionStart: start, selectionEnd: end, selectionDirection: direction });
+        },
+    });
+    view.elements.set('tgj-tpl-text', make());
+    const section = view.elements.get('tgj-templates');
+    const setter = Object.getOwnPropertyDescriptor(section, 'innerHTML').set;
+    const getter = Object.getOwnPropertyDescriptor(section, 'innerHTML').get;
+    Object.defineProperty(section, 'innerHTML', {
+        get: getter,
+        set(value) {
+            setter.call(section, value);
+            if (doc.activeElement === view.elements.get('tgj-tpl-text')) {
+                doc.activeElement = null;
+            }
+
+            view.elements.set('tgj-tpl-text', make());
+        },
+    });
+    return () => view.elements.get('tgj-tpl-text');
+}
+
+test('a Destinations render while typing keeps the textarea focus, selection and scroll', async () => {
+    const server = oneRevisionServer();
+    const { view, el, doc } = mount(server.routes);
+    await show(view);
+    const textarea = liveTextarea(view, doc);
+    const typing = textarea();
+    typing.focus();
+    Object.assign(typing, { selectionStart: 3, selectionEnd: 5, selectionDirection: 'forward', scrollTop: 40, scrollLeft: 2 });
+    tplInput(view, 'tplText', { value: 'abcdef {{ title }}' });
+    const writes = el('tgj-templates').writes;
+
+    // Toggling a destination renders Destinations, which renders the templates section with the typed text.
+    await destAct(view, 'enabled', { 'data-tgj-id': 'd1' });
+
+    assert.ok(el('tgj-templates').writes > writes, 'the section was written again');
+    assert.ok(el('tgj-templates').innerHTML.includes('abcdef {{ title }}</textarea>'), 'the unsaved text is kept');
+    const now = textarea();
+    assert.notEqual(now, typing, 'the textarea was replaced');
+    assert.equal(doc.activeElement, now);
+    assert.deepEqual(now.focusOptions, { preventScroll: true });
+    assert.deepEqual([now.selectionStart, now.selectionEnd, now.selectionDirection], [3, 5, 'forward']);
+    assert.deepEqual([now.scrollTop, now.scrollLeft], [40, 2]);
+});
+
+test('a render without the textarea focused does not take the focus', async () => {
+    const server = oneRevisionServer();
+    const { view, el, doc } = mount(server.routes);
+    await show(view);
+    const textarea = liveTextarea(view, doc);
+    doc.activeElement = null;
+    tplInput(view, 'tplText', { value: 'typed elsewhere' });
+    const writes = el('tgj-templates').writes;
+
+    await destAct(view, 'enabled', { 'data-tgj-id': 'd1' });
+
+    assert.ok(el('tgj-templates').writes > writes);
+    assert.equal(textarea().focusCalls, 0);
+    assert.equal(doc.activeElement, null);
+});

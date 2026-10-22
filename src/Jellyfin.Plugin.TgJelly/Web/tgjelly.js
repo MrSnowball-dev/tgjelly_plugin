@@ -1177,7 +1177,7 @@ export function renderTemplates(dto, S, ui) {
     const rows = (item.Fields ?? []).map(f => `<tr><td><code>${esc(f.Name)}</code></td><td>${esc(f.Type)}</td>`
         + `<td>${f.Optional ? t(S, 'web.templates.optional') : ''}</td><td>${esc(f.Description)}</td></tr>`);
     parts.push(`<div class="tgj-tpl-grid"><div class="tgj-tpl-edit">`
-        + `<div class="${changed('Text').trim()}"><textarea class="tgj-template-text" data-tgj-input="tplText" rows="12" spellcheck="false">${esc(local.Text)}</textarea></div>`
+        + `<div class="${changed('Text').trim()}"><textarea id="tgj-tpl-text" class="tgj-template-text" data-tgj-input="tplText" rows="12" spellcheck="false">${esc(local.Text)}</textarea></div>`
         + `<details><summary>${t(S, 'web.templates.fields')}</summary><table class="tgj-template-fields">${rows.join('')}</table></details>`
         + `<p class="fieldDescription"><a is="emby-linkbutton" href="${TEMPLATES_DOCS}" target="_blank" rel="noopener noreferrer">${t(S, 'web.templates.docs')}</a></p></div>`
         + `<div id="tgj-tpl-preview" class="tgj-tpl-preview">${renderTemplatePreview(ui.result ?? null, S, lang, ui.good ?? null)}</div></div>`);
@@ -1324,6 +1324,45 @@ export default function TgJellyPage(view, params) {
             el.innerHTML = html;
             rendered.set(id, html);
         }
+    };
+
+    /**
+     * Runs a write that may replace the template textarea. When the textarea has the focus, the new one gets it back with
+     * the same selection and scroll position, so a render while the admin types (a Destinations render, a revision sync)
+     * doesn't move the caret. The text itself is safe: it renders from the form state.
+     * @param {() => void} write
+     */
+    const keepTemplateCaret = write => {
+        const before = byId('tgj-tpl-text');
+        const doc = (before && before.ownerDocument) || globalThis.document;
+        if (!before || !doc || doc.activeElement !== before) {
+            write();
+            return;
+        }
+
+        const saved = {
+            start: before.selectionStart,
+            end: before.selectionEnd,
+            direction: before.selectionDirection || 'none',
+            top: before.scrollTop,
+            left: before.scrollLeft,
+        };
+        write();
+        const after = byId('tgj-tpl-text');
+        if (!after || after === before) {
+            return;
+        }
+
+        if (typeof after.focus === 'function') {
+            after.focus({ preventScroll: true });
+        }
+
+        if (typeof after.setSelectionRange === 'function' && typeof saved.start === 'number' && typeof saved.end === 'number') {
+            after.setSelectionRange(saved.start, saved.end, saved.direction);
+        }
+
+        after.scrollTop = saved.top;
+        after.scrollLeft = saved.left;
     };
 
     /** The error line for a section, or ''. */
@@ -1624,7 +1663,13 @@ export default function TgJellyPage(view, params) {
 
     const renderSection = name => {
         const section = sections[name];
-        setHtml(section.id, section.render() + sectionError(name));
+        const write = () => setHtml(section.id, section.render() + sectionError(name));
+        if (name === 'templates') {
+            keepTemplateCaret(write);
+        } else {
+            write();
+        }
+
         if (name === 'destinations') {
             // The manual block shows the same data (detected chats, the gate), so it follows every Destinations render;
             // the templates section lists the destinations for its test send.
