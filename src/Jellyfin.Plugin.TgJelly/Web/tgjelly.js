@@ -8,7 +8,7 @@
 //
 // Sibling modules are imported by the URL Jellyfin serves them under (plan 8); tests/web/jellyfin-resolve.mjs maps it
 // to the file for Node.
-import { esc, stateLabel } from './configurationpage?name=tgjelly-ui.js';
+import { esc, stateLabel, card, row, actionButton, inlineConfirm, notice, emptyState, textField } from './configurationpage?name=tgjelly-ui.js';
 
 // esc lives in tgjelly-ui.js; it stays a named export here for the page's callers and tests.
 export { esc };
@@ -314,30 +314,37 @@ export function requestError(S, result) {
 export function renderStatus(status, S, lang = 'en') {
     const counters = status.Counters ?? {};
     const dropped = (counters.DroppedIntake ?? 0) + (counters.DroppedOutbox ?? 0) + (counters.Evictions ?? 0);
-    const parts = [`<h2 class="sectionTitle">${t(S, 'web.status.title')}</h2>`];
+    const parts = [];
 
     if (!status.Compatible) {
-        parts.push(`<p class="tgj-compat tgj-error">${esc(status.CompatMessage)}</p>`);
+        parts.push(notice({ kind: 'error', extraClass: 'tgj-compat', html: esc(status.CompatMessage) }));
     } else {
-        const problem = PROBLEM_STATES.has(status.ConnectionState) ? ' class="tgj-error"' : '';
-        parts.push(`<p${problem}>${esc(status.ConnectionMessage)}</p>`);
-        if (status.ConnectionState === 'WebhookConflict') {
-            parts.push('<button is="emby-button" type="button" class="raised button-submit emby-button" data-tgj-act="takeover">'
-                + `<span>${t(S, 'web.status.takeOver')}</span></button>`);
-        }
+        const kind = PROBLEM_STATES.has(status.ConnectionState) ? 'error' : status.ConnectionState === 'Connected' ? 'ok' : 'muted';
+        const takeOver = status.ConnectionState === 'WebhookConflict'
+            ? actionButton({ label: text(S, 'web.status.takeOver'), act: 'takeover', kind: 'primary' })
+            : '';
+        parts.push(row({
+            label: text(S, 'web.status.connection'),
+            control: stateLabel({ kind, text: status.ConnectionMessage }) + takeOver,
+        }));
     }
 
-    parts.push(`<p class="fieldDescription">${t(S, 'web.status.counts', {
-        pending: formatNumber(status.PendingMedia ?? 0, lang),
-        outbox: formatNumber(status.OutboxCount ?? 0, lang),
-        dropped: formatNumber(dropped, lang),
-    })}</p>`);
+    parts.push(row({
+        label: text(S, 'web.status.activity'),
+        extraClass: 'tgj-row--stack',
+        control: `<span class="tgj-row-hint">${t(S, 'web.status.counts', {
+            pending: formatNumber(status.PendingMedia ?? 0, lang),
+            outbox: formatNumber(status.OutboxCount ?? 0, lang),
+            dropped: formatNumber(dropped, lang),
+        })}</span>`,
+    }));
 
-    for (const notice of status.Notices ?? []) {
-        parts.push('<div class="tgj-notice">'
-            + `<span class="tgj-notice-text">${esc(notice.Text)}</span>`
-            + `<button is="emby-button" type="button" class="raised emby-button" data-tgj-act="dismiss" data-tgj-id="${esc(notice.Id)}">`
-            + `<span>${t(S, 'web.status.dismiss')}</span></button></div>`);
+    for (const entry of status.Notices ?? []) {
+        parts.push(notice({
+            kind: 'info',
+            html: `<span class="tgj-notice-text">${esc(entry.Text)}</span>`
+                + actionButton({ label: text(S, 'web.status.dismiss'), act: 'dismiss', id: entry.Id }),
+        }));
     }
 
     const errors = status.LastErrors ?? [];
@@ -347,11 +354,15 @@ export function renderStatus(status, S, lang = 'en') {
             source: e.Source,
             message: e.Message,
         })}</li>`);
-        parts.push(`<h3>${t(S, 'web.status.errors')}</h3><ul class="tgj-errors fieldDescription">${items.join('')}</ul>`);
+        parts.push(row({
+            label: text(S, 'web.status.errors'),
+            extraClass: 'tgj-row--stack',
+            control: `<ul class="tgj-errors tgj-row-hint">${items.join('')}</ul>`,
+        }));
     }
 
-    parts.push(`<p class="fieldDescription">${t(S, 'web.status.version', { version: status.Version, target: status.BuildTarget })}</p>`);
-    return `<div class="verticalSection">${parts.join('')}</div>`;
+    parts.push(`<p class="tgj-row-hint tgj-version">${t(S, 'web.status.version', { version: status.Version, target: status.BuildTarget })}</p>`);
+    return card({ title: text(S, 'web.status.title'), body: parts.join('') });
 }
 
 const BUTTON = 'is="emby-button" type="button"';
@@ -365,7 +376,7 @@ function button(label, act, { primary = false, disabled = false, id = null } = {
 /** A link to Telegram, or '' when the URL isn't one the server should have sent. */
 function telegramLink(url, label) {
     return typeof url === 'string' && url.startsWith('https://t.me/')
-        ? `<a is="emby-linkbutton" class="raised emby-button" href="${esc(url)}" target="_blank" rel="noopener noreferrer"><span>${label}</span></a>`
+        ? `<a class="tgj-btn" href="${esc(url)}" target="_blank" rel="noopener noreferrer">${label}</a>`
         : '';
 }
 
@@ -419,21 +430,24 @@ export function renderProxyForm(settings, S, ui) {
 
 /**
  * The token form (spec §6.1): a password input that is never pre-filled, the two notes for an existing bot, the
- * profile checkbox and Save.
+ * profile checkbox and Connect. Connecting is an explicit action: nothing here auto-saves.
  */
 function renderTokenForm(ui, S) {
-    const busy = ui.saving ? ' disabled' : '';
+    const busy = Boolean(ui.saving);
     const notes = ui.mode === 'existing'
-        ? `<p class="fieldDescription">${t(S, 'web.connect.noteRestrict')}</p><p class="fieldDescription">${t(S, 'web.connect.noteOther')}</p>`
+        ? `<p class="tgj-row-hint">${t(S, 'web.connect.noteRestrict')}</p><p class="tgj-row-hint">${t(S, 'web.connect.noteOther')}</p>`
         : '';
     return '<div class="tgj-token-form">'
-        + `<div class="inputContainer"><input is="emby-input" type="password" label="${t(S, 'web.connect.tokenLabel')}" `
-        + `autocomplete="off" data-tgj-input="token"${busy} /></div>`
+        + row({
+            label: text(S, 'web.connect.tokenLabel'),
+            extraClass: 'tgj-row--stack',
+            control: textField({ input: 'token', value: '', type: 'password', attrs: { autocomplete: 'off', 'aria-label': text(S, 'web.connect.tokenLabel'), disabled: busy } }),
+        })
         + notes
-        + '<label class="emby-checkbox-label"><input is="emby-checkbox" type="checkbox" data-tgj-input="setProfile"'
-        + `${ui.setProfile ? ' checked' : ''}${busy} /><span>${t(S, 'web.connect.setProfile')}</span></label>`
-        + `<div>${button(t(S, 'web.connect.save'), 'saveToken', { primary: true, disabled: ui.saving })}`
-        + `${ui.hasToken ? button(t(S, 'web.connect.cancel'), 'cancelToken', { disabled: ui.saving }) : ''}</div></div>`;
+        + '<label class="tgj-check"><input type="checkbox" data-tgj-input="setProfile"'
+        + `${ui.setProfile ? ' checked' : ''}${busy ? ' disabled' : ''} /><span>${t(S, 'web.connect.setProfile')}</span></label>`
+        + `<div class="tgj-actions">${actionButton({ label: text(S, 'web.connect.save'), act: 'saveToken', kind: 'primary', disabled: busy })}`
+        + `${ui.hasToken ? actionButton({ label: text(S, 'web.connect.cancel'), act: 'cancelToken', disabled: busy }) : ''}</div></div>`;
 }
 
 /**
@@ -448,29 +462,32 @@ function renderTokenForm(ui, S) {
  */
 export function renderConnect(ui, S, links, settings = null) {
     const result = ui.result;
-    const busy = ui.saving;
+    const busy = Boolean(ui.saving);
     if (result && result.kind === 'Connected') {
-        return result.webhookDeleted
-            ? `<div class="verticalSection"><p class="fieldDescription">${t(S, 'web.connect.webhookRemoved')}</p></div>`
-            : '';
+        return result.webhookDeleted ? notice({ kind: 'info', html: t(S, 'web.connect.webhookRemoved') }) : '';
     }
 
     if (ui.hasToken && !ui.changingToken) {
         return '';
     }
 
-    const parts = [`<h2 class="sectionTitle">${t(S, 'web.connect.title')}</h2>`];
+    const title = text(S, 'web.connect.title');
     if (result && result.kind === 'NeedsConfirm') {
-        parts.push(`<p>${esc(result.message)}</p>`
-            + `<div>${button(t(S, 'web.connect.switch'), 'switchBot', { primary: true, disabled: busy })}`
-            + `${button(t(S, 'web.connect.cancel'), 'cancelSwitch', { disabled: busy })}</div>`);
-        return `<div class="verticalSection">${parts.join('')}</div>`;
+        return card({
+            title,
+            body: `<p>${esc(result.message)}</p><div class="tgj-actions">`
+                + actionButton({ label: text(S, 'web.connect.switch'), act: 'switchBot', kind: 'primary', disabled: busy })
+                + actionButton({ label: text(S, 'web.connect.cancel'), act: 'cancelSwitch', disabled: busy })
+                + '</div>',
+        });
     }
 
+    const parts = [];
     if (!ui.mode) {
-        parts.push(`<div>${button(t(S, 'web.connect.createNew'), 'connectNew', { primary: true, disabled: busy })}`
-            + `${button(t(S, 'web.connect.haveBot'), 'connectExisting', { disabled: busy })}`
-            + `${ui.hasToken ? button(t(S, 'web.connect.cancel'), 'cancelToken', { disabled: busy }) : ''}</div>`);
+        parts.push('<div class="tgj-actions">'
+            + actionButton({ label: text(S, 'web.connect.createNew'), act: 'connectNew', kind: 'primary', disabled: busy })
+            + actionButton({ label: text(S, 'web.connect.haveBot'), act: 'connectExisting', disabled: busy })
+            + `${ui.hasToken ? actionButton({ label: text(S, 'web.connect.cancel'), act: 'cancelToken', disabled: busy }) : ''}</div>`);
     } else {
         if (ui.mode === 'new') {
             parts.push('<ol class="tgj-steps">'
@@ -482,20 +499,20 @@ export function renderConnect(ui, S, links, settings = null) {
     }
 
     if (result && result.kind === 'Error') {
-        parts.push(`<p class="tgj-error">${esc(result.message)}</p>`);
+        parts.push(notice({ kind: 'error', html: esc(result.message) }));
     }
 
     if (ui.unreachable) {
         parts.push(`<div class="tgj-unreachable"><h3>${t(S, 'web.connect.unreachableTitle')}</h3>`
-            + `<p class="fieldDescription">${t(S, 'web.connect.unreachableHint')}</p>${renderProxyForm(settings, S, ui.proxy ?? {})}</div>`);
+            + `<p class="tgj-row-hint">${t(S, 'web.connect.unreachableHint')}</p>${renderProxyForm(settings, S, ui.proxy ?? {})}</div>`);
     }
 
-    return `<div class="verticalSection">${parts.join('')}</div>`;
+    return card({ title, body: parts.join('') });
 }
 
 /**
- * The Bot section (spec §6.6 item 2, §6.4): the username, the access reminder, Change token and Disconnect bot with
- * its inline two-step confirm.
+ * The Bot card (spec §6.6 item 2, §6.4): the username, the access reminder, Open in Telegram, Change token and
+ * Disconnect bot with its inline confirmation.
  * @param {object} status the StatusDto
  * @param {{ OpenBot?: string } | null} links
  * @param {Record<string, string>} S
@@ -507,18 +524,80 @@ export function renderBot(status, links, S, ui) {
         return '';
     }
 
-    const busy = ui.saving;
-    const bot = status.BotUsername;
+    const busy = Boolean(ui.saving);
     const disconnect = ui.confirmDisconnect
-        ? `<p>${t(S, 'web.bot.confirmDisconnect')}</p>${button(t(S, 'web.bot.confirmYes'), 'disconnectYes', { primary: true, disabled: busy })}`
-            + button(t(S, 'web.connect.cancel'), 'disconnectNo', { disabled: busy })
-        : button(t(S, 'web.bot.disconnect'), 'disconnect', { disabled: busy });
-    return '<div class="verticalSection">'
-        + `<h2 class="sectionTitle">${t(S, 'web.bot.title')}</h2>`
-        + `<p><b>@${esc(bot)}</b></p>`
-        + `<p class="fieldDescription">${t(S, 'web.bot.access')}</p>`
-        + `<div>${telegramLink(links && links.OpenBot, t(S, 'web.bot.open'))}`
-        + `${button(t(S, 'web.bot.change'), 'changeToken', { disabled: busy })}${disconnect}</div></div>`;
+        ? inlineConfirm({
+            question: text(S, 'web.bot.confirmDisconnect'),
+            confirmLabel: text(S, 'web.bot.confirmYes'),
+            confirmAct: 'disconnectYes',
+            cancelLabel: text(S, 'web.connect.cancel'),
+            cancelAct: 'disconnectNo',
+        })
+        : actionButton({ label: text(S, 'web.bot.disconnect'), act: 'disconnect', kind: 'danger', disabled: busy });
+    return card({
+        title: text(S, 'web.bot.title'),
+        body: row({ label: text(S, 'web.bot.name'), control: `<b>@${esc(status.BotUsername)}</b>` })
+            + row({ label: text(S, 'web.bot.accessLabel'), hint: text(S, 'web.bot.access'), control: '' })
+            + `<div class="tgj-actions">${telegramLink(links && links.OpenBot, t(S, 'web.bot.open'))}`
+            + `${actionButton({ label: text(S, 'web.bot.change'), act: 'changeToken', disabled: busy })}${disconnect}</div>`,
+    });
+}
+
+/**
+ * The Overview summary card (design §5.2): the destinations and how many need attention, the templates edited and
+ * flagged, and the notices. Each row ends with a button that switches to its section (data-tgj-nav).
+ * @param {object | null} status the StatusDto
+ * @param {object | null} destinations the DestinationsDto, or null until it loads
+ * @param {object | null} templates the TemplatesDto, or null until it loads
+ * @param {Record<string, string>} S
+ * @param {string} [lang]
+ * @returns {string} HTML; '' until a bot is connected
+ */
+export function renderOverviewSummary(status, destinations, templates, S, lang = 'en') {
+    if (!status || !status.HasToken) {
+        return '';
+    }
+
+    const go = section => actionButton({ label: text(S, 'web.summary.open'), act: 'goto', attrs: { 'data-tgj-nav': section } });
+    const values = [];
+
+    const dests = destinations ? destinations.Items ?? [] : null;
+    if (dests) {
+        if (dests.length === 0) {
+            values.push(stateLabel({ kind: 'muted', text: text(S, 'web.summary.noDestinations') }));
+        } else {
+            const failing = dests.filter(d => d.Health && (d.Health.Status !== 'Ok' || d.Health.PhotosBlocked)).length;
+            values.push(`<span class="tgj-summary-count">${esc(pluralText(S, 'web.summary.destinations', dests.length, {}, lang))}</span>`
+                + (failing > 0
+                    ? stateLabel({ kind: 'warning', text: pluralText(S, 'web.summary.attention', failing, {}, lang) })
+                    : stateLabel({ kind: 'ok', text: text(S, 'web.summary.healthy') })));
+        }
+    }
+
+    const items = templates ? templates.Items ?? [] : null;
+    let templateValue = '';
+    if (items) {
+        const edited = items.filter(i => i.Edited).length;
+        const flagged = items.filter(i => i.Flag).length;
+        templateValue = edited > 0
+            ? `<span class="tgj-summary-count">${esc(pluralText(S, 'web.nav.edited', edited, {}, lang))}</span>`
+            : stateLabel({ kind: 'muted', text: text(S, 'web.summary.templatesDefault') });
+        if (flagged > 0) {
+            templateValue += stateLabel({ kind: 'warning', text: pluralText(S, 'web.summary.flagged', flagged, {}, lang) });
+        }
+    }
+
+    const notices = (status.Notices ?? []).length;
+    const noticeValue = notices > 0
+        ? stateLabel({ kind: 'warning', text: pluralText(S, 'web.summary.noticeCount', notices, {}, lang) })
+        : stateLabel({ kind: 'muted', text: text(S, 'web.summary.noNotices') });
+
+    return card({
+        title: text(S, 'web.summary.title'),
+        body: row({ label: text(S, 'web.nav.destinations'), control: (values[0] ?? '') + go('destinations') })
+            + row({ label: text(S, 'web.nav.templates'), control: templateValue + go('templates') })
+            + row({ label: text(S, 'web.summary.notices'), control: noticeValue + go('advanced') }),
+    });
 }
 
 /** The proxy editor's data from a SettingsDto. Username and Password are absent until the user types in them. */
@@ -1262,7 +1341,7 @@ const NAV_LABELS = {
 
 /** Today's section containers, by the dashboard section that holds them (design §5.2). */
 const SECTION_HOSTS = {
-    overview: ['tgj-status', 'tgj-connect', 'tgj-bot'],
+    overview: ['tgj-status', 'tgj-connect', 'tgj-bot', 'tgj-summary'],
     destinations: ['tgj-destinations'],
     messages: ['tgj-messages'],
     templates: ['tgj-templates'],
@@ -1825,7 +1904,7 @@ export default function TgJellyPage(view, params) {
             render: () => {
                 const S = state.strings;
                 const html = state.status ? renderStatus(state.status, S, lang()) : '';
-                return state.ui.statusFailed ? html + `<p class="tgj-error">${t(S, 'web.status.failed')}</p>` : html;
+                return state.ui.statusFailed ? html + notice({ kind: 'error', html: t(S, 'web.status.failed') }) : html;
             },
         },
         connect: {
@@ -1839,6 +1918,13 @@ export default function TgJellyPage(view, params) {
             dependsOnStatus: true,
             load: loadLinks,
             render: () => renderBot(state.status, state.links, state.strings, state.ui),
+        },
+        // Reads the status, destinations and templates state, so it has nothing to load itself.
+        summary: {
+            id: 'tgj-summary',
+            dependsOnStatus: true,
+            load: async () => {},
+            render: () => renderOverviewSummary(state.status, state.destinations, state.templates, state.strings, lang()),
         },
         proxy: {
             id: 'tgj-proxy',
@@ -1994,6 +2080,11 @@ export default function TgJellyPage(view, params) {
             // the templates section lists the destinations for its test send.
             renderSection('manual');
             renderSection('templates');
+        }
+
+        if (name === 'destinations' || name === 'templates') {
+            // The Overview summary counts these.
+            renderSection('summary');
         }
 
         if (name === 'proxy' || name === 'connect') {

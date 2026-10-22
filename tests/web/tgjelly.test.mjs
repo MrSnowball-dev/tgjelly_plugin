@@ -12,7 +12,7 @@ const EN = JSON.parse(readFileSync(new URL('../../src/Jellyfin.Plugin.TgJelly/St
 // The page has only #tgjelly-root; the shell the controller writes into it adds the rest (makeView registers them).
 // The section hosts are listed too, so a test can hold an element before the shell is written.
 const IDS = [
-    'tgjelly-root', 'tgj-status', 'tgj-connect', 'tgj-bot', 'tgj-destinations', 'tgj-messages', 'tgj-demo',
+    'tgjelly-root', 'tgj-status', 'tgj-connect', 'tgj-bot', 'tgj-summary', 'tgj-destinations', 'tgj-messages', 'tgj-demo',
     'tgj-proxy', 'tgj-batching', 'tgj-updates', 'tgj-templates', 'tgj-tpl-preview', 'tgj-manual', 'tgj-diagnostics',
 ];
 
@@ -231,7 +231,7 @@ test('renderStatus shows take over only on WebhookConflict', () => {
 
 test('renderStatus shows the compat banner when incompatible', () => {
     const html = m.renderStatus(status({ Compatible: false, CompatMessage: 'Install the <12> build', ConnectionState: 'Incompatible' }), EN);
-    assert.ok(html.includes('tgj-error'));
+    assert.ok(html.includes('tgj-notice--error') && html.includes('tgj-compat'));
     assert.ok(html.includes('Install the &lt;12&gt; build'));
     assert.ok(!m.renderStatus(status(), EN).includes('tgj-compat'));
 });
@@ -628,7 +628,7 @@ test('token input is type=password and never pre-filled', async () => {
     await click(view, 'connectExisting');
     const html = el('tgj-connect').innerHTML;
     assert.match(html, /<input[^>]*type="password"[^>]*data-tgj-input="token"/);
-    assert.ok(!/data-tgj-input="token"[^>]*value=/.test(html) && !/value=[^>]*data-tgj-input="token"/.test(html));
+    assert.ok(!/data-tgj-input="token"[^>]*value="[^"]/.test(html) && !/value="[^"][^>]*data-tgj-input="token"/.test(html), 'value stays empty');
     assert.ok(html.includes("Restrict access in BotFather if you haven't, because anyone who can open the bot can manage notifications."));
     assert.ok(html.includes("Don't use this bot in another program at the same time."));
     assert.match(html, /data-tgj-input="setProfile"[^>]*checked/);
@@ -2107,7 +2107,7 @@ function shownSection(el) {
 }
 
 const HOSTS = {
-    overview: ['tgj-status', 'tgj-connect', 'tgj-bot'],
+    overview: ['tgj-status', 'tgj-connect', 'tgj-bot', 'tgj-summary'],
     destinations: ['tgj-destinations'],
     messages: ['tgj-messages'],
     templates: ['tgj-templates'],
@@ -2396,4 +2396,125 @@ test('pendingField_keepsTypedValueAcrossRefresh', async () => {
     current = settings({ PublicUrl: 'https://later.example', Revision: 7 });
     await hooks.reloadSection('messages', { fresh: true });
     assert.equal(field().value, 'https://later.example');
+});
+
+// --- Overview section (plan 8, task 5) ---
+
+const SYMBOLS = /[●✓✅⚠❌]|️/u;
+
+/** Every status the Overview must render without a symbol. */
+const STATUS_FIXTURES = {
+    connected: () => status(),
+    noToken: () => noToken(),
+    webhookConflict: () => status({ ConnectionState: 'WebhookConflict', ConnectionMessage: 'Another webhook is set' }),
+    incompatible: () => status({ Compatible: false, CompatMessage: 'Install the 10.11 build', ConnectionState: 'Incompatible' }),
+    rejected: () => status({ ConnectionState: 'TokenRejected', ConnectionMessage: 'Telegram rejected the token' }),
+    withNoticesAndErrors: () => status({
+        Notices: [{ Id: 'n1', Kind: 'X', Text: 'A notice' }],
+        LastErrors: [{ Source: 'outbox', Message: 'chat gone', At: '2026-10-20T10:00:00Z' }],
+        UnhealthyDestinations: 1,
+    }),
+};
+
+const overviewHtml = el => ['tgj-status', 'tgj-connect', 'tgj-bot', 'tgj-summary'].map(id => el(id).innerHTML).join('\n');
+
+test('overview_cards_statusBotSummary', async () => {
+    const { view, el } = mount({
+        'GET TgJelly/Destinations': destinations({ Items: [dest(), dest({ Id: 'd2', Health: { Status: 'NeedsPermissions', PhotosBlocked: false } })] }),
+        'GET TgJelly/Templates': templates(),
+    });
+    await show(view);
+
+    const statusHtml = el('tgj-status').innerHTML;
+    assert.ok(statusHtml.includes('class="tgj-card"') && statusHtml.includes('>Status</h2>'));
+    assert.ok(statusHtml.includes(ui.stateLabel({ kind: 'ok', text: 'Connected to Telegram' })), 'health is a state label');
+    assert.ok(statusHtml.includes('class="tgj-row'));
+
+    const botHtml = el('tgj-bot').innerHTML;
+    assert.ok(botHtml.includes('class="tgj-card"') && botHtml.includes('>Bot</h2>'));
+    assert.ok(botHtml.includes('@jf_bot'));
+    for (const act of ['changeToken', 'disconnect']) {
+        assert.match(botHtml, new RegExp(`<button type="button" class="tgj-btn[^"]*" data-tgj-act="${act}"`));
+    }
+    assert.match(botHtml, /<a [^>]*class="tgj-btn"[^>]*href="https:\/\/t\.me\/jf_bot\?start=setup"[^>]*>Open in Telegram<\/a>/);
+    assert.equal(el('tgj-connect').innerHTML, '', 'no connect form while a bot is connected');
+
+    const summary = el('tgj-summary').innerHTML;
+    assert.ok(summary.includes('class="tgj-card"'));
+    assert.ok(summary.includes('2 destinations'));
+    assert.ok(summary.includes(ui.stateLabel({ kind: 'warning', text: '1 needs attention' })));
+    assert.ok(summary.includes('1 edited'));
+    assert.ok(summary.includes(ui.stateLabel({ kind: 'warning', text: '1 flagged' })));
+    assert.ok(summary.includes('No notices'));
+});
+
+test('overview_noBot_leadsWithConnectCard_noSave', async () => {
+    const { view, el } = mount({ 'GET TgJelly/Status': noToken() });
+    await show(view);
+    assert.ok(el('tgj-connect').innerHTML.includes('class="tgj-card"'));
+    assert.equal(el('tgj-bot').innerHTML, '');
+    assert.equal(el('tgj-summary').innerHTML, '', 'no summary before a bot is connected');
+    await click(view, 'connectExisting');
+    const html = el('tgj-connect').innerHTML;
+    assert.ok(html.includes('data-tgj-act="saveToken"') && html.includes('>Connect</button>'));
+    assert.ok(!/>Save</.test(html), 'no Save button');
+    assert.match(html, /<input[^>]*type="password"[^>]*data-tgj-input="token"/);
+});
+
+test('summary_linksToSections', async () => {
+    const { view, el, win } = mount({
+        'GET TgJelly/Destinations': destinations(),
+        'GET TgJelly/Templates': templates(),
+    });
+    await show(view);
+    const summary = el('tgj-summary').innerHTML;
+    const targets = [...summary.matchAll(/data-tgj-nav="(\w+)"/g)].map(match => match[1]);
+    assert.deepEqual(targets, ['destinations', 'templates', 'advanced']);
+    for (const target of targets) {
+        assert.match(summary, new RegExp(`<button type="button" class="tgj-btn"[^>]*data-tgj-nav="${target}"`));
+    }
+
+    clickOn(view, { 'data-tgj-nav': 'templates' });
+    assert.equal(shownSection(el), 'templates');
+    assert.match(win.location.hash, /tgj=templates/);
+    clickOn(view, { 'data-tgj-nav': 'destinations' });
+    assert.equal(shownSection(el), 'destinations');
+});
+
+test('summary_noDestinations_saysSo', () => {
+    const html = m.renderOverviewSummary(status(), destinations({ Items: [] }), templates({ Items: [] }), EN);
+    assert.ok(html.includes('No destinations yet'));
+    assert.ok(html.includes('data-tgj-nav="destinations"'));
+});
+
+test('overview_noSymbols', async () => {
+    for (const [name, make] of Object.entries(STATUS_FIXTURES)) {
+        const { view, el } = mount({
+            'GET TgJelly/Status': make(),
+            'GET TgJelly/Destinations': destinations({ Items: [dest({ Health: { Status: 'Lost', PhotosBlocked: true } })] }),
+            'GET TgJelly/Templates': templates(),
+        });
+        await show(view);
+        assert.ok(!SYMBOLS.test(overviewHtml(el)), `${name}: ${overviewHtml(el).match(SYMBOLS)}`);
+        if (make().HasToken) {
+            await click(view, 'disconnect');
+            assert.ok(!SYMBOLS.test(overviewHtml(el)), `${name} confirming`);
+        } else {
+            await click(view, 'connectNew');
+            assert.ok(!SYMBOLS.test(overviewHtml(el)), `${name} connect form`);
+        }
+    }
+});
+
+test('disconnect_asksInline', async () => {
+    const { view, api, el } = mount();
+    await show(view);
+    await click(view, 'disconnect');
+    const html = el('tgj-bot').innerHTML;
+    assert.ok(html.includes('class="tgj-confirm"'), 'the inline confirmation component');
+    assert.ok(html.includes('Disconnect this bot? Notifications stop until you connect a bot.'));
+    assert.match(html, /data-tgj-act="disconnectYes"/);
+    assert.match(html, /data-tgj-act="disconnectNo"/);
+    assert.equal(api.calls.filter(c => c.type === 'DELETE').length, 0, 'nothing is sent until confirmed');
+    assert.ok(!/\b(confirm|alert|prompt)\(/.test(SOURCE.replace(/inlineConfirm\(/g, '')), 'no browser dialog in the page');
 });

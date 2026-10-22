@@ -878,3 +878,46 @@
         border: 1px solid;
     }
 }
+
+/* ---- Overview ---- */
+
+#tgjelly-root .tgj-check {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--tgj-space-2);
+    margin-top: var(--tgj-space-3);
+    cursor: pointer;
+}
+
+#tgjelly-root .tgj-check input {
+    flex: none;
+    margin-top: 0.2em;
+}
+
+#tgjelly-root .tgj-steps {
+    margin: 0 0 var(--tgj-space-3);
+    padding-left: 1.25rem;
+}
+
+#tgjelly-root a.tgj-btn {
+    display: inline-flex;
+    align-items: center;
+    text-decoration: none;
+}
+
+#tgjelly-root .tgj-summary-count {
+    color: var(--tgj-fg);
+}
+
+#tgjelly-root .tgj-row-control .tgj-state,
+#tgjelly-root .tgj-row-control .tgj-summary-count {
+    margin-right: var(--tgj-space-2);
+}
+
+#tgjelly-root .tgj-unreachable {
+    margin-top: var(--tgj-space-4);
+}
+
+#tgjelly-root .tgj-version {
+    margin: var(--tgj-space-3) 0 0;
+}
