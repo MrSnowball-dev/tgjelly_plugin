@@ -3,13 +3,16 @@ import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import page, * as m from '../../src/Jellyfin.Plugin.TgJelly/Web/tgjelly.js';
-import { makeView, makeApiClient, makeResponse, fakeTimers, flush, clickOn, dispatchOn } from './fake-view.mjs';
+import * as ui from '../../src/Jellyfin.Plugin.TgJelly/Web/tgjelly-ui.js';
+import { makeView, makeApiClient, makeResponse, fakeTimers, flush, clickOn, dispatchOn, liveFields } from './fake-view.mjs';
 
 const SOURCE = readFileSync(new URL('../../src/Jellyfin.Plugin.TgJelly/Web/tgjelly.js', import.meta.url), 'utf8');
 const EN = JSON.parse(readFileSync(new URL('../../src/Jellyfin.Plugin.TgJelly/Strings/en.json', import.meta.url), 'utf8'));
 
+// The page has only #tgjelly-root; the shell the controller writes into it adds the rest (makeView registers them).
+// The section hosts are listed too, so a test can hold an element before the shell is written.
 const IDS = [
-    'tgj-status', 'tgj-connect', 'tgj-bot', 'tgj-destinations', 'tgj-messages', 'tgj-demo', 'tgj-advanced', 'tgj-advanced-title',
+    'tgjelly-root', 'tgj-status', 'tgj-connect', 'tgj-bot', 'tgj-destinations', 'tgj-messages', 'tgj-demo',
     'tgj-proxy', 'tgj-batching', 'tgj-updates', 'tgj-templates', 'tgj-tpl-preview', 'tgj-manual', 'tgj-diagnostics',
 ];
 
@@ -112,8 +115,11 @@ afterEach(() => {
     }
 });
 
-/** Builds a page on a fake view, with fake globals; returns everything a test needs. */
-function mount(routes = {}) {
+/**
+ * Builds a page on a fake view, with fake globals; returns everything a test needs. hash is the page URL's hash; the
+ * fake history keeps the router's state object, as Jellyfin's router stores one there.
+ */
+function mount(routes = {}, { hash = '#/configurationpage?name=TgJelly' } = {}) {
     const timers = fakeTimers();
     const api = makeApiClient({
         'GET TgJelly/Strings': EN,
@@ -125,7 +131,17 @@ function mount(routes = {}) {
         ...routes,
     });
     const doc = { hidden: false, documentElement: { lang: 'en' } };
-    globalThis.window = { ApiClient: api };
+    const location = { hash };
+    const history = {
+        state: { idx: 3 },
+        replaced: [],
+        replaceState(state, title, url) {
+            this.replaced.push(url);
+            this.state = state;
+            location.hash = String(url);
+        },
+    };
+    globalThis.window = { ApiClient: api, location, history };
     globalThis.document = doc;
     globalThis.setInterval = timers.setInterval;
     globalThis.clearInterval = timers.clearInterval;
@@ -133,9 +149,8 @@ function mount(routes = {}) {
     globalThis.clearTimeout = timers.clearTimeout;
 
     const view = makeView(IDS);
-    view.elements.get('tgj-advanced').hidden = true; // as in the HTML, until the strings load
     const hooks = page(view, {});
-    return { view, api, timers, doc, hooks, el: id => view.elements.get(id) };
+    return { view, api, timers, doc, hooks, win: globalThis.window, el: id => view.elements.get(id) };
 }
 
 async function show(view) {
@@ -251,8 +266,8 @@ test('viewshow loads strings and status, and renders the status', async () => {
         'GET /jf/TgJelly/Templates',
     ]);
     assert.ok(el('tgj-status').innerHTML.includes('Connected to Telegram'));
-    assert.equal(el('tgj-advanced-title').innerHTML, m.t(EN, 'web.advanced'));
-    assert.equal(el('tgj-advanced').hidden, false);
+    assert.equal(el('tgjelly-root').writes, 1, 'the shell is written once');
+    assert.ok(el('tgjelly-root').innerHTML.includes(`<span class="tgj-nav-label">${m.t(EN, 'web.nav.advanced')}</span>`));
 });
 
 test('viewshow twice binds one poller', async () => {
@@ -499,8 +514,8 @@ test('strings failure shows the fallback line', async t => {
     const { view, el, timers } = mount({ 'GET TgJelly/Strings': { status: 500, body: { Message: 'boom' } } });
     await show(view);
 
-    assert.equal(el('tgj-status').textContent, 'Could not load TgJelly.');
-    assert.equal(el('tgj-advanced').hidden, true, 'the empty Advanced block stays hidden');
+    assert.equal(el('tgjelly-root').textContent, 'Could not load TgJelly.');
+    assert.equal(el('tgjelly-root').writes, 0, 'no shell without the strings');
     assert.equal(errors.length, 1);
     assert.equal(timers.active(), 0);
 });
@@ -509,7 +524,7 @@ test('a network failure loading strings shows the fallback line', async t => {
     t.mock.method(console, 'error', () => {});
     const { view, el } = mount({ NETWORK: true });
     await show(view);
-    assert.equal(el('tgj-status').textContent, 'Could not load TgJelly.');
+    assert.equal(el('tgjelly-root').textContent, 'Could not load TgJelly.');
 });
 
 test('a failed status poll says so, escaped through the strings', async t => {
@@ -1211,7 +1226,9 @@ test('the set up manually link only shows when ManualUnlocked', async () => {
     open.el('tgj-manual').scrolled = 0;
     open.el('tgj-manual').scrollIntoView = () => { open.el('tgj-manual').scrolled++; };
     await destAct(open.view, 'open-manual');
-    assert.equal(open.el('tgj-advanced').open, true);
+    assert.equal(open.el('tgj-sec-advanced').hidden, false, 'the Advanced section is shown');
+    assert.equal(open.el('tgj-sec-destinations').hidden, true);
+    assert.equal(open.win.location.hash, '#/configurationpage?name=TgJelly&tgj=advanced');
     assert.equal(open.el('tgj-manual').scrolled, 1);
 });
 
@@ -1522,7 +1539,7 @@ test('previewHtml_keepsWhitelist', () => {
         '<strong>a</strong><em>b</em><u>c</u><ins>d</ins><s>e</s><strike>f</strike><del>g</del><code>h</code><pre>i</pre>');
     assert.equal(m.previewHtml('<pre><code class="language-js">x</code></pre>'), '<pre><code>x</code></pre>');
     assert.equal(m.previewHtml('<tg-spoiler>a</tg-spoiler><span class="tg-spoiler">b</span>'),
-        '<span class="tgj-spoiler">a</span><span class="tgj-spoiler">b</span>');
+        '<span class="tgj-tg-spoiler">a</span><span class="tgj-tg-spoiler">b</span>');
     assert.equal(m.previewHtml('<blockquote>q</blockquote>'), '<blockquote>q</blockquote>');
     assert.equal(m.previewHtml('<a href="https://example.com/?a=1&amp;b=2">x</a>'),
         '<a target="_blank" rel="noopener noreferrer" href="https://example.com/?a=1&amp;b=2">x</a>');
@@ -1560,9 +1577,9 @@ test('previewHtml_neutralizesUnsafeMarkup', () => {
 
 test('previewHtml_expandableQuote_isDetails', () => {
     assert.equal(m.previewHtml('<blockquote expandable>First line\nsecond <b>bold</b>\nthird</blockquote>'),
-        '<details class="tgj-quote"><summary>First line</summary>second <b>bold</b>\nthird</details>');
+        '<details class="tgj-tg-quote"><summary>First line</summary>second <b>bold</b>\nthird</details>');
     assert.equal(m.previewHtml('<blockquote expandable>one line</blockquote>'),
-        '<details class="tgj-quote"><summary>one line</summary></details>');
+        '<details class="tgj-tg-quote"><summary>one line</summary></details>');
 });
 
 test('previewHtml_tgTime_showsFallbackText', () => {
@@ -1639,11 +1656,11 @@ test('renderTemplatePreview_errorsDimLastGood', () => {
     const html = m.renderTemplatePreview(bad, EN, 'en', good);
     assert.ok(html.includes('line 2, column 7: Unexpected &lt;end&gt;'), html);
     assert.ok(html.includes('No position') && html.includes('careful &amp; slow'));
-    assert.ok(/class="tgj-tg[^"]*tgj-stale/.test(html), html);
+    assert.ok(/class="tgj-tg-bubble[^"]*tgj-tg-stale/.test(html), html);
     assert.ok(html.includes('<b>last good</b>'));
 
     const fresh = m.renderTemplatePreview(good, EN, 'en', good);
-    assert.ok(!fresh.includes('tgj-stale'));
+    assert.ok(!fresh.includes('tgj-tg-stale'));
 });
 
 test('sendTest_disabledWithErrors', () => {
@@ -1723,7 +1740,7 @@ test('a validate failure shows in the preview and keeps the last good preview, d
     await flush();
     const pane = el('tgj-tpl-preview').innerHTML;
     assert.ok(pane.includes('line 1, column 3: Unexpected end'), pane);
-    assert.ok(pane.includes('tgj-stale') && pane.includes('good one'));
+    assert.ok(pane.includes('tgj-tg-stale') && pane.includes('good one'));
 });
 
 test('switching events keeps unsaved text, validates at once and drops the pending debounce', async () => {
@@ -1888,29 +1905,31 @@ test('template section shows events, fields and the docs link', async () => {
 
 test('a spoiler in the preview is revealed on click', async () => {
     const { view } = mount();
-    const classes = new Set(['tgj-spoiler']);
+    const classes = new Set(['tgj-tg-spoiler']);
     const spoiler = { classList: { toggle: name => (classes.has(name) ? classes.delete(name) : classes.add(name)) } };
     const event = new Event('click');
-    Object.defineProperty(event, 'target', { value: { closest: selector => (selector === '.tgj-spoiler' ? spoiler : null) } });
+    Object.defineProperty(event, 'target', { value: { closest: selector => (selector === '.tgj-tg-spoiler' ? spoiler : null) } });
     view.dispatchEvent(event);
-    assert.ok(classes.has('tgj-revealed'));
+    assert.ok(classes.has('tgj-tg-revealed'));
 });
 
-test('the page shell has the templates section after Messages, outside Advanced', () => {
-    const shell = readFileSync(new URL('../../src/Jellyfin.Plugin.TgJelly/Web/tgjelly.html', import.meta.url), 'utf8');
-    const messages = shell.indexOf('id="tgj-messages"');
-    const templatesAt = shell.indexOf('id="tgj-templates"');
-    const advanced = shell.indexOf('id="tgj-advanced"');
-    assert.ok(messages < templatesAt && templatesAt < advanced, 'templates sit between Messages and Advanced');
-    assert.ok(shell.includes('.tgj-tpl-grid'));
-    assert.ok(/@media \(max-width: 700px\)/.test(shell));
+test('the page is a thin shell: the stylesheet and the root, no inline styles', () => {
+    const page = readFileSync(new URL('../../src/Jellyfin.Plugin.TgJelly/Web/tgjelly.html', import.meta.url), 'utf8');
+    assert.match(page, /^<div data-role="page" id="tgjConfigPage" [^>]*data-controller="__plugin\/tgjelly.js">/);
+    assert.ok(page.includes('<link id="tgjelly-css" rel="stylesheet" href="configurationpage?name=tgjelly.css">'));
+    assert.ok(page.includes('<div id="tgjelly-root"></div>'));
+    assert.ok(!page.includes('<style'), 'the old rules live in tgjelly.css');
+    assert.ok(!page.includes('${'));
+    const css = readFileSync(new URL('../../src/Jellyfin.Plugin.TgJelly/Web/tgjelly.css', import.meta.url), 'utf8');
+    assert.ok(css.includes('#tgjelly-root .tgj-tpl-grid'), 'the template editor rules moved');
+    assert.ok(css.includes('#tgjelly-root .tgj-tg-bubble'), 'the preview bubble rules moved, tgj-tg- prefixed');
 });
 
 // --- source checks ---
 
 test('every t(…) key used in tgjelly.js exists in en.json', () => {
-    const keys = [...SOURCE.matchAll(/\bt\(S, '([^']+)'/g)].map(x => x[1]);
-    const plurals = [...SOURCE.matchAll(/\bplural\(S, '([^']+)'/g)].map(x => x[1]);
+    const keys = [...SOURCE.matchAll(/\b(?:t|text)\(S, '([^']+)'/g)].map(x => x[1]);
+    const plurals = [...SOURCE.matchAll(/\b(?:plural|pluralText)\(S, '([^']+)'/g)].map(x => x[1]);
     assert.ok(keys.length > 0);
     for (const key of keys) {
         assert.ok(key in EN, key);
@@ -2024,44 +2043,8 @@ test('a status poll with a higher revision reloads the sections, keeping unsaved
 
 // --- the template textarea keeps its caret across section renders (final review M11) ---
 
-/**
- * A fake template textarea. Like a browser, every write of the templates section replaces it with a new, unfocused
- * one at the start; the returned textarea() gives the current one.
- */
-function liveTextarea(view, doc) {
-    const make = () => ({
-        selectionStart: 0,
-        selectionEnd: 0,
-        selectionDirection: 'none',
-        scrollTop: 0,
-        scrollLeft: 0,
-        focusCalls: 0,
-        focus(options) {
-            this.focusCalls++;
-            this.focusOptions = options;
-            doc.activeElement = this;
-        },
-        setSelectionRange(start, end, direction) {
-            Object.assign(this, { selectionStart: start, selectionEnd: end, selectionDirection: direction });
-        },
-    });
-    view.elements.set('tgj-tpl-text', make());
-    const section = view.elements.get('tgj-templates');
-    const setter = Object.getOwnPropertyDescriptor(section, 'innerHTML').set;
-    const getter = Object.getOwnPropertyDescriptor(section, 'innerHTML').get;
-    Object.defineProperty(section, 'innerHTML', {
-        get: getter,
-        set(value) {
-            setter.call(section, value);
-            if (doc.activeElement === view.elements.get('tgj-tpl-text')) {
-                doc.activeElement = null;
-            }
-
-            view.elements.set('tgj-tpl-text', make());
-        },
-    });
-    return () => view.elements.get('tgj-tpl-text');
-}
+/** The template textarea as a live field: every write of the templates section replaces it (see liveFields). */
+const liveTextarea = (view, doc) => liveFields(view, doc, 'tgj-templates', [{ tag: 'textarea', attributes: { id: 'tgj-tpl-text', 'data-tgj-input': 'tplText' } }]);
 
 test('a Destinations render while typing keeps the textarea focus, selection and scroll', async () => {
     const server = oneRevisionServer();
@@ -2101,4 +2084,316 @@ test('a render without the textarea focused does not take the focus', async () =
     assert.ok(el('tgj-templates').writes > writes);
     assert.equal(textarea().focusCalls, 0);
     assert.equal(doc.activeElement, null);
+});
+
+// --- the shell, section navigation and focus-safe writes (plan 8 Task 4, design §5.1-5.2) ---
+
+/** Each <section data-tgj-section> of the shell markup: name → { attrs, body }. */
+function shellSections(html) {
+    return new Map([...html.matchAll(/<section([^>]*)data-tgj-section="(\w+)"([^>]*)>([\s\S]*?)<\/section>/g)]
+        .map(([, before, name, after, body]) => [name, { attrs: before + after, body }]));
+}
+
+/** Each nav button of the shell markup: name → its outer HTML. */
+function shellNav(html) {
+    return new Map([...html.matchAll(/<button[^>]*data-tgj-nav="(\w+)"[^>]*>[\s\S]*?<\/button>/g)].map(match => [match[1], match[0]]));
+}
+
+/** The section the page shows: the one host not hidden (exactly one). */
+function shownSection(el) {
+    const shown = m.SECTIONS.filter(name => el(`tgj-sec-${name}`).hidden === false);
+    assert.equal(shown.length, 1, `exactly one section is shown (${shown.join(', ')})`);
+    return shown[0];
+}
+
+const HOSTS = {
+    overview: ['tgj-status', 'tgj-connect', 'tgj-bot'],
+    destinations: ['tgj-destinations'],
+    messages: ['tgj-messages'],
+    templates: ['tgj-templates'],
+    advanced: ['tgj-proxy', 'tgj-batching', 'tgj-updates', 'tgj-manual', 'tgj-diagnostics'],
+};
+
+test('shell_rendersAllSections_onlyActiveVisible', () => {
+    assert.deepEqual(m.SECTIONS, ['overview', 'destinations', 'messages', 'templates', 'advanced']);
+    const html = m.renderShell(EN, {
+        active: 'messages',
+        connection: { kind: 'ok', text: 'Connected · @jf_bot' },
+        counts: { destinations: '3', templates: '1 edited' },
+    });
+
+    assert.match(html, /<h1 class="tgj-header-title">TgJelly<\/h1>/);
+    assert.ok(html.includes(ui.stateLabel({ kind: 'ok', text: 'Connected · @jf_bot' })), 'the connection is a state label');
+    assert.match(html, /<nav class="tgj-sidebar" aria-label="[^"]+">/);
+
+    const nav = shellNav(html);
+    assert.deepEqual([...nav.keys()], m.SECTIONS);
+    const labels = { overview: 'Overview', destinations: 'Destinations', messages: 'Messages', templates: 'Templates', advanced: 'Advanced' };
+    for (const [name, button] of nav) {
+        assert.equal(EN[`web.nav.${name}`], labels[name]);
+        assert.ok(button.includes(`<span class="tgj-nav-label">${labels[name]}</span>`), button);
+        assert.ok(button.startsWith('<button type="button"'), 'a real button, never a link with href="#…"');
+        assert.equal(/aria-current="page"/.test(button), name === 'messages', `${name} aria-current`);
+    }
+
+    assert.match(nav.get('destinations'), /<span id="tgj-nav-count-destinations" class="tgj-nav-count">3<\/span>/);
+    assert.match(nav.get('templates'), /<span id="tgj-nav-count-templates" class="tgj-nav-count">1 edited<\/span>/);
+    assert.match(nav.get('overview'), /<span id="tgj-nav-count-overview" class="tgj-nav-count"><\/span>/);
+
+    const sections = shellSections(html);
+    assert.deepEqual([...sections.keys()], m.SECTIONS);
+    for (const [name, { attrs, body }] of sections) {
+        assert.equal(/\shidden(\s|$)/.test(attrs), name !== 'messages', `${name} hidden`);
+        assert.ok(attrs.includes(`id="tgj-sec-${name}"`));
+        const ids = [...body.matchAll(/id="([^"]+)"/g)].map(x => x[1]);
+        assert.deepEqual(ids, HOSTS[name], `${name} holds today's containers, in order`);
+    }
+
+    // Templates sit between Messages and Advanced, outside Advanced (as in v0.3).
+    assert.ok(html.indexOf('id="tgj-messages"') < html.indexOf('id="tgj-templates"'));
+    assert.ok(html.indexOf('id="tgj-templates"') < html.indexOf('data-tgj-section="advanced"'));
+    assert.doesNotMatch(html, /[●✓✔✅⚠❌✗🟢🔴]/u);
+});
+
+test('renderShell escapes the label and counts, and an unknown active section shows Overview', () => {
+    const html = m.renderShell(EN, { active: 'nope', connection: { kind: 'warning', text: '<b>x</b>' }, counts: { destinations: '<i>' } });
+    assert.ok(html.includes('&lt;b&gt;x&lt;/b&gt;') && !html.includes('<b>x</b>'));
+    assert.ok(html.includes('class="tgj-nav-count">&lt;i&gt;</span>'));
+    const hidden = [...shellSections(html)].filter(([, s]) => !/\shidden(\s|$)/.test(s.attrs)).map(([name]) => name);
+    assert.deepEqual(hidden, ['overview']);
+});
+
+test('text is the plain-text lookup: no escaping, same fallbacks as t', () => {
+    const S = { k: "Can't & <b>{x}</b> {missing}" };
+    assert.equal(m.text(S, 'k', { x: '<i>' }), "Can't & <b><i></b> {missing}");
+    assert.equal(m.text(S, 'no.such'), 'no.such');
+    assert.equal(m.text(null, 'no.such'), 'no.such');
+    assert.equal(m.pluralText({ 'x.one': "{count} chat's", 'x.other': '{count} chats' }, 'x', 1000), '1,000 chats');
+});
+
+test('connectionLabel: connected names the bot, no token is muted, problems are a warning', () => {
+    assert.deepEqual(m.connectionLabel(status(), EN), { kind: 'ok', text: 'Connected · @jf_bot' });
+    assert.deepEqual(m.connectionLabel(status({ HasToken: false, BotUsername: null, ConnectionState: 'NoToken' }), EN), { kind: 'muted', text: EN['web.header.notConnected'] });
+    assert.deepEqual(m.connectionLabel(status({ ConnectionState: 'TokenRejected' }), EN), { kind: 'warning', text: EN['web.header.attention'] });
+    assert.deepEqual(m.connectionLabel(status({ ConnectionState: 'Connecting' }), EN), { kind: 'muted', text: EN['web.header.connecting'] });
+    assert.deepEqual(m.connectionLabel(null, EN, true), { kind: 'warning', text: EN['web.header.unknown'] });
+    for (const key of ['web.header.connected', 'web.header.notConnected', 'web.header.attention', 'web.header.connecting', 'web.header.unknown']) {
+        assert.doesNotMatch(EN[key], /[●✓✔✅⚠❌✗🟢🔴]/u, key);
+    }
+});
+
+test('the header and the sidebar counts follow the data', async () => {
+    let current = status();
+    const { view, el, timers } = mount({ 'GET TgJelly/Status': () => current, 'GET TgJelly/Templates': templates() });
+    await show(view);
+    assert.equal(el('tgj-conn').innerHTML, ui.stateLabel({ kind: 'ok', text: 'Connected · @jf_bot' }));
+    assert.equal(el('tgj-nav-count-destinations').innerHTML, '1');
+    assert.equal(el('tgj-nav-count-templates').innerHTML, '1 edited');
+
+    current = status({ ConnectionState: 'Unreachable' });
+    timers.tick();
+    await flush();
+    assert.equal(el('tgj-conn').innerHTML, ui.stateLabel({ kind: 'warning', text: EN['web.header.attention'] }));
+    assert.equal(el('tgjelly-root').writes, 1, 'the shell is not written again');
+});
+
+test('nav_click_switchesSection_updatesHash', async () => {
+    const { view, el, win, api } = mount();
+    await show(view);
+    assert.equal(shownSection(el), 'overview');
+    const calls = api.calls.length;
+
+    const { event } = clickOn(view, { 'data-tgj-nav': 'destinations' });
+    assert.ok(event.defaultPrevented);
+    assert.equal(shownSection(el), 'destinations');
+    for (const name of m.SECTIONS) {
+        assert.equal(el(`tgj-nav-${name}`).getAttribute('aria-current'), name === 'destinations' ? 'page' : null, name);
+    }
+
+    assert.equal(win.location.hash, '#/configurationpage?name=TgJelly&tgj=destinations', "kept beside the router's own hash");
+    assert.deepEqual(win.history.state, { idx: 3 }, "the router's history state is kept");
+
+    clickOn(view, { 'data-tgj-nav': 'messages' });
+    assert.equal(shownSection(el), 'messages');
+    assert.equal(win.location.hash, '#/configurationpage?name=TgJelly&tgj=messages', 'replaced, not appended');
+    assert.equal(win.history.replaced.length, 2, 'replaceState only: no history entries, no router navigation');
+
+    clickOn(view, { 'data-tgj-nav': 'bogus' });
+    assert.equal(shownSection(el), 'messages', 'an unknown name changes nothing');
+    await flush();
+    assert.equal(api.calls.length, calls, 'switching sections loads nothing');
+});
+
+test('hash_restoresSection_unknownFallsBack', async () => {
+    assert.equal(m.sectionFromHash('#/configurationpage?name=TgJelly&tgj=templates'), 'templates');
+    assert.equal(m.sectionFromHash('#tgj=messages'), 'messages');
+    assert.equal(m.sectionFromHash('#tgj=bogus'), 'overview');
+    assert.equal(m.sectionFromHash('#tgj=%E0%A4%A'), 'overview', 'a malformed escape');
+    assert.equal(m.sectionFromHash('#/configurationpage?name=tgjelly'), 'overview', 'name=tgjelly is not the section');
+    assert.equal(m.sectionFromHash(''), 'overview');
+    assert.equal(m.sectionFromHash(undefined), 'overview');
+    assert.equal(m.hashWithSection('', 'messages'), '#tgj=messages');
+    assert.equal(m.hashWithSection('#tgj=messages', 'advanced'), '#tgj=advanced');
+    assert.equal(m.hashWithSection('#/configurationpage', 'advanced'), '#/configurationpage?tgj=advanced');
+    assert.equal(m.hashWithSection('#/configurationpage?name=TgJelly&tgj=messages&x=1', 'overview'), '#/configurationpage?name=TgJelly&tgj=overview&x=1');
+
+    const restored = mount({}, { hash: '#/configurationpage?name=TgJelly&tgj=advanced' });
+    await show(restored.view);
+    assert.equal(shownSection(restored.el), 'advanced');
+    assert.equal(restored.el('tgj-nav-advanced').getAttribute('aria-current'), 'page');
+
+    const unknown = mount({}, { hash: '#/configurationpage?name=TgJelly&tgj=nope' });
+    await show(unknown.view);
+    assert.equal(shownSection(unknown.el), 'overview');
+
+    const bare = mount({}, { hash: '#tgj=templates' });
+    await show(bare.view);
+    assert.equal(shownSection(bare.el), 'templates');
+});
+
+test('notConnected_opensOverview', async () => {
+    const { view, el, timers } = mount({ 'GET TgJelly/Status': noToken() }, { hash: '#/configurationpage?name=TgJelly&tgj=messages' });
+    await show(view);
+    assert.equal(shownSection(el), 'overview', 'Overview leads with Connect');
+    assert.equal(el('tgj-conn').innerHTML, ui.stateLabel({ kind: 'muted', text: EN['web.header.notConnected'] }));
+
+    // The other sections stay reachable.
+    clickOn(view, { 'data-tgj-nav': 'messages' });
+    assert.equal(shownSection(el), 'messages');
+    timers.tick();
+    await flush();
+    assert.equal(shownSection(el), 'messages', 'a poll does not send the admin back');
+});
+
+test('the shell waits for the stylesheet, so its transitions do not play on first show', async () => {
+    const loaded = mount();
+    const link = new EventTarget();
+    link.sheet = null;
+    loaded.view.elements.set('tgjelly-css', link);
+    loaded.view.dispatchEvent(new Event('viewshow'));
+    await flush();
+    assert.equal(loaded.el('tgjelly-root').writes, 0, 'nothing shown before the stylesheet');
+    link.dispatchEvent(new Event('load'));
+    await flush();
+    assert.equal(loaded.el('tgjelly-root').writes, 1);
+    assert.ok(!loaded.timers.timeouts().includes(1000), 'the fallback timer is cleared');
+
+    const failed = mount();
+    const broken = new EventTarget();
+    broken.sheet = null;
+    failed.view.elements.set('tgjelly-css', broken);
+    failed.view.dispatchEvent(new Event('viewshow'));
+    await flush();
+    broken.dispatchEvent(new Event('error'));
+    await flush();
+    assert.equal(failed.el('tgjelly-root').writes, 1, 'a failed stylesheet still shows the page');
+
+    const slow = mount();
+    const stuck = new EventTarget();
+    stuck.sheet = null;
+    slow.view.elements.set('tgjelly-css', stuck);
+    slow.view.dispatchEvent(new Event('viewshow'));
+    await flush();
+    assert.deepEqual(slow.timers.timeouts(), [1000]);
+    slow.timers.runTimeouts();
+    await flush();
+    assert.equal(slow.el('tgjelly-root').writes, 1, 'after 1 s the page shows anyway');
+
+    const ready = mount();
+    ready.view.elements.set('tgjelly-css', Object.assign(new EventTarget(), { sheet: {} }));
+    await show(ready.view);
+    assert.equal(ready.el('tgjelly-root').writes, 1, 'an already loaded stylesheet does not wait');
+});
+
+test('fieldSelector finds a field again by its id or its data-tgj attributes', () => {
+    const field = attrs => ({ getAttribute: name => attrs[name] ?? null });
+    assert.equal(m.fieldSelector(field({ id: 'tgj-tpl-text', 'data-tgj-input': 'tplText' })), '[id="tgj-tpl-text"]');
+    assert.equal(m.fieldSelector(field({ 'data-tgj-input': 'event', 'data-tgj-id': 'd"1', 'data-tgj-key': 'media.movie' })),
+        '[data-tgj-input="event"][data-tgj-id="d\\"1"][data-tgj-key="media.movie"]');
+    assert.equal(m.fieldSelector(field({})), null);
+});
+
+const URL_FIELD = [{ tag: 'input', attributes: { 'data-tgj-input': 'publicUrl', 'data-tgj-field': 'PublicUrl' } }];
+
+test('sectionWrite_keepsFocusInAnyField', async () => {
+    let current = settings({ PublicUrl: 'https://a.example' });
+    const { view, el, doc, hooks } = mount({ 'GET TgJelly/Settings': () => current });
+    await show(view);
+    const field = liveFields(view, doc, 'tgj-messages', URL_FIELD);
+    const typing = field();
+    assert.equal(typing.value, 'https://a.example');
+    typing.focus();
+    // Typed, and its input event not handled yet: the field's own value is the truth.
+    typing.value = 'https://a.example/jf';
+    Object.assign(typing, { selectionStart: 8, selectionEnd: 10, selectionDirection: 'backward', scrollLeft: 30 });
+    const writes = el('tgj-messages').writes;
+
+    // Another tab changes a different setting; the Messages section renders again.
+    current = settings({ PublicUrl: 'https://a.example', Revision: 6, Message: { ...settings().Message, ShowPoster: false } });
+    await hooks.reloadSection('messages', { fresh: true });
+
+    assert.ok(el('tgj-messages').writes > writes, 'the section was written again');
+    const now = field();
+    assert.notEqual(now, typing, 'the input was replaced');
+    assert.equal(doc.activeElement, now, 'the new input has the focus');
+    assert.deepEqual(now.focusOptions, { preventScroll: true });
+    assert.equal(now.value, 'https://a.example/jf', 'what the admin typed stays');
+    assert.deepEqual([now.selectionStart, now.selectionEnd, now.selectionDirection, now.scrollLeft], [8, 10, 'backward', 30]);
+});
+
+test('a focused field the admin has not changed takes the new value', async () => {
+    let current = settings({ PublicUrl: 'https://a.example' });
+    const { view, doc, hooks } = mount({ 'GET TgJelly/Settings': () => current });
+    await show(view);
+    const field = liveFields(view, doc, 'tgj-messages', URL_FIELD);
+    field().focus();
+
+    current = settings({ PublicUrl: 'https://b.example', Revision: 6 });
+    await hooks.reloadSection('messages', { fresh: true });
+
+    assert.equal(field().value, 'https://b.example');
+    assert.equal(doc.activeElement, field(), 'and keeps the focus');
+});
+
+test('a focused select keeps the focus; a field outside the section is left alone', async () => {
+    let current = settings();
+    const { view, doc, hooks } = mount({ 'GET TgJelly/Settings': () => current });
+    await show(view);
+    const mode = liveFields(view, doc, 'tgj-updates', [{ tag: 'select', attributes: { 'data-tgj-input': 'updMode' } }]);
+    const url = liveFields(view, doc, 'tgj-messages', URL_FIELD);
+    mode().focus();
+    const focused = mode();
+
+    current = settings({ Revision: 6, UpdateCheck: { Enabled: true, Mode: 'AnyNewer' } });
+    await hooks.reloadSection('messages', { fresh: true });
+    assert.equal(doc.activeElement, focused, 'a write of Messages does not touch the Updates select');
+    await hooks.reloadSection('updates', { fresh: true });
+    assert.equal(doc.activeElement, mode());
+    assert.notEqual(mode(), focused);
+    assert.equal(mode().value, 'AnyNewer', 'a select shows the new value: its choice was already made');
+    assert.equal(url().focusCalls, 0);
+});
+
+test('pendingField_keepsTypedValueAcrossRefresh', async () => {
+    let current = settings({ PublicUrl: 'https://old.example' });
+    const { view, el, doc, hooks } = mount({ 'GET TgJelly/Settings': () => current });
+    await show(view);
+    const field = liveFields(view, doc, 'tgj-messages', URL_FIELD);
+    // Typed, then the focus moved on; its auto-save hasn't gone out yet.
+    field().value = 'https://typed.example';
+    hooks.pendingFields.add(m.fieldSelector(field()));
+
+    current = settings({ PublicUrl: 'https://server.example', Revision: 6 });
+    await hooks.reloadSection('messages', { fresh: true });
+
+    assert.ok(el('tgj-messages').innerHTML.includes('value="https://server.example"'), 'the markup has the server value');
+    assert.equal(field().value, 'https://typed.example', 'the pending field keeps the typed value');
+    assert.equal(field().focusCalls, 0, 'and does not take the focus');
+    assert.equal(doc.activeElement, undefined);
+
+    // Once its save has settled, the field follows the server again.
+    hooks.pendingFields.clear();
+    current = settings({ PublicUrl: 'https://later.example', Revision: 7 });
+    await hooks.reloadSection('messages', { fresh: true });
+    assert.equal(field().value, 'https://later.example');
 });

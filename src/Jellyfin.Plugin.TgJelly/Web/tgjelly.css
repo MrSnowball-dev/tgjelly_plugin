@@ -612,6 +612,180 @@
     to { opacity: 1; }
 }
 
+/* ---- Today's section markup, moved from the page's old <style> block (Tasks 5-8 restyle it) ---- */
+
+#tgjelly-root .tgj-badge {
+    display: inline-block;
+    padding: 0.1em 0.6em;
+    border: 1px solid currentColor;
+    border-radius: 1em;
+    font-size: 0.85em;
+    white-space: nowrap;
+}
+
+#tgjelly-root .tgj-changed {
+    outline: 2px solid var(--tgj-warning);
+    outline-offset: 2px;
+}
+
+#tgjelly-root .tgj-error {
+    color: var(--tgj-error-text);
+}
+
+/* The old notice markup (a text span and its buttons, no kind class) keeps its warning bar. */
+#tgjelly-root .tgj-notice:has(> .tgj-notice-text) {
+    display: flex;
+    align-items: center;
+    gap: var(--tgj-space-4);
+    margin: var(--tgj-space-2) 0;
+    padding: var(--tgj-space-2) var(--tgj-space-3);
+    border-left: 3px solid var(--tgj-warning);
+    border-radius: 0;
+}
+
+#tgjelly-root .tgj-notice-text {
+    flex: 1;
+}
+
+#tgjelly-root .tgj-errors {
+    margin: 0.3em 0;
+    padding-left: 1.2em;
+}
+
+#tgjelly-root .tgj-tpl-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--tgj-space-4);
+}
+
+#tgjelly-root .tgj-tpl-head > .selectContainer {
+    flex: 1;
+    min-width: 14em;
+}
+
+#tgjelly-root .tgj-tpl-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: var(--tgj-space-4);
+    margin: var(--tgj-space-4) 0;
+}
+
+#tgjelly-root .tgj-tpl-grid > * {
+    min-width: 0;
+}
+
+#tgjelly-root .tgj-template-text {
+    width: 100%;
+    font-family: monospace;
+}
+
+#tgjelly-root .tgj-tpl-test {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--tgj-space-4);
+}
+
+#tgjelly-root .tgj-tpl-test > .selectContainer {
+    min-width: 14em;
+    margin-bottom: 0;
+}
+
+/*
+ * The template preview imitates a Telegram message bubble on purpose (design §3), so these tgj-tg- rules keep their
+ * own colours (R3; tests/web/css.test.mjs exempts exactly this prefix).
+ */
+#tgjelly-root .tgj-tg-bubble {
+    max-width: 28em;
+    border-radius: 0.8em;
+    overflow: hidden;
+    background: var(--jf-palette-background-paper, rgba(127, 127, 127, 0.15));
+    box-shadow: 0 0 0 1px rgba(127, 127, 127, 0.25);
+}
+
+#tgjelly-root .tgj-tg-bubble.tgj-tg-stale {
+    opacity: 0.45;
+}
+
+#tgjelly-root .tgj-tg-poster {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 9em;
+    background: rgba(127, 127, 127, 0.3);
+    opacity: 0.8;
+}
+
+#tgjelly-root .tgj-tg-text {
+    padding: 0.6em 0.8em;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+#tgjelly-root .tgj-tg-text a {
+    color: var(--jf-palette-primary-main, #00a4dc);
+}
+
+#tgjelly-root .tgj-tg-text blockquote,
+#tgjelly-root .tgj-tg-quote {
+    margin: 0.3em 0;
+    padding: 0.2em 0.6em;
+    border-left: 3px solid var(--jf-palette-primary-main, #00a4dc);
+    background: rgba(127, 127, 127, 0.1);
+}
+
+#tgjelly-root .tgj-tg-quote > summary {
+    cursor: pointer;
+}
+
+#tgjelly-root .tgj-tg-text pre {
+    margin: 0.3em 0;
+    white-space: pre-wrap;
+}
+
+#tgjelly-root .tgj-tg-spoiler {
+    border-radius: 0.2em;
+    background: rgba(127, 127, 127, 0.35);
+    filter: blur(0.25em);
+    cursor: pointer;
+}
+
+#tgjelly-root .tgj-tg-spoiler.tgj-tg-revealed {
+    background: rgba(127, 127, 127, 0.15);
+    filter: none;
+}
+
+#tgjelly-root .tgj-tg-buttons {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25em;
+    padding: 0 0.4em 0.4em;
+}
+
+#tgjelly-root .tgj-tg-row {
+    display: flex;
+    gap: 0.25em;
+}
+
+#tgjelly-root .tgj-tg-button {
+    flex: 1;
+    padding: 0.4em;
+    border-radius: 0.4em;
+    background: rgba(127, 127, 127, 0.25);
+    color: inherit;
+    text-align: center;
+    text-decoration: none;
+    overflow-wrap: anywhere;
+}
+
+/* The editor and the preview stack once the content column is too narrow for both (was a 700px window query). */
+@container tgjelly (max-width: 52rem) {
+    #tgjelly-root .tgj-tpl-grid {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
 /* ---- Narrow: the sidebar becomes a scrolling tab row, rows stack ---- */
 
 @container tgjelly (max-width: 40rem) {

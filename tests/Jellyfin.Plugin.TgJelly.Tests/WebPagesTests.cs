@@ -58,21 +58,17 @@ public class WebPagesTests
     }
 
     [Fact]
-    public void Html_HasEverySectionContainer_InOrder()
+    public void Html_IsAThinShell_TheStylesheetAndTheRoot()
     {
+        // Plan 8: tgjelly.js renders the shell and every section container into #tgjelly-root (tests/web checks
+        // where each container sits); the page only loads the stylesheet, and keeps no inline styles.
         var html = ReadResource("Jellyfin.Plugin.TgJelly.Web.tgjelly.html");
-        string[] ids =
-        [
-            "tgj-status", "tgj-connect", "tgj-bot", "tgj-destinations", "tgj-messages", "tgj-templates", "tgj-advanced", "tgj-advanced-title",
-            "tgj-proxy", "tgj-batching", "tgj-updates", "tgj-manual", "tgj-diagnostics",
-        ];
 
-        var positions = ids.Select(id => html.IndexOf("id=\"" + id + "\"", StringComparison.Ordinal)).ToList();
-
-        Assert.All(ids.Zip(positions), p => Assert.True(p.Second >= 0, p.First + " is missing"));
-        Assert.Equal(positions.Order(), positions);
-        Assert.Contains("<details id=\"tgj-advanced\"", html, StringComparison.Ordinal);
-        Assert.Contains("<style>", html, StringComparison.Ordinal);
+        Assert.Contains("id=\"tgjConfigPage\"", html, StringComparison.Ordinal);
+        Assert.Contains("<link id=\"tgjelly-css\" rel=\"stylesheet\" href=\"configurationpage?name=tgjelly.css\">", html, StringComparison.Ordinal);
+        Assert.Contains("<div id=\"tgjelly-root\"></div>", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("<style", html, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("id=\"tgj-status\"", html, StringComparison.Ordinal);
     }
 
     private static string ReadResource(string name)

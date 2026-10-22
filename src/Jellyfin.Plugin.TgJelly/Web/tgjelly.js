@@ -8,7 +8,7 @@
 //
 // Sibling modules are imported by the URL Jellyfin serves them under (plan 8); tests/web/jellyfin-resolve.mjs maps it
 // to the file for Node.
-import { esc } from './configurationpage?name=tgjelly-ui.js';
+import { esc, stateLabel } from './configurationpage?name=tgjelly-ui.js';
 
 // esc lives in tgjelly-ui.js; it stays a named export here for the page's callers and tests.
 export { esc };
@@ -29,15 +29,43 @@ const PROBLEM_STATES = new Set(['TokenRejected', 'WebhookConflict', 'Conflicting
  * @returns {string}
  */
 export function t(S, key, args = {}) {
-    const text = S && Object.hasOwn(S, key) ? String(S[key]) : key;
-    let html = '';
+    return fill(S, key, args, esc);
+}
+
+/**
+ * The plain-text twin of t(): the same lookup and fallbacks, nothing escaped. For the labels passed to the
+ * tgjelly-ui.js helpers, which escape their text themselves; t() stays for HTML written here.
+ * @param {Record<string, string> | null} S
+ * @param {string} key
+ * @param {Record<string, unknown>} [args]
+ * @returns {string}
+ */
+export function text(S, key, args = {}) {
+    return fill(S, key, args, String);
+}
+
+function fill(S, key, args, encode) {
+    const source = S && Object.hasOwn(S, key) ? String(S[key]) : key;
+    let out = '';
     let last = 0;
-    for (const match of text.matchAll(/\{(\w+)\}/g)) {
-        html += esc(text.slice(last, match.index)) + esc(Object.hasOwn(args, match[1]) ? args[match[1]] : match[0]);
+    for (const match of source.matchAll(/\{(\w+)\}/g)) {
+        out += encode(source.slice(last, match.index)) + encode(Object.hasOwn(args, match[1]) ? args[match[1]] ?? '' : match[0]);
         last = match.index + match[0].length;
     }
 
-    return html + esc(text.slice(last));
+    return out + encode(source.slice(last));
+}
+
+/** The key plural() and pluralText() look up: key.<category>, or key.other when the table lacks that category. */
+function pluralKey(S, key, count, lang) {
+    let category;
+    try {
+        category = new Intl.PluralRules(lang).select(count);
+    } catch {
+        category = new Intl.PluralRules('en').select(count);
+    }
+
+    return S && Object.hasOwn(S, `${key}.${category}`) ? `${key}.${category}` : `${key}.other`;
 }
 
 /**
@@ -50,15 +78,12 @@ export function t(S, key, args = {}) {
  * @returns {string} HTML, as t() returns
  */
 export function plural(S, key, count, args = {}, lang = 'en') {
-    let category;
-    try {
-        category = new Intl.PluralRules(lang).select(count);
-    } catch {
-        category = new Intl.PluralRules('en').select(count);
-    }
+    return t(S, pluralKey(S, key, count, lang), { ...args, count: formatNumber(count, lang) });
+}
 
-    const chosen = S && Object.hasOwn(S, `${key}.${category}`) ? `${key}.${category}` : `${key}.other`;
-    return t(S, chosen, { ...args, count: formatNumber(count, lang) });
+/** plural() as plain text, as text() is to t(). */
+export function pluralText(S, key, count, args = {}, lang = 'en') {
+    return text(S, pluralKey(S, key, count, lang), { ...args, count: formatNumber(count, lang) });
 }
 
 /**
@@ -1001,7 +1026,7 @@ function expandableQuote(children) {
         body = [{ text: children[index].text.slice(cut + 1) }, ...children.slice(index + 1)];
     }
 
-    return `<details class="tgj-quote"><summary>${nodesHtml(summary)}</summary>${nodesHtml(body)}</details>`;
+    return `<details class="tgj-tg-quote"><summary>${nodesHtml(summary)}</summary>${nodesHtml(body)}</details>`;
 }
 
 /** The safe preview markup for one closed Telegram element. */
@@ -1013,9 +1038,9 @@ function previewElement(name, attrs, children) {
 
     switch (name) {
         case 'tg-spoiler':
-            return `<span class="tgj-spoiler">${inner}</span>`;
+            return `<span class="tgj-tg-spoiler">${inner}</span>`;
         case 'span':
-            return String(attrs.class ?? '').trim() === 'tg-spoiler' ? `<span class="tgj-spoiler">${inner}</span>` : inner;
+            return String(attrs.class ?? '').trim() === 'tg-spoiler' ? `<span class="tgj-tg-spoiler">${inner}</span>` : inner;
         case 'blockquote':
             return Object.hasOwn(attrs, 'expandable') ? expandableQuote(children) : `<blockquote>${inner}</blockquote>`;
         case 'a': {
@@ -1032,7 +1057,7 @@ function previewElement(name, attrs, children) {
  * Turns Telegram HTML (from the server's Validate) into markup that is safe to put into the page. It tokenizes the
  * input and re-emits only Telegram's formatting tags, with no attribute from the input except a checked link href:
  * b, strong, i, em, u, ins, s, strike, del, code and pre as themselves; tg-spoiler and span class="tg-spoiler" as a
- * span.tgj-spoiler; blockquote (an expandable one as details/summary); a as a new-tab link for http:, https: and tg:
+ * span.tgj-tg-spoiler; blockquote (an expandable one as details/summary); a as a new-tab link for http:, https: and tg:
  * hrefs only, otherwise its text; tg-emoji and tg-time as their text. An unknown, unclosed or stray tag is shown as text.
  * Entities are decoded once, and all text is escaped on output.
  * @param {string} telegramHtml
@@ -1116,7 +1141,7 @@ export function renderTemplatePreview(result, S, lang = 'en', lastGood = null) {
     const failed = Boolean(result.RequestError) || (result.Errors ?? []).length > 0;
     const shown = failed ? lastGood : result;
     if (shown) {
-        parts.push(`<div class="tgj-tg${failed ? ' tgj-stale' : ''}">`
+        parts.push(`<div class="tgj-tg-bubble${failed ? ' tgj-tg-stale' : ''}">`
             + (shown.Poster ? `<div class="tgj-tg-poster">${t(S, 'web.templates.poster')}</div>` : '')
             + `<div class="tgj-tg-text">${previewHtml(shown.Html)}</div>${previewButtons(shown.Buttons)}</div>`);
     }
@@ -1223,6 +1248,260 @@ export function renderDiagnostics(S, ui) {
     return `<div class="verticalSection">${parts.join('')}</div>`;
 }
 
+// --- the shell (plan 8, design §5.1-5.2): header, sidebar, one section shown at a time ---
+
+/** The dashboard's sections, in sidebar order; each label is web.nav.<name>. */
+export const SECTIONS = ['overview', 'destinations', 'messages', 'templates', 'advanced'];
+const NAV_LABELS = {
+    overview: 'web.nav.overview',
+    destinations: 'web.nav.destinations',
+    messages: 'web.nav.messages',
+    templates: 'web.nav.templates',
+    advanced: 'web.nav.advanced',
+};
+
+/** Today's section containers, by the dashboard section that holds them (design §5.2). */
+const SECTION_HOSTS = {
+    overview: ['tgj-status', 'tgj-connect', 'tgj-bot'],
+    destinations: ['tgj-destinations'],
+    messages: ['tgj-messages'],
+    templates: ['tgj-templates'],
+    advanced: ['tgj-proxy', 'tgj-batching', 'tgj-updates', 'tgj-manual', 'tgj-diagnostics'],
+};
+
+/** How long the first show waits for tgjelly.css before showing the page unstyled. */
+const STYLESHEET_WAIT_MS = 1000;
+
+/** The header's connection label: a state label's HTML, a coloured word and no symbol. */
+const connectionHtml = connection => stateLabel(connection);
+
+/**
+ * The header's connection label for a Status: "Connected · @bot", "Not connected", "Connecting", or a warning when the
+ * connection needs attention or the status can't be read.
+ * @param {object | null} status the last GET Status body
+ * @param {Record<string, string> | null} S
+ * @param {boolean} [failed] the last GET Status failed
+ * @returns {{ kind: 'ok' | 'warning' | 'muted', text: string }} plain text, for stateLabel
+ */
+export function connectionLabel(status, S, failed = false) {
+    if (failed || !status) {
+        return failed ? { kind: 'warning', text: text(S, 'web.header.unknown') } : { kind: 'muted', text: text(S, 'web.header.notConnected') };
+    }
+
+    if (!status.HasToken) {
+        return { kind: 'muted', text: text(S, 'web.header.notConnected') };
+    }
+
+    if (PROBLEM_STATES.has(status.ConnectionState) || status.Compatible === false) {
+        return { kind: 'warning', text: text(S, 'web.header.attention') };
+    }
+
+    if (status.ConnectionState === 'Connected') {
+        return { kind: 'ok', text: status.BotUsername ? text(S, 'web.header.connected', { bot: status.BotUsername }) : text(S, 'web.header.connectedPlain') };
+    }
+
+    return { kind: 'muted', text: text(S, 'web.header.connecting') };
+}
+
+/**
+ * Renders the dashboard shell: the header with the connection label, the sidebar of sections with their muted counts,
+ * and one section per name holding today's containers. Only the active section is visible. The page fills the
+ * containers, the label (#tgj-conn) and the counts (#tgj-nav-count-<name>) afterwards; this is written once.
+ * @param {Record<string, string> | null} S
+ * @param {{ active: string, connection: { kind: string, text: string }, counts?: Record<string, string> }} options
+ *   counts are plain text by section name, e.g. { destinations: '3', templates: '1 edited' }
+ * @returns {string}
+ */
+export function renderShell(S, { active, connection, counts = {} }) {
+    const current = SECTIONS.includes(active) ? active : 'overview';
+    const nav = SECTIONS.map(name => `<button type="button" id="tgj-nav-${name}" data-tgj-nav="${name}"`
+        + `${name === current ? ' aria-current="page"' : ''}>`
+        + `<span class="tgj-nav-label">${t(S, NAV_LABELS[name])}</span>`
+        + `<span id="tgj-nav-count-${name}" class="tgj-nav-count">${esc(counts[name] ?? '')}</span></button>`);
+    const sections = SECTIONS.map(name => `<section id="tgj-sec-${name}" data-tgj-section="${name}" aria-labelledby="tgj-nav-${name}"`
+        + `${name === current ? '' : ' hidden'}>${SECTION_HOSTS[name].map(id => `<div id="${id}"></div>`).join('')}</section>`);
+    return '<div class="tgj-shell">'
+        + `<header class="tgj-header"><h1 class="tgj-header-title">TgJelly</h1><span id="tgj-conn">${connectionHtml(connection)}</span></header>`
+        + `<nav class="tgj-sidebar" aria-label="${t(S, 'web.nav.label')}">${nav.join('')}</nav>`
+        + `<div class="tgj-content">${sections.join('')}</div>`
+        + '</div>';
+}
+
+/** The tgj=<section> parameter in the URL hash. */
+const HASH_SECTION = /([#?&])tgj=([^&]*)/;
+
+/**
+ * The section a URL hash names with tgj=<section>, or 'overview'. Jellyfin routes on the hash
+ * (#/configurationpage?name=TgJelly), so the parameter sits beside the route's own.
+ * @param {string | undefined} hash
+ * @returns {string}
+ */
+export function sectionFromHash(hash) {
+    const match = HASH_SECTION.exec(String(hash ?? ''));
+    let name = '';
+    try {
+        name = match ? decodeURIComponent(match[2]) : '';
+    } catch {
+        name = '';
+    }
+
+    return SECTIONS.includes(name) ? name : 'overview';
+}
+
+/**
+ * The hash with tgj=<name> set: replaced where it is, else added to the route's query, else the whole hash.
+ * @param {string} hash
+ * @param {string} name a SECTIONS name
+ * @returns {string}
+ */
+export function hashWithSection(hash, name) {
+    const current = String(hash ?? '');
+    if (HASH_SECTION.test(current)) {
+        return current.replace(HASH_SECTION, `$1tgj=${name}`);
+    }
+
+    if (current.startsWith('#/')) {
+        return `${current}${current.includes('?') ? '&' : '?'}tgj=${name}`;
+    }
+
+    return current === '' || current === '#' ? `#tgj=${name}` : `${current}&tgj=${name}`;
+}
+
+/** The attributes that tell the page's fields apart (an id alone is enough). */
+const FIELD_ATTRS = ['data-tgj-input', 'data-tgj-id', 'data-tgj-key', 'data-tgj-field', 'data-tgj-lib', 'data-tgj-group'];
+const FIELD_TAGS = new Set(['INPUT', 'TEXTAREA', 'SELECT']);
+// Input types whose value is typed text: their typed value outlives a render. (A checkbox or a select is a choice made
+// at once, so a render shows the state it led to.)
+const TYPED_INPUTS = new Set(['text', 'url', 'password', 'search', 'email', 'tel', 'number']);
+
+const selectorValue = value => String(value).replace(/["\\]/g, c => `\\${c}`);
+
+/**
+ * A selector that finds this field again after its section is written: [id="…"], or its data-tgj-* attributes.
+ * null when the field has none of them. It is also the key of state.pendingFields.
+ * @param {{ getAttribute(name: string): string | null }} el
+ * @returns {string | null}
+ */
+export function fieldSelector(el) {
+    const id = el.getAttribute('id');
+    if (id) {
+        return `[id="${selectorValue(id)}"]`;
+    }
+
+    const parts = FIELD_ATTRS.map(name => [name, el.getAttribute(name)]).filter(([, value]) => value !== null && value !== '')
+        .map(([name, value]) => `[${name}="${selectorValue(value)}"]`);
+    return parts.length > 0 ? parts.join('') : null;
+}
+
+const isTyped = el => el.tagName === 'TEXTAREA' || (el.tagName === 'INPUT' && TYPED_INPUTS.has(String(el.type || 'text').toLowerCase()));
+
+/**
+ * Runs a write that may replace fields inside rootEl, so that typing is never interrupted (design §4, generalising
+ * v0.3's template caret fix):
+ * - a focused input, textarea or select inside rootEl is focused again in its new copy, with the same selection and
+ *   scroll; a typed field keeps what the admin typed since the last render (its value differs from its defaultValue);
+ * - a field in pending (selectors from fieldSelector, e.g. a change whose auto-save hasn't gone out) keeps the value it
+ *   had before the write, and does not take the focus.
+ * A write that leaves a field in place (an unchanged section) changes nothing.
+ * @param {Element | null} rootEl
+ * @param {() => void} write
+ * @param {{ pending?: Iterable<string> }} [options]
+ */
+export function keepFocus(rootEl, write, { pending = [] } = {}) {
+    if (!rootEl || typeof rootEl.querySelector !== 'function') {
+        write();
+        return;
+    }
+
+    const doc = rootEl.ownerDocument || globalThis.document;
+    const active = doc ? doc.activeElement : null;
+    const kept = new Map();
+    if (active && FIELD_TAGS.has(String(active.tagName).toUpperCase()) && typeof rootEl.contains === 'function' && rootEl.contains(active)) {
+        const key = fieldSelector(active);
+        if (key) {
+            kept.set(key, {
+                el: active,
+                focus: true,
+                value: isTyped(active) && active.value !== active.defaultValue ? active.value : undefined,
+                start: active.selectionStart,
+                end: active.selectionEnd,
+                direction: active.selectionDirection || 'none',
+                top: active.scrollTop,
+                left: active.scrollLeft,
+            });
+        }
+    }
+
+    for (const key of pending) {
+        const el = rootEl.querySelector(key);
+        if (el) {
+            const entry = kept.get(key) ?? { el, focus: false };
+            kept.set(key, { ...entry, value: el.value, checked: el.checked });
+        }
+    }
+
+    write();
+    for (const [key, saved] of kept) {
+        const after = rootEl.querySelector(key);
+        if (!after || after === saved.el) {
+            continue;
+        }
+
+        if (saved.value !== undefined && after.value !== saved.value) {
+            after.value = saved.value;
+        }
+
+        if (typeof saved.checked === 'boolean' && after.checked !== saved.checked) {
+            after.checked = saved.checked;
+        }
+
+        if (!saved.focus) {
+            continue;
+        }
+
+        if (typeof after.focus === 'function') {
+            after.focus({ preventScroll: true });
+        }
+
+        if (typeof after.setSelectionRange === 'function' && typeof saved.start === 'number' && typeof saved.end === 'number') {
+            try {
+                after.setSelectionRange(saved.start, saved.end, saved.direction);
+            } catch {
+                // This input type has no selection (e.g. number): the focus is enough.
+            }
+        }
+
+        after.scrollTop = saved.top;
+        after.scrollLeft = saved.left;
+    }
+}
+
+/**
+ * Resolves once the stylesheet <link> has loaded or failed, or after ms. At once when there is no link (as in the
+ * tests) or it has loaded already. The first show waits for it, so the page doesn't paint unstyled and then play every
+ * transition from the browser's defaults.
+ * @param {(EventTarget & { sheet?: unknown }) | null} link
+ * @param {number} [ms]
+ * @returns {Promise<void>}
+ */
+export function waitForStylesheet(link, ms = STYLESHEET_WAIT_MS) {
+    if (!link || typeof link.addEventListener !== 'function' || link.sheet) {
+        return Promise.resolve();
+    }
+
+    return new Promise(resolve => {
+        let timer = null;
+        const done = () => {
+            clearTimeout(timer);
+            link.removeEventListener('load', done);
+            link.removeEventListener('error', done);
+            resolve();
+        };
+        link.addEventListener('load', done);
+        link.addEventListener('error', done);
+        timer = setTimeout(done, ms);
+    });
+}
 
 /**
  * The page controller (spec §11.1). Listeners are bound once, here; viewshow is idempotent.
@@ -1308,6 +1587,12 @@ export default function TgJellyPage(view, params) {
     // The template preview: the newest Validate request's number (older replies are ignored), and the typing debounce.
     let tplSeq = 0;
     let tplTimer = null;
+    // Fields whose change hasn't been saved yet, by fieldSelector: a section write keeps their values (keepFocus).
+    const pendingFields = new Set();
+    // The shell: written once, at the first render after the strings and the stylesheet; then the shown section.
+    let shellDrawn = false;
+    let activeSection = 'overview';
+    let stylesheet = null;
 
     /**
      * Sets a container's HTML unless it's the HTML last written there. It compares with its own copy, not with
@@ -1320,45 +1605,6 @@ export default function TgJellyPage(view, params) {
             el.innerHTML = html;
             rendered.set(id, html);
         }
-    };
-
-    /**
-     * Runs a write that may replace the template textarea. When the textarea has the focus, the new one gets it back with
-     * the same selection and scroll position, so a render while the admin types (a Destinations render, a revision sync)
-     * doesn't move the caret. The text itself is safe: it renders from the form state.
-     * @param {() => void} write
-     */
-    const keepTemplateCaret = write => {
-        const before = byId('tgj-tpl-text');
-        const doc = (before && before.ownerDocument) || globalThis.document;
-        if (!before || !doc || doc.activeElement !== before) {
-            write();
-            return;
-        }
-
-        const saved = {
-            start: before.selectionStart,
-            end: before.selectionEnd,
-            direction: before.selectionDirection || 'none',
-            top: before.scrollTop,
-            left: before.scrollLeft,
-        };
-        write();
-        const after = byId('tgj-tpl-text');
-        if (!after || after === before) {
-            return;
-        }
-
-        if (typeof after.focus === 'function') {
-            after.focus({ preventScroll: true });
-        }
-
-        if (typeof after.setSelectionRange === 'function' && typeof saved.start === 'number' && typeof saved.end === 'number') {
-            after.setSelectionRange(saved.start, saved.end, saved.direction);
-        }
-
-        after.scrollTop = saved.top;
-        after.scrollLeft = saved.left;
     };
 
     /** The error line for a section, or ''. */
@@ -1657,14 +1903,91 @@ export default function TgJellyPage(view, params) {
         },
     };
 
-    const renderSection = name => {
-        const section = sections[name];
-        const write = () => setHtml(section.id, section.render() + sectionError(name));
-        if (name === 'templates') {
-            keepTemplateCaret(write);
-        } else {
-            write();
+    /** The sidebar counts, plain text by section: the destinations, and how many templates are edited. */
+    const navCounts = () => {
+        const S = state.strings;
+        const counts = {};
+        const destinationCount = state.destinations ? (state.destinations.Items ?? []).length : 0;
+        if (destinationCount > 0) {
+            counts.destinations = formatNumber(destinationCount, lang());
         }
+
+        const edited = state.templates ? (state.templates.Items ?? []).filter(item => item.Edited).length : 0;
+        if (edited > 0) {
+            counts.templates = pluralText(S, 'web.nav.edited', edited, {}, lang());
+        }
+
+        return counts;
+    };
+
+    const connection = () => connectionLabel(state.status, state.strings, state.ui.statusFailed);
+
+    /** Shows one section and marks its sidebar button; with { remember: true } also records it in the URL hash. */
+    const selectSection = (name, { remember = false } = {}) => {
+        if (!SECTIONS.includes(name)) {
+            return;
+        }
+
+        activeSection = name;
+        for (const other of SECTIONS) {
+            const section = byId(`tgj-sec-${other}`);
+            if (section) {
+                section.hidden = other !== name;
+            }
+
+            const button = byId(`tgj-nav-${other}`);
+            if (button) {
+                if (other === name) {
+                    button.setAttribute('aria-current', 'page');
+                } else {
+                    button.removeAttribute('aria-current');
+                }
+            }
+        }
+
+        const location = window.location;
+        const history = window.history;
+        if (remember && location && history && typeof history.replaceState === 'function') {
+            // replaceState: no history entry, and no hashchange, so Jellyfin's router doesn't navigate.
+            history.replaceState(history.state, '', hashWithSection(location.hash, name));
+        }
+    };
+
+    /**
+     * Writes the shell into #tgjelly-root, once. The first section shown is the one in the URL hash, except that
+     * Overview leads until a bot is connected (design §5.2).
+     */
+    const drawShell = () => {
+        const root = byId('tgjelly-root');
+        if (shellDrawn || !root || !state.strings) {
+            return;
+        }
+
+        const connected = Boolean(state.status && state.status.HasToken);
+        const first = connected ? sectionFromHash(window.location && window.location.hash) : 'overview';
+        root.innerHTML = renderShell(state.strings, { active: first, connection: connection(), counts: navCounts() });
+        shellDrawn = true;
+        selectSection(first);
+    };
+
+    /** Brings the header label and the sidebar counts up to date (each written only when it changed). */
+    const renderChrome = () => {
+        if (!shellDrawn) {
+            return;
+        }
+
+        setHtml('tgj-conn', connectionHtml(connection()));
+        const counts = navCounts();
+        for (const name of SECTIONS) {
+            setHtml(`tgj-nav-count-${name}`, esc(counts[name] ?? ''));
+        }
+    };
+
+    const renderSection = name => {
+        drawShell();
+        const section = sections[name];
+        keepFocus(byId(section.id), () => setHtml(section.id, section.render() + sectionError(name)), { pending: pendingFields });
+        renderChrome();
 
         if (name === 'destinations') {
             // The manual block shows the same data (detected chats, the gate), so it follows every Destinations render;
@@ -1678,9 +2001,9 @@ export default function TgJellyPage(view, params) {
         }
 
         if (name === 'diagnostics' && state.ui.diagText) {
-            const text = byId('tgj-diagnostics-text');
-            if (text && typeof text.select === 'function') {
-                text.select();
+            const area = byId('tgj-diagnostics-text');
+            if (area && typeof area.select === 'function') {
+                area.select();
             }
         }
     };
@@ -2047,11 +2370,7 @@ export default function TgJellyPage(view, params) {
     };
 
     const openManual = () => {
-        const advanced = byId('tgj-advanced');
-        if (advanced) {
-            advanced.open = true;
-        }
-
+        selectSection('advanced', { remember: true });
         const manual = byId('tgj-manual');
         if (manual && typeof manual.scrollIntoView === 'function') {
             manual.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -2585,20 +2904,12 @@ export default function TgJellyPage(view, params) {
         } catch (err) {
             stringsLoad = null;
             console.error('TgJelly: could not load the page strings', err);
-            const el = byId('tgj-status');
-            if (el) {
-                el.textContent = 'Could not load TgJelly.';
-                rendered.delete('tgj-status');
+            const root = byId('tgjelly-root');
+            if (root && !shellDrawn) {
+                root.textContent = 'Could not load TgJelly.';
             }
 
             return false;
-        }
-
-        const S = state.strings;
-        setHtml('tgj-advanced-title', t(S, 'web.advanced'));
-        const advanced = byId('tgj-advanced');
-        if (advanced) {
-            advanced.hidden = false;
         }
 
         return true;
@@ -2607,7 +2918,9 @@ export default function TgJellyPage(view, params) {
     const show = async () => {
         visible = true;
         stopPolling();
-        if (!(await ensureStrings())) {
+        stylesheet ??= waitForStylesheet(byId('tgjelly-css'));
+        const [ready] = await Promise.all([ensureStrings(), stylesheet]);
+        if (!ready) {
             return;
         }
 
@@ -2665,11 +2978,20 @@ export default function TgJellyPage(view, params) {
 
     // A spoiler in the template preview is revealed (and hidden again) on click, as in Telegram.
     view.addEventListener('click', event => {
-        const spoiler = event.target && event.target.closest ? event.target.closest('.tgj-spoiler') : null;
+        const spoiler = event.target && event.target.closest ? event.target.closest('.tgj-tg-spoiler') : null;
         if (spoiler) {
-            spoiler.classList.toggle('tgj-revealed');
+            spoiler.classList.toggle('tgj-tg-revealed');
         }
     });
 
-    return { api, state, sections, actions, inputs, reloadSection, runAction, syncForm, markDirty, resetForm };
+    // A sidebar button, or any control carrying data-tgj-nav (e.g. an Overview summary row), shows that section.
+    view.addEventListener('click', event => {
+        const el = event.target && event.target.closest ? event.target.closest('[data-tgj-nav]') : null;
+        if (el) {
+            event.preventDefault();
+            selectSection(el.getAttribute('data-tgj-nav'), { remember: true });
+        }
+    });
+
+    return { api, state, sections, actions, inputs, reloadSection, runAction, syncForm, markDirty, resetForm, pendingFields };
 }
