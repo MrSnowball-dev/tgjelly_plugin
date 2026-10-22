@@ -329,6 +329,11 @@ export function renderStatus(status, S, lang = 'en') {
         }));
     }
 
+    if (!status.HasToken) {
+        // Before a bot is connected the card is just the connection line, below the Connect card.
+        return card({ title: text(S, 'web.status.title'), body: parts.join('') });
+    }
+
     parts.push(row({
         label: text(S, 'web.status.activity'),
         extraClass: 'tgj-row--stack',
@@ -559,6 +564,7 @@ export function renderOverviewSummary(status, destinations, templates, S, lang =
     }
 
     const go = section => actionButton({ label: text(S, 'web.summary.open'), act: 'goto', attrs: { 'data-tgj-nav': section } });
+    // Notices are shown on the Overview itself, so that row has no button.
     const values = [];
 
     const dests = destinations ? destinations.Items ?? [] : null;
@@ -596,7 +602,7 @@ export function renderOverviewSummary(status, destinations, templates, S, lang =
         title: text(S, 'web.summary.title'),
         body: row({ label: text(S, 'web.nav.destinations'), control: (values[0] ?? '') + go('destinations') })
             + row({ label: text(S, 'web.nav.templates'), control: templateValue + go('templates') })
-            + row({ label: text(S, 'web.summary.notices'), control: noticeValue + go('advanced') }),
+            + row({ label: text(S, 'web.summary.notices'), control: noticeValue }),
     });
 }
 
@@ -1341,7 +1347,8 @@ const NAV_LABELS = {
 
 /** Today's section containers, by the dashboard section that holds them (design §5.2). */
 const SECTION_HOSTS = {
-    overview: ['tgj-status', 'tgj-connect', 'tgj-bot', 'tgj-summary'],
+    // Connect precedes Status: with no bot it leads (design §5.2), and with a bot it is empty, so Status leads.
+    overview: ['tgj-connect', 'tgj-status', 'tgj-bot', 'tgj-summary'],
     destinations: ['tgj-destinations'],
     messages: ['tgj-messages'],
     templates: ['tgj-templates'],

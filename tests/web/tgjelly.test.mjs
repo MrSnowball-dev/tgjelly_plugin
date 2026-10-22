@@ -2107,7 +2107,7 @@ function shownSection(el) {
 }
 
 const HOSTS = {
-    overview: ['tgj-status', 'tgj-connect', 'tgj-bot', 'tgj-summary'],
+    overview: ['tgj-connect', 'tgj-status', 'tgj-bot', 'tgj-summary'],
     destinations: ['tgj-destinations'],
     messages: ['tgj-messages'],
     templates: ['tgj-templates'],
@@ -2452,6 +2452,9 @@ test('overview_noBot_leadsWithConnectCard_noSave', async () => {
     const { view, el } = mount({ 'GET TgJelly/Status': noToken() });
     await show(view);
     assert.ok(el('tgj-connect').innerHTML.includes('class="tgj-card"'));
+    const order = id => el('tgjelly-root').innerHTML.indexOf(`id="${id}"`);
+    assert.ok(order('tgj-connect') > -1 && order('tgj-connect') < order('tgj-status'), 'Connect leads without a bot');
+    assert.ok(!el('tgj-status').innerHTML.includes('Waiting for metadata'), 'Status is only the connection line');
     assert.equal(el('tgj-bot').innerHTML, '');
     assert.equal(el('tgj-summary').innerHTML, '', 'no summary before a bot is connected');
     await click(view, 'connectExisting');
@@ -2469,16 +2472,26 @@ test('summary_linksToSections', async () => {
     await show(view);
     const summary = el('tgj-summary').innerHTML;
     const targets = [...summary.matchAll(/data-tgj-nav="(\w+)"/g)].map(match => match[1]);
-    assert.deepEqual(targets, ['destinations', 'templates', 'advanced']);
+    assert.deepEqual(targets, ['destinations', 'templates']);
     for (const target of targets) {
         assert.match(summary, new RegExp(`<button type="button" class="tgj-btn"[^>]*data-tgj-nav="${target}"`));
     }
 
-    clickOn(view, { 'data-tgj-nav': 'templates' });
+    clickOn(view, { 'data-tgj-act': 'goto', 'data-tgj-nav': 'templates' });
     assert.equal(shownSection(el), 'templates');
     assert.match(win.location.hash, /tgj=templates/);
-    clickOn(view, { 'data-tgj-nav': 'destinations' });
+    clickOn(view, { 'data-tgj-act': 'goto', 'data-tgj-nav': 'destinations' });
     assert.equal(shownSection(el), 'destinations');
+    assert.ok(!/Notices[\s\S]*?data-tgj-nav/.test(summary.slice(summary.indexOf('Notices'))), 'the Notices row has no button');
+});
+
+test('overview_connected_statusLeads', async () => {
+    const { view, el } = mount();
+    await show(view);
+    const order = id => el('tgjelly-root').innerHTML.indexOf(`id="${id}"`);
+    assert.equal(el('tgj-connect').innerHTML, '');
+    assert.ok(order('tgj-status') < order('tgj-bot'));
+    assert.ok(el('tgj-status').innerHTML.includes('Waiting for metadata'));
 });
 
 test('summary_noDestinations_saysSo', () => {
