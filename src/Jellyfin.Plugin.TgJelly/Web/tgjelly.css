@@ -948,3 +948,57 @@
     margin-top: var(--tgj-space-2);
     font-family: monospace;
 }
+
+/* ---- Destinations ---- */
+
+/* The list card, then the open destination's editor card. */
+#tgjelly-root .tgj-stack {
+    display: flex;
+    flex-direction: column;
+    gap: var(--tgj-space-4);
+}
+
+/* "Sending" and its switch stay together when the row wraps. */
+#tgjelly-root .tgj-switch-pair {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--tgj-space-2);
+}
+
+#tgjelly-root .tgj-switch-label {
+    color: var(--tgj-fg-2);
+    font-size: var(--tgj-step--1);
+}
+
+#tgjelly-root .tgj-group-title {
+    margin: var(--tgj-space-3) 0 0;
+    color: var(--tgj-fg-2);
+    font-size: var(--tgj-step--1);
+    font-weight: 600;
+}
+
+#tgjelly-root .tgj-dest-editor .tgj-row-hint,
+#tgjelly-root .tgj-dest-editor .tgj-confirm {
+    margin-block: var(--tgj-space-2);
+}
+
+#tgjelly-root .tgj-subtitle .tgj-cue {
+    font-weight: 400;
+}
+
+/* "Telegram setup didn't work?" sits on the buttons' line. */
+#tgjelly-root .tgj-actions .tgj-row-hint,
+#tgjelly-root .tgj-empty-actions .tgj-row-hint {
+    margin-top: 0;
+}
+
+/* Narrow: a destination's health, Sending and Edit go under its title. */
+@container tgjelly (max-width: 40rem) {
+    #tgjelly-root .tgj-dest-row {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    #tgjelly-root .tgj-dest-row .tgj-row-control {
+        justify-content: flex-start;
+    }
+}

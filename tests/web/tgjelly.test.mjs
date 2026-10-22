@@ -1066,7 +1066,7 @@ test('createApi throws on a network failure', async () => {
     await assert.rejects(api.get('Status'), TypeError);
 });
 
-// --- destinations (spec §6.6.3, §7.2, §7.3, §10.4) ---
+// --- destinations (spec §6.6.3, §7.2, §7.3, §10.4; plan 8 Task 7: cards, auto-save, the preset confirmation) ---
 
 const destEl = el => el('tgj-destinations').innerHTML;
 const destAct = (view, act, attributes = {}) => {
@@ -1078,50 +1078,270 @@ const destInput = (view, name, attributes, extra, type = 'change') => {
     return flush();
 };
 const putBodies = api => api.calls.filter(c => c.type === 'PUT' && c.url.includes('Destinations/')).map(c => JSON.parse(c.data));
+/** A click on a destination switch (a button with role=switch), as the page's switch listener sees it. */
+const flip = (view, name, attributes) => {
+    dispatchOn(view, 'click', { 'data-tgj-input': name, role: 'switch', ...attributes });
+    return flush();
+};
+const pickPreset = (view, value) => destInput(view, 'destPreset', { 'data-tgj-id': 'd1', 'data-tgj-save': 'dest:d1:Preset' }, { value });
+/** Whether the switch with this input and these attributes is on in the markup; null when there is none. */
+function switchIn(html, name, attributes = {}) {
+    for (const [tag] of html.matchAll(/<button[^>]*role="switch"[^>]*>/g)) {
+        if (tag.includes(` data-tgj-input="${name}"`) && Object.entries(attributes).every(([k, v]) => tag.includes(` ${k}="${v}"`))) {
+            return /aria-checked="(true|false)"/.exec(tag)[1] === 'true';
+        }
+    }
+
+    return null;
+}
+const selectedPreset = html => /<select[^>]*data-tgj-input="destPreset"[^>]*>[\s\S]*?<option value="(\w+)" selected>/.exec(html)?.[1];
+// The bot's strings keep their emoji (design §7), so the dashboard must not show them: these too.
+const DEST_SYMBOLS = /[●✓✅⚠❌⛔▫🔔🔕]|️/u;
+
+/**
+ * A PUT Destinations/d1 that applies the request to the destination, as the server does, and answers with the
+ * DestinationDto and the Revision it moved to.
+ */
+function echoDest(start = 5, base = dest()) {
+    let revision = start;
+    let item = base;
+    return request => {
+        const body = JSON.parse(request.data);
+        const next = { ...item };
+        if (body.Events) {
+            Object.assign(next, { Preset: 'Custom', Events: body.Events });
+        } else if (body.Preset) {
+            Object.assign(next, { Preset: body.Preset, Events: CATALOG.Presets[body.Preset] ?? next.Events });
+        }
+
+        for (const key of ['LibraryIds', 'SilentGroups', 'Enabled']) {
+            if (key in body) {
+                next[key] = body[key];
+            }
+        }
+
+        item = next;
+        revision++;
+        return { ...next, Revision: revision };
+    };
+}
 
 test('destination titles are escaped', async () => {
     const { view, el } = mount({ 'GET TgJelly/Destinations': destinations({ Items: [dest({ Title: '<script>alert(1)</script>' })] }) });
     await show(view);
+    await destAct(view, 'edit', { 'data-tgj-id': 'd1' });
     assert.ok(!destEl(el).includes('<script>'));
     assert.ok(destEl(el).includes('&lt;script&gt;alert(1)&lt;/script&gt;'));
 });
 
-test('health badge text comes from the strings', async () => {
+test('destList_rowsWithStateLabels_noSymbols', async () => {
     const { view, el } = mount({
         'GET TgJelly/Destinations': destinations({
-            Items: [dest({ Health: { Status: 'NeedsPermissions', PhotosBlocked: true } })],
+            Items: [
+                dest(),
+                dest({ Id: 'd2', Title: 'Admins', Kind: 'Group', Preset: 'AdminAlerts', Health: { Status: 'NeedsPermissions', PhotosBlocked: true } }),
+                dest({ Id: 'd3', Title: 'Topic', Preset: 'Custom', Health: { Status: 'TopicMissing', PhotosBlocked: false } }),
+                dest({ Id: 'd4', Title: 'Gone', Kind: 'Channel', Enabled: false, Health: { Status: 'Lost', PhotosBlocked: false } }),
+            ],
         }),
     });
     await show(view);
-    assert.ok(destEl(el).includes(m.t(EN, 'dest.health.NeedsPermissions')));
-    assert.ok(destEl(el).includes(m.t(EN, 'dest.health.PhotosBlocked')));
-    assert.ok(destEl(el).includes(m.t(EN, 'dest.kind.Supergroup')));
+    const html = destEl(el);
+    assert.match(html, /<section class="tgj-card"/, 'the list is a card');
+    assert.ok(!/emby-|inputContainer|selectContainer|sectionTitle|verticalSection|fieldDescription|tgj-badge/.test(html), 'only the dashboard components');
+    assert.ok(!DEST_SYMBOLS.test(html), 'no symbols');
+
+    // Each destination is a row: its title, the kind and preset muted, and the health as a coloured word.
+    assert.equal((html.match(/<div class="tgj-row tgj-dest-row">/g) ?? []).length, 4);
+    for (const [kind, preset] of [['Supergroup', 'Everything'], ['Group', 'AdminAlerts'], ['Channel', 'Everything']]) {
+        assert.ok(html.includes(`<span class="tgj-row-hint">${m.t(EN, 'web.dest.meta', { kind: EN[`dest.kind.${kind}`], preset: EN[`dest.preset.${preset}`] })}</span>`), kind);
+    }
+    assert.ok(html.includes('<span class="tgj-row-label">Admins</span>'));
+    assert.ok(html.includes(ui.stateLabel({ kind: 'ok', text: 'OK' })));
+    assert.ok(html.includes(ui.stateLabel({ kind: 'warning', text: 'Needs permissions' })));
+    assert.ok(html.includes(ui.stateLabel({ kind: 'warning', text: 'Photos blocked' })));
+    assert.ok(html.includes(ui.stateLabel({ kind: 'error', text: 'Topic missing' })));
+    assert.ok(html.includes(ui.stateLabel({ kind: 'error', text: 'Lost' })));
+    // The dashboard has its own words; the bot's labels keep their emoji.
+    assert.equal(EN['dest.health.Ok'], '✅ OK');
+    assert.equal(EN['dest.health.Lost'], '⛔ Lost');
+    for (const status of ['Ok', 'PhotosBlocked', 'NeedsPermissions', 'TopicMissing', 'Lost']) {
+        assert.ok(!DEST_SYMBOLS.test(EN[`web.dest.health.${status}`]), status);
+    }
+
+    // The Sending switch is a switch with its own cue; Edit is an action.
+    assert.equal(switchIn(html, 'destEnabled', { 'data-tgj-id': 'd1', 'data-tgj-save': 'dest:d1:Enabled' }), true);
+    assert.equal(switchIn(html, 'destEnabled', { 'data-tgj-id': 'd4' }), false);
+    assert.ok(html.includes('data-tgj-cue="dest:d1:Enabled"'));
+    assert.ok(html.includes(m.t(EN, 'web.dest.enabled')));
+    assert.ok(html.includes(ui.actionButton({ label: EN['web.dest.edit'], act: 'edit', id: 'd2' })));
+    // The add actions stay.
+    assert.ok(html.includes(LINKS.StartAdd));
+
+    const empty = mount({ 'GET TgJelly/Destinations': destinations({ Items: [], ManualUnlocked: true }) });
+    await show(empty.view);
+    const none = destEl(empty.el);
+    assert.match(none, /<div class="tgj-empty"><p class="tgj-empty-text">No destinations yet[^<]*<\/p><div class="tgj-empty-actions">/);
+    assert.match(none, /class="tgj-empty-actions">[\s\S]*https:\/\/t\.me\/jf_bot\?start=add[\s\S]*data-tgj-act="open-manual"/, 'the add actions in the empty state');
 });
 
-test('pause toggle sends only Enabled with the revision', async () => {
-    const { view, api } = mount({ 'PUT TgJelly/Destinations/d1': () => dest({ Enabled: false }) });
-    await show(view);
-    await destAct(view, 'enabled', { 'data-tgj-id': 'd1' });
-    assert.deepEqual(putBodies(api), [{ ExpectedRevision: 5, Enabled: false }]);
-});
-
-test('preset change sends Preset', async () => {
-    const { view, api, el } = mount({ 'PUT TgJelly/Destinations/d1': () => dest({ Preset: 'NewMedia' }) });
+test('eventSwitch_savesImmediately', async () => {
+    const { view, api, el, hooks, timers } = mount({ 'PUT TgJelly/Destinations/d1': echoDest() });
     await show(view);
     await destAct(view, 'edit', { 'data-tgj-id': 'd1' });
-    assert.ok(destEl(el).includes('data-tgj-input="destPreset"'));
-    await destInput(view, 'destPreset', { 'data-tgj-id': 'd1' }, { value: 'NewMedia' });
-    await destAct(view, 'saveDest', { 'data-tgj-id': 'd1' });
+    assert.equal(switchIn(destEl(el), 'destEvent', { 'data-tgj-key': 'server.started' }), true);
+
+    await flip(view, 'destEvent', { 'data-tgj-id': 'd1', 'data-tgj-key': 'server.started', 'data-tgj-save': 'dest:d1:event:server.started' });
+    assert.deepEqual(putBodies(api), [{ ExpectedRevision: 5, Events: ['media.movie', 'media.episodes', 'security.login_failed'] }], 'sent at once');
+    assert.deepEqual(cue(view, 'dest:d1:event:server.started'), SAVED_CUE, 'Saved, beside the switch that changed');
+    assert.deepEqual(cue(view, 'dest:d1:event:media.movie'), IDLE_CUE);
+    assert.equal(switchIn(destEl(el), 'destEvent', { 'data-tgj-key': 'server.started' }), false);
+    assert.equal(selectedPreset(destEl(el)), 'Custom', 'a hand-picked list is Custom');
+    assert.equal(hooks.pageRevision(), 6, 'the reply carries the revision');
+    assert.equal(hooks.state.destinations.Items[0].Preset, 'Custom');
+    assert.equal(hooks.pendingFields.size, 0);
+
+    // Libraries, silent groups and the Sending switch save at once too, each with the revision the last save moved to.
+    await flip(view, 'destLibrary', { 'data-tgj-id': 'd1', 'data-tgj-lib': LIB_A, 'data-tgj-save': `dest:d1:lib:${LIB_A}` });
+    await flip(view, 'destSilent', { 'data-tgj-id': 'd1', 'data-tgj-group': 'media', 'data-tgj-save': 'dest:d1:silent:media' });
+    await flip(view, 'destEnabled', { 'data-tgj-id': 'd1', 'data-tgj-save': 'dest:d1:Enabled' });
+    assert.deepEqual(putBodies(api).slice(1), [
+        { ExpectedRevision: 6, LibraryIds: [LIB_A] },
+        { ExpectedRevision: 7, SilentGroups: ['media'] },
+        { ExpectedRevision: 8, Enabled: false },
+    ]);
+    assert.equal(switchIn(destEl(el), 'destLibrary', { 'data-tgj-lib': LIB_A }), true);
+    assert.equal(switchIn(destEl(el), 'destSilent', { 'data-tgj-group': 'media' }), true);
+    assert.equal(switchIn(destEl(el), 'destEnabled', { 'data-tgj-id': 'd1' }), false);
+    assert.deepEqual(cue(view, 'dest:d1:Enabled'), SAVED_CUE);
+    await timers.advance(2000);
+    assert.deepEqual(cue(view, 'dest:d1:Enabled'), IDLE_CUE);
+});
+
+test('presetFromCustom_asksInline_cancelKeepsCustom_replaceSends', async () => {
+    const custom = dest({ Preset: 'Custom', Events: ['media.movie'] });
+    const { view, api, el, hooks } = mount({
+        'GET TgJelly/Destinations': destinations({ Items: [custom] }),
+        'PUT TgJelly/Destinations/d1': echoDest(5, custom),
+    });
+    await show(view);
+    await destAct(view, 'edit', { 'data-tgj-id': 'd1' });
+
+    await pickPreset(view, 'NewMedia');
+    assert.deepEqual(putBodies(api), [], 'nothing is sent before Replace');
+    let html = destEl(el);
+    assert.ok(html.includes(ui.inlineConfirm({
+        question: EN['web.dest.presetConfirm'], confirmLabel: EN['web.dest.presetReplace'], confirmAct: 'presetReplace',
+        cancelAct: 'presetCancel', cancelLabel: EN['dest.btn.cancel'], id: 'd1',
+    })), 'the inline confirmation, not a dialog');
+    assert.equal(EN['web.dest.presetConfirm'], 'Replace your custom events with this preset?');
+    assert.equal(selectedPreset(html), 'Custom', 'the select shows Custom until confirmed');
+    assert.deepEqual(hooks.state.forms['dest:d1'].local.Events, ['media.movie']);
+
+    await destAct(view, 'presetCancel', { 'data-tgj-id': 'd1' });
+    html = destEl(el);
+    assert.ok(!html.includes(EN['web.dest.presetConfirm']));
+    assert.equal(selectedPreset(html), 'Custom');
+    assert.deepEqual(putBodies(api), []);
+    assert.equal(hooks.state.forms['dest:d1'].local.Preset, 'Custom');
+
+    await pickPreset(view, 'NewMedia');
+    await destAct(view, 'presetReplace', { 'data-tgj-id': 'd1' });
     assert.deepEqual(putBodies(api), [{ ExpectedRevision: 5, Preset: 'NewMedia' }]);
+    html = destEl(el);
+    assert.ok(!html.includes(EN['web.dest.presetConfirm']));
+    assert.equal(selectedPreset(html), 'NewMedia');
+    assert.equal(switchIn(html, 'destEvent', { 'data-tgj-key': 'media.episodes' }), true, 'the preset events show');
+    assert.deepEqual(cue(view, 'dest:d1:Preset'), SAVED_CUE);
 });
 
-test('event toggle sends Events', async () => {
-    const { view, api } = mount({ 'PUT TgJelly/Destinations/d1': () => dest({ Preset: 'Custom' }) });
+test('presetToPreset_savesImmediately', async () => {
+    const { view, api, el } = mount({ 'PUT TgJelly/Destinations/d1': echoDest() });
     await show(view);
     await destAct(view, 'edit', { 'data-tgj-id': 'd1' });
-    await destInput(view, 'destEvent', { 'data-tgj-id': 'd1', 'data-tgj-key': 'server.started' }, { checked: false });
-    await destAct(view, 'saveDest', { 'data-tgj-id': 'd1' });
-    assert.deepEqual(putBodies(api), [{ ExpectedRevision: 5, Events: ['media.movie', 'media.episodes', 'security.login_failed'] }]);
+
+    await pickPreset(view, 'NewMedia');
+    assert.deepEqual(putBodies(api), [{ ExpectedRevision: 5, Preset: 'NewMedia' }], 'between presets: at once');
+    assert.ok(!destEl(el).includes(EN['web.dest.presetConfirm']));
+    assert.equal(switchIn(destEl(el), 'destEvent', { 'data-tgj-key': 'server.started' }), false);
+    assert.deepEqual(cue(view, 'dest:d1:Preset'), SAVED_CUE);
+
+    await pickPreset(view, 'Custom');
+    assert.deepEqual(putBodies(api)[1], { ExpectedRevision: 6, Preset: 'Custom' }, 'into Custom: at once, keeping the events');
+    assert.equal(switchIn(destEl(el), 'destEvent', { 'data-tgj-key': 'media.movie' }), true);
+
+    await pickPreset(view, 'AdminAlerts');
+    assert.equal(putBodies(api).length, 2, 'out of Custom asks first');
+    assert.ok(destEl(el).includes(EN['web.dest.presetConfirm']));
+
+    // An input event before the change is not a second choice.
+    await destInput(view, 'destPreset', { 'data-tgj-id': 'd1' }, { value: 'Everything' }, 'input');
+    assert.equal(putBodies(api).length, 2);
+});
+
+test('destConflict_retries', async () => {
+    const theirs = dest({ SilentGroups: ['security'] });
+    const answers = [{ status: 409, body: { Current: destinations({ Revision: 9, Items: [theirs] }) } }];
+    const echo = echoDest(9, theirs);
+    const { view, api, el, hooks } = mount({ 'PUT TgJelly/Destinations/d1': request => answers.shift() ?? echo(request) });
+    await show(view);
+    await destAct(view, 'edit', { 'data-tgj-id': 'd1' });
+    await flip(view, 'destEvent', { 'data-tgj-id': 'd1', 'data-tgj-key': 'server.started', 'data-tgj-save': 'dest:d1:event:server.started' });
+
+    const puts = putBodies(api);
+    assert.deepEqual(puts.map(b => b.ExpectedRevision), [5, 9], 'retried once, with the server revision');
+    assert.deepEqual(puts[1].Events, ['media.movie', 'media.episodes', 'security.login_failed'], 'the admin change is re-applied');
+    assert.deepEqual(cue(view, 'dest:d1:event:server.started'), SAVED_CUE);
+    assert.equal(hooks.pageRevision(), 10);
+    assert.equal(switchIn(destEl(el), 'destSilent', { 'data-tgj-group': 'security' }), true, 'the change made elsewhere shows');
+    assert.ok(!destEl(el).includes(EN['web.dest.conflictPlain']), 'no section error line');
+
+    // Changed elsewhere twice in a row: stop, and say so beside the switch, which keeps the admin choice.
+    const always = mount({ 'PUT TgJelly/Destinations/d1': { status: 409, body: { Current: destinations({ Revision: 9, Items: [theirs] }) } } });
+    await show(always.view);
+    await destAct(always.view, 'edit', { 'data-tgj-id': 'd1' });
+    await flip(always.view, 'destEvent', { 'data-tgj-id': 'd1', 'data-tgj-key': 'server.started', 'data-tgj-save': 'dest:d1:event:server.started' });
+    assert.equal(putBodies(always.api).length, 2);
+    assert.deepEqual(cue(always.view, 'dest:d1:event:server.started'), errorCue('changed elsewhere, check the value'));
+    assert.equal(switchIn(destEl(always.el), 'destEvent', { 'data-tgj-key': 'server.started' }), false);
+    assert.ok(!always.hooks.state.forms['dest:d1'].local.Events.includes('server.started'));
+});
+
+test('noSaveButton_inEditor', async () => {
+    const ghost = 'cccccccccccccccccccccccccccccccc';
+    const { view, el } = mount({
+        'GET TgJelly/Destinations': destinations({ Items: [dest({ LibraryIds: [LIB_A, ghost], RemovedLibraryIds: [ghost] })] }),
+    });
+    await show(view);
+    await destAct(view, 'edit', { 'data-tgj-id': 'd1' });
+    const html = destEl(el);
+    assert.equal((html.match(/<section class="tgj-card/g) ?? []).length, 2, 'the list and the editor are cards');
+    assert.ok(!/saveDest|\bSave\b/.test(html), 'no Save button');
+    for (const key of ['web.dest.save', 'web.dest.conflict']) {
+        assert.ok(!(key in EN), `${key} is gone`);
+    }
+    assert.ok(!/emby-|inputContainer|selectContainer|sectionTitle|verticalSection|fieldDescription|tgj-changed|type="checkbox"/.test(html), 'only the dashboard components');
+    assert.ok(!DEST_SYMBOLS.test(html));
+
+    // Every auto-saved control names its save, has a cue beside it, and can be found again after a render.
+    const controls = html.match(/<select\b[^>]*>|<button[^>]*role="switch"[^>]*>/g);
+    assert.equal(controls.length, 1 + 1 + KEYS.length + LIBRARIES.length + CATALOG.Groups.length, 'Sending, preset, events, libraries, silent groups');
+    const keys = new Set();
+    for (const control of controls) {
+        const save = /data-tgj-save="([^"]+)"/.exec(control)?.[1];
+        assert.ok(save && /data-tgj-input="[^"]+"/.test(control), control);
+        assert.ok(html.includes(`data-tgj-cue="${save}"`), save);
+        keys.add(save);
+        const attrs = Object.fromEntries([...control.matchAll(/ ([\w-]+)="([^"]*)"/g)].map(([, k, v]) => [k, v]));
+        assert.ok(m.fieldSelector({ getAttribute: name => attrs[name] ?? null }).includes('data-tgj-input'), control);
+    }
+    assert.equal(keys.size, controls.length, 'one save and cue per control');
+
+    // The actions stay buttons: Send test, Check again, Remove (danger), and removing a leftover library.
+    for (const act of ['testDest', 'checkDest', 'removeLibrary']) {
+        assert.ok(html.includes(`data-tgj-act="${act}"`), act);
+    }
+    assert.ok(html.includes(ui.actionButton({ label: EN['dest.btn.remove'], act: 'remove', kind: 'danger', id: 'd1' })));
 });
 
 test('the editor lists events by group, libraries and silent groups', async () => {
@@ -1132,66 +1352,42 @@ test('the editor lists events by group, libraries and silent groups', async () =
     await destAct(view, 'edit', { 'data-tgj-id': 'd1' });
     const html = destEl(el);
     assert.ok(html.includes(m.t(EN, 'dest.event.security.login_failed')));
+    assert.ok(html.includes(m.t(EN, 'groups.security')));
     assert.ok(html.includes(m.t(EN, 'dest.preset.AdminAlerts')));
     assert.ok(html.includes('Shows &lt;i&gt;'));
-    assert.match(html, new RegExp(`data-tgj-lib="${LIB_A}"[^>]*checked`));
-    assert.match(html, /data-tgj-group="media"[^>]*checked/);
+    assert.equal(switchIn(html, 'destLibrary', { 'data-tgj-lib': LIB_A }), true);
+    assert.equal(switchIn(html, 'destLibrary', { 'data-tgj-lib': LIB_B }), false);
+    assert.equal(switchIn(html, 'destSilent', { 'data-tgj-group': 'media' }), true);
     assert.ok(html.includes(m.t(EN, 'dest.libraries.hint')));
     assert.ok(!html.includes(m.t(EN, 'dest.libraries.all')));
 });
 
-test('the all-libraries line follows the library boxes', async () => {
-    const { view, el } = mount({ 'GET TgJelly/Destinations': destinations({ Items: [dest({ LibraryIds: [LIB_A] })] }) });
+test('the all-libraries line follows the library switches', async () => {
+    const { view, el } = mount({
+        'GET TgJelly/Destinations': destinations({ Items: [dest({ LibraryIds: [LIB_A] })] }),
+        'PUT TgJelly/Destinations/d1': echoDest(5, dest({ LibraryIds: [LIB_A] })),
+    });
     await show(view);
     await destAct(view, 'edit', { 'data-tgj-id': 'd1' });
-    await destInput(view, 'destLibrary', { 'data-tgj-id': 'd1', 'data-tgj-lib': LIB_A }, { checked: false });
+    await flip(view, 'destLibrary', { 'data-tgj-id': 'd1', 'data-tgj-lib': LIB_A, 'data-tgj-save': `dest:d1:lib:${LIB_A}` });
     assert.ok(destEl(el).includes(m.t(EN, 'dest.libraries.all')));
     assert.ok(!destEl(el).includes(m.t(EN, 'dest.libraries.hint')));
 });
 
-test('the sending switch is checked exactly when the destination is enabled', async () => {
-    for (const enabled of [true, false]) {
-        const { view, el } = mount({ 'GET TgJelly/Destinations': destinations({ Items: [dest({ Enabled: enabled })] }) });
-        await show(view);
-        const html = destEl(el);
-        assert.ok(html.includes(m.t(EN, 'web.dest.enabled')));
-        assert.equal(/data-tgj-act="enabled"[^>]*checked/.test(html), enabled);
-    }
-});
-
-test('picking Custom sends Preset Custom and keeps the events', async () => {
-    const { view, api, hooks } = mount({ 'PUT TgJelly/Destinations/d1': () => dest({ Preset: 'Custom' }) });
-    await show(view);
-    await destAct(view, 'edit', { 'data-tgj-id': 'd1' });
-    await destInput(view, 'destPreset', { 'data-tgj-id': 'd1' }, { value: 'Custom' });
-    assert.deepEqual(hooks.state.forms['dest:d1'].local.Events, KEYS);
-    await destAct(view, 'saveDest', { 'data-tgj-id': 'd1' });
-    assert.deepEqual(putBodies(api), [{ ExpectedRevision: 5, Preset: 'Custom' }]);
-});
-
-test('a 409 on a pause with nothing pending uses the neutral line', async () => {
-    const { view, el } = mount({
-        'PUT TgJelly/Destinations/d1': { status: 409, body: { Current: destinations({ Revision: 9 }) } },
-    });
-    await show(view);
-    await destAct(view, 'enabled', { 'data-tgj-id': 'd1' });
-    assert.ok(destEl(el).includes(m.t(EN, 'web.dest.conflictPlain')));
-    assert.ok(!destEl(el).includes(m.t(EN, 'web.dest.conflict')));
-});
-
-test('a removed library is listed and removable', async () => {
+test('a removed library is listed, and removing it saves at once', async () => {
     const ghost = 'cccccccccccccccccccccccccccccccc';
+    const start = dest({ LibraryIds: [LIB_A, ghost], RemovedLibraryIds: [ghost], LibraryFilterBroken: false });
     const { view, api, el } = mount({
-        'GET TgJelly/Destinations': destinations({ Items: [dest({ LibraryIds: [LIB_A, ghost], RemovedLibraryIds: [ghost], LibraryFilterBroken: false })] }),
-        'PUT TgJelly/Destinations/d1': () => dest({ LibraryIds: [LIB_A] }),
+        'GET TgJelly/Destinations': destinations({ Items: [start] }),
+        'PUT TgJelly/Destinations/d1': echoDest(5, { ...start, RemovedLibraryIds: [] }),
     });
     await show(view);
     await destAct(view, 'edit', { 'data-tgj-id': 'd1' });
     assert.ok(destEl(el).includes(m.t(EN, 'dest.libraries.removed', { id: ghost })));
     await destAct(view, 'removeLibrary', { 'data-tgj-id': 'd1', 'data-tgj-lib': ghost });
     assert.ok(!destEl(el).includes(ghost));
-    await destAct(view, 'saveDest', { 'data-tgj-id': 'd1' });
     assert.deepEqual(putBodies(api), [{ ExpectedRevision: 5, LibraryIds: [LIB_A] }]);
+    assert.deepEqual(cue(view, 'dest:d1:libraries'), SAVED_CUE);
 });
 
 test('a broken library filter says so', async () => {
@@ -1201,7 +1397,7 @@ test('a broken library filter says so', async () => {
     });
     await show(view);
     await destAct(view, 'edit', { 'data-tgj-id': 'd1' });
-    assert.ok(destEl(el).includes(m.t(EN, 'web.dest.librariesRemoved')));
+    assert.ok(destEl(el).includes(ui.notice({ kind: 'error', html: m.t(EN, 'web.dest.librariesRemoved') })));
 });
 
 test('remove needs a confirm and sends the leave flag', async () => {
@@ -1210,23 +1406,29 @@ test('remove needs a confirm and sends the leave flag', async () => {
     await destAct(view, 'edit', { 'data-tgj-id': 'd1' });
     await destAct(view, 'remove', { 'data-tgj-id': 'd1' });
     assert.equal(api.calls.filter(c => c.type === 'DELETE').length, 0, 'the first click only asks');
-    assert.ok(destEl(el).includes('data-tgj-input="destLeave"'));
+    assert.equal(switchIn(destEl(el), 'destLeave'), false);
+    assert.ok(destEl(el).includes(ui.inlineConfirm({
+        question: m.text(EN, 'web.dest.confirmRemove', { title: 'Family' }), confirmLabel: EN['dest.btn.remove'], confirmAct: 'removeYes',
+        cancelAct: 'removeNo', cancelLabel: EN['dest.btn.cancel'], id: 'd1',
+    })));
 
     await destAct(view, 'removeNo', { 'data-tgj-id': 'd1' });
-    assert.ok(!destEl(el).includes('data-tgj-input="destLeave"'));
+    assert.equal(switchIn(destEl(el), 'destLeave'), null);
 
     await destAct(view, 'remove', { 'data-tgj-id': 'd1' });
-    await destInput(view, 'destLeave', { 'data-tgj-id': 'd1' }, { checked: true });
+    await flip(view, 'destLeave', { 'data-tgj-id': 'd1' });
+    assert.equal(switchIn(destEl(el), 'destLeave'), true);
+    assert.equal(putBodies(api).length, 0, 'the leave switch is part of the question, not a setting');
     await destAct(view, 'removeYes', { 'data-tgj-id': 'd1' });
     const deletes = api.calls.filter(c => c.type === 'DELETE');
     assert.equal(deletes.length, 1);
     assert.equal(deletes[0].url, '/jf/TgJelly/Destinations/d1?leave=true&expectedRevision=5');
 });
 
-test('send test and check again show their outcome', async () => {
+test('send test and check again show their outcome, in words', async () => {
     const { view, api, el } = mount({
         'POST TgJelly/Destinations/d1/Test': { Sent: false, Error: 'bot <was> kicked', Health: { Status: 'Lost' } },
-        'POST TgJelly/Destinations/d1/Check': { Health: { Status: 'Ok' }, Error: null },
+        'POST TgJelly/Destinations/d1/Check': { Health: { Status: 'NeedsPermissions' }, Error: null },
     });
     await show(view);
     await destAct(view, 'edit', { 'data-tgj-id': 'd1' });
@@ -1234,27 +1436,24 @@ test('send test and check again show their outcome', async () => {
     assert.ok(destEl(el).includes('bot &lt;was&gt; kicked'));
     await destAct(view, 'checkDest', { 'data-tgj-id': 'd1' });
     assert.equal(api.calls.filter(c => c.type === 'POST' && c.url.endsWith('/Check')).length, 1);
+    assert.ok(destEl(el).includes(EN['web.dest.health.NeedsPermissions']));
+    assert.ok(!DEST_SYMBOLS.test(destEl(el)));
 });
 
-test('editor 409 keeps local event choices and highlights both-changed', async () => {
-    const { view, hooks, el } = mount({
-        'PUT TgJelly/Destinations/d1': {
-            status: 409,
-            body: { Current: destinations({ Revision: 9, Items: [dest({ Preset: 'Custom', Events: ['media.movie', 'server.started'] })] }) },
-        },
-    });
+test('a destination save, then a settings save at once: the settings PUT sends the revision the reply carries, no 409', async () => {
+    const server = oneRevisionServer();
+    const { view, api, hooks } = mount(server.routes);
     await show(view);
-    await destAct(view, 'edit', { 'data-tgj-id': 'd1' });
-    await destInput(view, 'destEvent', { 'data-tgj-id': 'd1', 'data-tgj-key': 'server.started' }, { checked: false });
-    await destAct(view, 'saveDest', { 'data-tgj-id': 'd1' });
+    dispatchOn(view, 'click', { 'data-tgj-input': 'destEnabled', role: 'switch', 'data-tgj-id': 'd1', 'data-tgj-save': 'dest:d1:Enabled' });
+    toggle(view, 'ShowPoster');
+    await flush();
 
-    const form = hooks.state.forms['dest:d1'];
-    assert.deepEqual(form.local.Events, ['media.movie', 'media.episodes', 'security.login_failed']);
-    assert.equal(form.dirty, true);
-    assert.ok(form.changed.includes('Events'));
-    assert.equal(hooks.state.destinations.Revision, 9);
-    assert.ok(destEl(el).includes('tgj-changed'));
-    assert.ok(destEl(el).includes(m.t(EN, 'web.dest.conflict')));
+    assert.deepEqual(api.calls.filter(c => c.type === 'PUT').map(c => [c.url.replace('/jf/TgJelly/', ''), JSON.parse(c.data).ExpectedRevision]),
+        [['Destinations/d1', 5], ['Settings', 6]]);
+    assert.equal(server.conflicts, 0, 'no 409');
+    assert.equal(hooks.pageRevision(), 7);
+    assert.deepEqual(cue(view, 'dest:d1:Enabled'), SAVED_CUE);
+    assert.deepEqual(cue(view, 'Message.ShowPoster'), SAVED_CUE);
 });
 
 test('the set up manually link only shows when ManualUnlocked', async () => {
@@ -1266,9 +1465,8 @@ test('the set up manually link only shows when ManualUnlocked', async () => {
 
     const open = mount({ 'GET TgJelly/Destinations': destinations({ ManualUnlocked: true }) });
     await show(open.view);
-    assert.ok(destEl(open.el).includes('data-tgj-act="open-manual"'));
     // Jellyfin's dashboard routes on the hash, so the control must not carry an href="#…" (final review M1).
-    assert.match(destEl(open.el), /<button is="emby-button" type="button" class="button-link"[^>]*data-tgj-act="open-manual"/);
+    assert.ok(destEl(open.el).includes(ui.actionButton({ label: EN['web.dest.manualLink'], act: 'open-manual' })));
     assert.ok(!destEl(open.el).includes('href="#'));
     open.el('tgj-manual').scrolled = 0;
     open.el('tgj-manual').scrollIntoView = () => { open.el('tgj-manual').scrolled++; };
@@ -2032,9 +2230,10 @@ test('every web.* key in en.json is used by tgjelly.js', () => {
 
 /** A server with one Revision for every section, like PluginConfiguration.Revision; each save moves it on. */
 function oneRevisionServer() {
-    const server = { revision: 5, items: [dest()], tplText: '' };
+    const server = { revision: 5, items: [dest()], tplText: '', conflicts: 0 };
     const conflictOr = (request, ok, current) => {
         if (JSON.parse(request.data).ExpectedRevision !== server.revision) {
+            server.conflicts++;
             return { status: 409, body: { Current: current() } };
         }
 
@@ -2048,7 +2247,8 @@ function oneRevisionServer() {
         'GET TgJelly/Destinations': () => destinations({ Revision: server.revision, Items: server.items }),
         'GET TgJelly/Templates': tpl,
         'PUT TgJelly/Settings': r => conflictOr(r, () => settings({ Revision: server.revision }), () => settings({ Revision: server.revision })),
-        'PUT TgJelly/Destinations/d1': r => conflictOr(r, () => dest({ Enabled: false }), () => destinations({ Revision: server.revision, Items: server.items })),
+        // Like the server, the reply carries the Revision the change moved to.
+        'PUT TgJelly/Destinations/d1': r => conflictOr(r, () => ({ ...dest({ Enabled: false }), Revision: server.revision }), () => destinations({ Revision: server.revision, Items: server.items })),
         'PUT TgJelly/Templates/movie.added': r => conflictOr(r, tpl, tpl),
     };
     return server;
@@ -2062,7 +2262,7 @@ test('save Messages, then toggle Sending: the PUT carries the new revision, no 4
     await flush();
     assert.equal(server.revision, 6);
 
-    await destAct(view, 'enabled', { 'data-tgj-id': 'd1' });
+    await flip(view, 'destEnabled', { 'data-tgj-id': 'd1', 'data-tgj-save': 'dest:d1:Enabled' });
 
     assert.deepEqual(putBodies(api), [{ ExpectedRevision: 6, Enabled: false }]);
     assert.equal(server.revision, 7);
@@ -2073,7 +2273,7 @@ test('a destination change, then a template save and a settings save: each sends
     const server = oneRevisionServer();
     const { view, api, el } = mount(server.routes);
     await show(view);
-    await destAct(view, 'enabled', { 'data-tgj-id': 'd1' });
+    await flip(view, 'destEnabled', { 'data-tgj-id': 'd1', 'data-tgj-save': 'dest:d1:Enabled' });
     tplInput(view, 'tplText', { value: 'New {{ title }}' });
     await click(view, 'tplSave');
     toggle(view, 'ShowPoster');
@@ -2090,8 +2290,6 @@ test('a status poll with a higher revision reloads the sections, keeping unsaved
     const server = oneRevisionServer();
     const { view, api, el, hooks, timers } = mount(server.routes);
     await show(view);
-    await destAct(view, 'edit', { 'data-tgj-id': 'd1' });
-    await destInput(view, 'destPreset', { 'data-tgj-id': 'd1' }, { value: 'NewMedia' });
     input(view, 'publicUrl', 'https://typed.example.com');
     await flush();
 
@@ -2105,8 +2303,6 @@ test('a status poll with a higher revision reloads the sections, keeping unsaved
     assert.equal(hooks.state.destinations.Revision, 6);
     assert.equal(hooks.state.settings.Revision, 6);
     assert.equal(hooks.state.templates.Revision, 6);
-    assert.equal(hooks.state.forms['dest:d1'].local.Preset, 'NewMedia');
-    assert.equal(hooks.state.forms['dest:d1'].dirty, true);
     assert.equal(hooks.state.forms.settings.local.PublicUrl, 'https://typed.example.com');
 
     // A poll at the same revision loads nothing else.
@@ -2134,7 +2330,7 @@ test('a Destinations render while typing keeps the textarea focus, selection and
     const writes = el('tgj-templates').writes;
 
     // Toggling a destination renders Destinations, which renders the templates section with the typed text.
-    await destAct(view, 'enabled', { 'data-tgj-id': 'd1' });
+    await flip(view, 'destEnabled', { 'data-tgj-id': 'd1', 'data-tgj-save': 'dest:d1:Enabled' });
 
     assert.ok(el('tgj-templates').writes > writes, 'the section was written again');
     assert.ok(el('tgj-templates').innerHTML.includes('abcdef {{ title }}</textarea>'), 'the unsaved text is kept');
@@ -2155,7 +2351,7 @@ test('a render without the textarea focused does not take the focus', async () =
     tplInput(view, 'tplText', { value: 'typed elsewhere' });
     const writes = el('tgj-templates').writes;
 
-    await destAct(view, 'enabled', { 'data-tgj-id': 'd1' });
+    await flip(view, 'destEnabled', { 'data-tgj-id': 'd1', 'data-tgj-save': 'dest:d1:Enabled' });
 
     assert.ok(el('tgj-templates').writes > writes);
     assert.equal(textarea().focusCalls, 0);
@@ -2939,7 +3135,7 @@ test('a save queued behind a settings save sends the revision that save moved to
     assert.deepEqual(api.calls.filter(c => c.type === 'PUT').map(c => JSON.parse(c.data).ExpectedRevision), [5, 6]);
     assert.deepEqual(results, [200]);
     assert.equal(server.revision, 7);
-    assert.equal(hooks.pageRevision(), 6, 'the destination reply carries no revision; the reload that follows brings 7');
+    assert.equal(hooks.pageRevision(), 6, 'this raw send does not take its reply in; the destination save does (Task 7)');
 });
 
 test('validatePublicUrl matches System.Uri on hosts URL alone would accept', () => {

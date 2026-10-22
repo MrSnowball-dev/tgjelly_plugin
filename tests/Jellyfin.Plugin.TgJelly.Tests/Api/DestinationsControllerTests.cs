@@ -293,6 +293,20 @@ public sealed class DestinationsControllerTests : IAsyncLifetime
     }
 
     [Fact]
+    public void Put_ReturnsTheNewRevision_SoTheNextSaveDoesNotConflict()
+    {
+        var d = _h.AddDestination(-1001);
+        var before = _h.Settings.Current.Revision;
+
+        var dto = _controller.Update(d.Id, new UpdateDestinationRequest { ExpectedRevision = before, Enabled = false }).Value!;
+
+        Assert.True(dto.Revision > before);
+        Assert.Equal(_h.Settings.Current.Revision, dto.Revision);
+        Assert.Equal(dto.Revision, _controller.Get().Value!.Items.Single().Revision);
+        Assert.IsType<DestinationDto>(_controller.Update(d.Id, new UpdateDestinationRequest { ExpectedRevision = dto.Revision, Enabled = true }).Value);
+    }
+
+    [Fact]
     public void Put_UnknownEventKey_Is400()
     {
         var d = _h.AddDestination(-1001);

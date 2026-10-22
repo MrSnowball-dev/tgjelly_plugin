@@ -163,9 +163,9 @@ public class DestinationsController : ControllerBase
             case CreateOutcome.Invalid:
                 return BadRequest(new ErrorsDto { Errors = created.Errors });
             case CreateOutcome.AlreadyExists:
-                return new AddDestinationResponse { Outcome = "AlreadyExists", Destination = ToDto(created.Destination!) };
+                return new AddDestinationResponse { Outcome = "AlreadyExists", Destination = ToDto(created.Destination!, created.Configuration.Revision) };
             default:
-                return new AddDestinationResponse { Outcome = "Added", Destination = ToDto(created.Destination!), TestSent = created.Test!.Sent, TestError = created.Test.Error };
+                return new AddDestinationResponse { Outcome = "Added", Destination = ToDto(created.Destination!, created.Configuration.Revision), TestSent = created.Test!.Sent, TestError = created.Test.Error };
         }
     }
 
@@ -259,7 +259,7 @@ public class DestinationsController : ControllerBase
             SettingsUpdateStatus.Conflict => Conflict(new ConflictDto<DestinationsDto> { Current = List(result.Configuration) }),
             SettingsUpdateStatus.Invalid => BadRequest(new ErrorsDto { Errors = result.Errors }),
             SettingsUpdateStatus.Unchanged => NotFound(),
-            _ => ToDto(result.Configuration.Destinations.First(d => d.Id == id)),
+            _ => ToDto(result.Configuration.Destinations.First(d => d.Id == id), result.Configuration.Revision),
         };
     }
 
@@ -425,7 +425,7 @@ public class DestinationsController : ControllerBase
     private BadRequestObjectResult Error(string field, string message)
         => BadRequest(new ErrorsDto { Errors = [new SettingsError(field, message)] });
 
-    private DestinationDto ToDto(Destination d) => _mapper.ToDto(d);
+    private DestinationDto ToDto(Destination d, long revision) => _mapper.ToDto(d, revision);
 
     private DestinationsDto List(PluginConfiguration c) => _mapper.List(c);
 
