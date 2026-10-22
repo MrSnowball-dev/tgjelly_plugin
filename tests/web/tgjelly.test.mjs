@@ -1923,9 +1923,11 @@ test('every t(…) key used in tgjelly.js exists in en.json', () => {
 
 // Sent by TgJellyController as the Connected status message, not rendered by the page itself.
 const SERVER_SIDE_KEY = 'web.status.connected';
+// Plan 8 task 3 adds the cue strings before the controller renders them; drop this exemption when the controller is wired.
+const NOT_YET_WIRED = /^web\.autosave\./;
 
 test('every web.* key in en.json is used by tgjelly.js', () => {
-    for (const key of Object.keys(EN).filter(k => k.startsWith('web.') && k !== SERVER_SIDE_KEY)) {
+    for (const key of Object.keys(EN).filter(k => k.startsWith('web.') && k !== SERVER_SIDE_KEY && !NOT_YET_WIRED.test(k))) {
         const base = key.replace(/\.(one|other)$/, '');
         assert.ok(SOURCE.includes(`'${base}'`), key);
     }

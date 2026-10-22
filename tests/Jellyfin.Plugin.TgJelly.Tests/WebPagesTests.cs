@@ -14,7 +14,7 @@ public class WebPagesTests
         using var dir = new TempDir();
         var pages = TestPlugin.Create(dir.Path).GetPages().ToList();
 
-        Assert.Equal(["tgjelly", "tgjelly.js", "tgjelly-ui.js", "tgjelly.css"], pages.Select(p => p.Name));
+        Assert.Equal(["tgjelly", "tgjelly.js", "tgjelly-ui.js", "tgjelly-autosave.js", "tgjelly.css"], pages.Select(p => p.Name));
         Assert.True(pages[0].EnableInMainMenu);
         Assert.Equal("Telegram", pages[0].DisplayName);
         Assert.All(pages.Skip(1), p => Assert.False(p.EnableInMainMenu));

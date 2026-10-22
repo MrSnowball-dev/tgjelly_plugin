@@ -87,6 +87,11 @@ public class Plugin : BasePlugin<PluginConfiguration>, IConfigurationHost, IHasW
             },
             new PluginPageInfo
             {
+                Name = "tgjelly-autosave.js",
+                EmbeddedResourcePath = resourcePrefix + "tgjelly-autosave.js",
+            },
+            new PluginPageInfo
+            {
                 Name = "tgjelly.css",
                 EmbeddedResourcePath = resourcePrefix + "tgjelly.css",
             },
