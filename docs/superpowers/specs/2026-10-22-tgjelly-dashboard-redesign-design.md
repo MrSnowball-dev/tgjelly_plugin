@@ -33,7 +33,7 @@ Success: the page looks designed and organised, at least as polished as the brai
 ## 3. Non-goals
 
 - No new features and no new settings. Everything the dashboard does today stays, reorganised. Anything the page can't do today, it still can't.
-- No changes to the bot, the API semantics or the message pipeline. Endpoints may gain fields only where auto-save needs them (§6.4).
+- No changes to the bot, the API semantics or the message pipeline, with one exception the owner asked for on 2026-10-22: the bot's **Status** screen says which Jellyfin server it is connected to, "connected to Jellyfin Home (12.2)", instead of "Connected as @bot". The dashboard's connect result keeps the bot name. Endpoints may gain fields only where auto-save needs them (§6.4).
 - No UI framework and no Node build step (owner: "no framework is needed really"). The page stays plain ES-module JavaScript served as embedded resources, like today. This matches how Intro Skipper is built, minus its bundler.
 - The page's wording doesn't change. Only the Save buttons, the save and confirmation messages they had, and the symbols go.
 - The Telegram-style message bubble in the template preview keeps its Telegram look, since it imitates Telegram on purpose. It is the one element not themed like the rest.
