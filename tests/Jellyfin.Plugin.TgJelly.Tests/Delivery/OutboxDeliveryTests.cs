@@ -222,6 +222,22 @@ public sealed class OutboxDeliveryTests : IDisposable
     }
 
     [Fact]
+    public async Task ParseError_WithTemplate_FlagsIt_WhateverEnabledSays()
+    {
+        var d = _h.AddDestination(-1001);
+        _h.Settings.Update(null, c => c.Templates = [new TemplateOverride { EventKey = "media.movie", Enabled = true, Text = "<b>x" }]);
+        _h.Api.OnSequence("sendMessage", FakeBotApi.Error(400, "Bad Request: can't parse entities: Unsupported start tag \"x\" at byte offset 0"), FakeBotApi.Ok("""{"message_id":5,"date":1790000000,"chat":{"id":-1001,"type":"supergroup"},"text":"x"}"""));
+        var entry = Entry(d, "<x>");
+        entry.Message.TemplateKey = "media.movie";
+
+        await Deliver(entry, d);
+
+        var flag = _h.State.Read(s => s.Status.TemplateFlags["media.movie"]);
+        Assert.Equal("error", flag.Kind);
+        Assert.Equal(Jellyfin.Plugin.TgJelly.Templates.TemplateText.Hash("<b>x"), flag.TextHash);
+    }
+
+    [Fact]
     public async Task BadButton_ResendsWithoutButtons_AndFlagsThePublicUrl()
     {
         var d = _h.AddDestination(-1001);

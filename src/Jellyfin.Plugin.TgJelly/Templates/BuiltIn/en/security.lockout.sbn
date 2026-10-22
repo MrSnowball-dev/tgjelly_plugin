@@ -1,0 +1,1 @@
+🔒 <b>{{ user }}</b> is locked out after {{ attempts_text }} failed {{ plural attempts "attempt" "attempts" }}

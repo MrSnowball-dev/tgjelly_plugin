@@ -27,7 +27,7 @@ public sealed class TemplateModelBuilderTests : IDisposable
     [Fact]
     public void CommonFields_AreSet()
     {
-        var model = _builder.Build(Alert("security.user_created", ("user", "ann")));
+        var model = V(Alert("security.user_created", ("user", "ann")));
 
         Assert.Equal("security.user_created", model["event"]);
         Assert.Equal(At.ToUnixTimeSeconds(), model["at_unix"]);
@@ -47,7 +47,7 @@ public sealed class TemplateModelBuilderTests : IDisposable
         group.Upgraded = true;
         group.LibraryName = "Movies";
 
-        var model = _builder.Build(group);
+        var model = V(group);
 
         Assert.Equal("Arrival", model["title"]);
         Assert.Equal(2016L, model["year"]);
@@ -62,7 +62,7 @@ public sealed class TemplateModelBuilderTests : IDisposable
         Assert.Equal($"https://jf.example.com/web/#/details?id={movie.Id:N}&serverId=a1b2c3", model["jellyfin_url"]);
 
         Assert.Equal(SettingsUpdateStatus.Saved, _h.Settings.Update(null, c => c.PublicUrl = string.Empty).Status);
-        Assert.Null(_builder.Build(group)["jellyfin_url"]);
+        Assert.Null(V(group)["jellyfin_url"]);
     }
 
     [Fact]
@@ -81,7 +81,7 @@ public sealed class TemplateModelBuilderTests : IDisposable
         var group = Media("media.episodes", Ep(3, "Three"), Ep(1, "One"), Ep(2, "Two"));
         group.NewSeries = true;
 
-        var model = _builder.Build(group);
+        var model = V(group);
 
         Assert.Equal("Severance", model["series"]);
         Assert.Equal(0L, model["season"]);
@@ -100,7 +100,7 @@ public sealed class TemplateModelBuilderTests : IDisposable
     {
         var album = _library.Add(new MediaItem { Id = Guid.NewGuid(), Kind = MediaKind.MusicAlbum, Name = "Discovery", AlbumArtist = "Daft Punk", Year = 2001, ChildCount = 14 });
 
-        var model = _builder.Build(Media("media.album", album));
+        var model = V(Media("media.album", album));
 
         Assert.Equal("Daft Punk", model["artist"]);
         Assert.Equal("Discovery", model["album"]);
@@ -116,7 +116,7 @@ public sealed class TemplateModelBuilderTests : IDisposable
         var group = Media("media.book", Part("1"), Part("2"), Part("3"));
         group.ContainerId = folder.Id.ToString("N");
 
-        var model = _builder.Build(group);
+        var model = V(group);
 
         Assert.Equal("The Hobbit", model["title"]);
         Assert.Equal(3L, model["parts"]);
@@ -128,7 +128,7 @@ public sealed class TemplateModelBuilderTests : IDisposable
     {
         var book = _library.Add(new MediaItem { Id = Guid.NewGuid(), Kind = MediaKind.Book, Name = "Dune", Year = 1965 });
 
-        var model = _builder.Build(Media("media.book", book));
+        var model = V(Media("media.book", book));
 
         Assert.Equal("Dune", model["title"]);
         Assert.Equal(0L, model["parts"]);
@@ -137,7 +137,7 @@ public sealed class TemplateModelBuilderTests : IDisposable
     [Fact]
     public void LoginFailed_FromValues()
     {
-        var model = _builder.Build(Alert(
+        var model = V(Alert(
             "security.login_failed", ("user", "ann"), ("attempts", "5"), ("ip_count", "2"), ("ip", "10.0.0.7"), ("client", "Web"), ("device", "Firefox"), ("locked", "true")));
 
         Assert.Equal("10.0.0.7", model["last_ip"]);
@@ -146,13 +146,13 @@ public sealed class TemplateModelBuilderTests : IDisposable
         Assert.Equal(true, model["locked"]);
         Assert.Equal(At.ToUnixTimeSeconds(), model["last_attempt_unix"]);
         Assert.Equal("09:30 UTC", model["last_attempt_text"]);
-        Assert.Equal(["event", "at_unix", "at_text", "user", "attempts", "ip_count", "last_ip", "client", "device", "last_attempt_unix", "last_attempt_text", "locked"], model.Keys);
+        Assert.Equal(["event", "at_unix", "at_text", "at_html", "user", "attempts", "attempts_text", "ip_count", "ip_count_text", "last_ip", "ip", "client", "device", "last_attempt_unix", "last_attempt_text", "locked"], model.Keys);
     }
 
     [Fact]
     public void BadNumber_BecomesNull()
     {
-        var model = _builder.Build(Alert("security.lockout", ("user", "ann"), ("attempts", "many")));
+        var model = V(Alert("security.lockout", ("user", "ann"), ("attempts", "many")));
 
         Assert.Null(model["attempts"]);
     }
@@ -163,7 +163,7 @@ public sealed class TemplateModelBuilderTests : IDisposable
         var alert = Alert("server.restart_pending");
         alert.Lines = ["Plugin A&B <beta> installed", "A &amp; B"];
 
-        var model = _builder.Build(alert);
+        var model = V(alert);
 
         Assert.Equal(new object?[] { "Plugin A&B <beta> installed", "A &amp; B" }, Assert.IsAssignableFrom<IReadOnlyList<object?>>(model["reasons"]));
     }
@@ -173,16 +173,16 @@ public sealed class TemplateModelBuilderTests : IDisposable
     {
         foreach (var key in EventCatalog.AllKeys.Where(TemplateFieldCatalog.IsMedia))
         {
-            var model = _builder.Build(new RenderModel { Kind = RenderKind.Media, EventKey = key, At = At, ItemIds = [Guid.NewGuid().ToString("N"), "bad"] });
+            var model = V(new RenderModel { Kind = RenderKind.Media, EventKey = key, At = At, ItemIds = [Guid.NewGuid().ToString("N"), "bad"] });
 
             Assert.Equal(TemplateFieldCatalog.For(key).Select(f => f.Name), model.Keys);
         }
 
-        var movie = _builder.Build(new RenderModel { Kind = RenderKind.Media, EventKey = "media.movie", At = At });
+        var movie = V(new RenderModel { Kind = RenderKind.Media, EventKey = "media.movie", At = At });
         Assert.Null(movie["title"]);
         Assert.Null(movie["jellyfin_url"]);
         Assert.Empty(Assert.IsAssignableFrom<IReadOnlyList<object?>>(movie["genres"]));
-        var episodes = _builder.Build(new RenderModel { Kind = RenderKind.Media, EventKey = "media.episodes", At = At });
+        var episodes = V(new RenderModel { Kind = RenderKind.Media, EventKey = "media.episodes", At = At });
         Assert.Equal(0L, episodes["count"]);
         Assert.Empty(Assert.IsAssignableFrom<IReadOnlyList<object?>>(episodes["episodes"]));
     }
@@ -192,13 +192,309 @@ public sealed class TemplateModelBuilderTests : IDisposable
     {
         foreach (var key in EventCatalog.AllKeys.Where(k => !TemplateFieldCatalog.IsMedia(k)))
         {
-            var model = _builder.Build(Alert(key));
+            var model = V(Alert(key));
 
             Assert.Equal(TemplateFieldCatalog.For(key).Select(f => f.Name), model.Keys);
         }
     }
 
+    [Fact]
+    public void Build_V02FieldNamesStillPresent()
+    {
+        var movie = new[] { "title", "year", "overview", "rating", "runtime_minutes", "genres", "library", "imdb_id", "tmdb_id", "jellyfin_url", "upgraded" };
+        var v02 = new Dictionary<string, string[]>
+        {
+            ["media.movie"] = movie,
+            ["media.musicvideo"] = movie,
+            ["media.episodes"] = ["series", "season", "count", "episodes", "new_series", "library", "imdb_id", "tmdb_id", "jellyfin_url", "upgraded"],
+            ["media.album"] = ["artist", "album", "year", "tracks", "library", "jellyfin_url", "upgraded"],
+            ["media.book"] = ["title", "year", "overview", "parts", "library", "jellyfin_url", "upgraded"],
+            ["security.login_failed"] = ["user", "attempts", "ip_count", "last_ip", "client", "device", "last_attempt_unix", "last_attempt_text", "locked"],
+            ["security.lockout"] = ["user", "attempts"],
+            ["security.login_succeeded"] = ["user", "client", "device", "ip"],
+            ["security.user_created"] = ["user"],
+            ["security.user_deleted"] = ["user"],
+            ["security.password_changed"] = ["user"],
+            ["server.started"] = ["version", "server"],
+            ["server.update_available"] = ["version", "current", "url"],
+            ["server.plugin_installed"] = ["plugin", "version"],
+            ["server.plugin_uninstalled"] = ["plugin", "version"],
+            ["server.plugin_updated"] = ["plugin", "version", "changelog"],
+            ["server.plugin_install_failed"] = ["plugin", "version", "error"],
+            ["server.task_failed"] = ["task", "error"],
+            ["server.restart_pending"] = ["reasons"],
+        };
+        foreach (var key in EventCatalog.AllKeys)
+        {
+            var model = V(TemplateFieldCatalog.IsMedia(key) ? Media(key) : Alert(key));
+            foreach (var name in new[] { "event", "at_unix", "at_text" }.Concat(v02[key]))
+            {
+                Assert.True(model.ContainsKey(name), key + "." + name);
+            }
+        }
+    }
+
+    [Fact]
+    public void Build_ShowRatingGenresOff_EmptiesRatingAndGenres()
+    {
+        var movie = _library.Add(new MediaItem { Id = Guid.NewGuid(), Kind = MediaKind.Movie, Name = "Arrival", CommunityRating = 7.9f, Genres = ["Drama"] });
+        Assert.Equal("7.9", V(Media("media.movie", movie))["rating_text"]);
+        Assert.Equal(SettingsUpdateStatus.Saved, _h.Settings.Update(null, c => c.Message.ShowRatingGenres = false).Status);
+
+        var model = V(Media("media.movie", movie));
+
+        Assert.Null(model["rating"]);
+        Assert.Null(model["rating_text"]);
+        Assert.Empty(Assert.IsAssignableFrom<IReadOnlyList<object?>>(model["genres"]));
+    }
+
+    [Fact]
+    public void Build_ShowOverviewOff_NullOverview()
+    {
+        var movie = _library.Add(new MediaItem { Id = Guid.NewGuid(), Kind = MediaKind.Movie, Name = "Arrival", Overview = "Aliens." });
+        Assert.Equal("Aliens.", V(Media("media.movie", movie))["overview"]);
+        Assert.Equal(SettingsUpdateStatus.Saved, _h.Settings.Update(null, c => c.Message.ShowOverview = false).Status);
+
+        Assert.Null(V(Media("media.movie", movie))["overview"]);
+    }
+
+    [Fact]
+    public void Build_AtHtml_IsRawTgTime()
+    {
+        var model = V(Alert("security.user_created"));
+
+        var raw = Assert.IsType<RawHtml>(model["at_html"]);
+        Assert.Equal(new Formatter(_h.Strings).Time(At, _h.Time.GetUtcNow()), raw.Html);
+        Assert.StartsWith("<tg-time unix=\"" + At.ToUnixTimeSeconds(), raw.Html, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Build_EpisodeNumberText_TwoDigitsOrNull()
+    {
+        MediaItem Ep(int? n, string t) => _library.Add(new MediaItem { Id = Guid.NewGuid(), Kind = MediaKind.Episode, Name = t, SeriesName = "S", EpisodeNumber = n });
+
+        var model = V(Media("media.episodes", Ep(1, "A"), Ep(12, "B"), Ep(null, "C")));
+
+        var episodes = Assert.IsAssignableFrom<IReadOnlyList<object?>>(model["episodes"]).Cast<IReadOnlyDictionary<string, object?>>().ToList();
+        Assert.Equal(["01", "12", null], episodes.Select(e => e["number_text"]));
+        Assert.Equal("3", model["count_text"]);
+        Assert.Equal(0L, model["episodes_more"]);
+    }
+
+    [Fact]
+    public void Build_PluginUpdated_WhitespaceChangelog_IsNull()
+    {
+        Assert.Null(V(Alert("server.plugin_updated", ("plugin", "P"), ("changelog", "  \n "))) ["changelog"]);
+        Assert.Equal("Fixed.", V(Alert("server.plugin_updated", ("plugin", "P"), ("changelog", "  Fixed.\n")))["changelog"]);
+        Assert.Null(V(Alert("server.task_failed", ("task", "T"), ("error", " ")))["error"]);
+    }
+
+    [Fact]
+    public void Build_Book_HasRatingGenresNoRuntime()
+    {
+        var book = _library.Add(new MediaItem { Id = Guid.NewGuid(), Kind = MediaKind.Book, Name = "Dune", CommunityRating = 8.04f, Genres = ["SF", "Classic"] });
+
+        var model = V(Media("media.book", book));
+
+        Assert.Equal(8.0, model["rating"]);
+        Assert.Equal("8.0", model["rating_text"]);
+        Assert.Equal(new object?[] { "SF", "Classic" }, Assert.IsAssignableFrom<IReadOnlyList<object?>>(model["genres"]));
+        Assert.Equal("0", model["parts_text"]);
+        Assert.False(model.ContainsKey("runtime_minutes"));
+        Assert.False(model.ContainsKey("runtime_text"));
+    }
+
+    [Fact]
+    public void Build_NumberTexts_UseGrouping()
+    {
+        var album = _library.Add(new MediaItem { Id = Guid.NewGuid(), Kind = MediaKind.MusicAlbum, Name = "X", ChildCount = 1234 });
+        Assert.Equal("1,234", V(Media("media.album", album))["tracks_text"]);
+        var failed = V(Alert("security.login_failed", ("attempts", "1500"), ("ip_count", "2")));
+        Assert.Equal("1,500", failed["attempts_text"]);
+        Assert.Equal("2", failed["ip_count_text"]);
+        Assert.Null(V(Alert("security.lockout", ("attempts", "x")))["attempts_text"]);
+    }
+
+    [Fact]
+    public void Build_RuntimeText()
+    {
+        var movie = _library.Add(new MediaItem { Id = Guid.NewGuid(), Kind = MediaKind.Movie, Name = "A", RunTime = new TimeSpan(1, 56, 0) });
+
+        Assert.Equal("1h 56m", V(Media("media.movie", movie))["runtime_text"]);
+    }
+
+    [Fact]
+    public void Sample_AppliesToggles()
+    {
+        Assert.Equal("7.9", _builder.Sample("media.movie").Values["rating_text"]);
+        Assert.Equal(SettingsUpdateStatus.Saved, _h.Settings.Update(null, c =>
+        {
+            c.Message.ShowRatingGenres = false;
+            c.Message.ShowOverview = false;
+        }).Status);
+
+        var sample = _builder.Sample("media.movie").Values;
+
+        Assert.Null(sample["rating"]);
+        Assert.Null(sample["rating_text"]);
+        Assert.Null(sample["overview"]);
+        Assert.Empty(Assert.IsAssignableFrom<IReadOnlyList<object?>>(sample["genres"]));
+        Assert.Equal("Arrival", sample["title"]);
+        Assert.NotNull(_builder.Sample("media.digest").Values["libraries"]);
+    }
+
+    [Fact]
+    public void Shrink_Table()
+    {
+        Assert.Equal(("overview", null, null), TemplateFieldCatalog.Shrink("media.movie"));
+        Assert.Equal(("overview", null, null), TemplateFieldCatalog.Shrink("media.musicvideo"));
+        Assert.Equal(("overview", null, null), TemplateFieldCatalog.Shrink("media.book"));
+        Assert.Equal((null, "episodes", "episodes_more"), TemplateFieldCatalog.Shrink("media.episodes"));
+        Assert.Equal(("changelog", null, null), TemplateFieldCatalog.Shrink("server.plugin_updated"));
+        Assert.Equal(("error", null, null), TemplateFieldCatalog.Shrink("server.plugin_install_failed"));
+        Assert.Equal(("error", null, null), TemplateFieldCatalog.Shrink("server.task_failed"));
+        Assert.Equal((null, "reasons", "reasons_more"), TemplateFieldCatalog.Shrink("server.restart_pending"));
+        Assert.Equal((null, "libraries", "more"), TemplateFieldCatalog.Shrink("media.digest"));
+        Assert.Equal((null, null, null), TemplateFieldCatalog.Shrink("media.album"));
+        Assert.Equal((null, null, null), TemplateFieldCatalog.Shrink("security.lockout"));
+    }
+
+    [Fact]
+    public void Build_MoreTextFields_StayInStepWithTheCounts()
+    {
+        MediaItem Ep(int n) => _library.Add(new MediaItem { Id = Guid.NewGuid(), Kind = MediaKind.Episode, Name = "E" + n, SeriesName = "S", EpisodeNumber = n });
+        var episodes = _builder.Build(Media("media.episodes", Ep(1), Ep(2), Ep(3)));
+        Assert.Equal("0", episodes.Values["episodes_more_text"]);
+        var shortened = episodes.With(null, 1);
+        Assert.Equal((2L, "2"), (shortened["episodes_more"], shortened["episodes_more_text"]));
+
+        var restart = new RenderModel { Kind = RenderKind.Alert, EventKey = "server.restart_pending", At = At, Lines = [.. Enumerable.Range(1, 1500).Select(i => "reason " + i)] };
+        var reasons = _builder.Build(restart);
+        Assert.Equal("0", reasons.Values["reasons_more_text"]);
+        var cut = reasons.With(null, 100);
+        Assert.Equal((1400L, "1,400"), (cut["reasons_more"], cut["reasons_more_text"]));
+    }
+
+    [Fact]
+    public void Sample_MoreTextFields_StayInStepWithTheCounts()
+    {
+        var episodes = _builder.Sample("media.episodes").With(null, 1);
+        Assert.Equal((2L, "2"), (episodes["episodes_more"], episodes["episodes_more_text"]));
+
+        var digest = _builder.Sample("media.digest").With(null, 1);
+        Assert.Equal((2L, "2"), (digest["more"], digest["more_text"]));
+    }
+
+    [Fact]
+    public void Build_ReturnsShrinkableModel()
+    {
+        var model = _builder.Build(Alert("server.restart_pending", ("x", "y")));
+
+        Assert.Equal(0, model.ListCount);
+    }
+
+    [Fact]
+    public void Digest_EntriesGroupedByLibrary_InOrderOfFirstAppearance()
+    {
+        var arrival = _library.Add(new MediaItem { Id = Guid.NewGuid(), Kind = MediaKind.Movie, Name = "Arrival", Year = 2016 });
+        var e1 = _library.Add(new MediaItem { Id = Guid.NewGuid(), Kind = MediaKind.Episode, Name = "One", SeriesName = "Andor", SeasonNumber = 1, EpisodeNumber = 1 });
+        var e2 = _library.Add(new MediaItem { Id = Guid.NewGuid(), Kind = MediaKind.Episode, Name = "Two", SeriesName = "Andor", SeasonNumber = 1, EpisodeNumber = 2 });
+        var lone = _library.Add(new MediaItem { Id = Guid.NewGuid(), Kind = MediaKind.Episode, Name = "Pilot", SeriesName = "Severance" });
+        var album = _library.Add(new MediaItem { Id = Guid.NewGuid(), Kind = MediaKind.MusicAlbum, Name = "Discovery", AlbumArtist = "Daft Punk", Year = 2001 });
+        var part = _library.Add(new MediaItem { Id = Guid.NewGuid(), Kind = MediaKind.AudioBook, Name = "Part 1", ParentName = "The Hobbit" });
+        var book = _library.Add(new MediaItem { Id = Guid.NewGuid(), Kind = MediaKind.Book, Name = "Emma", Year = 1815 });
+        var gone = new MediaItem { Id = Guid.NewGuid(), Kind = MediaKind.Movie, Name = "Gone" };
+
+        var model = _builder.Build(Digest(
+            ("Movies", Media("media.movie", arrival)),
+            ("Shows", Media("media.episodes", e1, e2)),
+            ("Movies", Media("media.movie", gone)),
+            (string.Empty, Media("media.album", album)),
+            ("Shows", Media("media.episodes", lone)),
+            ("Audiobooks", Media("media.book", part)),
+            (string.Empty, Media("media.book", book))));
+
+        var values = model.Values;
+        Assert.Equal(6L, values["count"]);
+        Assert.Equal("6", values["count_text"]);
+        Assert.Equal(0L, values["more"]);
+        Assert.Equal(6, model.ListCount);
+        Assert.Equal(0, model.MinListKept);
+        var libraries = Libraries(values);
+        Assert.Equal(["Movies", "Shows", null, "Audiobooks"], libraries.Select(l => l["name"]));
+        Assert.Equal(["movie"], Kinds(libraries[0]));
+        Assert.Equal(["season", "episode"], Kinds(libraries[1]));
+        Assert.Equal(["album", "other"], Kinds(libraries[2]));
+        Assert.Equal(["audiobook"], Kinds(libraries[3]));
+
+        var movie = Entries(libraries[0])[0];
+        Assert.Equal("Arrival", movie["title"]);
+        Assert.Equal(2016L, movie["year"]);
+        var season = Entries(libraries[1])[0];
+        Assert.Equal("Andor", season["series"]);
+        Assert.Equal("01", season["season_text"]);
+        Assert.Null(season["episode_text"]);
+        Assert.Equal(2L, season["count"]);
+        Assert.Equal("2", season["count_text"]);
+        var episode = Entries(libraries[1])[1];
+        Assert.Equal("Pilot", episode["title"]);
+        Assert.Equal("?", episode["season_text"]);
+        Assert.Equal("?", episode["episode_text"]);
+        Assert.Equal(1L, episode["count"]);
+        var music = Entries(libraries[2])[0];
+        Assert.Equal("Daft Punk", music["artist"]);
+        Assert.Equal("Discovery", music["album"]);
+        Assert.Equal("The Hobbit", Entries(libraries[3])[0]["title"]);
+    }
+
+    [Fact]
+    public void Digest_With_KeepsTheFirstEntriesAndCountsTheRest()
+    {
+        var movies = Enumerable.Range(1, 1200)
+            .Select(i => _library.Add(new MediaItem { Id = Guid.NewGuid(), Kind = MediaKind.Movie, Name = $"Movie {i}" }))
+            .Select((m, i) => (i % 2 == 0 ? "A" : "B", Media("media.movie", m)))
+            .ToArray();
+        var model = _builder.Build(Digest(movies));
+
+        var capped = model.With(null, TemplateFitter.MaxListItems);
+        var three = model.With(null, 3);
+        var none = model.With(null, 0);
+
+        Assert.Equal(1200, model.ListCount);
+        Assert.Equal(1200L, capped["count"]);
+        Assert.Equal(200L, capped["more"]);
+        Assert.Equal("200", capped["more_text"]);
+        Assert.Equal(1000, Libraries(capped).Sum(l => Entries(l).Count));
+        Assert.Equal(1197L, three["more"]);
+        Assert.Equal("1,197", three["more_text"]);
+        Assert.Equal(["A", "B"], Libraries(three).Select(l => l["name"]));
+        Assert.Equal(["Movie 1", "Movie 3"], Entries(Libraries(three)[0]).Select(e => e["title"]));
+        Assert.Empty(Libraries(none));
+        Assert.Equal(1200L, none["more"]);
+        Assert.Equal(1200, Libraries(model.Values).Sum(l => Entries(l).Count));
+    }
+
     public void Dispose() => _h.Dispose();
+
+    private static RenderModel Digest(params (string Library, RenderModel Group)[] groups)
+    {
+        foreach (var (library, group) in groups)
+        {
+            group.LibraryName = library;
+        }
+
+        return new RenderModel { Kind = RenderKind.Digest, EventKey = "media.digest", At = At, Groups = groups.Select(g => g.Group).ToList() };
+    }
+
+    private static List<IReadOnlyDictionary<string, object?>> Libraries(IReadOnlyDictionary<string, object?> values)
+        => Assert.IsAssignableFrom<IReadOnlyList<object?>>(values["libraries"]).Cast<IReadOnlyDictionary<string, object?>>().ToList();
+
+    private static List<IReadOnlyDictionary<string, object?>> Entries(IReadOnlyDictionary<string, object?> library)
+        => Assert.IsAssignableFrom<IReadOnlyList<object?>>(library["entries"]).Cast<IReadOnlyDictionary<string, object?>>().ToList();
+
+    private static List<object?> Kinds(IReadOnlyDictionary<string, object?> library) => Entries(library).Select(e => e["kind"]).ToList();
+
+    private IReadOnlyDictionary<string, object?> V(RenderModel model) => _builder.Build(model).Values;
 
     private static RenderModel Alert(string key, params (string Name, string Value)[] values) => new()
     {

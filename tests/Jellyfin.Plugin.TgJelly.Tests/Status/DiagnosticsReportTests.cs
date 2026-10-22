@@ -124,7 +124,7 @@ public class DiagnosticsReportTests
     }
 
     [Fact]
-    public async System.Threading.Tasks.Task Templates_ListEnabledKeysAndFlags_NeverText()
+    public async System.Threading.Tasks.Task Templates_ListEveryOverrideAndFlags_NeverText()
     {
         using var h = new BotTestHarness();
         h.Settings.Update(null, c => c.Templates =
@@ -138,6 +138,7 @@ public class DiagnosticsReportTests
 
         Assert.Contains("Templates", text, StringComparison.Ordinal);
         Assert.Contains("security.lockout: error", text, StringComparison.Ordinal);
+        // A switched-off v0.2 override is gone after the settings migration, so it is not listed.
         Assert.DoesNotContain("media.movie", text.Split("Templates")[1].Split("Counters")[0], StringComparison.Ordinal);
         Assert.DoesNotContain("SECRET-TEMPLATE-TEXT", text, StringComparison.Ordinal);
     }

@@ -85,6 +85,19 @@ public class NoticeBuilderTests
     }
 
     [Fact]
+    public void TemplateFlag_Digest_UsesTheDigestLabel_AndSaysEditedAndBuiltIn()
+    {
+        using var h = new BotTestHarness();
+        h.Settings.Update(null, c => c.Templates = [new TemplateOverride { EventKey = TemplateKeys.Digest, Enabled = true, Text = "a" }]);
+        new TemplateFlags(h.State, h.Settings, h.Time).Flag(TemplateKeys.Digest, "error", "bad", TemplateText.Hash("a"));
+
+        var text = Assert.Single(NewBuilder(h).Active()).Text;
+
+        Assert.Equal("The edited template for Digest failed, so the built-in template is used: bad", text);
+        Assert.DoesNotContain("dest.event", text, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Dismissed_IsHiddenButStillActive()
     {
         using var h = new BotTestHarness();

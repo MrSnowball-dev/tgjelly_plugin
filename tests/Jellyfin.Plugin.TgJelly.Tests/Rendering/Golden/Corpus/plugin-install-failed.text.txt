@@ -1,0 +1,3 @@
+⚙️ <b>Plugin install failed: Trakt 26.0.0.0</b>
+
+<blockquote expandable>Checksum &lt;mismatch&gt; &amp; retry</blockquote>

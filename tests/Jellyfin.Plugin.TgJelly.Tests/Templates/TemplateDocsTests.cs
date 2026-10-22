@@ -24,10 +24,24 @@ public sealed class TemplateDocsTests
     }
 
     [Fact]
+    public void Docs_ListBuiltInTemplateOfEveryKey()
+    {
+        var generated = TemplateDocs.Render();
+        Assert.Contains("## Built-in templates", generated, StringComparison.Ordinal);
+        foreach (var key in TemplateKeys.All)
+        {
+            var builtIn = BuiltInTemplates.Get(key, "en");
+            Assert.NotNull(builtIn);
+            Assert.Contains($"### `{key}`\n\n", generated[generated.IndexOf("## Built-in templates", StringComparison.Ordinal)..], StringComparison.Ordinal);
+            Assert.Contains(builtIn.TrimEnd('\n'), generated, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
     public void Docs_ExamplesRender_WithFullAndSparseSamples()
     {
         var engine = new TemplateEngine(TimeProvider.System);
-        foreach (var key in EventCatalog.AllKeys)
+        foreach (var key in TemplateKeys.All)
         {
             var example = TemplateDocs.Example(key);
             Assert.Empty(engine.Parse(example));

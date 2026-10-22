@@ -28,14 +28,13 @@ public sealed class PipelineRig
         Aggregator = new MediaAggregator(State, h.Settings, Outbox, scan, h.Time);
         Alerts = new AlertCoalescer(State, h.Strings, h.Time);
         var formatter = new Formatter(h.Strings);
+        var engine = new Jellyfin.Plugin.TgJelly.Templates.TemplateEngine(TimeProvider.System);
+        var models = new Jellyfin.Plugin.TgJelly.Templates.TemplateModelBuilder(library, new LinkBuilder(new FakeServerInfo()), h.Settings, formatter, h.Time);
+        var flags = new Jellyfin.Plugin.TgJelly.Templates.TemplateFlags(State, h.Settings, h.Time);
         Renderer = new NotificationRenderer(
             new MediaLayouts(formatter, new LinkBuilder(new FakeServerInfo()), library, h.Settings),
-            new AlertLayouts(formatter, h.Time),
-            new Jellyfin.Plugin.TgJelly.Templates.TemplateEngine(TimeProvider.System),
-            new Jellyfin.Plugin.TgJelly.Templates.TemplateModelBuilder(library, new LinkBuilder(new FakeServerInfo()), h.Settings, formatter, h.Time),
-            new Jellyfin.Plugin.TgJelly.Templates.TemplateFlags(State, h.Settings, h.Time),
-            h.Settings,
-            h.Strings);
+            new AlertLayouts(formatter),
+            new Jellyfin.Plugin.TgJelly.Templates.TemplateRenderer(engine, models, flags, h.Settings, h.Strings, NullLogger<Jellyfin.Plugin.TgJelly.Templates.TemplateRenderer>.Instance));
         Logger = new ListLogger<NotificationPipeline>();
         Pipeline = new NotificationPipeline(Queues, Readiness, Aggregator, Alerts, Renderer, Outbox, h.Settings, State, h.Time, Logger);
     }

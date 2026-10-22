@@ -6,12 +6,18 @@ using Jellyfin.Plugin.TgJelly.Configuration;
 using Jellyfin.Plugin.TgJelly.Library;
 using Jellyfin.Plugin.TgJelly.Rendering;
 using Jellyfin.Plugin.TgJelly.State.Documents;
+using Jellyfin.Plugin.TgJelly.Templates;
 using Jellyfin.Plugin.TgJelly.Tests.Fakes;
+using Microsoft.Extensions.Logging.Abstractions;
 using Telegram.Bot.Extensions;
 using Xunit;
 
 namespace Jellyfin.Plugin.TgJelly.Tests.Rendering;
 
+/// <summary>
+/// The media layouts give the poster and buttons only; the text tests render through <see cref="NotificationRenderer"/>,
+/// so they check the built-in templates against v0.2's text.
+/// </summary>
 public sealed class MediaLayoutsTests : IDisposable
 {
     private static readonly DateTime Modified = new(2026, 10, 1, 0, 0, 0, DateTimeKind.Utc);
@@ -19,12 +25,33 @@ public sealed class MediaLayoutsTests : IDisposable
     private readonly FakeLibrary _library = new();
     private readonly FakeServerInfo _server = new();
     private readonly MediaLayouts _layouts;
+    private readonly NotificationRenderer _renderer;
     private int _files;
 
     public MediaLayoutsTests()
     {
         SetPublicUrl("https://jf.example.com");
-        _layouts = new MediaLayouts(new Formatter(_h.Strings), new LinkBuilder(_server), _library, _h.Settings);
+        var formatter = new Formatter(_h.Strings);
+        var links = new LinkBuilder(_server);
+        _layouts = new MediaLayouts(formatter, links, _library, _h.Settings);
+        var models = new TemplateModelBuilder(_library, links, _h.Settings, formatter, _h.Time);
+        _renderer = new NotificationRenderer(
+            _layouts,
+            new AlertLayouts(formatter),
+            new TemplateRenderer(new TemplateEngine(TimeProvider.System), models, new TemplateFlags(_h.State, _h.Settings, _h.Time), _h.Settings, _h.Strings, NullLogger<TemplateRenderer>.Instance));
+    }
+
+    [Fact]
+    public void Layout_NoText_PosterAndButtonsOnly()
+    {
+        var movie = Add(Movie());
+
+        var message = _layouts.Render(Group("Movies", movie))!;
+
+        Assert.Equal(string.Empty, message.Caption);
+        Assert.Equal(string.Empty, message.Text);
+        Assert.Equal(movie.Primary!.Path, message.PosterPath);
+        Assert.Equal(2, message.Buttons.Count);
     }
 
     [Fact]
@@ -32,7 +59,7 @@ public sealed class MediaLayoutsTests : IDisposable
     {
         var movie = Add(Movie());
 
-        var message = _layouts.Render(Group("Movies", movie))!;
+        var message = Render(Group("Movies", movie))!;
 
         Assert.Equal(Golden("movie.caption.txt"), message.Caption);
         Assert.Equal(Golden("movie.text.txt"), message.Text);
@@ -65,7 +92,7 @@ public sealed class MediaLayoutsTests : IDisposable
         Assert.True(_h.Settings.Update(null, c => typeof(MessageOptions).GetProperty(toggle)!.SetValue(c.Message, false)).Status == SettingsUpdateStatus.Saved);
         var movie = Add(Movie());
 
-        var message = _layouts.Render(Group("Movies", movie))!;
+        var message = Render(Group("Movies", movie))!;
 
         var labels = message.Buttons.Select(r => r[0].Text).ToList();
         switch (toggle)
@@ -119,7 +146,7 @@ public sealed class MediaLayoutsTests : IDisposable
         var group = Group("Shows", e3, e1, e2);
         group.NewSeries = true;
 
-        var message = _layouts.Render(group)!;
+        var message = Render(group)!;
 
         Assert.Equal(Golden("episodes.caption.txt"), message.Caption);
         Assert.Equal(Golden("episodes.caption.txt"), message.Text);
@@ -144,7 +171,7 @@ public sealed class MediaLayoutsTests : IDisposable
         var special = Add(Episode(series, season, 1, "Behind the scenes", seasonNumber: 0));
         var unnumbered = Add(Episode(series, season, null, "Bonus"));
 
-        var caption = _layouts.Render(Group("Shows", unnumbered, special))!.Caption;
+        var caption = Render(Group("Shows", unnumbered, special))!.Caption;
 
         Assert.StartsWith("<b>Severance</b> · Specials · 2 new episodes\n\nE01 Behind the scenes\nBonus\n\n", caption, StringComparison.Ordinal);
     }
@@ -158,7 +185,7 @@ public sealed class MediaLayoutsTests : IDisposable
             ChildCount = 12, Primary = Poster(),
         });
 
-        var message = _layouts.Render(Group("Music", album))!;
+        var message = Render(Group("Music", album))!;
 
         Assert.Equal(Golden("album.caption.txt"), message.Caption);
         Assert.Equal(album.Primary!.Path, message.PosterPath);
@@ -179,7 +206,7 @@ public sealed class MediaLayoutsTests : IDisposable
         var group = Group("Audiobooks", parts);
         group.ContainerId = folder.Id.ToString("N");
 
-        var message = _layouts.Render(group)!;
+        var message = Render(group)!;
 
         Assert.Equal(Golden("audiobook.caption.txt"), message.Caption);
         Assert.Equal(folder.Primary!.Path, message.PosterPath);
@@ -192,7 +219,7 @@ public sealed class MediaLayoutsTests : IDisposable
         var group = Group("Movies", Add(Movie()));
         group.Upgraded = true;
 
-        var message = _layouts.Render(group)!;
+        var message = Render(group)!;
 
         Assert.EndsWith("\n\n♻️ Upgraded\n📁 Movies", message.Caption, StringComparison.Ordinal);
         Assert.EndsWith("\n\n♻️ Upgraded\n📁 Movies", message.Text, StringComparison.Ordinal);
@@ -204,6 +231,7 @@ public sealed class MediaLayoutsTests : IDisposable
         var movie = Movie();
 
         Assert.Null(_layouts.Render(Group("Movies", movie)));
+        Assert.Null(Render(Group("Movies", movie)));
     }
 
     [Fact]
@@ -215,7 +243,7 @@ public sealed class MediaLayoutsTests : IDisposable
         var e2 = Episode(series, season, 2, "Goodbye, Mrs. Selvig");
         var e3 = Add(Episode(series, season, 3, "Who Is Alive?"));
 
-        var caption = _layouts.Render(Group("Shows", e1, e2, e3))!.Caption;
+        var caption = Render(Group("Shows", e1, e2, e3))!.Caption;
 
         Assert.StartsWith("<b>Severance</b> · Season 2 · 2 new episodes\n\nE01 Hello, Ms. Cobel\nE03 Who Is Alive?\n\n", caption, StringComparison.Ordinal);
     }
@@ -225,7 +253,7 @@ public sealed class MediaLayoutsTests : IDisposable
     {
         var movie = Add(Copy(Movie(), Poster(), name: "<b>&</b>" + string.Concat(Enumerable.Repeat("😀", 3000))));
 
-        var message = _layouts.Render(Group("Movies", movie))!;
+        var message = Render(Group("Movies", movie))!;
 
         Assert.Contains("&lt;b&gt;&amp;&lt;/b&gt;", message.Caption, StringComparison.Ordinal);
         Assert.Contains("&lt;b&gt;&amp;&lt;/b&gt;", message.Text, StringComparison.Ordinal);
@@ -240,8 +268,8 @@ public sealed class MediaLayoutsTests : IDisposable
         var fits = Add(new MediaItem { Id = Guid.NewGuid(), Kind = MediaKind.Movie, Name = exact });
         var over = Add(new MediaItem { Id = Guid.NewGuid(), Kind = MediaKind.Movie, Name = exact + "😀" });
 
-        var fitted = _layouts.Render(Group(string.Empty, fits))!.Caption;
-        var truncated = _layouts.Render(Group(string.Empty, over))!.Caption;
+        var fitted = Render(Group(string.Empty, fits))!.Caption;
+        var truncated = Render(Group(string.Empty, over))!.Caption;
 
         Assert.Equal("<b>" + exact + "</b>", fitted);
         Assert.InRange(HtmlText.PlainLength(truncated), 1, 984);
@@ -266,7 +294,7 @@ public sealed class MediaLayoutsTests : IDisposable
         groups.Insert(1, severance);
         groups.Add(single);
 
-        var message = _layouts.RenderDigest(Digest(groups));
+        var message = Render(Digest(groups))!;
 
         Assert.Equal(Golden("digest.text.txt"), message.Text);
         Assert.Null(message.PosterPath);
@@ -279,7 +307,7 @@ public sealed class MediaLayoutsTests : IDisposable
         var kept = Group(string.Empty, Add(new MediaItem { Id = Guid.NewGuid(), Kind = MediaKind.Movie, Name = "A & B" }));
         var gone = Group("Movies", new MediaItem { Id = Guid.NewGuid(), Kind = MediaKind.Movie, Name = "Gone" });
 
-        var text = _layouts.RenderDigest(Digest([gone, kept])).Text;
+        var text = Render(Digest([gone, kept]))!.Text;
 
         Assert.Equal("🆕 <b>1 new item in Jellyfin</b>\n\n<b>Other</b>: A &amp; B", text);
     }
@@ -291,7 +319,7 @@ public sealed class MediaLayoutsTests : IDisposable
             .Select(i => Group("Movies", Add(new MediaItem { Id = Guid.NewGuid(), Kind = MediaKind.Movie, Name = $"Movie number {i:000}", Year = 2000 })))
             .ToList();
 
-        var text = _layouts.RenderDigest(Digest(groups)).Text;
+        var text = Render(Digest(groups))!.Text;
 
         Assert.InRange(HtmlText.PlainLength(text), 1, 4056);
         var lines = text.Split('\n');
@@ -315,7 +343,13 @@ public sealed class MediaLayoutsTests : IDisposable
     private static RenderModel Group(string library, params MediaItem[] items) => new()
     {
         Kind = RenderKind.Media,
-        EventKey = "media.movie",
+        EventKey = items.Length == 0 ? "media.movie" : items[0].Kind switch
+        {
+            MediaKind.Episode => "media.episodes",
+            MediaKind.MusicAlbum => "media.album",
+            MediaKind.AudioBook or MediaKind.Book => "media.book",
+            _ => "media.movie",
+        },
         LibraryName = library,
         ItemIds = items.Select(i => i.Id.ToString("N")).ToList(),
     };
@@ -350,6 +384,8 @@ public sealed class MediaLayoutsTests : IDisposable
     };
 
     private MediaItem Add(MediaItem item) => _library.Add(item);
+
+    private OutboxMessage? Render(RenderModel model) => _renderer.Render(model, new Destination { Id = "d1" });
 
     private ImageRef Poster()
     {

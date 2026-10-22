@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using MediaBrowser.Model.Plugins;
 
 namespace Jellyfin.Plugin.TgJelly.Configuration;
@@ -97,5 +98,17 @@ public class PluginConfiguration : BasePluginConfiguration
             t.EventKey ??= string.Empty;
             t.Text ??= string.Empty;
         }
+
+        MigrateTemplates();
+    }
+
+    /// <summary>
+    /// Plan 7 migration (design §5.1): an override that was switched off, or has no text, is removed. The others are
+    /// the template in use, so <see cref="TemplateOverride.Enabled"/> is set to true.
+    /// </summary>
+    public void MigrateTemplates()
+    {
+        Templates ??= Array.Empty<TemplateOverride>();
+        Templates = [.. Templates.Where(t => t is not null && t.Enabled && !string.IsNullOrWhiteSpace(t.Text))];
     }
 }

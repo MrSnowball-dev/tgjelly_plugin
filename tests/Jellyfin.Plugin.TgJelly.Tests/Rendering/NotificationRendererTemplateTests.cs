@@ -18,6 +18,7 @@ public sealed class NotificationRendererTemplateTests : IDisposable
     private readonly BotTestHarness _h = new();
     private readonly FakeLibrary _library = new();
     private readonly TemplateFlags _flags;
+    private readonly ListLogger<TemplateRenderer> _logger = new();
     private readonly NotificationRenderer _renderer;
 
     public NotificationRendererTemplateTests()
@@ -25,14 +26,12 @@ public sealed class NotificationRendererTemplateTests : IDisposable
         var formatter = new Formatter(_h.Strings);
         var links = new LinkBuilder(new FakeServerInfo());
         _flags = new TemplateFlags(_h.State, _h.Settings, _h.Time);
+        var engine = new TemplateEngine(TimeProvider.System);
+        var models = new TemplateModelBuilder(_library, links, _h.Settings, formatter, _h.Time);
         _renderer = new NotificationRenderer(
             new MediaLayouts(formatter, links, _library, _h.Settings),
-            new AlertLayouts(formatter, _h.Time),
-            new TemplateEngine(TimeProvider.System),
-            new TemplateModelBuilder(_library, links, _h.Settings, formatter, _h.Time),
-            _flags,
-            _h.Settings,
-            _h.Strings);
+            new AlertLayouts(formatter),
+            new TemplateRenderer(engine, models, _flags, _h.Settings, _h.Strings, _logger));
     }
 
     [Fact]
@@ -53,27 +52,41 @@ public sealed class NotificationRendererTemplateTests : IDisposable
     }
 
     [Fact]
-    public void DisabledOrBlank_UsesDefault()
+    public void BlankOverride_UsesDefault()
     {
-        Set("security.lockout", "custom", enabled: false);
-        Assert.Null(_renderer.Render(Lockout(), Dest())!.TemplateKey);
-
         Set("security.lockout", "   ");
         var message = _renderer.Render(Lockout(), Dest())!;
 
+        // The built-in template renders it, not the blank override.
         Assert.Null(message.TemplateKey);
         Assert.StartsWith("🔒", message.Text, StringComparison.Ordinal);
+        Assert.Null(_flags.Current("security.lockout"));
     }
 
     [Fact]
-    public void Digest_NeverUsesTemplate()
+    public void Digest_EditedTemplate_IsUsed_TextOnly()
     {
         var item = _library.Add(new MediaItem { Id = Guid.NewGuid(), Kind = MediaKind.Movie, Name = "Arrival" });
-        Set("media.digest", "custom");
+        Set("media.digest", "custom {{ count }}");
 
         var message = _renderer.Render(new RenderModel { Kind = RenderKind.Digest, EventKey = "media.digest", Groups = [Media(item)] }, Dest())!;
 
-        Assert.NotEqual("custom", message.Text);
+        Assert.Equal("custom 1", message.Text);
+        Assert.Equal(string.Empty, message.Caption);
+        Assert.Equal("media.digest", message.TemplateKey);
+        Assert.Null(message.PosterPath);
+        Assert.Empty(message.Buttons);
+    }
+
+    [Fact]
+    public void Digest_NoOverride_UsesTheBuiltInTemplate()
+    {
+        var item = _library.Add(new MediaItem { Id = Guid.NewGuid(), Kind = MediaKind.Movie, Name = "Arrival", Year = 2016 });
+
+        var message = _renderer.Render(new RenderModel { Kind = RenderKind.Digest, EventKey = "media.digest", Groups = [Media(item)] }, Dest())!;
+
+        Assert.Equal("🆕 <b>1 new item in Jellyfin</b>\n\n<b>Other</b>: Arrival (2016)", message.Text);
+        Assert.Equal(string.Empty, message.Caption);
         Assert.Null(message.TemplateKey);
     }
 
@@ -150,7 +163,7 @@ public sealed class NotificationRendererTemplateTests : IDisposable
         var message = _renderer.Render(Media(item), Dest())!;
 
         Assert.Equal("truncated", _flags.Current("media.movie")!.Kind);
-        Assert.True(message.Caption.Length <= MessageFitter.CaptionLimit - MessageFitter.DelayedReserve);
+        Assert.True(message.Caption.Length <= TemplateFitter.CaptionLimit - TemplateFitter.DelayedReserve);
         Assert.True(message.Text.Length > 1500);
     }
 
@@ -209,23 +222,46 @@ public sealed class NotificationRendererTemplateTests : IDisposable
     }
 
     [Fact]
-    public void ThrowingModelBuilder_KeepsDefaultMessage()
+    public void ThrowingModelBuilder_MediaGetsLastResortText_KeepsPosterAndButtons()
     {
-        var item = _library.Add(new MediaItem { Id = Guid.NewGuid(), Kind = MediaKind.Movie, Name = "Arrival" });
+        var item = WithPoster();
+        _h.Settings.Update(null, c => c.PublicUrl = "https://jf.example.com");
         Set("media.movie", "custom {{ title }}");
-        var model = Media(item);
+
+        // The layout reads the item once; the model builder's read throws.
         var calls = 0;
-        _library.GetItemOverride = id => { calls++; return _library.Items.GetValueOrDefault(id); };
-        Set("media.movie", "custom {{ title }}", enabled: false);
-        var baseline = _renderer.Render(model, Dest())!.Text;
-        var defaultCalls = calls;
-        Set("media.movie", "custom {{ title }}");
-        calls = 0;
-        _library.GetItemOverride = id => ++calls > defaultCalls ? throw new InvalidOperationException("boom") : _library.Items.GetValueOrDefault(id);
+        _library.GetItemOverride = id => ++calls > 1 ? throw new InvalidOperationException("boom") : _library.Items.GetValueOrDefault(id);
 
-        var message = _renderer.Render(model, Dest())!;
+        var message = _renderer.Render(Media(item), Dest())!;
 
-        Assert.Equal(baseline, message.Text);
+        Assert.Equal("<b>Media: Movies</b>", message.Text);
+        Assert.Equal(message.Text, message.Caption);
+        Assert.Null(message.TemplateKey);
+        Assert.Equal(item.Primary!.Path, message.PosterPath);
+        Assert.NotEmpty(message.Buttons);
+        Assert.Equal(1, _logger.Count(Microsoft.Extensions.Logging.LogLevel.Warning));
+    }
+
+    [Fact]
+    public void MediaKey_Override_IsUsed()
+    {
+        Set("media.movie", "<b>New: {{ title }}</b>");
+        var item = _library.Add(new MediaItem { Id = Guid.NewGuid(), Kind = MediaKind.Movie, Name = "Arrival" });
+
+        var message = _renderer.Render(Media(item), Dest())!;
+
+        Assert.Equal("<b>New: Arrival</b>", message.Text);
+        Assert.Equal("media.movie", message.TemplateKey);
+    }
+
+    [Fact]
+    public void MediaKey_NoOverride_UsesTheBuiltInTemplate()
+    {
+        var item = _library.Add(new MediaItem { Id = Guid.NewGuid(), Kind = MediaKind.Movie, Name = "Arrival", Year = 2016 });
+
+        var message = _renderer.Render(Media(item), Dest())!;
+
+        Assert.Equal("<b>Arrival</b> (2016)", message.Text);
         Assert.Null(message.TemplateKey);
     }
 

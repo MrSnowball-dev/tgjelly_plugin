@@ -46,11 +46,11 @@ public sealed class TemplateFlagsTests : IDisposable
     }
 
     [Fact]
-    public void Disabled_FlagNotCurrent()
+    public void NoOverride_FlagNotCurrent()
     {
         _flags.Flag("security.lockout", "truncated", string.Empty, TemplateText.Hash("old text"));
 
-        Enable("old text", enabled: false);
+        _h.Settings.Update(null, c => c.Templates = []);
 
         Assert.Null(_flags.Current("security.lockout"));
     }
@@ -67,6 +67,6 @@ public sealed class TemplateFlagsTests : IDisposable
 
     public void Dispose() => _h.Dispose();
 
-    private void Enable(string text, bool enabled = true)
-        => _h.Settings.Update(null, c => c.Templates = [new TemplateOverride { EventKey = "security.lockout", Enabled = enabled, Text = text }]);
+    private void Enable(string text)
+        => _h.Settings.Update(null, c => c.Templates = [new TemplateOverride { EventKey = "security.lockout", Enabled = true, Text = text }]);
 }

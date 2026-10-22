@@ -2,6 +2,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using System.Threading;
 using Scriban;
 using Scriban.Parsing;
@@ -19,6 +20,10 @@ public sealed class TemplateEngine
     private const int Limit = 1000;
     private const int Depth = 20;
     private const int TextLimit = 16384;
+
+    // How Scriban words the failures of the output limit and of the string limit (a value or a joined string too long).
+    private const string OutputLimitMessage = "Rendered output exceeds OutputLimit";
+    private const string StringLimitWord = "LimitToString";
 
     private static readonly TimeSpan DefaultTimeout = TimeSpan.FromSeconds(2);
 
@@ -61,6 +66,9 @@ public sealed class TemplateEngine
         _parse = parse;
     }
 
+    /// <summary>Gets the clock the render timeouts run on.</summary>
+    internal TimeProvider Time => _time;
+
     /// <summary>Gets the number of cached parsed templates.</summary>
     internal int CachedCount => _cache.Count;
 
@@ -95,8 +103,9 @@ public sealed class TemplateEngine
     /// <param name="text">The template text.</param>
     /// <param name="model">The flat template model.</param>
     /// <param name="strict">True to fail on unknown variables (validation renders).</param>
+    /// <param name="language">The language <c>plural</c> uses.</param>
     /// <returns>The output, or the error.</returns>
-    public TemplateRenderResult Render(string eventKey, string text, IReadOnlyDictionary<string, object?> model, bool strict)
+    public TemplateRenderResult Render(string eventKey, string text, IReadOnlyDictionary<string, object?> model, bool strict, string language = "en")
     {
         try
         {
@@ -132,12 +141,18 @@ public sealed class TemplateEngine
             // Imported last, so a model key named raw can never replace the function.
             globals.Import("raw", new Func<object?, RawHtml>(value => new RawHtml(Convert.ToString(value, CultureInfo.InvariantCulture) ?? string.Empty)));
 
+            // Same for plural.
+            globals.Import("plural", new Func<object?, object?[], string>((count, forms) =>
+                PluralRules.Pick(language, Convert.ToInt64(count, CultureInfo.InvariantCulture), forms.Select(f => Convert.ToString(f, CultureInfo.InvariantCulture) ?? string.Empty).ToList())));
+
             context.PushGlobal(globals);
             return new TemplateRenderResult(template.Render(context), null);
         }
         catch (ScriptRuntimeException ex)
         {
-            return new TemplateRenderResult(null, ToError(ex.OriginalMessage, ex.Span));
+            var tooLong = ex.OriginalMessage.StartsWith(OutputLimitMessage, StringComparison.Ordinal)
+                || ex.OriginalMessage.Contains(StringLimitWord, StringComparison.Ordinal);
+            return new TemplateRenderResult(null, ToError(ex.OriginalMessage, ex.Span), tooLong);
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {

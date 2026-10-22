@@ -13,7 +13,7 @@ public sealed class TemplateFieldCatalogTests
     public static TheoryData<string> Keys()
     {
         var data = new TheoryData<string>();
-        foreach (var key in EventCatalog.AllKeys)
+        foreach (var key in TemplateKeys.All)
         {
             data.Add(key);
         }
@@ -29,7 +29,7 @@ public sealed class TemplateFieldCatalogTests
             var fields = TemplateFieldCatalog.For(key);
             Assert.NotEmpty(fields);
             Assert.Equal(fields.Count, fields.Select(f => f.Name).Distinct(StringComparer.Ordinal).Count());
-            Assert.All(fields, f => Assert.Contains(f.Type, new[] { "string", "number", "bool", "string[]", "episode[]" }));
+            Assert.All(fields, f => Assert.Contains(f.Type, new[] { "string", "number", "bool", "string[]", "episode[]", "library[]" }));
             Assert.All(fields, f => Assert.NotEmpty(f.Description));
         }
     }
@@ -40,7 +40,7 @@ public sealed class TemplateFieldCatalogTests
     {
         var names = TemplateFieldCatalog.For(key).Select(f => f.Name).ToList();
 
-        Assert.Equal(["event", "at_unix", "at_text"], names.Take(3));
+        Assert.Equal(["event", "at_unix", "at_text", "at_html"], names.Take(4));
         Assert.Equal(TemplateFieldCatalog.IsMedia(key), key.StartsWith("media.", StringComparison.Ordinal));
     }
 
@@ -54,7 +54,8 @@ public sealed class TemplateFieldCatalogTests
             template.Append(field.Type switch
             {
                 "string[]" => $"{{{{ for x in {field.Name} }}}}{{{{ x }}}}{{{{ end }}}}",
-                "episode[]" => $"{{{{ for x in {field.Name} }}}}{{{{ x.number }}}}{{{{ x.title }}}}{{{{ end }}}}",
+                "episode[]" => $"{{{{ for x in {field.Name} }}}}{{{{ x.number }}}}{{{{ x.number_text }}}}{{{{ x.title }}}}{{{{ end }}}}",
+                "library[]" => $"{{{{ for x in {field.Name} }}}}{{{{ x.name }}}}{{{{ for e in x.entries }}}}{{{{ e.kind }}}}{{{{ e.title }}}}{{{{ e.year }}}}{{{{ e.series }}}}{{{{ e.season_text }}}}{{{{ e.episode_text }}}}{{{{ e.count }}}}{{{{ e.count_text }}}}{{{{ e.artist }}}}{{{{ e.album }}}}{{{{ end }}}}{{{{ end }}}}",
                 _ => $"{{{{ {field.Name} }}}}",
             }).Append('|');
         }
@@ -89,6 +90,20 @@ public sealed class TemplateFieldCatalogTests
                 Assert.NotNull(sparse[field.Name]);
             }
         }
+    }
+
+    [Fact]
+    public void Catalog_CoversTemplateKeysAll()
+    {
+        Assert.Equal([.. EventCatalog.AllKeys, "media.digest"], TemplateKeys.All);
+        foreach (var key in TemplateKeys.All)
+        {
+            Assert.NotEmpty(TemplateFieldCatalog.For(key));
+            Assert.Contains("at_html", TemplateFieldCatalog.For(key).Select(f => f.Name));
+            Assert.IsType<RawHtml>(TemplateFieldCatalog.SampleFull(key)["at_html"]);
+        }
+
+        Assert.Equal(["count", "count_text", "libraries", "more", "more_text"], TemplateFieldCatalog.For("media.digest").Select(f => f.Name).Skip(4));
     }
 
     [Fact]

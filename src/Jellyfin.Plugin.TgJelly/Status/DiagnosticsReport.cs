@@ -128,7 +128,8 @@ public sealed class DiagnosticsReport
         }
 
         Section(sb, "Templates");
-        foreach (var template in settings.Templates.Where(t => t.Enabled && !string.IsNullOrWhiteSpace(t.Text)).OrderBy(t => t.EventKey, StringComparer.Ordinal))
+        // Every override is the template in use (design §5.1); the settings migration has already dropped empty ones.
+        foreach (var template in settings.Templates.OrderBy(t => t.EventKey, StringComparer.Ordinal))
         {
             Line(sb, template.EventKey, _templates.Current(template.EventKey)?.Kind ?? "ok");
         }

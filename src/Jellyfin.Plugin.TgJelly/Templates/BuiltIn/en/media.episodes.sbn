@@ -1,0 +1,19 @@
+{{ if new_series -}}
+🆕 New series
+{{ end -}}
+<b>{{ series }}</b> · {{ if season == 0 }}Specials{{ else }}Season {{ season ?? "?" }}{{ end }} · {{ count_text }} new {{ plural count "episode" "episodes" }}
+{{- for episode in episodes }}
+{{ if for.first }}
+{{ end }}
+{{- if episode.number_text }}E{{ episode.number_text }} {{ end }}{{ episode.title }}
+{{- end }}
+{{- if episodes_more > 0 }}
++{{ episodes_more_text }} more
+{{- end }}
+{{- if upgraded || library }}
+
+{{ end }}
+{{- if upgraded }}♻️ Upgraded{{ end }}
+{{- if upgraded && library }}
+{{ end }}
+{{- if library }}📁 {{ library }}{{ end -}}

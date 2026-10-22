@@ -16,11 +16,14 @@ public sealed class TemplateItemDto
     /// <summary>Gets a value indicating whether this is a media event (1024-character caption limit).</summary>
     public bool Media { get; init; }
 
-    /// <summary>Gets a value indicating whether the custom template is used.</summary>
-    public bool Enabled { get; init; }
-
-    /// <summary>Gets the template text; empty without an override.</summary>
+    /// <summary>Gets the template text in use: the edited one, otherwise the built-in one.</summary>
     public string Text { get; init; } = string.Empty;
+
+    /// <summary>Gets the built-in template text.</summary>
+    public string BuiltIn { get; init; } = string.Empty;
+
+    /// <summary>Gets a value indicating whether the text in use is an edited one.</summary>
+    public bool Edited { get; init; }
 
     /// <summary>Gets the fields a template can use.</summary>
     public IReadOnlyList<TemplateFieldDto> Fields { get; init; } = [];

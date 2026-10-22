@@ -77,6 +77,25 @@ public sealed class TemplateEngineTests
         Assert.False(result.Ok);
         Assert.Null(result.Output);
         Assert.Contains("OutputLimit", result.Error!.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.True(result.TooLong);
+    }
+
+    [Fact]
+    public void StringLimit_IsTooLong()
+    {
+        var model = new Dictionary<string, object?> { ["text"] = new string('x', 20000) };
+
+        var result = Engine().Render("k", "{{ text }}", model, strict: false);
+
+        Assert.False(result.Ok);
+        Assert.True(result.TooLong);
+    }
+
+    [Fact]
+    public void OtherErrors_AreNotTooLong()
+    {
+        Assert.False(Engine().Render("k", "{{ for i in 1..2000 }}x{{ end }}", Empty, strict: false).TooLong);
+        Assert.False(Engine().Render("k", "{{ if }}", Empty, strict: false).TooLong);
     }
 
     [Fact]
@@ -151,5 +170,29 @@ public sealed class TemplateEngineTests
     {
         var hash = TemplateText.Hash("abc");
         Assert.Equal("ba7816bf8f01cfea", hash);
+    }
+
+    [Fact]
+    public void Plural_Function()
+    {
+        Assert.Equal("items", Engine().Render("k", "{{ plural 3 \"item\" \"items\" }}", Empty, strict: true).Output);
+        Assert.Equal("item", Engine().Render("k", "{{ plural 1 \"item\" \"items\" }}", Empty, strict: true).Output);
+    }
+
+    [Fact]
+    public void Plural_OneForm_AndThreeForms()
+    {
+        Assert.Equal("x", Engine().Render("k", "{{ plural 2 \"x\" }}", Empty, strict: true).Output);
+        Assert.Equal("x", Engine().Render("k", "{{ plural 1 \"x\" }}", Empty, strict: true).Output);
+        Assert.Equal("b", Engine().Render("k", "{{ plural 5 \"a\" \"b\" \"c\" }}", Empty, strict: true).Output);
+        Assert.Equal("a", Engine().Render("k", "{{ plural 1 \"a\" \"b\" \"c\" }}", Empty, strict: true).Output);
+    }
+
+    [Fact]
+    public void Plural_CannotBeReplacedByModelKey()
+    {
+        var result = Engine().Render("k", "{{ plural 1 \"a\" \"b\" }}", Model("plural", "x"), strict: true);
+
+        Assert.Equal("a", result.Output);
     }
 }

@@ -43,6 +43,8 @@ public class PluginServiceRegistratorTests
         Assert.NotNull(provider.GetRequiredService<SettingsStore>());
         Assert.NotNull(provider.GetRequiredService<Jellyfin.Plugin.TgJelly.Library.ILibraryAccess>());
         Assert.NotNull(provider.GetRequiredService<Jellyfin.Plugin.TgJelly.Library.IServerInfo>());
+        Assert.NotNull(provider.GetRequiredService<Jellyfin.Plugin.TgJelly.Rendering.NotificationRenderer>());
+        Assert.NotNull(provider.GetRequiredService<Jellyfin.Plugin.TgJelly.Templates.TemplateRenderer>());
         using (var scope = provider.CreateScope())
         {
             Assert.Single(scope.ServiceProvider.GetServices<MediaBrowser.Controller.Events.IEventConsumer<MediaBrowser.Controller.Events.Authentication.AuthenticationRequestEventArgs>>());

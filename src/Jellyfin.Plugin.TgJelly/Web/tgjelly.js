@@ -7,6 +7,8 @@
 // The strings table is always called S, so the key check in tests/web can find the key at every t() and plural() call.
 
 const POLL_MS = 3000;
+// The template preview validates this long after the last keystroke.
+const PREVIEW_DEBOUNCE_MS = 500;
 
 /** Connection states shown in the error color (the ConnectionState names from GET Status). */
 const PROBLEM_STATES = new Set(['TokenRejected', 'WebhookConflict', 'ConflictingInstance', 'Unreachable', 'InvalidBaseUrl', 'Incompatible']);
@@ -914,29 +916,239 @@ const TEMPLATES_DOCS = 'https://github.com/MrSnowball-dev/tgjelly_plugin/blob/ma
 
 /** The template form data for one item (what Save sends besides the revision). */
 export function templateFormData(item) {
-    return { Enabled: Boolean(item.Enabled), Text: String(item.Text ?? '') };
+    return { Text: String(item.Text ?? '') };
+}
+
+/** Tags of Telegram HTML that the preview shows as the same tag, without any attribute. */
+const PREVIEW_SAME = new Set(['b', 'strong', 'i', 'em', 'u', 'ins', 's', 'strike', 'del', 'code', 'pre']);
+/** Every tag the preview understands; any other tag is shown as text. */
+const PREVIEW_KNOWN = new Set([...PREVIEW_SAME, 'tg-spoiler', 'span', 'blockquote', 'a', 'tg-emoji', 'tg-time']);
+// A tag: optional /, the name, attributes (a name, maybe = and a quoted or bare value), >. Sticky: matched at lastIndex.
+const PREVIEW_TAG = /<(\/?)([a-zA-Z][a-zA-Z0-9-]*)((?:\s+[^\s=>/"']+(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s"'<>`]+))?)*)\s*>/y;
+const PREVIEW_ATTR = /([^\s=>/"']+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'<>`]+)))?/g;
+const NAMED_ENTITIES = { lt: '<', gt: '>', amp: '&', quot: '"' };
+
+/** Decodes the entities Telegram accepts (&lt; &gt; &amp; &quot; and numeric ones), once; anything else stays as it is. */
+function decodeEntities(text) {
+    return text.replace(/&(?:#(\d{1,7})|#[xX]([0-9a-fA-F]{1,6})|(lt|gt|amp|quot));/g, (whole, dec, hex, name) => {
+        if (name) {
+            return NAMED_ENTITIES[name];
+        }
+
+        const code = dec !== undefined ? Number(dec) : parseInt(hex, 16);
+        return code > 0 && code <= 0x10FFFF && (code < 0xD800 || code > 0xDFFF) ? String.fromCodePoint(code) : whole;
+    });
+}
+
+/** An href the preview may link to: http:, https: or tg:, else null. */
+function safeHref(value) {
+    const href = String(value ?? '').trim();
+    return /^(?:https?|tg):/i.test(href) ? href : null;
+}
+
+/** Splits Telegram HTML into tokens: text (decoded), and open and close tags with their attributes and raw source. */
+function previewTokens(source) {
+    const tokens = [];
+    let text = '';
+    let i = 0;
+    while (i < source.length) {
+        const lt = source.indexOf('<', i);
+        if (lt < 0) {
+            text += source.slice(i);
+            break;
+        }
+
+        text += source.slice(i, lt);
+        PREVIEW_TAG.lastIndex = lt;
+        const match = PREVIEW_TAG.exec(source);
+        if (!match) {
+            text += '<';
+            i = lt + 1;
+            continue;
+        }
+
+        if (text) {
+            tokens.push({ type: 'text', value: decodeEntities(text) });
+            text = '';
+        }
+
+        const attrs = {};
+        for (const attr of match[3].matchAll(PREVIEW_ATTR)) {
+            const name = attr[1].toLowerCase();
+            if (!Object.hasOwn(attrs, name)) {
+                attrs[name] = decodeEntities(attr[2] ?? attr[3] ?? attr[4] ?? '');
+            }
+        }
+
+        tokens.push({ type: match[1] ? 'close' : 'open', name: match[2].toLowerCase(), attrs, raw: match[0] });
+        i = lt + match[0].length;
+    }
+
+    if (text) {
+        tokens.push({ type: 'text', value: decodeEntities(text) });
+    }
+
+    return tokens;
+}
+
+/** A node list as HTML: text escaped, markup (already safe) as it is. */
+const nodesHtml = nodes => nodes.map(n => (n.html !== undefined ? n.html : esc(n.text))).join('');
+
+/** An expandable quote: the first line is the summary, the rest the body. */
+function expandableQuote(children) {
+    const index = children.findIndex(n => n.text !== undefined && n.text.includes('\n'));
+    let summary = children;
+    let body = [];
+    if (index >= 0) {
+        const cut = children[index].text.indexOf('\n');
+        summary = [...children.slice(0, index), { text: children[index].text.slice(0, cut) }];
+        body = [{ text: children[index].text.slice(cut + 1) }, ...children.slice(index + 1)];
+    }
+
+    return `<details class="tgj-quote"><summary>${nodesHtml(summary)}</summary>${nodesHtml(body)}</details>`;
+}
+
+/** The safe preview markup for one closed Telegram element. */
+function previewElement(name, attrs, children) {
+    const inner = nodesHtml(children);
+    if (PREVIEW_SAME.has(name)) {
+        return `<${name}>${inner}</${name}>`;
+    }
+
+    switch (name) {
+        case 'tg-spoiler':
+            return `<span class="tgj-spoiler">${inner}</span>`;
+        case 'span':
+            return String(attrs.class ?? '').trim() === 'tg-spoiler' ? `<span class="tgj-spoiler">${inner}</span>` : inner;
+        case 'blockquote':
+            return Object.hasOwn(attrs, 'expandable') ? expandableQuote(children) : `<blockquote>${inner}</blockquote>`;
+        case 'a': {
+            const href = safeHref(attrs.href);
+            return href === null ? inner : `<a target="_blank" rel="noopener noreferrer" href="${esc(href)}">${inner}</a>`;
+        }
+        default:
+            // tg-emoji and tg-time show their fallback text.
+            return inner;
+    }
 }
 
 /**
- * A one-line example template built from an event's field names: the first few required text and number fields.
- * @param {{ Name: string, Type: string, Optional: boolean }[]} fields
- * @returns {string}
+ * Turns Telegram HTML (from the server's Validate) into markup that is safe to put into the page. It tokenizes the
+ * input and re-emits only Telegram's formatting tags, with no attribute from the input except a checked link href:
+ * b, strong, i, em, u, ins, s, strike, del, code and pre as themselves; tg-spoiler and span class="tg-spoiler" as a
+ * span.tgj-spoiler; blockquote (an expandable one as details/summary); a as a new-tab link for http:, https: and tg:
+ * hrefs only, otherwise its text; tg-emoji and tg-time as their text. An unknown, unclosed or stray tag is shown as text.
+ * Entities are decoded once, and all text is escaped on output.
+ * @param {string} telegramHtml
+ * @returns {string} HTML
  */
-export function sampleTemplate(fields) {
-    const names = (fields ?? [])
-        .filter(f => !f.Optional && (f.Type === 'string' || f.Type === 'number') && f.Name !== 'event' && !f.Name.endsWith('_unix'))
-        .slice(0, 3)
-        .map(f => `{{ ${f.Name} }}`);
-    return names.join(' ');
+export function previewHtml(telegramHtml) {
+    // Each open element: its tag, attributes, raw source and children; the root holds the output.
+    const root = { children: [] };
+    const stack = [root];
+    const top = () => stack.at(-1);
+    // An element that never closed: its tag's source as text, then its children.
+    const unwrap = frame => [{ text: frame.raw }, ...frame.children];
+
+    for (const token of previewTokens(String(telegramHtml ?? ''))) {
+        if (token.type === 'text') {
+            top().children.push({ text: token.value });
+        } else if (token.type === 'open' && PREVIEW_KNOWN.has(token.name)) {
+            stack.push({ name: token.name, attrs: token.attrs, raw: token.raw, children: [] });
+        } else if (token.type === 'close' && stack.some((f, i) => i > 0 && f.name === token.name)) {
+            while (top().name !== token.name) {
+                const open = stack.pop();
+                top().children.push(...unwrap(open));
+            }
+
+            const frame = stack.pop();
+            top().children.push({ html: previewElement(frame.name, frame.attrs, frame.children) });
+        } else {
+            top().children.push({ text: token.raw });
+        }
+    }
+
+    while (stack.length > 1) {
+        const open = stack.pop();
+        top().children.push(...unwrap(open));
+    }
+
+    return nodesHtml(root.children);
+}
+
+/** The message's inline buttons: one row each, a link only for an http:, https: or tg: URL. */
+function previewButtons(rows) {
+    const html = (rows ?? []).filter(row => Array.isArray(row) && row.length > 0).map(row => `<div class="tgj-tg-row">${row.map(b => {
+        const href = safeHref(b && b.Url);
+        const label = esc(b && b.Text);
+        return href === null
+            ? `<span class="tgj-tg-button">${label}</span>`
+            : `<a class="tgj-tg-button" target="_blank" rel="noopener noreferrer" href="${esc(href)}">${label}</a>`;
+    }).join('')}</div>`);
+    return html.length > 0 ? `<div class="tgj-tg-buttons">${html.join('')}</div>` : '';
 }
 
 /**
- * The custom template editor under Advanced (spec §8.5, §6.6 item 5). The validation preview is Telegram HTML made from
- * the admin's template, so it is shown only as escaped text.
+ * The template preview pane: the validation's errors and warnings, then the message as Telegram would show it (poster
+ * placeholder, text, buttons) and its length. With errors, the last good preview is shown dimmed instead.
+ * @param {object | null} result the last TemplateValidationDto; RequestError (HTML) when the request itself failed
+ * @param {Record<string, string>} S
+ * @param {string} [lang]
+ * @param {object | null} [lastGood] the last validation of this template without errors
+ * @returns {string} HTML
+ */
+export function renderTemplatePreview(result, S, lang = 'en', lastGood = null) {
+    if (!result) {
+        return '';
+    }
+
+    const parts = [];
+    if (result.RequestError) {
+        parts.push(`<p class="tgj-error">${result.RequestError}</p>`);
+    }
+
+    for (const e of result.Errors ?? []) {
+        parts.push(`<p class="tgj-error">${e.Line
+            ? t(S, 'web.templates.errorAt', { line: e.Line, column: e.Column ?? 0, message: e.Message })
+            : esc(e.Message)}</p>`);
+    }
+
+    for (const w of result.Warnings ?? []) {
+        parts.push(`<p class="fieldDescription">${esc(w)}</p>`);
+    }
+
+    const failed = Boolean(result.RequestError) || (result.Errors ?? []).length > 0;
+    const shown = failed ? lastGood : result;
+    if (shown) {
+        parts.push(`<div class="tgj-tg${failed ? ' tgj-stale' : ''}">`
+            + (shown.Poster ? `<div class="tgj-tg-poster">${t(S, 'web.templates.poster')}</div>` : '')
+            + `<div class="tgj-tg-text">${previewHtml(shown.Html)}</div>${previewButtons(shown.Buttons)}</div>`);
+    }
+
+    if (!result.RequestError && (!failed || result.Length > 0)) {
+        parts.push(`<p class="fieldDescription">${t(S, 'web.templates.length', { length: formatNumber(result.Length ?? 0, lang), limit: formatNumber(result.Limit ?? 0, lang) })}</p>`);
+    }
+
+    return parts.join('');
+}
+
+/** Whether a validation result stops a test send: it had errors, or the request failed. */
+const validationFailed = result => Boolean(result && (result.RequestError || (result.Errors ?? []).length > 0));
+
+/** Whether Send test is off: no destination, the last validation failed, or a send or save is in flight. */
+export function templateTestBlocked(ui) {
+    return (ui.destinations ?? []).length === 0 || validationFailed(ui.result) || Boolean(ui.testing) || Boolean(ui.busy);
+}
+
+/**
+ * The Message templates section (spec §8.5): every message comes from a template, and this edits the one in use per
+ * event, with a live Telegram-like preview, a test send and a reset to the built-in template.
  * @param {object | null} dto the TemplatesDto
  * @param {Record<string, string>} S
  * @param {{ key?: string, forms?: Record<string, { local: object, changed: string[] }>, result?: object | null,
- *   busy?: boolean, lang?: string }} ui key is the selected event; result is the last validation of that key
+ *   good?: object | null, busy?: boolean, lang?: string, destinations?: { Id: string, Title: string }[],
+ *   testTo?: string, testing?: boolean, testResult?: string, resetAsk?: boolean }} ui key is the selected event;
+ *   result is its last validation, good the last one without errors; testResult is HTML
  * @returns {string} HTML
  */
 export function renderTemplates(dto, S, ui) {
@@ -944,46 +1156,52 @@ export function renderTemplates(dto, S, ui) {
         return '';
     }
 
+    const lang = ui.lang ?? 'en';
     const item = dto.Items.find(i => i.EventKey === ui.key) ?? dto.Items[0];
     const form = (ui.forms ?? {})[`tpl:${item.EventKey}`];
     const local = form ? form.local : templateFormData(item);
     const changed = path => (form && (form.changed ?? []).includes(path) ? ' tgj-changed' : '');
-    const options = dto.Items.map(i => `<option value="${esc(i.EventKey)}"${i === item ? ' selected' : ''}>${i.Enabled ? '● ' : ''}${esc(i.Label)}</option>`);
-    const parts = [`<h3>${t(S, 'web.templates.title')}</h3>`,
-        `<p class="fieldDescription">${t(S, 'web.templates.intro')} `
-        + `<a is="emby-linkbutton" href="${TEMPLATES_DOCS}" target="_blank" rel="noopener noreferrer">${t(S, 'web.templates.docs')}</a></p>`,
-        `<div class="selectContainer"><select is="emby-select" class="emby-select-withcolor emby-select" label="${t(S, 'web.templates.event')}" `
-        + `data-tgj-input="tplEvent">${options.join('')}</select></div>`];
+    const options = dto.Items.map(i => `<option value="${esc(i.EventKey)}"${i === item ? ' selected' : ''}>${i.Edited ? '● ' : ''}${esc(i.Label)}</option>`);
+    const parts = [`<h2 class="sectionTitle">${t(S, 'web.templates.title')}</h2>`,
+        `<p class="fieldDescription">${t(S, 'web.templates.intro')}</p>`,
+        `<div class="tgj-tpl-head"><div class="selectContainer"><select is="emby-select" class="emby-select-withcolor emby-select" `
+        + `label="${t(S, 'web.templates.event')}" data-tgj-input="tplEvent">${options.join('')}</select></div>`
+        + `<span class="tgj-badge">${item.Edited ? t(S, 'web.templates.edited') : t(S, 'web.templates.builtIn')}</span></div>`];
     if (item.Flag) {
-        // A truncated template was sent, only shortened; any other flag means the default message was sent instead.
+        // A truncated template was sent, only shortened; any other flag means the built-in template was sent instead.
         parts.push(item.Flag.Kind === 'truncated'
             ? `<p class="tgj-error">${t(S, 'web.templates.flagTruncated')}</p>`
             : `<p class="tgj-error">${t(S, 'web.templates.flagError')} ${esc(item.Flag.Error)}</p>`);
     }
 
-    if (item.Media) {
-        parts.push(`<p class="fieldDescription">${t(S, 'web.templates.digestNote')}</p>`);
-    }
-
-    parts.push(`<label class="emby-checkbox-label${changed('Enabled')}"><input is="emby-checkbox" type="checkbox" data-tgj-input="tplEnabled"`
-        + `${local.Enabled ? ' checked' : ''} /><span>${t(S, 'web.templates.enabled')}</span></label>`,
-        `<div class="${changed('Text').trim()}"><textarea class="tgj-template-text" data-tgj-input="tplText" rows="8" spellcheck="false" style="width:100%">${esc(local.Text)}</textarea></div>`);
     const rows = (item.Fields ?? []).map(f => `<tr><td><code>${esc(f.Name)}</code></td><td>${esc(f.Type)}</td>`
         + `<td>${f.Optional ? t(S, 'web.templates.optional') : ''}</td><td>${esc(f.Description)}</td></tr>`);
-    parts.push(`<details><summary>${t(S, 'web.templates.fields')}</summary><table class="tgj-template-fields">${rows.join('')}</table></details>`,
-        `<div>${button(t(S, 'web.templates.sample'), 'tplSample')}${button(t(S, 'web.templates.validate'), 'tplValidate', { disabled: ui.busy })}`
-        + `${button(t(S, 'web.templates.save'), 'tplSave', { primary: true, disabled: ui.busy })}</div>`);
+    parts.push(`<div class="tgj-tpl-grid"><div class="tgj-tpl-edit">`
+        + `<div class="${changed('Text').trim()}"><textarea id="tgj-tpl-text" class="tgj-template-text" data-tgj-input="tplText" rows="12" spellcheck="false">${esc(local.Text)}</textarea></div>`
+        + `<details><summary>${t(S, 'web.templates.fields')}</summary><table class="tgj-template-fields">${rows.join('')}</table></details>`
+        + `<p class="fieldDescription"><a is="emby-linkbutton" href="${TEMPLATES_DOCS}" target="_blank" rel="noopener noreferrer">${t(S, 'web.templates.docs')}</a></p></div>`
+        + `<div id="tgj-tpl-preview" class="tgj-tpl-preview">${renderTemplatePreview(ui.result ?? null, S, lang, ui.good ?? null)}</div></div>`);
 
-    const result = ui.result;
-    if (result) {
-        const lang = ui.lang ?? 'en';
-        const lines = (result.Errors ?? []).map(e => `<p class="tgj-error">${e.Line
-            ? t(S, 'web.templates.errorAt', { line: e.Line, column: e.Column ?? 0, message: e.Message })
-            : esc(e.Message)}</p>`);
-        const warnings = (result.Warnings ?? []).map(w => `<p class="fieldDescription">${esc(w)}</p>`);
-        parts.push(...lines, ...warnings,
-            `<p class="fieldDescription">${t(S, 'web.templates.length', { length: formatNumber(result.Length, lang), limit: formatNumber(result.Limit, lang) })}</p>`,
-            `<pre class="tgj-template-preview">${esc(result.Preview)}</pre>`);
+    const destinations = ui.destinations ?? [];
+    const chosen = destinations.some(d => d.Id === ui.testTo) ? ui.testTo : (destinations[0] ? destinations[0].Id : '');
+    const testDisabled = templateTestBlocked(ui);
+    const testButton = `<button ${BUTTON} id="tgj-tpl-test" class="raised emby-button" data-tgj-act="tplTest"${testDisabled ? ' disabled' : ''}>`
+        + `<span>${t(S, 'web.templates.test')}</span></button>`;
+    const target = destinations.length > 0
+        ? `<div class="selectContainer"><select is="emby-select" class="emby-select-withcolor emby-select" label="${t(S, 'web.templates.testTo')}" `
+          + `data-tgj-input="tplTestTo">${destinations.map(d => `<option value="${esc(d.Id)}"${d.Id === chosen ? ' selected' : ''}>${esc(d.Title)}</option>`).join('')}</select></div>`
+        : `<p class="fieldDescription">${t(S, 'web.templates.noDestinations')}</p>`;
+    parts.push(`<div class="tgj-tpl-test">${target}${testButton}`
+        + `${ui.testResult ? `<span class="tgj-tpl-test-result">${ui.testResult}</span>` : ''}</div>`,
+        `<p class="fieldDescription">${t(S, 'web.templates.testNote')}</p>`);
+
+    const save = button(t(S, 'web.templates.save'), 'tplSave', { primary: true, disabled: ui.busy });
+    if (item.Edited && ui.resetAsk) {
+        parts.push(`<div class="tgj-notice"><span class="tgj-notice-text">${t(S, 'web.templates.resetAsk')}</span>`
+            + `${button(t(S, 'web.templates.resetConfirm'), 'tplResetConfirm', { disabled: ui.busy })}${button(t(S, 'web.templates.resetCancel'), 'tplResetCancel')}</div>`,
+            `<div>${save}</div>`);
+    } else {
+        parts.push(`<div>${item.Edited ? button(t(S, 'web.templates.reset'), 'tplReset', { disabled: ui.busy }) : ''}${save}</div>`);
     }
 
     return `<div class="verticalSection">${parts.join('')}</div>`;
@@ -1067,10 +1285,17 @@ export default function TgJellyPage(view, params) {
             // Diagnostics: the text when the clipboard refused it, and whether the last copy worked.
             diagText: '',
             diagCopied: false,
-            // The template editor: the selected event key, the last validation per key, a request in flight.
+            // The templates section: the selected event key, the last validation and the last one without errors per
+            // key, a save or reset in flight, the test send's destination, in-flight flag and outcome (HTML), and the
+            // open reset question.
             tplKey: '',
             tplResults: {},
+            tplGood: {},
             tplBusy: false,
+            tplTestTo: '',
+            tplTesting: false,
+            tplTestResult: '',
+            tplResetAsk: false,
         },
     };
     const lang = () => document.documentElement.lang || 'en';
@@ -1084,6 +1309,9 @@ export default function TgJellyPage(view, params) {
     const typed = { token: '', proxyUsername: undefined, proxyPassword: undefined };
     // Section load errors (set by reloadSection), so a later good load can clear them without touching action errors.
     const loadErrors = new Set();
+    // The template preview: the newest Validate request's number (older replies are ignored), and the typing debounce.
+    let tplSeq = 0;
+    let tplTimer = null;
 
     /**
      * Sets a container's HTML unless it's the HTML last written there. It compares with its own copy, not with
@@ -1096,6 +1324,45 @@ export default function TgJellyPage(view, params) {
             el.innerHTML = html;
             rendered.set(id, html);
         }
+    };
+
+    /**
+     * Runs a write that may replace the template textarea. When the textarea has the focus, the new one gets it back with
+     * the same selection and scroll position, so a render while the admin types (a Destinations render, a revision sync)
+     * doesn't move the caret. The text itself is safe: it renders from the form state.
+     * @param {() => void} write
+     */
+    const keepTemplateCaret = write => {
+        const before = byId('tgj-tpl-text');
+        const doc = (before && before.ownerDocument) || globalThis.document;
+        if (!before || !doc || doc.activeElement !== before) {
+            write();
+            return;
+        }
+
+        const saved = {
+            start: before.selectionStart,
+            end: before.selectionEnd,
+            direction: before.selectionDirection || 'none',
+            top: before.scrollTop,
+            left: before.scrollLeft,
+        };
+        write();
+        const after = byId('tgj-tpl-text');
+        if (!after || after === before) {
+            return;
+        }
+
+        if (typeof after.focus === 'function') {
+            after.focus({ preventScroll: true });
+        }
+
+        if (typeof after.setSelectionRange === 'function' && typeof saved.start === 'number' && typeof saved.end === 'number') {
+            after.setSelectionRange(saved.start, saved.end, saved.direction);
+        }
+
+        after.scrollTop = saved.top;
+        after.scrollLeft = saved.left;
     };
 
     /** The error line for a section, or ''. */
@@ -1205,6 +1472,92 @@ export default function TgJellyPage(view, params) {
         return items.some(i => i.EventKey === state.ui.tplKey) ? state.ui.tplKey : (items[0] ? items[0].EventKey : '');
     };
 
+    /** The destination a test send goes to: the chosen one while it exists, else the first ('' when there is none). */
+    const templateTestTarget = () => {
+        const items = state.destinations ? state.destinations.Items : [];
+        return items.some(d => d.Id === state.ui.tplTestTo) ? state.ui.tplTestTo : (items[0] ? items[0].Id : '');
+    };
+
+    /** The templates section's view of the state. */
+    const templatesUi = () => {
+        const key = templateKey();
+        return {
+            key,
+            forms: state.forms,
+            result: state.ui.tplResults[key] ?? null,
+            good: state.ui.tplGood[key] ?? null,
+            busy: state.ui.tplBusy,
+            lang: lang(),
+            destinations: state.destinations ? state.destinations.Items : [],
+            testTo: templateTestTarget(),
+            testing: state.ui.tplTesting,
+            testResult: state.ui.tplTestResult,
+            resetAsk: state.ui.tplResetAsk,
+        };
+    };
+
+    /**
+     * Shows the selected template's last validation in the preview pane, and turns Send test on or off to match. Only
+     * the pane is replaced: the textarea keeps its focus and caret.
+     */
+    const showTemplatePreview = () => {
+        const ui = templatesUi();
+        const pane = byId('tgj-tpl-preview');
+        if (pane) {
+            pane.innerHTML = renderTemplatePreview(ui.result, state.strings, ui.lang, ui.good);
+            // The section on the page no longer matches the copy setHtml keeps, so its next render must write.
+            rendered.delete('tgj-templates');
+        }
+
+        const test = byId('tgj-tpl-test');
+        if (test) {
+            test.disabled = templateTestBlocked(ui);
+        }
+    };
+
+    /**
+     * Validates the selected template's current text and shows the result in the preview. Every request gets the next
+     * number; a reply that is not for the newest request is ignored, so a slow older reply can't overwrite a newer one.
+     */
+    const validateTemplate = async () => {
+        const key = templateKey();
+        const form = state.forms[`tpl:${key}`];
+        if (!key || !form) {
+            return;
+        }
+
+        const seq = ++tplSeq;
+        const S = state.strings;
+        let reply;
+        try {
+            const result = await api.post('Templates/Validate', { EventKey: key, Text: String(form.local.Text ?? '') });
+            reply = result.status === 200 && result.body ? result.body : { RequestError: requestError(S, result) };
+        } catch (err) {
+            reply = { RequestError: t(S, 'web.requestFailed', { reason: err && err.message }) };
+        }
+
+        if (seq !== tplSeq) {
+            return;
+        }
+
+        state.ui.tplResults[key] = reply;
+        if (!validationFailed(reply)) {
+            state.ui.tplGood[key] = reply;
+        }
+
+        if (key === templateKey()) {
+            showTemplatePreview();
+        }
+    };
+
+    /** Drops a pending debounced validation. */
+    const cancelTemplateTimer = () => {
+        if (tplTimer !== null) {
+            clearTimeout(tplTimer);
+            tplTimer = null;
+        }
+    };
+
     const sections = {
         status: {
             id: 'tgj-status',
@@ -1301,23 +1654,27 @@ export default function TgJellyPage(view, params) {
                 }
 
                 takeTemplates(result.body);
+                // Opening the section shows the preview of the template in use at once.
+                validateTemplate().catch(err => console.error('TgJelly: the template preview failed', err));
             },
-            render: () => renderTemplates(state.templates, state.strings, {
-                key: templateKey(),
-                forms: state.forms,
-                result: state.ui.tplResults[templateKey()] ?? null,
-                busy: state.ui.tplBusy,
-                lang: lang(),
-            }),
+            render: () => renderTemplates(state.templates, state.strings, templatesUi()),
         },
     };
 
     const renderSection = name => {
         const section = sections[name];
-        setHtml(section.id, section.render() + sectionError(name));
+        const write = () => setHtml(section.id, section.render() + sectionError(name));
+        if (name === 'templates') {
+            keepTemplateCaret(write);
+        } else {
+            write();
+        }
+
         if (name === 'destinations') {
-            // The manual block shows the same data (detected chats, the gate), so it follows every Destinations render.
+            // The manual block shows the same data (detected chats, the gate), so it follows every Destinations render;
+            // the templates section lists the destinations for its test send.
             renderSection('manual');
+            renderSection('templates');
         }
 
         if (name === 'proxy' || name === 'connect') {
@@ -1938,37 +2295,6 @@ export default function TgJellyPage(view, params) {
 
             return undefined;
         }),
-        tplSample: () => {
-            const key = templateKey();
-            const item = state.templates && state.templates.Items.find(i => i.EventKey === key);
-            if (item) {
-                markDirty(`tpl:${key}`, 'Text', sampleTemplate(item.Fields));
-                renderSection('templates');
-            }
-        },
-        tplValidate: () => runAction('templates', async () => {
-            const key = templateKey();
-            const form = state.forms[`tpl:${key}`];
-            if (!form) {
-                return undefined;
-            }
-
-            state.ui.tplBusy = true;
-            renderSection('templates');
-            let result;
-            try {
-                result = await api.post('Templates/Validate', { EventKey: key, Text: String(form.local.Text ?? '') });
-            } finally {
-                state.ui.tplBusy = false;
-            }
-
-            if (result.status !== 200 || !result.body) {
-                return result;
-            }
-
-            state.ui.tplResults[key] = result.body;
-            return undefined;
-        }),
         tplSave: () => runAction('templates', async () => {
             const key = templateKey();
             const name = `tpl:${key}`;
@@ -1983,7 +2309,7 @@ export default function TgJellyPage(view, params) {
             let result;
             try {
                 result = await api.put(`Templates/${encodeURIComponent(key)}`,
-                    { ExpectedRevision: state.templates.Revision, Enabled: Boolean(form.local.Enabled), Text: String(form.local.Text ?? '') });
+                    { ExpectedRevision: state.templates.Revision, Text: String(form.local.Text ?? '') });
             } finally {
                 state.ui.tplBusy = false;
             }
@@ -1991,7 +2317,6 @@ export default function TgJellyPage(view, params) {
             if (result.status === 200 && result.body) {
                 // Saved: this key starts over from the server's data; other keys keep their unsaved text.
                 delete state.forms[name];
-                delete state.ui.tplResults[key];
                 takeTemplates(result.body);
                 return undefined;
             }
@@ -2008,6 +2333,84 @@ export default function TgJellyPage(view, params) {
             }
 
             return result;
+        }),
+        // Reset asks first, inline: Reset or Cancel.
+        tplReset: () => {
+            state.ui.tplResetAsk = true;
+            renderSection('templates');
+        },
+        tplResetCancel: () => {
+            state.ui.tplResetAsk = false;
+            renderSection('templates');
+        },
+        tplResetConfirm: () => runAction('templates', async () => {
+            const key = templateKey();
+            const name = `tpl:${key}`;
+            if (!state.templates) {
+                return undefined;
+            }
+
+            const S = state.strings;
+            state.ui.tplBusy = true;
+            renderSection('templates');
+            let result;
+            try {
+                result = await api.del(`Templates/${encodeURIComponent(key)}?expectedRevision=${state.templates.Revision}`);
+            } finally {
+                state.ui.tplBusy = false;
+                state.ui.tplResetAsk = false;
+            }
+
+            if (result.status === 200 && result.body) {
+                // The edits are gone: the form starts over from the built-in text, and the preview follows it.
+                cancelTemplateTimer();
+                delete state.forms[name];
+                takeTemplates(result.body);
+                validateTemplate().catch(err => console.error('TgJelly: the template preview failed', err));
+                return undefined;
+            }
+
+            if (result.status === 409 && result.body && result.body.Current) {
+                takeTemplates(result.body.Current);
+                state.ui.errors.templates = t(S, 'web.templates.conflict');
+                return undefined;
+            }
+
+            return result;
+        }),
+        // Sends the typed text, rendered with sample values, to the chosen destination; the outcome shows by the button.
+        tplTest: () => runAction('templates', async () => {
+            const key = templateKey();
+            const form = state.forms[`tpl:${key}`];
+            const target = templateTestTarget();
+            if (!form || !target) {
+                return undefined;
+            }
+
+            const S = state.strings;
+            state.ui.tplTesting = true;
+            state.ui.tplTestResult = '';
+            renderSection('templates');
+            let result;
+            try {
+                result = await api.post('Templates/Test', { EventKey: key, Text: String(form.local.Text ?? ''), DestinationId: target });
+            } finally {
+                state.ui.tplTesting = false;
+            }
+
+            if (result.status !== 200 || !result.body) {
+                state.ui.tplTestResult = requestError(S, result);
+                return undefined;
+            }
+
+            const reply = result.body;
+            const health = reply.Health;
+            state.ui.tplTestResult = reply.Sent
+                ? t(S, 'web.templates.sent')
+                : (reply.Error ? esc(reply.Error) : t(S, `dest.health.${health && health.Status ? health.Status : 'Ok'}`));
+            // The send may have changed the destination's health.
+            await reloadSection('destinations', { fresh: true });
+            return undefined;
         }),
     };
 
@@ -2116,14 +2519,29 @@ export default function TgJellyPage(view, params) {
                 markDirty('settings', 'UpdateCheck.Mode', el.value);
             }
         },
-        // The textarea and checkbox only record the edit: re-rendering would move the caret.
-        tplText: el => markDirty(`tpl:${templateKey()}`, 'Text', String(el.value ?? '')),
-        tplEnabled: el => markDirty(`tpl:${templateKey()}`, 'Enabled', Boolean(el.checked)),
+        // Typing only records the edit and, after a pause, refreshes the preview pane: re-rendering would move the caret.
+        tplText: (el, event) => {
+            markDirty(`tpl:${templateKey()}`, 'Text', String(el.value ?? ''));
+            if (event.type === 'input') {
+                cancelTemplateTimer();
+                tplTimer = setTimeout(() => {
+                    tplTimer = null;
+                    validateTemplate().catch(err => console.error('TgJelly: the template preview failed', err));
+                }, PREVIEW_DEBOUNCE_MS);
+            }
+        },
         tplEvent: el => {
             if (state.templates && state.templates.Items.some(i => i.EventKey === el.value)) {
-                state.ui.tplKey = el.value;
+                cancelTemplateTimer();
+                Object.assign(state.ui, { tplKey: el.value, tplResetAsk: false, tplTestResult: '' });
                 renderSection('templates');
+                return validateTemplate();
             }
+
+            return undefined;
+        },
+        tplTestTo: el => {
+            state.ui.tplTestTo = String(el.value ?? '');
         },
     };
 
@@ -2206,6 +2624,7 @@ export default function TgJellyPage(view, params) {
     const hide = () => {
         visible = false;
         stopPolling();
+        cancelTemplateTimer();
     };
 
     /** Finds the handler for an event through the target's closest [attribute]; null when there is none. */
@@ -2247,6 +2666,14 @@ export default function TgJellyPage(view, params) {
     };
     view.addEventListener('change', onInput);
     view.addEventListener('input', onInput);
+
+    // A spoiler in the template preview is revealed (and hidden again) on click, as in Telegram.
+    view.addEventListener('click', event => {
+        const spoiler = event.target && event.target.closest ? event.target.closest('.tgj-spoiler') : null;
+        if (spoiler) {
+            spoiler.classList.toggle('tgj-revealed');
+        }
+    });
 
     return { api, state, sections, actions, inputs, reloadSection, runAction, syncForm, markDirty, resetForm };
 }

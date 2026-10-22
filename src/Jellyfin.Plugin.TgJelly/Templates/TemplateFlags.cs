@@ -8,8 +8,8 @@ using Jellyfin.Plugin.TgJelly.State.Documents;
 namespace Jellyfin.Plugin.TgJelly.Templates;
 
 /// <summary>
-/// Remembers which custom templates had a problem at send time (spec §8.5). A flag counts only while the template is
-/// enabled and its text is the one that was flagged.
+/// Remembers which custom templates had a problem at send time (spec §8.5). A flag counts only while the override exists
+/// and its text is the one that was flagged.
 /// </summary>
 public sealed class TemplateFlags
 {
@@ -66,7 +66,7 @@ public sealed class TemplateFlags
     /// Returns a template's flag while it still applies.
     /// </summary>
     /// <param name="eventKey">The event key.</param>
-    /// <returns>The flag, or <c>null</c> when none is stored, the template is disabled, or its text changed.</returns>
+    /// <returns>The flag, or <c>null</c> when none is stored, the override is gone, or its text changed.</returns>
     public TemplateFlag? Current(string eventKey)
     {
         var flag = _state.Read(s => s.Status.TemplateFlags.TryGetValue(eventKey, out var f)
@@ -78,7 +78,7 @@ public sealed class TemplateFlags
         }
 
         var template = _settings.Current.Templates.FirstOrDefault(t => string.Equals(t.EventKey, eventKey, StringComparison.Ordinal));
-        return template is { Enabled: true } && TemplateText.Hash(template.Text) == flag.TextHash ? flag : null;
+        return template is not null && TemplateText.Hash(template.Text) == flag.TextHash ? flag : null;
     }
 
     /// <summary>

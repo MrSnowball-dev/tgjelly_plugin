@@ -63,8 +63,8 @@ public class WebPagesTests
         var html = ReadResource("Jellyfin.Plugin.TgJelly.Web.tgjelly.html");
         string[] ids =
         [
-            "tgj-status", "tgj-connect", "tgj-bot", "tgj-destinations", "tgj-messages", "tgj-advanced", "tgj-advanced-title",
-            "tgj-proxy", "tgj-batching", "tgj-updates", "tgj-templates", "tgj-manual", "tgj-diagnostics",
+            "tgj-status", "tgj-connect", "tgj-bot", "tgj-destinations", "tgj-messages", "tgj-templates", "tgj-advanced", "tgj-advanced-title",
+            "tgj-proxy", "tgj-batching", "tgj-updates", "tgj-manual", "tgj-diagnostics",
         ];
 
         var positions = ids.Select(id => html.IndexOf("id=\"" + id + "\"", StringComparison.Ordinal)).ToList();

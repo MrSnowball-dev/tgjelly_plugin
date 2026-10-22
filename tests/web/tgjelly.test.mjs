@@ -3,14 +3,14 @@ import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import page, * as m from '../../src/Jellyfin.Plugin.TgJelly/Web/tgjelly.js';
-import { makeView, makeApiClient, fakeTimers, flush, clickOn, dispatchOn } from './fake-view.mjs';
+import { makeView, makeApiClient, makeResponse, fakeTimers, flush, clickOn, dispatchOn } from './fake-view.mjs';
 
 const SOURCE = readFileSync(new URL('../../src/Jellyfin.Plugin.TgJelly/Web/tgjelly.js', import.meta.url), 'utf8');
 const EN = JSON.parse(readFileSync(new URL('../../src/Jellyfin.Plugin.TgJelly/Strings/en.json', import.meta.url), 'utf8'));
 
 const IDS = [
     'tgj-status', 'tgj-connect', 'tgj-bot', 'tgj-destinations', 'tgj-messages', 'tgj-demo', 'tgj-advanced', 'tgj-advanced-title',
-    'tgj-proxy', 'tgj-batching', 'tgj-updates', 'tgj-templates', 'tgj-manual', 'tgj-diagnostics',
+    'tgj-proxy', 'tgj-batching', 'tgj-updates', 'tgj-templates', 'tgj-tpl-preview', 'tgj-manual', 'tgj-diagnostics',
 ];
 
 function status(overrides = {}) {
@@ -98,7 +98,7 @@ function destinations(overrides = {}) {
 }
 
 const saved = {};
-for (const name of ['window', 'document', 'setInterval', 'clearInterval']) {
+for (const name of ['window', 'document', 'setInterval', 'clearInterval', 'setTimeout', 'clearTimeout']) {
     saved[name] = Object.getOwnPropertyDescriptor(globalThis, name);
 }
 
@@ -129,6 +129,8 @@ function mount(routes = {}) {
     globalThis.document = doc;
     globalThis.setInterval = timers.setInterval;
     globalThis.clearInterval = timers.clearInterval;
+    globalThis.setTimeout = timers.setTimeout;
+    globalThis.clearTimeout = timers.clearTimeout;
 
     const view = makeView(IDS);
     view.elements.get('tgj-advanced').hidden = true; // as in the HTML, until the strings load
@@ -1484,18 +1486,20 @@ test('copy diagnostics falls back to a textarea when clipboard rejects', async (
     assert.equal(selected, 1);
 });
 
-// --- template editor (Task 12) ---
+// --- message templates (Plan 7 Task 8) ---
 
 function templates(overrides = {}) {
     return {
         Revision: 4,
         Items: [
             {
-                EventKey: 'movie.added', Label: 'Movie added', Media: false, Enabled: false, Text: '', SampleFull: '', SampleSparse: '', Flag: null,
+                EventKey: 'movie.added', Label: 'Movie added', Media: true, Text: '<b>{{ title }}</b>', BuiltIn: '<b>{{ title }}</b>', Edited: false,
+                SampleFull: {}, SampleSparse: {}, Flag: null,
                 Fields: [{ Name: 'title', Type: 'string', Description: 'The <title>.', Optional: false }, { Name: 'year', Type: 'number', Description: 'The year.', Optional: true }],
             },
             {
-                EventKey: 'media.digest', Label: 'Digest', Media: true, Enabled: true, Text: 'Hi {{ title }}', SampleFull: '', SampleSparse: '',
+                EventKey: 'media.digest', Label: 'Digest', Media: false, Text: 'Hi {{ title }}', BuiltIn: 'Digest {{ count }}', Edited: true,
+                SampleFull: {}, SampleSparse: {},
                 Flag: { Kind: 'error', Error: 'bad <tag>', At: '2026-10-20T10:00:00Z' },
                 Fields: [{ Name: 'title', Type: 'string', Description: 'T', Optional: false }],
             },
@@ -1504,61 +1508,251 @@ function templates(overrides = {}) {
     };
 }
 
+/** A Validate reply: no errors unless given, Telegram HTML in Html. */
+function validation(overrides = {}) {
+    return { Errors: [], Warnings: [], Preview: '', Length: 10, Limit: 1024, Html: 'ok', Caption: true, Poster: true, Buttons: [], ...overrides };
+}
+
 const tplInput = (view, name, extra, type = 'input') => dispatchOn(view, type, { 'data-tgj-input': name }, extra);
+const tplUi = (overrides = {}) => ({ key: 'movie.added', forms: {}, result: null, good: null, destinations: [{ Id: 'd1', Title: 'Family' }], ...overrides });
 
-test('preview is escaped, not markup', async () => {
-    const { view, el } = mount({
-        'GET TgJelly/Templates': templates(),
-        'POST TgJelly/Templates/Validate': { Errors: [], Warnings: [], Preview: '<b onclick=x>hi</b>', Length: 19, Limit: 4096 },
-    });
-    await show(view);
-    await click(view, 'tplValidate');
-    const html = el('tgj-templates').innerHTML;
-    assert.ok(html.includes('<pre class="tgj-template-preview">&lt;b onclick=x&gt;hi&lt;/b&gt;</pre>'), html);
-    assert.ok(!html.includes('<b onclick'));
-    assert.ok(html.includes('19 / 4,096'));
+test('previewHtml_keepsWhitelist', () => {
+    assert.equal(m.previewHtml('<b>a</b><i>b</i>'), '<b>a</b><i>b</i>');
+    assert.equal(m.previewHtml('<strong>a</strong><em>b</em><u>c</u><ins>d</ins><s>e</s><strike>f</strike><del>g</del><code>h</code><pre>i</pre>'),
+        '<strong>a</strong><em>b</em><u>c</u><ins>d</ins><s>e</s><strike>f</strike><del>g</del><code>h</code><pre>i</pre>');
+    assert.equal(m.previewHtml('<pre><code class="language-js">x</code></pre>'), '<pre><code>x</code></pre>');
+    assert.equal(m.previewHtml('<tg-spoiler>a</tg-spoiler><span class="tg-spoiler">b</span>'),
+        '<span class="tgj-spoiler">a</span><span class="tgj-spoiler">b</span>');
+    assert.equal(m.previewHtml('<blockquote>q</blockquote>'), '<blockquote>q</blockquote>');
+    assert.equal(m.previewHtml('<a href="https://example.com/?a=1&amp;b=2">x</a>'),
+        '<a target="_blank" rel="noopener noreferrer" href="https://example.com/?a=1&amp;b=2">x</a>');
+    assert.equal(m.previewHtml('<a href=" TG://user?id=1 ">x</a>'), '<a target="_blank" rel="noopener noreferrer" href="TG://user?id=1">x</a>');
+    assert.equal(m.previewHtml('<tg-emoji emoji-id="5368324170671202286">👍</tg-emoji>'), '👍');
+    assert.equal(m.previewHtml('a &lt;b&gt; &amp;amp; &#65;&#x42; &quot;'), 'a &lt;b&gt; &amp;amp; AB &quot;');
 });
 
-test('errors show line and column', async () => {
-    const { view, el } = mount({
-        'GET TgJelly/Templates': templates(),
-        'POST TgJelly/Templates/Validate': {
-            Errors: [{ Message: 'Unexpected <end>', Line: 2, Column: 7 }, { Message: 'No position' }],
-            Warnings: ['careful & slow'], Preview: '', Length: 0, Limit: 4096,
-        },
-    });
-    await show(view);
-    await click(view, 'tplValidate');
-    const html = el('tgj-templates').innerHTML;
+test('previewHtml_neutralizesUnsafeMarkup', () => {
+    const link = m.previewHtml('<a href="javascript:alert(1)">x</a>');
+    assert.ok(!link.includes('href'), link);
+    assert.ok(link.includes('x'));
+    assert.equal(link, 'x');
+    for (const href of ['JavaScript:alert(1)', 'javascript&#58;alert(1)', ' data:text/html,x', 'vbscript:x', '//evil.example', '"><script>']) {
+        assert.ok(!m.previewHtml(`<a href="${href}">x</a>`).includes('href'), href);
+    }
+
+    const img = m.previewHtml('<img src=x onerror=alert(1)>');
+    assert.ok(img.startsWith('&lt;img'), img);
+    assert.ok(!img.includes('<img'));
+    assert.equal(m.previewHtml('<b onclick="x">y</b>'), '<b>y</b>');
+    assert.equal(m.previewHtml('<b>unclosed'), '&lt;b&gt;unclosed');
+    assert.equal(m.previewHtml('stray</b>'), 'stray&lt;/b&gt;');
+    assert.equal(m.previewHtml('<script>alert(1)</script>'), '&lt;script&gt;alert(1)&lt;/script&gt;');
+    assert.equal(m.previewHtml('<span style="color:red">r</span>'), 'r');
+    assert.equal(m.previewHtml('<a href="https://x.example" onclick="y" style="z">l</a>'),
+        '<a target="_blank" rel="noopener noreferrer" href="https://x.example">l</a>');
+    // Mis-nested: the inner tag never closes inside the outer one, so it and the stray close are text.
+    assert.equal(m.previewHtml('<b><i>x</b></i>'), '<b>&lt;i&gt;x</b>&lt;/i&gt;');
+    assert.equal(m.previewHtml('a < b > c'), 'a &lt; b &gt; c');
+    assert.equal(m.previewHtml('<a href="https://x.example/&quot;onmouseover=&quot;y">l</a>'),
+        '<a target="_blank" rel="noopener noreferrer" href="https://x.example/&quot;onmouseover=&quot;y">l</a>');
+    assert.equal(m.previewHtml(null), '');
+});
+
+test('previewHtml_expandableQuote_isDetails', () => {
+    assert.equal(m.previewHtml('<blockquote expandable>First line\nsecond <b>bold</b>\nthird</blockquote>'),
+        '<details class="tgj-quote"><summary>First line</summary>second <b>bold</b>\nthird</details>');
+    assert.equal(m.previewHtml('<blockquote expandable>one line</blockquote>'),
+        '<details class="tgj-quote"><summary>one line</summary></details>');
+});
+
+test('previewHtml_tgTime_showsFallbackText', () => {
+    assert.equal(m.previewHtml('At <tg-time unix="1700000000" format="t">20:00</tg-time>.'), 'At 20:00.');
+});
+
+test('renderTemplates_builtInBadge_noResetButton', () => {
+    const html = m.renderTemplates(templates(), EN, tplUi());
+    assert.ok(html.includes(`<span class="tgj-badge">${m.t(EN, 'web.templates.builtIn')}</span>`), html);
+    assert.ok(!html.includes(m.t(EN, 'web.templates.edited')));
+    assert.ok(!html.includes('data-tgj-act="tplReset"'));
+    assert.ok(html.includes('data-tgj-act="tplSave"'));
+    assert.ok(html.includes(`<h2 class="sectionTitle">${m.t(EN, 'web.templates.title')}</h2>`));
+    // The select lists every event, the edited one marked.
+    assert.ok(html.includes('<option value="movie.added" selected>Movie added</option>'), html);
+    assert.ok(html.includes('<option value="media.digest">● Digest</option>'), html);
+});
+
+test('renderTemplates_editedBadge_resetAsksInline', () => {
+    const html = m.renderTemplates(templates(), EN, tplUi({ key: 'media.digest' }));
+    assert.ok(html.includes(`<span class="tgj-badge">${m.t(EN, 'web.templates.edited')}</span>`), html);
+    assert.ok(html.includes('data-tgj-act="tplReset"'));
+    assert.ok(!html.includes('data-tgj-act="tplResetConfirm"'));
+
+    const asking = m.renderTemplates(templates(), EN, tplUi({ key: 'media.digest', resetAsk: true }));
+    assert.ok(asking.includes(m.t(EN, 'web.templates.resetAsk')));
+    assert.ok(asking.includes('data-tgj-act="tplResetConfirm"') && asking.includes('data-tgj-act="tplResetCancel"'));
+    assert.ok(!asking.includes('data-tgj-act="tplReset"'));
+});
+
+test('renderTemplates_noEnabledCheckbox', () => {
+    const html = m.renderTemplates(templates(), EN, tplUi());
+    assert.ok(!html.includes('type="checkbox"'));
+    assert.ok(!html.includes('tplEnabled') && !html.includes('tplSample') && !html.includes('tplValidate'));
+    assert.ok(!('web.templates.enabled' in EN) && !('web.templates.digestNote' in EN));
+});
+
+test('renderTemplates_gridHasPreviewPane', () => {
+    const good = validation({ Html: '<b>Dune</b>' });
+    const html = m.renderTemplates(templates(), EN, tplUi({ result: good, good }));
+    const grid = html.indexOf('<div class="tgj-tpl-grid">');
+    const textarea = html.indexOf('<textarea');
+    const fields = html.indexOf(`<summary>${m.t(EN, 'web.templates.fields')}</summary>`);
+    const pane = html.indexOf('<div id="tgj-tpl-preview"');
+    assert.ok(grid >= 0 && grid < textarea && textarea < fields && fields < pane, html);
+    assert.ok(html.includes('>&lt;b&gt;{{ title }}&lt;/b&gt;</textarea>'));
+    assert.ok(html.slice(pane).includes('<b>Dune</b>'));
+    assert.ok(html.includes(m.t(EN, 'web.templates.testNote')));
+    assert.ok(html.includes('<option value="d1" selected>Family</option>'), html);
+    assert.equal(m.t(EN, 'web.templates.testNote'), 'The test message goes to that chat for real, and its members see it.');
+});
+
+test('renderTemplatePreview_posterPlaceholderAndButtons', () => {
+    const html = m.renderTemplatePreview(validation({
+        Html: 'Dune <i>2021</i>', Length: 9, Limit: 1024,
+        Buttons: [[{ Text: 'Open <x>', Url: 'https://jf.example/web/' }], [{ Text: 'IMDb', Url: 'javascript:alert(1)' }, { Text: 'TMDB', Url: 'https://tmdb.example' }]],
+    }), EN, 'en');
+    assert.ok(html.includes('class="tgj-tg-poster"'), html);
+    assert.ok(html.includes('Dune <i>2021</i>'));
+    assert.equal((html.match(/class="tgj-tg-row"/g) ?? []).length, 2);
+    assert.ok(html.includes('href="https://jf.example/web/"') && html.includes('Open &lt;x&gt;'));
+    assert.ok(!html.includes('javascript:'));
+    assert.ok(html.includes('IMDb'));
+    assert.ok(html.includes('9 / 1,024'));
+
+    const plain = m.renderTemplatePreview(validation({ Poster: false, Html: 'x' }), EN, 'en');
+    assert.ok(!plain.includes('tgj-tg-poster'));
+    assert.equal(m.renderTemplatePreview(null, EN, 'en'), '');
+});
+
+test('renderTemplatePreview_errorsDimLastGood', () => {
+    const good = validation({ Html: '<b>last good</b>' });
+    const bad = validation({ Errors: [{ Message: 'Unexpected <end>', Line: 2, Column: 7 }, { Message: 'No position' }], Warnings: ['careful & slow'], Html: '', Length: 0 });
+    const html = m.renderTemplatePreview(bad, EN, 'en', good);
     assert.ok(html.includes('line 2, column 7: Unexpected &lt;end&gt;'), html);
-    assert.ok(html.includes('No position'));
-    assert.ok(html.includes('careful &amp; slow'));
+    assert.ok(html.includes('No position') && html.includes('careful &amp; slow'));
+    assert.ok(/class="tgj-tg[^"]*tgj-stale/.test(html), html);
+    assert.ok(html.includes('<b>last good</b>'));
+
+    const fresh = m.renderTemplatePreview(good, EN, 'en', good);
+    assert.ok(!fresh.includes('tgj-stale'));
 });
 
-test('validate sends the selected key and typed text', async () => {
-    const { view, api } = mount({
-        'GET TgJelly/Templates': templates(),
-        'POST TgJelly/Templates/Validate': { Errors: [], Warnings: [], Preview: '', Length: 0, Limit: 4096 },
-    });
+test('sendTest_disabledWithErrors', () => {
+    const testButton = html => /<button[^>]*data-tgj-act="tplTest"[^>]*>/.exec(html)[0];
+    const bad = validation({ Errors: [{ Message: 'x' }] });
+    assert.ok(testButton(m.renderTemplates(templates(), EN, tplUi({ result: bad }))).includes(' disabled'));
+    assert.ok(!testButton(m.renderTemplates(templates(), EN, tplUi({ result: validation() }))).includes(' disabled'));
+    assert.ok(testButton(m.renderTemplates(templates(), EN, tplUi({ result: validation(), testing: true }))).includes(' disabled'));
+    const none = m.renderTemplates(templates(), EN, tplUi({ result: validation(), destinations: [] }));
+    assert.ok(testButton(none).includes(' disabled'));
+});
+
+/** Holds every Validate request until the test resolves it; other requests go to the routes. */
+function holdValidate(api) {
+    const held = [];
+    const original = api.fetch;
+    api.fetch = request => (request.url.endsWith('/Templates/Validate')
+        ? new Promise(resolve => held.push({ body: JSON.parse(request.data), reply: body => resolve(makeResponse(200, body)) }))
+        : original(request));
+    return held;
+}
+
+test('opening the section validates the selected template at once', async () => {
+    const { view, api, el } = mount({ 'GET TgJelly/Templates': templates(), 'POST TgJelly/Templates/Validate': validation({ Html: '<b>Dune</b>' }) });
     await show(view);
-    tplInput(view, 'tplText', { value: '{{ title }}' });
-    await click(view, 'tplValidate');
-    assert.deepEqual(posted(api, 'Templates/Validate'), [{ EventKey: 'movie.added', Text: '{{ title }}' }]);
+    assert.deepEqual(posted(api, 'Templates/Validate'), [{ EventKey: 'movie.added', Text: '<b>{{ title }}</b>' }]);
+    assert.ok(el('tgj-templates').innerHTML.includes('<b>Dune</b>'));
 });
 
-test('save sends revision', async () => {
+test('preview_ignoresStaleResponse', async () => {
+    const { view, api, el, timers } = mount({ 'GET TgJelly/Templates': templates() });
+    const held = holdValidate(api);
+    await show(view);
+    assert.equal(held.length, 1);
+
+    tplInput(view, 'tplText', { value: 'newer {{ title }}' });
+    await flush();
+    assert.deepEqual(timers.timeouts(), [500]);
+    timers.runTimeouts();
+    await flush();
+    assert.equal(held.length, 2);
+    assert.deepEqual(held[1].body, { EventKey: 'movie.added', Text: 'newer {{ title }}' });
+
+    held[1].reply(validation({ Html: 'NEWER' }));
+    await flush();
+    held[0].reply(validation({ Html: 'OLDER' }));
+    await flush();
+    const pane = el('tgj-tpl-preview').innerHTML;
+    assert.ok(pane.includes('NEWER'), pane);
+    assert.ok(!pane.includes('OLDER'));
+});
+
+test('typing_doesNotRerenderTextarea', async () => {
+    const { view, el, timers } = mount({ 'GET TgJelly/Templates': templates(), 'POST TgJelly/Templates/Validate': validation({ Html: 'typed' }) });
+    await show(view);
+    const before = el('tgj-templates').writes;
+    const previewBefore = el('tgj-tpl-preview').writes;
+    tplInput(view, 'tplText', { value: 'abc' });
+    tplInput(view, 'tplText', { value: 'abcd' });
+    await flush();
+    assert.deepEqual(timers.timeouts(), [500], 'one debounce, restarted');
+    timers.runTimeouts();
+    await flush();
+    assert.equal(el('tgj-templates').writes, before, 'the section, and so the textarea, is not written again');
+    assert.equal(el('tgj-tpl-preview').writes, previewBefore + 1, 'only the preview pane is replaced');
+    assert.ok(el('tgj-tpl-preview').innerHTML.includes('typed'));
+});
+
+test('a validate failure shows in the preview and keeps the last good preview, dimmed', async () => {
+    let reply = validation({ Html: 'good one' });
+    const { view, el, timers } = mount({ 'GET TgJelly/Templates': templates(), 'POST TgJelly/Templates/Validate': () => reply });
+    await show(view);
+    reply = validation({ Errors: [{ Message: 'Unexpected end', Line: 1, Column: 3 }], Html: '' });
+    tplInput(view, 'tplText', { value: '{{' });
+    await flush();
+    timers.runTimeouts();
+    await flush();
+    const pane = el('tgj-tpl-preview').innerHTML;
+    assert.ok(pane.includes('line 1, column 3: Unexpected end'), pane);
+    assert.ok(pane.includes('tgj-stale') && pane.includes('good one'));
+});
+
+test('switching events keeps unsaved text, validates at once and drops the pending debounce', async () => {
+    const { view, el, api, timers } = mount({ 'GET TgJelly/Templates': templates(), 'POST TgJelly/Templates/Validate': validation() });
+    await show(view);
+    tplInput(view, 'tplText', { value: 'draft one' });
+    tplInput(view, 'tplEvent', { value: 'media.digest' }, 'change');
+    await flush();
+    assert.deepEqual(timers.timeouts(), []);
+    assert.ok(el('tgj-templates').innerHTML.includes('>Hi {{ title }}</textarea>'));
+    assert.deepEqual(posted(api, 'Templates/Validate').at(-1), { EventKey: 'media.digest', Text: 'Hi {{ title }}' });
+    tplInput(view, 'tplEvent', { value: 'movie.added' }, 'change');
+    await flush();
+    assert.ok(el('tgj-templates').innerHTML.includes('>draft one</textarea>'));
+});
+
+test('save sends the revision and the text', async () => {
     const { view, api } = mount({
         'GET TgJelly/Templates': templates(),
+        'POST TgJelly/Templates/Validate': validation(),
         'PUT TgJelly/Templates/movie.added': templates({ Revision: 5 }),
     });
     await show(view);
-    tplInput(view, 'tplEnabled', { checked: true }, 'change');
     tplInput(view, 'tplText', { value: 'New {{ title }}' });
     await flush();
     await click(view, 'tplSave');
     const put = api.calls.find(c => c.type === 'PUT');
     assert.equal(put.url, '/jf/TgJelly/Templates/movie.added');
-    assert.deepEqual(JSON.parse(put.data), { ExpectedRevision: 4, Enabled: true, Text: 'New {{ title }}' });
+    assert.deepEqual(JSON.parse(put.data), { ExpectedRevision: 4, Text: 'New {{ title }}' });
 });
 
 test('409 keeps typed text', async () => {
@@ -1566,6 +1760,7 @@ test('409 keeps typed text', async () => {
     fresh.Items[0].Text = 'theirs';
     const { view, el, hooks } = mount({
         'GET TgJelly/Templates': templates(),
+        'POST TgJelly/Templates/Validate': validation(),
         'PUT TgJelly/Templates/movie.added': { status: 409, body: { Current: fresh } },
     });
     await show(view);
@@ -1578,26 +1773,71 @@ test('409 keeps typed text', async () => {
     assert.equal(hooks.state.forms['tpl:movie.added'].dirty, true);
 });
 
-test('typing keeps other keys unsaved text when switching', async () => {
-    const { view, el } = mount({ 'GET TgJelly/Templates': templates() });
+test('reset asks inline, cancel keeps the template, confirm sends DELETE with the revision', async () => {
+    const after = templates({ Revision: 5 });
+    after.Items[1] = { ...after.Items[1], Text: 'Digest {{ count }}', Edited: false, Flag: null };
+    const { view, el, api } = mount({
+        'GET TgJelly/Templates': templates(),
+        'POST TgJelly/Templates/Validate': validation(),
+        'DELETE TgJelly/Templates/media.digest': after,
+    });
     await show(view);
-    tplInput(view, 'tplText', { value: 'draft one' });
     tplInput(view, 'tplEvent', { value: 'media.digest' }, 'change');
     await flush();
-    assert.ok(el('tgj-templates').innerHTML.includes('>Hi {{ title }}</textarea>'));
-    tplInput(view, 'tplEvent', { value: 'movie.added' }, 'change');
-    await flush();
-    assert.ok(el('tgj-templates').innerHTML.includes('>draft one</textarea>'));
+    await click(view, 'tplReset');
+    assert.ok(el('tgj-templates').innerHTML.includes(m.t(EN, 'web.templates.resetAsk')));
+    await click(view, 'tplResetCancel');
+    assert.ok(!el('tgj-templates').innerHTML.includes(m.t(EN, 'web.templates.resetAsk')));
+    assert.ok(!api.calls.some(c => c.type === 'DELETE'));
+
+    await click(view, 'tplReset');
+    await click(view, 'tplResetConfirm');
+    const del = api.calls.find(c => c.type === 'DELETE');
+    assert.equal(del.url, '/jf/TgJelly/Templates/media.digest?expectedRevision=4');
+    const html = el('tgj-templates').innerHTML;
+    assert.ok(html.includes('>Digest {{ count }}</textarea>'), html);
+    assert.ok(html.includes(`<span class="tgj-badge">${m.t(EN, 'web.templates.builtIn')}</span>`));
+    assert.ok(!html.includes(m.t(EN, 'web.templates.resetAsk')));
+    assert.deepEqual(posted(api, 'Templates/Validate').at(-1), { EventKey: 'media.digest', Text: 'Digest {{ count }}' });
 });
 
-test('typing in the textarea does not re-render it', async () => {
-    const { view, el } = mount({ 'GET TgJelly/Templates': templates() });
+test('send test posts the typed text to the chosen destination and shows the outcome', async () => {
+    let reply = { Sent: true, Error: null, Health: { Status: 'Ok' } };
+    const { view, el, api } = mount({
+        'GET TgJelly/Destinations': destinations({ Items: [dest(), dest({ Id: 'd2', Title: 'Admins <x>' })] }),
+        'GET TgJelly/Templates': templates(),
+        'POST TgJelly/Templates/Validate': validation(),
+        'POST TgJelly/Templates/Test': () => reply,
+    });
     await show(view);
-    const before = el('tgj-templates').writes;
-    tplInput(view, 'tplText', { value: 'abc' });
-    tplInput(view, 'tplText', { value: 'abcd' }, 'change');
+    assert.ok(el('tgj-templates').innerHTML.includes('<option value="d2">Admins &lt;x&gt;</option>'));
+    tplInput(view, 'tplText', { value: 'Test {{ title }}' });
+    tplInput(view, 'tplTestTo', { value: 'd2' }, 'change');
+    await click(view, 'tplTest');
+    assert.deepEqual(posted(api, 'Templates/Test'), [{ EventKey: 'movie.added', Text: 'Test {{ title }}', DestinationId: 'd2' }]);
+    assert.ok(el('tgj-templates').innerHTML.includes(m.t(EN, 'web.templates.sent')));
+
+    reply = { Sent: false, Error: 'Bot was <kicked>', Health: { Status: 'Lost' } };
+    await click(view, 'tplTest');
+    const html = el('tgj-templates').innerHTML;
+    assert.ok(html.includes('Bot was &lt;kicked&gt;'), html);
+    assert.ok(!html.includes(`>${m.t(EN, 'web.templates.sent')}<`));
+});
+
+test('the send test button is disabled while a send is in flight', async () => {
+    let finish;
+    const { view, el, api } = mount({ 'GET TgJelly/Templates': templates(), 'POST TgJelly/Templates/Validate': validation() });
+    await show(view);
+    const original = api.fetch;
+    api.fetch = request => (request.url.endsWith('/Templates/Test')
+        ? new Promise(resolve => { finish = () => resolve(makeResponse(200, { Sent: true, Error: null, Health: null })); })
+        : original(request));
+    clickOn(view, { 'data-tgj-act': 'tplTest' });
     await flush();
-    assert.equal(el('tgj-templates').writes, before);
+    assert.ok(/<button[^>]*data-tgj-act="tplTest"[^>]*disabled/.test(el('tgj-templates').innerHTML));
+    finish();
+    await flush();
+    assert.ok(!/<button[^>]*data-tgj-act="tplTest"[^>]*disabled/.test(el('tgj-templates').innerHTML));
 });
 
 test('flag shown for flagged key', async () => {
@@ -1607,6 +1847,7 @@ test('flag shown for flagged key', async () => {
     await flush();
     const html = el('tgj-templates').innerHTML;
     assert.ok(html.includes(m.t(EN, 'web.templates.flagError')));
+    assert.ok(m.t(EN, 'web.templates.flagError').includes('so the built-in template was used instead:'));
     assert.ok(!html.includes(m.t(EN, 'web.templates.flagTruncated')));
     assert.ok(html.includes('bad &lt;tag&gt;'));
     tplInput(view, 'tplEvent', { value: 'movie.added' }, 'change');
@@ -1626,26 +1867,43 @@ test('a truncated flag says the message was shortened, not that the template fai
     assert.ok(!html.includes(m.t(EN, 'web.templates.flagError')));
 });
 
-test('media keys mention digests', async () => {
+test('template section shows events, fields and the docs link', async () => {
     const { view, el } = mount({ 'GET TgJelly/Templates': templates() });
     await show(view);
-    assert.ok(!el('tgj-templates').innerHTML.includes(m.t(EN, 'web.templates.digestNote')));
-    tplInput(view, 'tplEvent', { value: 'media.digest' }, 'change');
-    await flush();
-    assert.ok(el('tgj-templates').innerHTML.includes(m.t(EN, 'web.templates.digestNote')));
-});
-
-test('template editor lists events, fields and the docs link, and insert sample fills the text', async () => {
-    const { view, el, hooks } = mount({ 'GET TgJelly/Templates': templates() });
-    await show(view);
     const html = el('tgj-templates').innerHTML;
-    assert.ok(html.includes('https://github.com/MrSnowball-dev/tgjelly_plugin/blob/main/docs/templates.md'));
+    // Spec §6.1: the guide link sits under the template, after the fields list, inside the left column.
+    const link = html.indexOf('href="https://github.com/MrSnowball-dev/tgjelly_plugin/blob/main/docs/templates.md"');
+    const left = html.indexOf('<div class="tgj-tpl-edit">');
+    const textarea = html.indexOf('<textarea');
+    const fieldsEnd = html.indexOf('</details>', html.indexOf(`<summary>${m.t(EN, 'web.templates.fields')}</summary>`));
+    const pane = html.indexOf('<div id="tgj-tpl-preview"');
+    assert.ok(left >= 0 && left < textarea && textarea < fieldsEnd && fieldsEnd < link && link < pane, html);
+    assert.equal(html.split('docs/templates.md').length, 2, 'one guide link');
+    const intro = html.indexOf(m.t(EN, 'web.templates.intro'));
+    assert.ok(intro >= 0 && intro < left, 'the intro stays at the top');
     assert.ok(html.includes('Movie added') && html.includes('Digest'));
     assert.ok(html.includes('The &lt;title&gt;.'));
     assert.ok(html.includes('class="tgj-template-text"'));
-    await click(view, 'tplSample');
-    assert.equal(hooks.state.forms['tpl:movie.added'].local.Text, '{{ title }}');
-    assert.ok(el('tgj-templates').innerHTML.includes('>{{ title }}</textarea>'));
+});
+
+test('a spoiler in the preview is revealed on click', async () => {
+    const { view } = mount();
+    const classes = new Set(['tgj-spoiler']);
+    const spoiler = { classList: { toggle: name => (classes.has(name) ? classes.delete(name) : classes.add(name)) } };
+    const event = new Event('click');
+    Object.defineProperty(event, 'target', { value: { closest: selector => (selector === '.tgj-spoiler' ? spoiler : null) } });
+    view.dispatchEvent(event);
+    assert.ok(classes.has('tgj-revealed'));
+});
+
+test('the page shell has the templates section after Messages, outside Advanced', () => {
+    const shell = readFileSync(new URL('../../src/Jellyfin.Plugin.TgJelly/Web/tgjelly.html', import.meta.url), 'utf8');
+    const messages = shell.indexOf('id="tgj-messages"');
+    const templatesAt = shell.indexOf('id="tgj-templates"');
+    const advanced = shell.indexOf('id="tgj-advanced"');
+    assert.ok(messages < templatesAt && templatesAt < advanced, 'templates sit between Messages and Advanced');
+    assert.ok(shell.includes('.tgj-tpl-grid'));
+    assert.ok(/@media \(max-width: 700px\)/.test(shell));
 });
 
 // --- source checks ---
@@ -1760,4 +2018,85 @@ test('a status poll with a higher revision reloads the sections, keeping unsaved
     timers.tick();
     await flush();
     assert.equal(gets(), before);
+});
+
+// --- the template textarea keeps its caret across section renders (final review M11) ---
+
+/**
+ * A fake template textarea. Like a browser, every write of the templates section replaces it with a new, unfocused
+ * one at the start; the returned textarea() gives the current one.
+ */
+function liveTextarea(view, doc) {
+    const make = () => ({
+        selectionStart: 0,
+        selectionEnd: 0,
+        selectionDirection: 'none',
+        scrollTop: 0,
+        scrollLeft: 0,
+        focusCalls: 0,
+        focus(options) {
+            this.focusCalls++;
+            this.focusOptions = options;
+            doc.activeElement = this;
+        },
+        setSelectionRange(start, end, direction) {
+            Object.assign(this, { selectionStart: start, selectionEnd: end, selectionDirection: direction });
+        },
+    });
+    view.elements.set('tgj-tpl-text', make());
+    const section = view.elements.get('tgj-templates');
+    const setter = Object.getOwnPropertyDescriptor(section, 'innerHTML').set;
+    const getter = Object.getOwnPropertyDescriptor(section, 'innerHTML').get;
+    Object.defineProperty(section, 'innerHTML', {
+        get: getter,
+        set(value) {
+            setter.call(section, value);
+            if (doc.activeElement === view.elements.get('tgj-tpl-text')) {
+                doc.activeElement = null;
+            }
+
+            view.elements.set('tgj-tpl-text', make());
+        },
+    });
+    return () => view.elements.get('tgj-tpl-text');
+}
+
+test('a Destinations render while typing keeps the textarea focus, selection and scroll', async () => {
+    const server = oneRevisionServer();
+    const { view, el, doc } = mount(server.routes);
+    await show(view);
+    const textarea = liveTextarea(view, doc);
+    const typing = textarea();
+    typing.focus();
+    Object.assign(typing, { selectionStart: 3, selectionEnd: 5, selectionDirection: 'forward', scrollTop: 40, scrollLeft: 2 });
+    tplInput(view, 'tplText', { value: 'abcdef {{ title }}' });
+    const writes = el('tgj-templates').writes;
+
+    // Toggling a destination renders Destinations, which renders the templates section with the typed text.
+    await destAct(view, 'enabled', { 'data-tgj-id': 'd1' });
+
+    assert.ok(el('tgj-templates').writes > writes, 'the section was written again');
+    assert.ok(el('tgj-templates').innerHTML.includes('abcdef {{ title }}</textarea>'), 'the unsaved text is kept');
+    const now = textarea();
+    assert.notEqual(now, typing, 'the textarea was replaced');
+    assert.equal(doc.activeElement, now);
+    assert.deepEqual(now.focusOptions, { preventScroll: true });
+    assert.deepEqual([now.selectionStart, now.selectionEnd, now.selectionDirection], [3, 5, 'forward']);
+    assert.deepEqual([now.scrollTop, now.scrollLeft], [40, 2]);
+});
+
+test('a render without the textarea focused does not take the focus', async () => {
+    const server = oneRevisionServer();
+    const { view, el, doc } = mount(server.routes);
+    await show(view);
+    const textarea = liveTextarea(view, doc);
+    doc.activeElement = null;
+    tplInput(view, 'tplText', { value: 'typed elsewhere' });
+    const writes = el('tgj-templates').writes;
+
+    await destAct(view, 'enabled', { 'data-tgj-id': 'd1' });
+
+    assert.ok(el('tgj-templates').writes > writes);
+    assert.equal(textarea().focusCalls, 0);
+    assert.equal(doc.activeElement, null);
 });

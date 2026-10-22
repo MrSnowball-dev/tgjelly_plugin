@@ -1,0 +1,4 @@
+⚙️ <b>Jellyfin needs a restart</b>
+
+Plugin Trakt updated
+Plugin &lt;Other&gt; &amp; installed

@@ -1,0 +1,3 @@
+⚙️ <b>Task failed: Scan media library</b>
+
+<blockquote expandable>Disk is &lt;full&gt; &amp; read-only</blockquote>

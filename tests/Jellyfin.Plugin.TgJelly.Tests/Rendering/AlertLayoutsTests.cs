@@ -2,26 +2,80 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using Jellyfin.Plugin.TgJelly.Configuration;
 using Jellyfin.Plugin.TgJelly.Intake;
 using Jellyfin.Plugin.TgJelly.Rendering;
 using Jellyfin.Plugin.TgJelly.State.Documents;
 using Jellyfin.Plugin.TgJelly.Strings;
+using Jellyfin.Plugin.TgJelly.Templates;
+using Jellyfin.Plugin.TgJelly.Tests.Fakes;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Time.Testing;
 using Telegram.Bot.Extensions;
 using Xunit;
 
 namespace Jellyfin.Plugin.TgJelly.Tests.Rendering;
 
-public class AlertLayoutsTests
+/// <summary>
+/// The alert layouts give the buttons only; the text tests render through <see cref="NotificationRenderer"/>, so they
+/// check the built-in templates against v0.2's text.
+/// </summary>
+public sealed class AlertLayoutsTests : IDisposable
 {
     private static readonly DateTimeOffset At = new(2026, 10, 18, 14, 5, 9, TimeSpan.Zero);
     private const string TimeTag = "<tg-time unix=\"1792332309\" format=\"t\">14:05 UTC</tg-time>";
-    private readonly AlertLayouts _layouts = new(new Formatter(StringTable.LoadEmbedded()), new FakeTimeProvider(At + TimeSpan.FromHours(1)));
+    private readonly AlertLayouts _layouts = new(new Formatter(StringTable.LoadEmbedded()));
+    private readonly BotTestHarness _h = new();
+    private readonly NotificationRenderer _renderer;
+
+    public AlertLayoutsTests()
+    {
+        var formatter = new Formatter(_h.Strings);
+        var time = new FakeTimeProvider(At + TimeSpan.FromHours(1));
+        var links = new LinkBuilder(new FakeServerInfo());
+        var library = new FakeLibrary();
+        var models = new TemplateModelBuilder(library, links, _h.Settings, formatter, time);
+        _renderer = new NotificationRenderer(
+            new MediaLayouts(formatter, links, library, _h.Settings),
+            _layouts,
+            new TemplateRenderer(new TemplateEngine(TimeProvider.System), models, new TemplateFlags(_h.State, _h.Settings, time), _h.Settings, _h.Strings, NullLogger<TemplateRenderer>.Instance));
+    }
+
+    public void Dispose() => _h.Dispose();
+
+    [Theory]
+    [InlineData("security.login_failed")]
+    [InlineData("security.lockout")]
+    [InlineData("server.started")]
+    [InlineData("server.plugin_updated")]
+    [InlineData("server.restart_pending")]
+    [InlineData("security.something_new")]
+    public void Layout_NoTextNoPosterNoButtons(string key)
+    {
+        var message = _layouts.Render(Alert(key, new() { [EventFields.User] = "alice", [EventFields.Url] = "https://example.com" }));
+
+        Assert.Equal(string.Empty, message.Text);
+        Assert.Equal(string.Empty, message.Caption);
+        Assert.Null(message.PosterPath);
+        Assert.Empty(message.Buttons);
+    }
+
+    [Fact]
+    public void Layout_UpdateAvailable_ReleaseNotesButtonOnlyWithAUrl()
+    {
+        var message = _layouts.Render(Alert("server.update_available", new() { [EventFields.Url] = "https://github.com/jellyfin/jellyfin/releases/tag/v12.3.0" }));
+
+        Assert.Equal(string.Empty, message.Text);
+        var button = Assert.Single(Assert.Single(message.Buttons));
+        Assert.Equal(("Release notes", "https://github.com/jellyfin/jellyfin/releases/tag/v12.3.0"), (button.Text, button.Url));
+        Assert.Empty(_layouts.Render(Alert("server.update_available", new() { [EventFields.Url] = string.Empty })).Buttons);
+        Assert.Empty(_layouts.Render(Alert("server.update_available", new())).Buttons);
+    }
 
     [Fact]
     public void LoginFailedMany_MatchesGolden()
     {
-        var message = _layouts.Render(Alert("security.login_failed", new()
+        var message = Render(Alert("security.login_failed", new()
         {
             [EventFields.User] = "alice", [EventFields.Attempts] = "37", [EventFields.IpCount] = "12", [EventFields.Ip] = "203.0.113.5",
             [EventFields.Client] = "Infuse", [EventFields.Device] = "iPhone", [EventFields.Locked] = "true",
@@ -37,13 +91,13 @@ public class AlertLayoutsTests
     public void ServerStarted_MatchesGolden()
         => Assert.Equal(
             Golden("server.started.txt"),
-            _layouts.Render(Alert("server.started", new() { [EventFields.Version] = "12.2.0", [EventFields.Server] = "Home" })).Text);
+            Render(Alert("server.started", new() { [EventFields.Version] = "12.2.0", [EventFields.Server] = "Home" })).Text);
 
     [Fact]
     public void PluginUpdated_MatchesGolden()
         => Assert.Equal(
             Golden("plugin_updated.txt"),
-            _layouts.Render(Alert("server.plugin_updated", new()
+            Render(Alert("server.plugin_updated", new()
             {
                 [EventFields.Plugin] = "Trakt", [EventFields.Version] = "26.0.0.0", [EventFields.Changelog] = "- Fixed sync for <b>shows</b>\n- Faster & safer",
             })).Text);
@@ -57,9 +111,9 @@ public class AlertLayoutsTests
             [EventFields.Client] = "Infuse", [EventFields.Device] = "iPhone", [EventFields.Locked] = "false",
         };
 
-        var lines = _layouts.Render(Alert("security.login_failed", values)).Text.Split('\n');
+        var lines = Render(Alert("security.login_failed", values)).Text.Split('\n');
         values[EventFields.Device] = string.Empty;
-        var withoutDevice = _layouts.Render(Alert("security.login_failed", values)).Text.Split('\n');
+        var withoutDevice = Render(Alert("security.login_failed", values)).Text.Split('\n');
 
         Assert.Equal(["🔐 <b>Wrong password for alice</b>", "203.0.113.5 · Infuse · iPhone · " + TimeTag], lines);
         Assert.Equal("203.0.113.5 · Infuse · " + TimeTag, withoutDevice[1]);
@@ -69,13 +123,13 @@ public class AlertLayoutsTests
     [InlineData("1", "🔒 <b>bob</b> is locked out after 1 failed attempt")]
     [InlineData("5", "🔒 <b>bob</b> is locked out after 5 failed attempts")]
     public void Lockout_Plural(string attempts, string expected)
-        => Assert.Equal(expected, _layouts.Render(Alert("security.lockout", new() { [EventFields.User] = "bob", [EventFields.Attempts] = attempts })).Text);
+        => Assert.Equal(expected, Render(Alert("security.lockout", new() { [EventFields.User] = "bob", [EventFields.Attempts] = attempts })).Text);
 
     [Fact]
     public void LoginSucceeded_ClientDeviceIpAndTime()
         => Assert.Equal(
             "🔐 <b>alice signed in</b>\nInfuse · iPhone\n🌐 203.0.113.5\n🕒 " + TimeTag,
-            _layouts.Render(Alert("security.login_succeeded", new()
+            Render(Alert("security.login_succeeded", new()
             {
                 [EventFields.User] = "alice", [EventFields.Client] = "Infuse", [EventFields.Device] = "iPhone", [EventFields.Ip] = "203.0.113.5",
             })).Text);
@@ -85,12 +139,12 @@ public class AlertLayoutsTests
     [InlineData("security.user_deleted", "🔐 <b>User deleted: carol</b>")]
     [InlineData("security.password_changed", "🔐 <b>Password changed for carol</b>")]
     public void UserEvents_OneLine(string key, string expected)
-        => Assert.Equal(expected, _layouts.Render(Alert(key, new() { [EventFields.User] = "carol" })).Text);
+        => Assert.Equal(expected, Render(Alert(key, new() { [EventFields.User] = "carol" })).Text);
 
     [Fact]
     public void UpdateAvailable_HasReleaseNotesButton()
     {
-        var message = _layouts.Render(Alert("server.update_available", new()
+        var message = Render(Alert("server.update_available", new()
         {
             [EventFields.Version] = "12.3.0", [EventFields.Current] = "12.2.0", [EventFields.Url] = "https://github.com/jellyfin/jellyfin/releases/tag/v12.3.0",
         }));
@@ -104,7 +158,7 @@ public class AlertLayoutsTests
     public void PluginInstallFailed_QuotesTheError()
         => Assert.Equal(
             "⚙️ <b>Plugin install failed: Trakt 26.0.0.0</b>\n\n<blockquote expandable>Checksum mismatch</blockquote>",
-            _layouts.Render(Alert("server.plugin_install_failed", new()
+            Render(Alert("server.plugin_install_failed", new()
             {
                 [EventFields.Plugin] = "Trakt", [EventFields.Version] = "26.0.0.0", [EventFields.Error] = "Checksum mismatch",
             })).Text);
@@ -112,11 +166,11 @@ public class AlertLayoutsTests
     [Fact]
     public void TaskFailed_EmptyError_NoBlockquote()
     {
-        Assert.Equal("⚙️ <b>Task failed: Scan Media Library</b>", _layouts.Render(Alert("server.task_failed", new() { [EventFields.Task] = "Scan Media Library", [EventFields.Error] = "" })).Text);
-        Assert.Equal("⚙️ <b>Task failed: Scan Media Library</b>", _layouts.Render(Alert("server.task_failed", new() { [EventFields.Task] = "Scan Media Library" })).Text);
+        Assert.Equal("⚙️ <b>Task failed: Scan Media Library</b>", Render(Alert("server.task_failed", new() { [EventFields.Task] = "Scan Media Library", [EventFields.Error] = "" })).Text);
+        Assert.Equal("⚙️ <b>Task failed: Scan Media Library</b>", Render(Alert("server.task_failed", new() { [EventFields.Task] = "Scan Media Library" })).Text);
         Assert.Equal(
             "⚙️ <b>Task failed: Scan Media Library</b>\n\n<blockquote expandable>Disk full</blockquote>",
-            _layouts.Render(Alert("server.task_failed", new() { [EventFields.Task] = "Scan Media Library", [EventFields.Error] = "Disk full" })).Text);
+            Render(Alert("server.task_failed", new() { [EventFields.Task] = "Scan Media Library", [EventFields.Error] = "Disk full" })).Text);
     }
 
     [Fact]
@@ -124,7 +178,7 @@ public class AlertLayoutsTests
     {
         var changelog = string.Join('\n', Enumerable.Range(1, 2000).Select(i => $"- change {i} with <tags> & more"));
 
-        var message = _layouts.Render(Alert("server.plugin_updated", new()
+        var message = Render(Alert("server.plugin_updated", new()
         {
             [EventFields.Plugin] = "Trakt", [EventFields.Version] = "26.0.0.0", [EventFields.Changelog] = changelog,
         }));
@@ -138,7 +192,7 @@ public class AlertLayoutsTests
     [Fact]
     public void UserControlledValues_AreEscaped()
     {
-        var text = _layouts.Render(Alert("security.login_failed", new()
+        var text = Render(Alert("security.login_failed", new()
         {
             [EventFields.User] = "<script>", [EventFields.Attempts] = "1", [EventFields.Ip] = "1.2.3.4", [EventFields.Client] = "a&b", [EventFields.Device] = "<i>",
         })).Text;
@@ -155,12 +209,8 @@ public class AlertLayoutsTests
 
         Assert.Equal(
             "⚙️ <b>Jellyfin needs a restart</b>\n\nUpdated Trakt to 26.0.0.0\nInstalled &lt;Odd&gt; &amp; Co 1.0",
-            _layouts.Render(model).Text);
+            Render(model).Text);
     }
-
-    [Fact]
-    public void UnknownKey_StillRenders()
-        => Assert.Equal("security.something_new", _layouts.Render(Alert("security.something_new", new())).Text);
 
     internal static RenderModel Alert(string key, Dictionary<string, string> values) => new()
     {
@@ -172,4 +222,6 @@ public class AlertLayoutsTests
 
     private static string Golden(string name)
         => File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Rendering", "Golden", name)).TrimEnd('\n');
+
+    private OutboxMessage Render(RenderModel model) => _renderer.Render(model, new Destination { Id = "d1" })!;
 }

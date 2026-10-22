@@ -1,0 +1,5 @@
+⚙️ <b>Plugin install failed: {{ plugin }} {{ version }}</b>
+{{- if error }}
+
+<blockquote expandable>{{ error }}</blockquote>
+{{- end -}}

@@ -68,7 +68,9 @@ public static class TemplateFieldCatalog
             Num("year", "The production year.", 2016L, true),
             Str("overview", "The overview text.", "A linguist works with the military to talk to alien visitors.", true),
             new TemplateField("rating", "number", "The community rating, from 0 to 10.", 7.9, true),
+            Str("rating_text", "The rating with one decimal, e.g. 7.9.", "7.9", true),
             Num("runtime_minutes", "The runtime in minutes.", 116L, true),
+            Str("runtime_text", "The runtime as hours and minutes, e.g. 1h 56m.", "1h 56m", true),
             Arr("genres", "The genres.", new List<object?> { "Drama", "Sci-Fi" }),
             library,
             imdb,
@@ -82,12 +84,15 @@ public static class TemplateFieldCatalog
             Str("series", "The series name.", "Severance", true),
             Num("season", "The season number. Specials are 0.", 2L, true),
             Num("count", "How many episodes the message covers.", 3L, false),
+            Str("count_text", "The episode count with digit grouping.", "3", false),
             new TemplateField(
                 "episodes",
                 "episode[]",
-                "The episodes, in number order. Each has a number (empty for an episode without one) and a title.",
+                "The episodes, in number order. Each has a number (empty for an episode without one), number_text (the number with two digits, empty without a number) and a title.",
                 new List<object?> { Episode(1, "Hello, Ms. Cobel"), Episode(2, "Goodbye, Mrs. Selvig"), Episode(3, "Who Is Alive?") },
                 false),
+            Num("episodes_more", "How many episodes were left out of the list to fit the message. 0 when none.", 0L, false),
+            Str("episodes_more_text", "The left-out episode count with digit grouping.", "0", false),
             Bool("new_series", "True when the series is new to the library.", false),
             library,
             imdb,
@@ -99,6 +104,7 @@ public static class TemplateFieldCatalog
             Str("album", "The album title.", "Discovery", false),
             Num("year", "The release year.", 2001L, true),
             Num("tracks", "The number of tracks.", 14L, false),
+            Str("tracks_text", "The track count with digit grouping.", "14", false),
             library,
             url,
             upgraded);
@@ -106,7 +112,11 @@ public static class TemplateFieldCatalog
             Str("title", "The title. For an audiobook, the name of the book.", "The Hobbit", false),
             Num("year", "The year.", 1937L, true),
             Str("overview", "The overview text.", "A hobbit sets out on a long journey.", true),
+            new TemplateField("rating", "number", "The community rating, from 0 to 10.", 8.2, true),
+            Str("rating_text", "The rating with one decimal, e.g. 8.2.", "8.2", true),
+            Arr("genres", "The genres.", new List<object?> { "Fantasy", "Adventure" }),
             Num("parts", "The number of audiobook parts. 0 for a book.", 3L, false),
+            Str("parts_text", "The part count with digit grouping.", "3", false),
             library,
             url,
             upgraded);
@@ -114,8 +124,11 @@ public static class TemplateFieldCatalog
         fields["security.login_failed"] = Alert(
             Str("user", "The user name that was tried.", "ann", false),
             Num("attempts", "How many attempts failed in a row.", 5L, true),
+            Str("attempts_text", "The attempt count with digit grouping.", "5", true),
             Num("ip_count", "How many different addresses the attempts came from.", 2L, true),
+            Str("ip_count_text", "The address count with digit grouping.", "2", true),
             Str("last_ip", "The address of the latest attempt.", "203.0.113.7", true),
+            Str("ip", "The address of the latest attempt. Same as last_ip.", "203.0.113.7", true),
             Str("client", "The client app.", "Jellyfin Web", true),
             Str("device", "The device name.", "Firefox", true),
             Num("last_attempt_unix", "When the latest attempt happened, as Unix seconds.", Sample.AtUnix, false),
@@ -123,7 +136,8 @@ public static class TemplateFieldCatalog
             Bool("locked", "True when the account is now locked.", true));
         fields["security.lockout"] = Alert(
             Str("user", "The user name.", "ann", false),
-            Num("attempts", "How many attempts failed.", 5L, true));
+            Num("attempts", "How many attempts failed.", 5L, true),
+            Str("attempts_text", "The attempt count with digit grouping.", "5", true));
         fields["security.login_succeeded"] = Alert(
             Str("user", "The user name.", "ann", false),
             Str("client", "The client app.", "Jellyfin Web", true),
@@ -151,15 +165,57 @@ public static class TemplateFieldCatalog
             Str("task", "The name of the scheduled task.", "Scan Media Library", false),
             Str("error", "The error message.", "The disk is full.", true));
         fields["server.restart_pending"] = Alert(
-            Arr("reasons", "Why a restart is needed, as plain text.", new List<object?> { "Plugin TgJelly was updated", "Plugin Foo was installed" }));
+            Arr("reasons", "Why a restart is needed, as plain text.", new List<object?> { "Plugin TgJelly was updated", "Plugin Foo was installed" }),
+            Num("reasons_more", "How many reasons were left out of the list to fit the message. 0 when none.", 0L, false),
+            Str("reasons_more_text", "The left-out reason count with digit grouping.", "0", false));
 
-        var missing = Configuration.EventCatalog.AllKeys.Except(fields.Keys, StringComparer.Ordinal).ToList();
+        fields[TemplateKeys.Digest] = Media(
+            Num("count", "How many items the digest covers.", 4L, false),
+            Str("count_text", "The item count with digit grouping.", "4", false),
+            new TemplateField(
+                "libraries",
+                "library[]",
+                "The libraries, each with a name (empty for items without a library) and entries. An entry has kind (movie, episode, season, album, audiobook or other), title, year, series, season_text, episode_text (two digits, or ?), count, count_text, artist and album.",
+                new List<object?>
+                {
+                    Library("Movies", Entry("movie", title: "Arrival", year: 2016L)),
+                    Library(
+                        "Shows",
+                        Entry("episode", title: "Who Is Alive?", series: "Severance", season: "02", episode: "03"),
+                        Entry("season", series: "Andor", season: "01", count: 12L)),
+                    Library(null, Entry("album", title: "Discovery", artist: "Daft Punk", album: "Discovery", count: 14L)),
+                },
+                false),
+            Num("more", "How many entries were left out to fit the message. 0 when none.", 0L, false),
+            Str("more_text", "The left-out count with digit grouping.", "0", false));
+
+        var missing = TemplateKeys.All.Except(fields.Keys, StringComparer.Ordinal).ToList();
         if (missing.Count > 0)
         {
             throw new InvalidOperationException("No template fields for " + string.Join(", ", missing));
         }
 
         return fields.ToDictionary(p => p.Key, p => (IReadOnlyList<TemplateField>)[.. Common(p.Key), .. p.Value], StringComparer.Ordinal);
+    }
+
+    /// <summary>
+    /// Returns the parts of an event key's model that the fitter may shorten when the message is too long.
+    /// </summary>
+    /// <param name="eventKey">The event key.</param>
+    /// <returns>The text field, the list field and the field for the number of removed list items; each may be null.</returns>
+    public static (string? Text, string? List, string? More) Shrink(string eventKey)
+    {
+        ArgumentNullException.ThrowIfNull(eventKey);
+        return eventKey switch
+        {
+            "media.movie" or "media.musicvideo" or "media.book" => ("overview", null, null),
+            "media.episodes" => (null, "episodes", "episodes_more"),
+            "server.plugin_updated" => ("changelog", null, null),
+            "server.plugin_install_failed" or "server.task_failed" => ("error", null, null),
+            "server.restart_pending" => (null, "reasons", "reasons_more"),
+            TemplateKeys.Digest => (null, "libraries", "more"),
+            _ => (null, null, null),
+        };
     }
 
     private static object? Copy(object? value) => value switch
@@ -178,10 +234,38 @@ public static class TemplateFieldCatalog
         Str("event", "The event key.", eventKey, false),
         Num("at_unix", "When the event happened, as Unix seconds.", Sample.AtUnix, false),
         Str("at_text", "When the event happened, as text in UTC.", Sample.AtText, false),
+        new TemplateField("at_html", "string", "When the event happened, as a time each reader sees in their own time zone. Write it as it is: it is not escaped.", new RawHtml(Sample.AtHtml), false),
     ];
 
     private static Dictionary<string, object?> Episode(long number, string title)
-        => new(StringComparer.Ordinal) { ["number"] = number, ["title"] = title };
+        => new(StringComparer.Ordinal) { ["number"] = number, ["number_text"] = number.ToString("00", System.Globalization.CultureInfo.InvariantCulture), ["title"] = title };
+
+    private static Dictionary<string, object?> Library(string? name, params Dictionary<string, object?>[] entries)
+        => new(StringComparer.Ordinal) { ["name"] = name, ["entries"] = entries.Cast<object?>().ToList() };
+
+    private static Dictionary<string, object?> Entry(
+        string kind,
+        string? title = null,
+        long? year = null,
+        string? series = null,
+        string? season = null,
+        string? episode = null,
+        long count = 1L,
+        string? artist = null,
+        string? album = null)
+        => new(StringComparer.Ordinal)
+        {
+            ["kind"] = kind,
+            ["title"] = title,
+            ["year"] = year,
+            ["series"] = series,
+            ["season_text"] = season,
+            ["episode_text"] = episode,
+            ["count"] = count,
+            ["count_text"] = count.ToString("N0", System.Globalization.CultureInfo.GetCultureInfo("en-US")),
+            ["artist"] = artist,
+            ["album"] = album,
+        };
 
     private static TemplateField Str(string name, string description, string sample, bool optional) => new(name, "string", description, sample, optional);
 
@@ -194,6 +278,8 @@ public static class TemplateFieldCatalog
     private static class Sample
     {
         public const string AtText = "14:05 UTC";
+
+        public static readonly string AtHtml = $"<tg-time unix=\"{AtUnix}\" format=\"t\">{AtText}</tg-time>";
 
         public static readonly long AtUnix = new DateTimeOffset(2026, 10, 20, 14, 5, 0, TimeSpan.Zero).ToUnixTimeSeconds();
     }
