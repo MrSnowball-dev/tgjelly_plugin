@@ -1,5 +1,6 @@
 using System;
 using System.Threading.Tasks;
+using Jellyfin.Plugin.TgJelly.Bot;
 using Jellyfin.Plugin.TgJelly.Bot.Screens;
 using Jellyfin.Plugin.TgJelly.State.Documents;
 using Jellyfin.Plugin.TgJelly.Tests.Fakes;
@@ -12,6 +13,42 @@ public sealed class StatusScreenTests : IDisposable
     private readonly BotTestHarness _h = new();
 
     public void Dispose() => _h.Dispose();
+
+    [Fact]
+    public async Task Connected_ShowsJellyfinServerAndVersion()
+    {
+        var rig = await BotRig.CreateAsync(_h);
+        rig.Server.ServerName = "Home";
+        rig.Server.Version = new Version(12, 2, 0, 0);
+
+        var html = rig.Status.Build().Html;
+
+        Assert.Contains("Connection: connected to Jellyfin Home (12.2)", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("@", html, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Connected_EmptyServerName_ShowsVersionOnly()
+    {
+        var rig = await BotRig.CreateAsync(_h);
+        rig.Server.ServerName = string.Empty;
+
+        var html = rig.Status.Build().Html;
+
+        Assert.Contains("Connection: connected to Jellyfin (12.2)", html, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task OtherStates_Unchanged()
+    {
+        var rig = await BotRig.CreateAsync(_h);
+        _h.Connection.SetState(ConnectionState.TokenRejected);
+
+        var html = rig.Status.Build().Html;
+
+        Assert.Contains("Connection: Token rejected", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("connected to Jellyfin", html, StringComparison.Ordinal);
+    }
 
     [Fact]
     public async Task Build_KeepsOnlyTheLastThreeErrors_AndEscapesThem()

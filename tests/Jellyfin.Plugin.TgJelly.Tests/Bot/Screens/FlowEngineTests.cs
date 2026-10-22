@@ -161,7 +161,7 @@ public sealed class FlowEngineTests : IDisposable, IAsyncLifetime
         await _rig.Deliver(TelegramFixtures.Update("private_text", ("text", "/status")));
 
         var text = (string)Assert.Single(_h.Api.CallsTo("sendMessage")).Body["text"]!;
-        Assert.Contains("Connected as @", text, StringComparison.Ordinal);
+        Assert.Contains("connected to Jellyfin Home (12.2)", text, StringComparison.Ordinal);
         Assert.Contains("✅ " + ok.Title, text, StringComparison.Ordinal);
         Assert.Contains("⛔ " + lost.Title, text, StringComparison.Ordinal);
         Assert.Contains("Waiting for metadata: 0", text, StringComparison.Ordinal);

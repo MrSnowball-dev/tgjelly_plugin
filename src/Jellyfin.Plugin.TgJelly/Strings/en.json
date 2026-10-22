@@ -94,6 +94,7 @@
   "help.text": "TgJelly sends Jellyfin news (new media, security alerts, server events) to your Telegram chats, groups and channels.\n\n/menu: open the menu\n/status: see how things are going\n/test: send a test message\n\nMore settings are on the Jellyfin dashboard: Dashboard → Plugins → Telegram.",
   "status.title": "Status",
   "status.connection": "Connection: {state}",
+  "status.connection.connected": "connected to Jellyfin {server}({version})",
   "status.compat": "Compatibility: {message}",
   "status.compat.ok": "OK",
   "status.destinations": "Destinations",
