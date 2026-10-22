@@ -708,7 +708,7 @@ Destinations: Destination[] = []
                 Events: string[]; LibraryIds: string[] (empty = all); SilentGroups: string[] }
   (ChatId, ThreadId) is unique across Destinations.
 Templates: TemplateOverride[] = []
-  TemplateOverride { EventKey: string; Enabled: bool (ignored since Plan 7; a disabled or empty v0.2 override is dropped on load); Text: string = "" }
+  TemplateOverride { EventKey: string; Enabled: bool (ignored since Plan 7; a disabled or empty v0.2 override is dropped on load. The migration runs on every load, not once, so an override added to the XML by hand without <Enabled>true</Enabled> is dropped too; the dashboard always saves it as true); Text: string = "" }
 ```
 - Arrays are initialized to `Array.Empty<T>()` (F9), and enums are serialized by name.
 - `PUT Settings` returns 400 with per-field errors for values outside the ranges.
