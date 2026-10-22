@@ -92,6 +92,7 @@ public static class TemplateFieldCatalog
                 new List<object?> { Episode(1, "Hello, Ms. Cobel"), Episode(2, "Goodbye, Mrs. Selvig"), Episode(3, "Who Is Alive?") },
                 false),
             Num("episodes_more", "How many episodes were left out of the list to fit the message. 0 when none.", 0L, false),
+            Str("episodes_more_text", "The left-out episode count with digit grouping.", "0", false),
             Bool("new_series", "True when the series is new to the library.", false),
             library,
             imdb,
@@ -165,7 +166,8 @@ public static class TemplateFieldCatalog
             Str("error", "The error message.", "The disk is full.", true));
         fields["server.restart_pending"] = Alert(
             Arr("reasons", "Why a restart is needed, as plain text.", new List<object?> { "Plugin TgJelly was updated", "Plugin Foo was installed" }),
-            Num("reasons_more", "How many reasons were left out of the list to fit the message. 0 when none.", 0L, false));
+            Num("reasons_more", "How many reasons were left out of the list to fit the message. 0 when none.", 0L, false),
+            Str("reasons_more_text", "The left-out reason count with digit grouping.", "0", false));
 
         fields[TemplateKeys.Digest] = Media(
             Num("count", "How many items the digest covers.", 4L, false),

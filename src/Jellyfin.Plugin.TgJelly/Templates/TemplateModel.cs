@@ -44,8 +44,9 @@ public sealed class TemplateModel
     /// <param name="textField">The shrinkable text field, or null.</param>
     /// <param name="listField">The shrinkable list field, or null.</param>
     /// <param name="moreField">The field that receives the number of removed list items, or null.</param>
+    /// <param name="formatNumber">Formats that number for <c>{moreField}_text</c>, which then stays in step with it; null leaves the text field alone.</param>
     /// <returns>A model that shortens by field name.</returns>
-    public static TemplateModel Of(IReadOnlyDictionary<string, object?> values, string? textField, string? listField, string? moreField)
+    public static TemplateModel Of(IReadOnlyDictionary<string, object?> values, string? textField, string? listField, string? moreField, Func<long, string>? formatNumber = null)
     {
         ArgumentNullException.ThrowIfNull(values);
         var text = textField is not null && values.TryGetValue(textField, out var t) && t is string s && s.Length > 0 ? s : null;
@@ -69,7 +70,12 @@ public sealed class TemplateModel
                     copy[listField] = list.Take(keep).ToList();
                     if (moreField is not null)
                     {
-                        copy[moreField] = (long)(list.Count - keep);
+                        var more = (long)(list.Count - keep);
+                        copy[moreField] = more;
+                        if (formatNumber is not null)
+                        {
+                            copy[moreField + "_text"] = formatNumber(more);
+                        }
                     }
                 }
 

@@ -104,7 +104,7 @@ public sealed class TemplateModelBuilder
         }
 
         var (text, list, more) = TemplateFieldCatalog.Shrink(model.EventKey);
-        return TemplateModel.Of(result, text, list, more);
+        return TemplateModel.Of(result, text, list, more, _formatter.Number);
     }
 
     /// <summary>
@@ -118,7 +118,7 @@ public sealed class TemplateModelBuilder
         var values = new Dictionary<string, object?>(TemplateFieldCatalog.SampleFull(eventKey), StringComparer.Ordinal);
         ApplyToggles(values, _settings.Current.Message);
         var (text, list, more) = TemplateFieldCatalog.Shrink(eventKey);
-        return TemplateModel.Of(values, text, list, more);
+        return TemplateModel.Of(values, text, list, more, _formatter.Number);
     }
 
     private static void ApplyToggles(Dictionary<string, object?> values, MessageOptions options)
@@ -254,6 +254,7 @@ public sealed class TemplateModelBuilder
             })
             .ToList();
         values["episodes_more"] = 0L;
+        values["episodes_more_text"] = _formatter.Number(0);
         values["new_series"] = model.NewSeries;
         values["imdb_id"] = Provider(series, "Imdb");
         values["tmdb_id"] = Provider(series, "Tmdb");
@@ -372,6 +373,7 @@ public sealed class TemplateModelBuilder
         values["locked"] = string.Equals(Get("locked"), "true", StringComparison.OrdinalIgnoreCase);
         values["reasons"] = model.Lines.Cast<object?>().ToList();
         values["reasons_more"] = 0L;
+        values["reasons_more_text"] = _formatter.Number(0);
     }
 
     private readonly record struct DigestEntry(string? Library, Dictionary<string, object?> Entry);

@@ -8,7 +8,7 @@
 {{- if episode.number_text }}E{{ episode.number_text }} {{ end }}{{ episode.title }}
 {{- end }}
 {{- if episodes_more > 0 }}
-+{{ episodes_more | math.format "N0" }} more
++{{ episodes_more_text }} more
 {{- end }}
 {{- if upgraded || library }}
 

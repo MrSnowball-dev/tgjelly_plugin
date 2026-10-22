@@ -360,6 +360,32 @@ public sealed class TemplateModelBuilderTests : IDisposable
     }
 
     [Fact]
+    public void Build_MoreTextFields_StayInStepWithTheCounts()
+    {
+        MediaItem Ep(int n) => _library.Add(new MediaItem { Id = Guid.NewGuid(), Kind = MediaKind.Episode, Name = "E" + n, SeriesName = "S", EpisodeNumber = n });
+        var episodes = _builder.Build(Media("media.episodes", Ep(1), Ep(2), Ep(3)));
+        Assert.Equal("0", episodes.Values["episodes_more_text"]);
+        var shortened = episodes.With(null, 1);
+        Assert.Equal((2L, "2"), (shortened["episodes_more"], shortened["episodes_more_text"]));
+
+        var restart = new RenderModel { Kind = RenderKind.Alert, EventKey = "server.restart_pending", At = At, Lines = [.. Enumerable.Range(1, 1500).Select(i => "reason " + i)] };
+        var reasons = _builder.Build(restart);
+        Assert.Equal("0", reasons.Values["reasons_more_text"]);
+        var cut = reasons.With(null, 100);
+        Assert.Equal((1400L, "1,400"), (cut["reasons_more"], cut["reasons_more_text"]));
+    }
+
+    [Fact]
+    public void Sample_MoreTextFields_StayInStepWithTheCounts()
+    {
+        var episodes = _builder.Sample("media.episodes").With(null, 1);
+        Assert.Equal((2L, "2"), (episodes["episodes_more"], episodes["episodes_more_text"]));
+
+        var digest = _builder.Sample("media.digest").With(null, 1);
+        Assert.Equal((2L, "2"), (digest["more"], digest["more_text"]));
+    }
+
+    [Fact]
     public void Build_ReturnsShrinkableModel()
     {
         var model = _builder.Build(Alert("server.restart_pending", ("x", "y")));

@@ -5,5 +5,5 @@
 {{ reason }}
 {{- end }}
 {{- if reasons_more > 0 }}
-+{{ reasons_more | math.format "N0" }} more
++{{ reasons_more_text }} more
 {{- end -}}

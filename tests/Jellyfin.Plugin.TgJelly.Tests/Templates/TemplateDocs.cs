@@ -48,6 +48,43 @@ internal static class TemplateDocs
         Every tag must be closed.
         To print a value without escaping it, write `{{ raw value }}`. Use this only for text you trust.
 
+        ### Line breaks: `{{-` and `-}}`
+
+        Every line break you type in a template is printed, also the one at the end of a line that only holds a tag.
+        A dash inside the braces removes them. `{{-` removes the line break and spaces just before the tag. `-}}` removes the line break and spaces just after it.
+        The dash only removes empty space. It never removes text or a value.
+
+        The built-in templates use this a lot, so a line is printed only when it has something to show.
+        Here is the end of the built-in movie template. It prints "♻️ Upgraded" and the library, each on its own line, under a blank line:
+
+        ```
+        {{- if upgraded || library }}
+
+        {{ end }}
+        {{- if upgraded }}♻️ Upgraded{{ end }}
+        {{- if upgraded && library }}
+        {{ end }}
+        {{- if library }}📁 {{ library }}{{ end -}}
+        ```
+
+        Line by line:
+
+        1. `{{- if upgraded || library }}` starts with a dash, so the line break before it is removed. When there is nothing to show, nothing is printed at all. When there is, it prints what sits between the tag and `{{ end }}`: two line breaks, which make the blank line.
+        2. `{{- if upgraded }}` removes the line break after the first `{{ end }}`, so that line break is not printed twice. It prints "♻️ Upgraded" right after the blank line.
+        3. `{{- if upgraded && library }}` prints one line break, only when both lines are shown. That puts the library on its own line.
+        4. `{{- if library }}` prints the library. The `-}}` at the very end removes the last line break of the file, so the message does not end with an empty line.
+
+        To add a line safely, start it with a dash and put its line break inside the `if`:
+
+        ```
+        {{- if year }}
+        📅 {{ year }}{{ end }}
+        ```
+
+        The dash removes the line break before the tag, and the line break inside the `if` is printed only when the year is. So an empty field leaves no empty line.
+        A line of plain text without a tag at its start keeps the line break before it.
+        Check the preview as you type. An extra empty line means a dash is missing. Two lines run together means a dash too many.
+
         ### Plural words
 
         Use `plural` to pick the right word for a number: `{{ plural count "episode" "episodes" }}`.
@@ -56,6 +93,7 @@ internal static class TemplateDocs
         ### Limits
 
         Each render may run for at most 2 seconds and print at most 16384 characters.
+        Fitting a message to Telegram's limits can take many renders. All of them together may take at most 5 seconds; after that the template counts as failed with "The template took too long".
         A loop may run at most 1000 times, and calls may nest at most 20 levels deep.
         Telegram allows 1024 characters in a caption and 4096 in a text message.
 
@@ -65,7 +103,7 @@ internal static class TemplateDocs
         It shortens in this order:
 
         1. The long text is cut and ends with `…`. This is the `overview` of a movie, music video or book, the `changelog` of a plugin update, or the `error` of a failed install or task. If less than 20 characters would be left, the text is dropped.
-        2. The list keeps as many items as fit. A count field tells you how many were left out, so you can print "+N more". The fields are `episodes_more` for `episodes`, `reasons_more` for `reasons`, and `more` for the digest's `libraries`. A digest can end up with no entries at all. If a library is named "Other" and some items have no library, the digest shows two "Other" lines.
+        2. The list keeps as many items as fit. A count field tells you how many were left out, so you can print "+N more". The fields are `episodes_more` for `episodes`, `reasons_more` for `reasons`, and `more` for the digest's `libraries`. Each has a `_text` twin with digit grouping, such as `episodes_more_text`, for printing. A digest can end up with no entries at all. If a library is named "Other" and some items have no library, the digest shows two "Other" lines.
         3. If it is still too long, the whole text is cut.
 
         Your template does not need to handle this. It only needs to print the count field if you want a "+N more" line.
@@ -85,7 +123,8 @@ internal static class TemplateDocs
         - `number` is a whole or decimal number.
         - `bool` is true or false.
         - `string[]` is a list of text. Use `{{ for x in genres }}{{ x }}{{ end }}`.
-        - `episode[]` is a list of episodes. Each has a `number` and a `title`.
+        - `episode[]` is a list of episodes. Each has a `number`, a `number_text` (the number with two digits, like `03`) and a `title`. `number` and `number_text` are empty for an episode without a number.
+        - `library[]` is the digest's list of libraries. Each has a `name`, which is empty for items without a library, and a list of `entries`. The `libraries` field of `media.digest` lists what an entry holds.
 
         A field marked optional is empty when the data is missing. Use `{{ if year }}` to test for it.
         Times come as two fields. `<name>_unix` is Unix seconds and `<name>_text` is text in UTC.
@@ -112,8 +151,8 @@ internal static class TemplateDocs
         ["server.plugin_updated"] = "Plugin <b>{{ plugin }}</b> is now {{ version }}.\n<blockquote>{{ changelog }}</blockquote>",
         ["server.plugin_install_failed"] = "Plugin <b>{{ plugin }}</b> {{ version }} failed to install.\n<blockquote>{{ error }}</blockquote>",
         ["server.task_failed"] = "Task <b>{{ task }}</b> failed.\n<blockquote>{{ error }}</blockquote>",
-        ["media.digest"] = "<b>{{ count_text }} new {{ plural count \"item\" \"items\" }}</b>\n{{ for l in libraries }}{{ l.name ?? \"Other\" }}: {{ for e in l.entries }}{{ e.title }} {{ end }}\n{{ end }}{{ if more > 0 }}and {{ more }} more{{ end }}",
-        ["server.restart_pending"] = "A restart is needed:\n{{ for r in reasons }}- {{ r }}\n{{ end }}{{ if reasons_more > 0 }}+{{ reasons_more }} more{{ end }}",
+        ["media.digest"] = "<b>{{ count_text }} new {{ plural count \"item\" \"items\" }}</b>\n{{ for l in libraries }}{{ l.name ?? \"Other\" }}: {{ for e in l.entries }}{{ e.title }} {{ end }}\n{{ end }}{{ if more > 0 }}and {{ more_text }} more{{ end }}",
+        ["server.restart_pending"] = "A restart is needed:\n{{ for r in reasons }}- {{ r }}\n{{ end }}{{ if reasons_more > 0 }}+{{ reasons_more_text }} more{{ end }}",
     };
 
     public static string Example(string eventKey) => Examples[eventKey];
