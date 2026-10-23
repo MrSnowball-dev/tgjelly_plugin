@@ -2054,33 +2054,38 @@ test('renderTemplates_gridHasPreviewPane', () => {
 });
 
 test('renderTemplatePreview_posterPlaceholderAndButtons', () => {
-    const html = m.renderTemplatePreview(validation({
+    const result = validation({
         Html: 'Dune <i>2021</i>', Length: 9, Limit: 1024,
         Buttons: [[{ Text: 'Open <x>', Url: 'https://jf.example/web/' }], [{ Text: 'IMDb', Url: 'javascript:alert(1)' }, { Text: 'TMDB', Url: 'https://tmdb.example' }]],
-    }), EN, 'en');
+    });
+    const html = m.renderTemplatePreview(result, EN);
     assert.ok(html.includes('class="tgj-tg-poster"'), html);
     assert.ok(html.includes('Dune <i>2021</i>'));
     assert.equal((html.match(/class="tgj-tg-row"/g) ?? []).length, 2);
     assert.ok(html.includes('href="https://jf.example/web/"') && html.includes('Open &lt;x&gt;'));
     assert.ok(!html.includes('javascript:'));
     assert.ok(html.includes('IMDb'));
-    assert.ok(html.includes('9 / 1,024'));
+    // The length sits under the template (Task 8 fix round 1), not in the preview.
+    assert.ok(!html.includes('9 / 1,024'));
+    assert.ok(m.renderTemplateCheck(result, EN, 'en').includes('9 / 1,024'));
 
-    const plain = m.renderTemplatePreview(validation({ Poster: false, Html: 'x' }), EN, 'en');
+    const plain = m.renderTemplatePreview(validation({ Poster: false, Html: 'x' }), EN);
     assert.ok(!plain.includes('tgj-tg-poster'));
-    assert.equal(m.renderTemplatePreview(null, EN, 'en'), '');
+    assert.equal(m.renderTemplatePreview(null, EN), '');
+    assert.equal(m.renderTemplateCheck(null, EN, 'en'), '');
 });
 
 test('renderTemplatePreview_errorsDimLastGood', () => {
     const good = validation({ Html: '<b>last good</b>' });
     const bad = validation({ Errors: [{ Message: 'Unexpected <end>', Line: 2, Column: 7 }, { Message: 'No position' }], Warnings: ['careful & slow'], Html: '', Length: 0 });
-    const html = m.renderTemplatePreview(bad, EN, 'en', good);
-    assert.ok(html.includes('line 2, column 7: Unexpected &lt;end&gt;'), html);
-    assert.ok(html.includes('No position') && html.includes('careful &amp; slow'));
+    const html = m.renderTemplatePreview(bad, EN, good);
+    const check = m.renderTemplateCheck(bad, EN, 'en');
+    assert.ok(check.includes('line 2, column 7: Unexpected &lt;end&gt;'), check);
+    assert.ok(check.includes('No position') && check.includes('careful &amp; slow'));
     assert.ok(/class="tgj-tg-bubble[^"]*tgj-tg-stale/.test(html), html);
     assert.ok(html.includes('<b>last good</b>'));
 
-    const fresh = m.renderTemplatePreview(good, EN, 'en', good);
+    const fresh = m.renderTemplatePreview(good, EN, good);
     assert.ok(!fresh.includes('tgj-tg-stale'));
 });
 
@@ -2156,7 +2161,7 @@ test('a validate failure shows in the preview and keeps the last good preview, d
     tplType(view, '{{');
     await timers.advance(500);
     const pane = el('tgj-tpl-preview').innerHTML;
-    assert.ok(pane.includes('line 1, column 3: Unexpected end'), pane);
+    assert.ok(el('tgj-tpl-check').innerHTML.includes('line 1, column 3: Unexpected end'), 'the error, under the template');
     assert.ok(pane.includes('tgj-tg-stale') && pane.includes('good one'));
 });
 

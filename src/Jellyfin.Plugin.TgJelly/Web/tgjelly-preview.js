@@ -174,16 +174,18 @@ function previewButtons(rows) {
     return html.length > 0 ? `<div class="tgj-tg-buttons">${html.join('')}</div>` : '';
 }
 
+/** Whether a validation result failed: it had errors, or the request itself failed. */
+const failed = result => Boolean(result.RequestError) || (result.Errors ?? []).length > 0;
+
 /**
- * The template preview pane: the validation's errors and warnings, then the message as Telegram would show it (poster
- * placeholder, text, buttons) and its length. With errors, the last good preview is shown dimmed instead.
+ * The template's check, shown under the textarea (design §6.1): the validation's errors and warnings, then the
+ * message's length against Telegram's limit (left out while the text has errors and renders nothing).
  * @param {object | null} result the last TemplateValidationDto; RequestError (HTML) when the request itself failed
  * @param {Record<string, string>} S
  * @param {string} [lang]
- * @param {object | null} [lastGood] the last validation of this template without errors
  * @returns {string} HTML
  */
-export function renderTemplatePreview(result, S, lang = 'en', lastGood = null) {
+export function renderTemplateCheck(result, S, lang = 'en') {
     if (!result) {
         return '';
     }
@@ -203,17 +205,31 @@ export function renderTemplatePreview(result, S, lang = 'en', lastGood = null) {
         parts.push(`<p class="tgj-tpl-warning">${esc(w)}</p>`);
     }
 
-    const failed = Boolean(result.RequestError) || (result.Errors ?? []).length > 0;
-    const shown = failed ? lastGood : result;
-    if (shown) {
-        parts.push(`<div class="tgj-tg-bubble${failed ? ' tgj-tg-stale' : ''}">`
-            + (shown.Poster ? `<div class="tgj-tg-poster">${t(S, 'web.templates.poster')}</div>` : '')
-            + `<div class="tgj-tg-text">${previewHtml(shown.Html)}</div>${previewButtons(shown.Buttons)}</div>`);
-    }
-
-    if (!result.RequestError && (!failed || result.Length > 0)) {
+    if (!result.RequestError && (!failed(result) || result.Length > 0)) {
         parts.push(`<p class="tgj-row-hint tgj-tpl-length">${t(S, 'web.templates.length', { length: formatNumber(result.Length ?? 0, lang), limit: formatNumber(result.Limit ?? 0, lang) })}</p>`);
     }
 
     return parts.join('');
+}
+
+/**
+ * The template preview pane: the message as Telegram would show it (poster placeholder, text, buttons). With errors,
+ * the last good preview is shown dimmed instead; renderTemplateCheck shows the errors themselves.
+ * @param {object | null} result the last TemplateValidationDto; RequestError (HTML) when the request itself failed
+ * @param {Record<string, string>} S
+ * @param {object | null} [lastGood] the last validation of this template without errors
+ * @returns {string} HTML
+ */
+export function renderTemplatePreview(result, S, lastGood = null) {
+    if (!result) {
+        return '';
+    }
+
+    const stale = failed(result);
+    const shown = stale ? lastGood : result;
+    return shown
+        ? `<div class="tgj-tg-bubble${stale ? ' tgj-tg-stale' : ''}">`
+            + (shown.Poster ? `<div class="tgj-tg-poster">${t(S, 'web.templates.poster')}</div>` : '')
+            + `<div class="tgj-tg-text">${previewHtml(shown.Html)}</div>${previewButtons(shown.Buttons)}</div>`
+        : '';
 }

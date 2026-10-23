@@ -11,7 +11,7 @@
 import {
     esc, t, text, label, card, row, actionButton, inlineConfirm, notice, textField, switchControl, selectField,
 } from './configurationpage?name=tgjelly-ui.js';
-import { renderTemplatePreview } from './configurationpage?name=tgjelly-preview.js';
+import { renderTemplateCheck, renderTemplatePreview } from './configurationpage?name=tgjelly-preview.js';
 
 // The template preview validates this long after the last keystroke.
 const PREVIEW_DEBOUNCE_MS = 500;
@@ -330,10 +330,11 @@ export function templateTestBlocked(ui) {
 
 /**
  * The Template card (spec §8.5): the message's template text, which saves itself (its cue sits beside the textarea's
- * label), the fields it can use, the guide, then Send test and, for an edited template, Reset.
+ * label), its errors and length under it, the fields it can use, the guide, then Send test and, for an edited
+ * template, Reset.
  * @param {object} item the selected template item
  * @param {Record<string, string>} S
- * @param {{ forms?: Record<string, { local: object }>, result?: object | null, busy?: boolean,
+ * @param {{ forms?: Record<string, { local: object }>, result?: object | null, lang?: string, busy?: boolean,
  *   destinations?: { Id: string, Title: string }[], testTo?: string, testing?: boolean, testResult?: string,
  *   resetAsk?: boolean }} ui result is the key's last validation; testResult is HTML
  * @returns {string} HTML
@@ -358,6 +359,8 @@ export function renderTemplateCard(item, S, ui) {
         + `<span class="tgj-cue" data-tgj-cue="${esc(saveKey)}" aria-live="polite"></span></div>`
         + `<textarea class="tgj-field tgj-template-text" data-tgj-input="tplText" data-tgj-key="${esc(item.EventKey)}" data-tgj-save="${esc(saveKey)}"`
         + ` aria-labelledby="tgj-tpl-label" rows="12" spellcheck="false">${esc(local.Text)}</textarea>`
+        // The errors and the length, under the text they are about; the controller replaces only this while typing.
+        + `<div id="tgj-tpl-check" class="tgj-tpl-check" aria-live="polite">${renderTemplateCheck(ui.result ?? null, S, ui.lang ?? 'en')}</div>`
         + `<details class="tgj-tpl-fields"><summary>${t(S, 'web.templates.fields')}</summary><table class="tgj-template-fields">${rows.join('')}</table></details>`
         + `<p class="tgj-tpl-docs"><a class="tgj-link" href="${TEMPLATES_DOCS}" target="_blank" rel="noopener noreferrer">${t(S, 'web.templates.docs')}</a></p></div>`);
 
@@ -412,7 +415,7 @@ export function renderMessagesSection(state, S, ui) {
     const forms = state.forms ?? {};
     const preview = card({
         title: text(S, 'web.messages.preview'),
-        body: `<div id="tgj-tpl-preview" class="tgj-tpl-preview">${renderTemplatePreview(ui.result ?? null, S, ui.lang ?? 'en', ui.good ?? null)}</div>`,
+        body: `<div id="tgj-tpl-preview" class="tgj-tpl-preview">${renderTemplatePreview(ui.result ?? null, S, ui.good ?? null)}</div>`,
         extraClass: 'tgj-msg-preview',
     });
     return '<div class="tgj-msg-layout">'
@@ -520,14 +523,23 @@ export function createMessages(page) {
     };
 
     /**
-     * Shows the selected template's last validation in the preview pane, and turns Send test on or off to match. Only
-     * the pane is replaced: the textarea keeps its focus and caret.
+     * Shows the selected template's last validation: its errors and length under the textarea, the message in the
+     * preview pane. It turns Send test on or off to match. Only those two are replaced: the textarea keeps its focus
+     * and caret.
      */
     const showTemplatePreview = () => {
         const ui = messagesUi();
+        const check = page.byId('tgj-tpl-check');
         const pane = page.byId('tgj-tpl-preview');
+        if (check) {
+            check.innerHTML = renderTemplateCheck(ui.result, state.strings, ui.lang);
+        }
+
         if (pane) {
-            pane.innerHTML = renderTemplatePreview(ui.result, state.strings, ui.lang, ui.good);
+            pane.innerHTML = renderTemplatePreview(ui.result, state.strings, ui.good);
+        }
+
+        if (check || pane) {
             // The section on the page no longer matches the copy the page keeps, so its next render must write.
             page.forget('tgj-messages');
         }

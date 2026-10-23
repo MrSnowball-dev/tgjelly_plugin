@@ -17,7 +17,7 @@ import { createMessages, messageFormData, messageRequest } from './configuration
 
 // These live in the sibling modules; they stay named exports here for the page's callers and tests.
 export { esc, t, text, plural, pluralText, formatNumber, formatTime };
-export { previewHtml, renderTemplatePreview } from './configurationpage?name=tgjelly-preview.js';
+export { previewHtml, renderTemplateCheck, renderTemplatePreview } from './configurationpage?name=tgjelly-preview.js';
 
 const POLL_MS = 3000;
 

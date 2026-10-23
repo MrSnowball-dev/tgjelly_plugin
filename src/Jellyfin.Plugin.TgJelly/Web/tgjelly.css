@@ -825,14 +825,10 @@
     text-decoration: underline;
 }
 
-/* The preview column: errors and warnings, then the message bubble, then its length. */
-#tgjelly-root .tgj-tpl-preview > p {
-    margin: 0 0 var(--tgj-space-2);
-    font-size: var(--tgj-step--1);
-}
-
-#tgjelly-root .tgj-tpl-preview > .tgj-tpl-length {
+/* Under the textarea: the errors and warnings, then the length. */
+#tgjelly-root .tgj-tpl-check > p {
     margin: var(--tgj-space-2) 0 0;
+    font-size: var(--tgj-step--1);
 }
 
 #tgjelly-root .tgj-tpl-warning {

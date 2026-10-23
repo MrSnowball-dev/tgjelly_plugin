@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs';
 import page, * as m from '../../src/Jellyfin.Plugin.TgJelly/Web/tgjelly.js';
 import * as msg from '../../src/Jellyfin.Plugin.TgJelly/Web/tgjelly-messages.js';
 import * as ui from '../../src/Jellyfin.Plugin.TgJelly/Web/tgjelly-ui.js';
-import { makeView, makeApiClient, fakeTimers, flush, dispatchOn } from './fake-view.mjs';
+import { makeView, makeApiClient, fakeTimers, flush, dispatchOn, liveFields } from './fake-view.mjs';
 
 const EN = JSON.parse(readFileSync(new URL('../../src/Jellyfin.Plugin.TgJelly/Strings/en.json', import.meta.url), 'utf8'));
 
@@ -146,7 +146,7 @@ function mount(routes = {}, { hash = '#/configurationpage?name=TgJelly&tgj=messa
 
     const view = makeView(['tgjelly-root']);
     const hooks = page(view, {});
-    return { view, api, timers, hooks, win: globalThis.window, el: id => view.elements.get(id) };
+    return { view, api, timers, doc, hooks, win: globalThis.window, el: id => view.elements.get(id) };
 }
 
 async function show(view) {
@@ -399,4 +399,69 @@ test('the Messages layout keeps the preview beside the cards on wide screens and
     assert.ok(html.startsWith('<div class="tgj-msg-layout">'), html.slice(0, 80));
     assert.ok(html.indexOf('<div class="tgj-msg-cards">') < html.indexOf('<div class="tgj-msg-side">'));
     assert.ok(!/[●✓✔✅⚠❌✗🟢🔴]/u.test(html));
+});
+
+// --- the template's errors and length sit under the textarea (Task 8 fix round 1, design §6.1) ---
+
+const FAILED = { ...VALIDATION, Errors: [{ Message: 'Unexpected <end>', Line: 2, Column: 7 }], Warnings: ['careful & slow'], Html: '', Length: 0 };
+const GOOD = { ...VALIDATION, Html: '<b>last good</b>', Length: 9, Limit: 1024 };
+/** The Messages section with this validation (and the last good one) for the movie. */
+const renderWith = (result, good = GOOD) => msg.renderMessagesSection(
+    { templates: templates(), settings: null, forms: {} }, EN, { key: 'media.movie', result, good, destinations: [{ Id: 'd1', Title: 'Family' }], lang: 'en' });
+/** The inner HTML of the first element with this id in the markup (no nested element of the same tag). */
+
+test('templateCard_showsErrorsAndLength_underTextarea', () => {
+    const html = renderWith(FAILED);
+    const card = html.slice(html.indexOf('<section class="tgj-card tgj-tpl"'), html.indexOf('</section>', html.indexOf('<section class="tgj-card tgj-tpl"')));
+    const textarea = card.indexOf('</textarea>');
+    const error = card.indexOf('line 2, column 7: Unexpected &lt;end&gt;');
+    const warning = card.indexOf('careful &amp; slow');
+    const actions = card.indexOf('data-tgj-act="tplTest"');
+    assert.ok(textarea >= 0 && textarea < error && error < actions, card);
+    assert.ok(textarea < warning && warning < actions);
+    assert.ok(card.includes('id="tgj-tpl-check"'), 'one element, updated in place');
+
+    const ok = renderWith({ ...GOOD, Length: 312 });
+    const okCard = ok.slice(ok.indexOf('<section class="tgj-card tgj-tpl"'));
+    const length = okCard.indexOf(m.t(EN, 'web.templates.length', { length: '312', limit: '1,024' }));
+    assert.ok(okCard.indexOf('</textarea>') < length && length < okCard.indexOf('data-tgj-act="tplTest"'), okCard);
+});
+
+test('previewPane_hasOnlyTheBubble', async () => {
+    const html = renderWith(FAILED);
+    const pane = html.slice(html.indexOf('<div id="tgj-tpl-preview"'));
+    assert.ok(/class="tgj-tg-bubble[^"]*tgj-tg-stale/.test(pane), 'the last good message, dimmed');
+    assert.ok(pane.includes('<b>last good</b>'));
+    assert.ok(!pane.includes('tgj-error') && !pane.includes('careful') && !pane.includes('tgj-tpl-length'), pane);
+    const okPane = renderWith(GOOD).slice(html.indexOf('<div id="tgj-tpl-preview"'));
+    assert.ok(!okPane.includes(m.t(EN, 'web.templates.length', { length: '9', limit: '1,024' })), 'the length is not in the pane');
+
+    // The controller fills each in place: the bubble in the pane, the errors and length under the template.
+    const { view, el, timers } = mount({ 'POST TgJelly/Templates/Validate': request => (JSON.parse(request.data).Text.includes('oops') ? FAILED : GOOD) });
+    await show(view);
+    dispatchOn(view, 'input', { 'data-tgj-input': 'tplText', 'data-tgj-key': 'media.movie', 'data-tgj-save': 'template:media.movie' }, { value: '{{ oops' });
+    await timers.advance(500);
+    assert.ok(el('tgj-tpl-check').innerHTML.includes('line 2, column 7: Unexpected &lt;end&gt;'));
+    assert.ok(el('tgj-tpl-preview').innerHTML.includes('<b>last good</b>'));
+    assert.ok(!el('tgj-tpl-preview').innerHTML.includes('tgj-error'));
+});
+
+test('templateErrors_updateWithoutTouchingTextarea', async () => {
+    const { view, el, doc, timers } = mount({ 'POST TgJelly/Templates/Validate': request => (JSON.parse(request.data).Text.includes('oops') ? FAILED : GOOD) });
+    await show(view);
+    const textarea = liveFields(view, doc, 'tgj-messages', [{ tag: 'textarea', attributes: { 'data-tgj-input': 'tplText', 'data-tgj-key': 'media.movie' } }]);
+    const typing = textarea();
+    typing.focus();
+    typing.setSelectionRange(4, 6, 'forward');
+    const writes = el('tgj-messages').writes;
+    const checkWrites = el('tgj-tpl-check').writes;
+
+    dispatchOn(view, 'input', { 'data-tgj-input': 'tplText', 'data-tgj-key': 'media.movie', 'data-tgj-save': 'template:media.movie' }, { value: 'Hi {{ oops' });
+    await timers.advance(500);
+    assert.ok(el('tgj-tpl-check').innerHTML.includes('Unexpected &lt;end&gt;'), 'the error shows');
+    assert.ok(el('tgj-tpl-check').writes > checkWrites);
+    assert.equal(el('tgj-messages').writes, writes, 'the section, and so the textarea, is not written again');
+    assert.equal(textarea(), typing, 'the same textarea');
+    assert.equal(doc.activeElement, typing, 'it keeps the focus');
+    assert.deepEqual([typing.selectionStart, typing.selectionEnd, typing.selectionDirection], [4, 6, 'forward'], 'and the caret');
 });
