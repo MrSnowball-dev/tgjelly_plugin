@@ -317,6 +317,7 @@
   "web.header.notConnected": "Not connected",
   "web.header.attention": "Needs attention",
   "web.header.unknown": "Status unavailable",
+  "web.header.versionTitle": "TgJelly {version}, built for Jellyfin {target}",
   "web.requestFailed": "Request failed: {reason}",
   "web.status.title": "Status",
   "web.status.connected": "Connected to Telegram",

@@ -1475,8 +1475,21 @@ const STYLESHEET_WAIT_MS = 1000;
 /** The header's connection label: a label's HTML, a word in an outline and no symbol. */
 const connectionHtml = connection => label(connection.text, connection.tone);
 
-/** The header's version label, or '' before the version is known. */
-const versionHtml = version => (version ? label(`v${version}`, 'neutral') : '');
+/**
+ * The release an assembly version stands for: "1.0.4.0" is v0.4 and "2.1.12.0" is v1.12 (build/package.py
+ * track_version). A version without four numeric parts shows as it is.
+ * @param {string} version the status's Version
+ * @returns {string}
+ */
+export function releaseName(version) {
+    const parts = String(version ?? '').split('.');
+    return parts.length === 4 && parts.every(part => /^\d+$/.test(part)) ? `v${parts[1]}.${parts[2]}` : `v${version}`;
+}
+
+/** The header's version label with the full version and build target as its tooltip, or '' before the version is known. */
+const versionHtml = (S, version, buildTarget) => (version
+    ? label(releaseName(version), 'neutral', { title: text(S, 'web.header.versionTitle', { version, target: buildTarget ?? '' }) })
+    : '');
 
 /**
  * The header's connection label for a Status: "Connected · @bot", "Not connected", "Connecting", or a warning when the
@@ -1516,7 +1529,7 @@ export function connectionLabel(status, S, failed = false) {
  *   counts are plain text by section name, e.g. { destinations: '3', templates: '1 edited' }
  * @returns {string}
  */
-export function renderShell(S, { active, connection, counts = {}, version = '' }) {
+export function renderShell(S, { active, connection, counts = {}, version = '', buildTarget = '' }) {
     const current = SECTIONS.includes(active) ? active : 'overview';
     const nav = SECTIONS.map(name => `<button type="button" id="tgj-nav-${name}" data-tgj-nav="${name}"`
         + `${name === current ? ' aria-current="page"' : ''}>`
@@ -1525,7 +1538,7 @@ export function renderShell(S, { active, connection, counts = {}, version = '' }
     const sections = SECTIONS.map(name => `<section id="tgj-sec-${name}" data-tgj-section="${name}" aria-labelledby="tgj-nav-${name}"`
         + `${name === current ? '' : ' hidden'}>${SECTION_HOSTS[name].map(id => `<div id="${id}"></div>`).join('')}</section>`);
     return '<div class="tgj-shell">'
-        + `<header class="tgj-header"><div class="tgj-header-brand"><h1 class="tgj-header-title">TgJelly</h1><span id="tgj-version">${versionHtml(version)}</span></div><span id="tgj-conn">${connectionHtml(connection)}</span></header>`
+        + `<header class="tgj-header"><div class="tgj-header-brand"><h1 class="tgj-header-title">TgJelly</h1><span id="tgj-version">${versionHtml(S, version, buildTarget)}</span></div><span id="tgj-conn">${connectionHtml(connection)}</span></header>`
         + `<nav class="tgj-sidebar" aria-label="${t(S, 'web.nav.label')}">${nav.join('')}</nav>`
         + `<div class="tgj-content">${sections.join('')}</div>`
         + '</div>';
@@ -2188,6 +2201,7 @@ export default function TgJellyPage(view, params) {
 
     const connection = () => connectionLabel(state.status, state.strings, state.ui.statusFailed);
     const pluginVersion = () => (state.status && state.status.Version) || '';
+    const pluginTarget = () => (state.status && state.status.BuildTarget) || '';
 
     /** Shows one section and marks its sidebar button; with { remember: true } also records it in the URL hash. */
     const selectSection = (name, { remember = false } = {}) => {
@@ -2232,7 +2246,7 @@ export default function TgJellyPage(view, params) {
 
         const connected = Boolean(state.status && state.status.HasToken);
         const first = connected ? sectionFromHash(window.location && window.location.hash) : 'overview';
-        root.innerHTML = renderShell(state.strings, { active: first, connection: connection(), counts: navCounts(), version: pluginVersion() });
+        root.innerHTML = renderShell(state.strings, { active: first, connection: connection(), counts: navCounts(), version: pluginVersion(), buildTarget: pluginTarget() });
         shellDrawn = true;
         selectSection(first);
     };
@@ -2244,7 +2258,7 @@ export default function TgJellyPage(view, params) {
         }
 
         setHtml('tgj-conn', connectionHtml(connection()));
-        setHtml('tgj-version', versionHtml(pluginVersion()));
+        setHtml('tgj-version', versionHtml(state.strings, pluginVersion(), pluginTarget()));
         const counts = navCounts();
         for (const name of SECTIONS) {
             setHtml(`tgj-nav-count-${name}`, esc(counts[name] ?? ''));
