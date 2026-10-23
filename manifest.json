@@ -3,6 +3,14 @@
     "guid": "e547b901-0dc4-42ae-8999-3871dd141270",
     "versions": [
       {
+        "version": "2.0.4.0",
+        "changelog": "A new dashboard: sections, cards and auto-save\n\n- The Telegram page is redesigned. A sidebar holds Overview, Destinations, Messages, Templates and Advanced, and becomes a row of tabs on a phone.\n- Settings are grouped into cards with clear spacing and follow your Jellyfin theme.\n- There are no Save buttons. Every setting saves itself, and \"Saved\" or \"Not saved:\" with the reason shows beside it.\n- The public URL and proxy settings save when you leave the field or press Enter. Templates save a second after you stop typing, and never while they have errors.\n- A change made in the bot while the dashboard is open is kept, and so is what you were typing.\n- Destinations show their health in words, and switching away from a Custom preset asks first.\n- Status in the bot now names your Jellyfin server.",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://github.com/MrSnowball-dev/tgjelly_plugin/releases/download/v0.4/tgjelly_2.0.4.0.zip",
+        "checksum": "bcbbbe59554defb14ebd6f02b0daea95",
+        "timestamp": "2026-10-23T13:01:19Z"
+      },
+      {
         "version": "2.0.3.0",
         "changelog": "Every message is a template, with a live preview editor\n\n- Every notification now comes from a template. The built-in templates produce exactly the messages v0.2 sent.\n- New Message templates section in the dashboard: see the template in use, change a word or a line, and watch a live Telegram-style preview as you type.\n- Send test sends the template, saved or not, to any of your chats. Reset goes back to the built-in template.\n- An edited template that breaks falls back to the built-in one, and the dashboard shows the error.\n- Long messages are shortened the same way as before, for edited templates too.\n- The templates guide lists every built-in template and explains how to change them.\n- Upgrading from v0.2: a disabled custom template is dropped; an enabled one becomes your edited template.",
         "targetAbi": "12.0.0.0",
@@ -25,6 +33,14 @@
         "sourceUrl": "https://github.com/MrSnowball-dev/tgjelly_plugin/releases/download/v0.1/tgjelly_2.0.1.0.zip",
         "checksum": "cb0feb4d6ee44d02cc6cc3be21287301",
         "timestamp": "2026-10-20T21:57:13Z"
+      },
+      {
+        "version": "1.0.4.0",
+        "changelog": "A new dashboard: sections, cards and auto-save\n\n- The Telegram page is redesigned. A sidebar holds Overview, Destinations, Messages, Templates and Advanced, and becomes a row of tabs on a phone.\n- Settings are grouped into cards with clear spacing and follow your Jellyfin theme.\n- There are no Save buttons. Every setting saves itself, and \"Saved\" or \"Not saved:\" with the reason shows beside it.\n- The public URL and proxy settings save when you leave the field or press Enter. Templates save a second after you stop typing, and never while they have errors.\n- A change made in the bot while the dashboard is open is kept, and so is what you were typing.\n- Destinations show their health in words, and switching away from a Custom preset asks first.\n- Status in the bot now names your Jellyfin server.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/MrSnowball-dev/tgjelly_plugin/releases/download/v0.4/tgjelly_1.0.4.0.zip",
+        "checksum": "9829264becf82b3c9934db736e947129",
+        "timestamp": "2026-10-23T13:01:19Z"
       },
       {
         "version": "1.0.3.0",
