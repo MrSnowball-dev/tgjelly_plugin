@@ -50,8 +50,9 @@ public sealed class DestinationDtoMapper
     /// Maps a destination.
     /// </summary>
     /// <param name="destination">The destination.</param>
+    /// <param name="revision">The settings revision it was read at.</param>
     /// <returns>The DTO.</returns>
-    public DestinationDto ToDto(Destination destination) => ToDto(destination, _library.GetVirtualFolders().Select(l => l.Id).ToHashSet());
+    public DestinationDto ToDto(Destination destination, long revision) => ToDto(destination, _library.GetVirtualFolders().Select(l => l.Id).ToHashSet(), revision);
 
     /// <summary>
     /// Maps a configuration to the destination list, with its detected chats.
@@ -65,7 +66,7 @@ public sealed class DestinationDtoMapper
         return new()
         {
             Revision = configuration.Revision,
-            Items = [.. configuration.Destinations.Select(d => ToDto(d, existing))],
+            Items = [.. configuration.Destinations.Select(d => ToDto(d, existing, configuration.Revision))],
             DetectedChats = [.. _memory.VisibleDetected(configuration).Select(c => new DetectedChatDto { ChatId = c.ChatId, Title = c.Title, Kind = c.Kind.ToString(), DetectedAt = c.DetectedAt })],
             ManualUnlocked = _gate.IsOpen(),
             Catalog = BuildCatalog(),
@@ -84,8 +85,9 @@ public sealed class DestinationDtoMapper
         },
     };
 
-    private DestinationDto ToDto(Destination d, IReadOnlyCollection<Guid> existing) => new()
+    private DestinationDto ToDto(Destination d, IReadOnlyCollection<Guid> existing, long revision) => new()
     {
+        Revision = revision,
         Id = d.Id,
         ChatId = d.ChatId,
         ThreadId = d.ThreadId,

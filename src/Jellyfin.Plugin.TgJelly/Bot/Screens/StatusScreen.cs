@@ -5,6 +5,7 @@ using Jellyfin.Plugin.TgJelly.Compat;
 using Jellyfin.Plugin.TgJelly.Configuration;
 using Jellyfin.Plugin.TgJelly.Delivery;
 using Jellyfin.Plugin.TgJelly.Destinations;
+using Jellyfin.Plugin.TgJelly.Library;
 using Jellyfin.Plugin.TgJelly.Pipeline;
 using Jellyfin.Plugin.TgJelly.Rendering;
 using Jellyfin.Plugin.TgJelly.State;
@@ -35,6 +36,7 @@ public sealed class StatusScreen
     private readonly StringTable _strings;
     private readonly Formatter _formatter;
     private readonly TimeProvider _time;
+    private readonly IServerInfo _server;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="StatusScreen"/> class.
@@ -50,7 +52,8 @@ public sealed class StatusScreen
     /// <param name="strings">The string table.</param>
     /// <param name="formatter">The formatter.</param>
     /// <param name="time">The clock.</param>
-    public StatusScreen(BotConnection connection, CompatResult compat, InstanceGate gate, SettingsStore settings, StateStore state, HealthService health, MediaReadiness readiness, Outbox outbox, StringTable strings, Formatter formatter, TimeProvider time)
+    /// <param name="server">The Jellyfin server's identity.</param>
+    public StatusScreen(BotConnection connection, CompatResult compat, InstanceGate gate, SettingsStore settings, StateStore state, HealthService health, MediaReadiness readiness, Outbox outbox, StringTable strings, Formatter formatter, TimeProvider time, IServerInfo server)
     {
         _connection = connection;
         _compat = compat;
@@ -63,6 +66,7 @@ public sealed class StatusScreen
         _strings = strings;
         _formatter = formatter;
         _time = time;
+        _server = server;
     }
 
     /// <summary>
@@ -144,6 +148,7 @@ public sealed class StatusScreen
         {
             ConnectionState.Incompatible => _compat.Message ?? string.Empty,
             ConnectionState.WaitingForInstance => _gate.WaitingMessage ?? string.Empty,
+            ConnectionState.Connected => _strings.Get("status.connection.connected", ("server", _server.ServerName.Length > 0 ? _server.ServerName + " " : string.Empty), ("version", _formatter.Version(_server.Version))),
             _ => _strings.Get("connection." + state, ("bot", username)),
         };
     }

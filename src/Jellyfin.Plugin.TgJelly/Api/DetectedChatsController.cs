@@ -134,9 +134,9 @@ public class DetectedChatsController : ControllerBase
             case CreateOutcome.Invalid:
                 return BadRequest(new ErrorsDto { Errors = created.Errors });
             case CreateOutcome.AlreadyExists:
-                return new AddDestinationResponse { Outcome = "AlreadyExists", Destination = _mapper.ToDto(created.Destination!) };
+                return new AddDestinationResponse { Outcome = "AlreadyExists", Destination = _mapper.ToDto(created.Destination!, created.Configuration.Revision) };
             default:
-                return new AddDestinationResponse { Outcome = "Added", Destination = _mapper.ToDto(created.Destination!), TestSent = created.Test!.Sent, TestError = created.Test.Error };
+                return new AddDestinationResponse { Outcome = "Added", Destination = _mapper.ToDto(created.Destination!, created.Configuration.Revision), TestSent = created.Test!.Sent, TestError = created.Test.Error };
         }
     }
 

@@ -36,12 +36,12 @@ public sealed class BotRig
         Memory = new BotMemory(h.State, h.Time);
         var formatter = new Formatter(h.Strings);
         var menus = new MenuScreens(h.Strings, formatter);
-        Status = new StatusScreen(h.Connection, PipelineRig.Compatible, gate, h.Settings, h.State, Health, Readiness, Outbox, h.Strings, formatter, h.Time);
+        Server = new FakeServerInfo();
+        Status = new StatusScreen(h.Connection, PipelineRig.Compatible, gate, h.Settings, h.State, Health, Readiness, Outbox, h.Strings, formatter, h.Time, Server);
         Library = new FakeLibrary();
         var tester = new DestinationTester(h.Connection, Health, h.Strings, NullLogger<DestinationTester>.Instance);
         var advanced = new AdvancedScreen(h.Strings, formatter);
         var destinations = new DestinationScreens(h.Settings, Health, tester, Library, Outbox, h.Connection, h.Strings, formatter, NullLogger<DestinationScreens>.Instance);
-        Server = new FakeServerInfo();
         var settingsScreens = new SettingsScreens(h.Settings, h.State, new LinkBuilder(Server), Memory, h.Strings, formatter);
         var checker = new DestinationChecker(h.Connection, h.Strings);
         Retrier = new ChatCheckRetrier(checker, h.Time)

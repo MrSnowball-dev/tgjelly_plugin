@@ -41,6 +41,15 @@ FAST_BATCHING = {"QuietWindowSeconds": 5, "ReleaseQuietSeconds": 5, "MaxHoldMinu
 PASSWORD = "smoke-pass-1"
 
 
+# Every dashboard asset GetPages() registers besides the page itself, with the content type a browser needs: a module
+# script with any other type is refused, and so is a stylesheet (design §8). test_smoke.py pins this to Plugin.cs.
+WEB_ASSETS = (("tgjelly.js", "javascript"), ("tgjelly-ui.js", "javascript"), ("tgjelly-autosave.js", "javascript"), ("tgjelly.css", "css"))
+
+
+def asset_served(status: int, content_type: str, kind: str) -> bool:
+    return status == 200 and kind in (content_type or "").lower()
+
+
 def plugin_folder_name(meta: dict) -> str:
     """Jellyfin's own install layout: plugins/<Name>_<version>/."""
     return f"{meta['name']}_{meta['version']}"
@@ -184,10 +193,11 @@ def checks(base: str, meta: dict, expect_compatible: bool = True) -> str:
 
     status, _, html = http("GET", f"{base}/web/ConfigurationPage?name=tgjelly")
     check(status == 200 and 'data-role="page"' in html, "dashboard page is served")
-    status, headers, _ = http("GET", f"{base}/web/ConfigurationPage?name=tgjelly.js")
-    content_type = headers.get("Content-Type") or ""
-    print(f"info - tgjelly.js Content-Type: {content_type}")
-    check(status == 200 and "javascript" in content_type, "page controller is served as JavaScript")
+    for name, kind in WEB_ASSETS:
+        status, headers, _ = http("GET", f"{base}/web/ConfigurationPage?name={name}")
+        content_type = headers.get("Content-Type") or ""
+        print(f"info - {name} Content-Type: {content_type}")
+        check(asset_served(status, content_type, kind), f"{name} is served with a {kind} content type")
 
     status, _, text = http("GET", f"{base}/TgJelly/Strings?lang=en", token=token)
     check(status == 200 and "web.connect.title" in json.loads(text), f"GET /TgJelly/Strings has web.connect.title (got {status})")

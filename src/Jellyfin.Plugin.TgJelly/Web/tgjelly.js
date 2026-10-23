@@ -5,24 +5,25 @@
 // - every render function returns HTML built only from esc()/t()/plural() output, so server text is always escaped;
 // - the default export is the page controller: it owns the state, the loaders, the click actions and the Status poller.
 // The strings table is always called S, so the key check in tests/web can find the key at every t() and plural() call.
+//
+// Sibling modules are imported by the URL Jellyfin serves them under (plan 8); tests/web/jellyfin-resolve.mjs maps it
+// to the file for Node.
+import {
+    esc, stateLabel, card, row, actionButton, inlineConfirm, notice, emptyState, textField, switchControl, selectField, numberField,
+} from './configurationpage?name=tgjelly-ui.js';
+import { createAutosave, CONFLICT_KEY } from './configurationpage?name=tgjelly-autosave.js';
+
+// esc lives in tgjelly-ui.js; it stays a named export here for the page's callers and tests.
+export { esc };
 
 const POLL_MS = 3000;
 // The template preview validates this long after the last keystroke.
 const PREVIEW_DEBOUNCE_MS = 500;
+// The template text saves this long after the last keystroke (design §6.1).
+const TEMPLATE_SAVE_MS = 1000;
 
 /** Connection states shown in the error color (the ConnectionState names from GET Status). */
 const PROBLEM_STATES = new Set(['TokenRejected', 'WebhookConflict', 'ConflictingInstance', 'Unreachable', 'InvalidBaseUrl', 'Incompatible']);
-
-const ESCAPES = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
-
-/**
- * Escapes a value for HTML text and attribute values. null and undefined give ''.
- * @param {unknown} value
- * @returns {string}
- */
-export function esc(value) {
-    return value === null || value === undefined ? '' : String(value).replace(/[&<>"']/g, c => ESCAPES[c]);
-}
 
 /**
  * Looks up a string and fills its {name} placeholders. The result is HTML: the text and the args are both escaped.
@@ -33,15 +34,43 @@ export function esc(value) {
  * @returns {string}
  */
 export function t(S, key, args = {}) {
-    const text = S && Object.hasOwn(S, key) ? String(S[key]) : key;
-    let html = '';
+    return fill(S, key, args, esc);
+}
+
+/**
+ * The plain-text twin of t(): the same lookup and fallbacks, nothing escaped. For the labels passed to the
+ * tgjelly-ui.js helpers, which escape their text themselves; t() stays for HTML written here.
+ * @param {Record<string, string> | null} S
+ * @param {string} key
+ * @param {Record<string, unknown>} [args]
+ * @returns {string}
+ */
+export function text(S, key, args = {}) {
+    return fill(S, key, args, String);
+}
+
+function fill(S, key, args, encode) {
+    const source = S && Object.hasOwn(S, key) ? String(S[key]) : key;
+    let out = '';
     let last = 0;
-    for (const match of text.matchAll(/\{(\w+)\}/g)) {
-        html += esc(text.slice(last, match.index)) + esc(Object.hasOwn(args, match[1]) ? args[match[1]] : match[0]);
+    for (const match of source.matchAll(/\{(\w+)\}/g)) {
+        out += encode(source.slice(last, match.index)) + encode(Object.hasOwn(args, match[1]) ? args[match[1]] ?? '' : match[0]);
         last = match.index + match[0].length;
     }
 
-    return html + esc(text.slice(last));
+    return out + encode(source.slice(last));
+}
+
+/** The key plural() and pluralText() look up: key.<category>, or key.other when the table lacks that category. */
+function pluralKey(S, key, count, lang) {
+    let category;
+    try {
+        category = new Intl.PluralRules(lang).select(count);
+    } catch {
+        category = new Intl.PluralRules('en').select(count);
+    }
+
+    return S && Object.hasOwn(S, `${key}.${category}`) ? `${key}.${category}` : `${key}.other`;
 }
 
 /**
@@ -54,15 +83,12 @@ export function t(S, key, args = {}) {
  * @returns {string} HTML, as t() returns
  */
 export function plural(S, key, count, args = {}, lang = 'en') {
-    let category;
-    try {
-        category = new Intl.PluralRules(lang).select(count);
-    } catch {
-        category = new Intl.PluralRules('en').select(count);
-    }
+    return t(S, pluralKey(S, key, count, lang), { ...args, count: formatNumber(count, lang) });
+}
 
-    const chosen = S && Object.hasOwn(S, `${key}.${category}`) ? `${key}.${category}` : `${key}.other`;
-    return t(S, chosen, { ...args, count: formatNumber(count, lang) });
+/** plural() as plain text, as text() is to t(). */
+export function pluralText(S, key, count, args = {}, lang = 'en') {
+    return text(S, pluralKey(S, key, count, lang), { ...args, count: formatNumber(count, lang) });
 }
 
 /**
@@ -293,30 +319,42 @@ export function requestError(S, result) {
 export function renderStatus(status, S, lang = 'en') {
     const counters = status.Counters ?? {};
     const dropped = (counters.DroppedIntake ?? 0) + (counters.DroppedOutbox ?? 0) + (counters.Evictions ?? 0);
-    const parts = [`<h2 class="sectionTitle">${t(S, 'web.status.title')}</h2>`];
+    const parts = [];
 
     if (!status.Compatible) {
-        parts.push(`<p class="tgj-compat tgj-error">${esc(status.CompatMessage)}</p>`);
+        parts.push(notice({ kind: 'error', extraClass: 'tgj-compat', html: esc(status.CompatMessage) }));
     } else {
-        const problem = PROBLEM_STATES.has(status.ConnectionState) ? ' class="tgj-error"' : '';
-        parts.push(`<p${problem}>${esc(status.ConnectionMessage)}</p>`);
-        if (status.ConnectionState === 'WebhookConflict') {
-            parts.push('<button is="emby-button" type="button" class="raised button-submit emby-button" data-tgj-act="takeover">'
-                + `<span>${t(S, 'web.status.takeOver')}</span></button>`);
-        }
+        const kind = PROBLEM_STATES.has(status.ConnectionState) ? 'error' : status.ConnectionState === 'Connected' ? 'ok' : 'muted';
+        const takeOver = status.ConnectionState === 'WebhookConflict'
+            ? actionButton({ label: text(S, 'web.status.takeOver'), act: 'takeover', kind: 'primary' })
+            : '';
+        parts.push(row({
+            label: text(S, 'web.status.connection'),
+            control: stateLabel({ kind, text: status.ConnectionMessage }) + takeOver,
+        }));
     }
 
-    parts.push(`<p class="fieldDescription">${t(S, 'web.status.counts', {
-        pending: formatNumber(status.PendingMedia ?? 0, lang),
-        outbox: formatNumber(status.OutboxCount ?? 0, lang),
-        dropped: formatNumber(dropped, lang),
-    })}</p>`);
+    if (!status.HasToken) {
+        // Before a bot is connected the card is just the connection line, below the Connect card.
+        return card({ title: text(S, 'web.status.title'), body: parts.join('') });
+    }
 
-    for (const notice of status.Notices ?? []) {
-        parts.push('<div class="tgj-notice">'
-            + `<span class="tgj-notice-text">${esc(notice.Text)}</span>`
-            + `<button is="emby-button" type="button" class="raised emby-button" data-tgj-act="dismiss" data-tgj-id="${esc(notice.Id)}">`
-            + `<span>${t(S, 'web.status.dismiss')}</span></button></div>`);
+    parts.push(row({
+        label: text(S, 'web.status.activity'),
+        extraClass: 'tgj-row--stack',
+        control: `<span class="tgj-row-hint">${t(S, 'web.status.counts', {
+            pending: formatNumber(status.PendingMedia ?? 0, lang),
+            outbox: formatNumber(status.OutboxCount ?? 0, lang),
+            dropped: formatNumber(dropped, lang),
+        })}</span>`,
+    }));
+
+    for (const entry of status.Notices ?? []) {
+        parts.push(notice({
+            kind: 'info',
+            html: `<span class="tgj-notice-text">${esc(entry.Text)}</span>`
+                + actionButton({ label: text(S, 'web.status.dismiss'), act: 'dismiss', id: entry.Id }),
+        }));
     }
 
     const errors = status.LastErrors ?? [];
@@ -326,93 +364,87 @@ export function renderStatus(status, S, lang = 'en') {
             source: e.Source,
             message: e.Message,
         })}</li>`);
-        parts.push(`<h3>${t(S, 'web.status.errors')}</h3><ul class="tgj-errors fieldDescription">${items.join('')}</ul>`);
+        parts.push(row({
+            label: text(S, 'web.status.errors'),
+            extraClass: 'tgj-row--stack',
+            control: `<ul class="tgj-errors tgj-row-hint">${items.join('')}</ul>`,
+        }));
     }
 
-    parts.push(`<p class="fieldDescription">${t(S, 'web.status.version', { version: status.Version, target: status.BuildTarget })}</p>`);
-    return `<div class="verticalSection">${parts.join('')}</div>`;
-}
-
-const BUTTON = 'is="emby-button" type="button"';
-
-/** A button for a data-tgj-act action; disabled while a request is in flight. */
-function button(label, act, { primary = false, disabled = false, id = null } = {}) {
-    return `<button ${BUTTON} class="raised${primary ? ' button-submit' : ''} emby-button" data-tgj-act="${act}"`
-        + `${id === null ? '' : ` data-tgj-id="${esc(id)}"`}${disabled ? ' disabled' : ''}><span>${label}</span></button>`;
+    parts.push(`<p class="tgj-row-hint tgj-version">${t(S, 'web.status.version', { version: status.Version, target: status.BuildTarget })}</p>`);
+    return card({ title: text(S, 'web.status.title'), body: parts.join('') });
 }
 
 /** A link to Telegram, or '' when the URL isn't one the server should have sent. */
 function telegramLink(url, label) {
     return typeof url === 'string' && url.startsWith('https://t.me/')
-        ? `<a is="emby-linkbutton" class="raised emby-button" href="${esc(url)}" target="_blank" rel="noopener noreferrer"><span>${label}</span></a>`
+        ? `<a class="tgj-btn" href="${esc(url)}" target="_blank" rel="noopener noreferrer">${label}</a>`
         : '';
 }
 
 /**
- * The proxy form (spec §6.6 item 5, §9.1): used under Advanced and in the "Can't reach Telegram?" panel.
+ * The proxy card (spec §6.6 item 5, §9.1; design §6.1): under Advanced, and inside the "Can't reach Telegram?" panel.
+ * Its fields auto-save together, as one save keyed 'proxy', when the focus leaves the card (every proxy save restarts
+ * the bot session); so they all carry data-tgj-save="proxy", and the card has one cue, beside the mode.
  * @param {object | null} settings the SettingsDto (null until it loads)
  * @param {Record<string, string>} S
- * @param {{ form?: { local: object, changed: string[] }, proxyErrors?: string[], saving?: boolean }} ui form is the
- *   editor state: local.Mode and local.Url. The proxy username and password are not part of it.
+ * @param {{ form?: { local: object } }} ui form is the editor state: local.Mode and local.Url. The proxy username and
+ *   password are not part of it.
+ * @param {{ nested?: boolean }} [options] nested: inside another card (the connect panel), so no card of its own
  * @returns {string} HTML
  */
-export function renderProxyForm(settings, S, ui) {
+export function renderProxyForm(settings, S, ui, { nested = false } = {}) {
     if (!settings || !ui.form) {
         return '';
     }
 
     const local = ui.form.local;
-    const changed = path => (ui.form.changed.includes(path) ? ' tgj-changed' : '');
-    const modes = [
-        ['System', t(S, 'web.proxy.modeSystem')],
-        ['None', t(S, 'web.proxy.modeNone')],
-        ['Http', t(S, 'web.proxy.modeHttp')],
-        ['Socks5', t(S, 'web.proxy.modeSocks5')],
-    ];
-    const options = modes.map(([value, label]) => `<option value="${value}"${local.Mode === value ? ' selected' : ''}>${label}</option>`);
+    const modes = ['System', 'None', 'Http', 'Socks5'].map(value => ({ value, label: text(S, PROXY_MODE_LABELS[value]) }));
+    const save = { 'data-tgj-save': 'proxy', autocomplete: 'off' };
     // Username and password are never written into the HTML (spec §10.2): the controller puts typed text back into the
     // inputs after a render.
-    const field = (name, path, label, saved, type, value) => `<div class="inputContainer${changed(path)}">`
-        + `<input is="emby-input" type="${type}" label="${label}" autocomplete="off" data-tgj-input="${name}"`
-        + `${saved ? ` placeholder="${t(S, 'web.proxy.saved')}"` : ''}${value === undefined ? '' : ` value="${esc(value)}"`} /></div>`;
-    const withAddress = local.Mode === 'Http' || local.Mode === 'Socks5';
-    const parts = [
-        `<h3>${t(S, 'web.proxy.title')}</h3>`,
-        `<div class="selectContainer${changed('Mode')}"><select is="emby-select" class="emby-select-withcolor emby-select" `
-        + `label="${t(S, 'web.proxy.mode')}" data-tgj-input="proxyMode">${options.join('')}</select></div>`,
-    ];
-    if (withAddress) {
-        parts.push(field('proxyUrl', 'Url', t(S, 'web.proxy.url'), false, 'text', local.Url ?? ''));
+    const field = (input, labelKey, type, value, placeholder = '') => row({
+        label: text(S, labelKey),
+        control: textField({ input, value, type, placeholder, attrs: { ...save, 'aria-label': text(S, labelKey) } }),
+    });
+    const rows = [row({
+        label: text(S, 'web.proxy.mode'),
+        cueKey: 'proxy',
+        control: selectField({ input: 'proxyMode', value: local.Mode, options: modes, attrs: { 'data-tgj-save': 'proxy', 'aria-label': text(S, 'web.proxy.mode') } }),
+    })];
+    if (local.Mode === 'Http' || local.Mode === 'Socks5') {
+        rows.push(field('proxyUrl', 'web.proxy.url', 'text', local.Url ?? ''));
     }
 
-    parts.push(field('proxyUsername', 'Username', t(S, 'web.proxy.username'), settings.HasProxyUsername, 'text'));
-    parts.push(field('proxyPassword', 'Password', t(S, 'web.proxy.password'), settings.HasProxyPassword, 'password'));
-
-    for (const message of ui.proxyErrors ?? []) {
-        parts.push(`<p class="tgj-error">${message}</p>`);
-    }
-
-    parts.push(button(t(S, 'web.proxy.save'), 'saveProxy', { primary: true, disabled: ui.saving }));
-    return `<div class="verticalSection tgj-proxy-form">${parts.join('')}</div>`;
+    rows.push(field('proxyUsername', 'web.proxy.username', 'text', '', settings.HasProxyUsername ? text(S, 'web.proxy.saved') : ''));
+    rows.push(field('proxyPassword', 'web.proxy.password', 'password', '', settings.HasProxyPassword ? text(S, 'web.proxy.saved') : ''));
+    return nested
+        ? `<div class="tgj-proxy-form"><h3 class="tgj-subtitle">${t(S, 'web.proxy.title')}</h3>${rows.join('')}</div>`
+        : card({ title: text(S, 'web.proxy.title'), body: rows.join(''), extraClass: 'tgj-proxy-form' });
 }
+
+const PROXY_MODE_LABELS = { System: 'web.proxy.modeSystem', None: 'web.proxy.modeNone', Http: 'web.proxy.modeHttp', Socks5: 'web.proxy.modeSocks5' };
 
 /**
  * The token form (spec §6.1): a password input that is never pre-filled, the two notes for an existing bot, the
- * profile checkbox and Save.
+ * profile checkbox and Connect. Connecting is an explicit action: nothing here auto-saves.
  */
 function renderTokenForm(ui, S) {
-    const busy = ui.saving ? ' disabled' : '';
+    const busy = Boolean(ui.saving);
     const notes = ui.mode === 'existing'
-        ? `<p class="fieldDescription">${t(S, 'web.connect.noteRestrict')}</p><p class="fieldDescription">${t(S, 'web.connect.noteOther')}</p>`
+        ? `<p class="tgj-row-hint">${t(S, 'web.connect.noteRestrict')}</p><p class="tgj-row-hint">${t(S, 'web.connect.noteOther')}</p>`
         : '';
     return '<div class="tgj-token-form">'
-        + `<div class="inputContainer"><input is="emby-input" type="password" label="${t(S, 'web.connect.tokenLabel')}" `
-        + `autocomplete="off" data-tgj-input="token"${busy} /></div>`
+        + row({
+            label: text(S, 'web.connect.tokenLabel'),
+            extraClass: 'tgj-row--stack',
+            control: textField({ input: 'token', value: '', type: 'password', attrs: { autocomplete: 'off', 'aria-label': text(S, 'web.connect.tokenLabel'), disabled: busy } }),
+        })
         + notes
-        + '<label class="emby-checkbox-label"><input is="emby-checkbox" type="checkbox" data-tgj-input="setProfile"'
-        + `${ui.setProfile ? ' checked' : ''}${busy} /><span>${t(S, 'web.connect.setProfile')}</span></label>`
-        + `<div>${button(t(S, 'web.connect.save'), 'saveToken', { primary: true, disabled: ui.saving })}`
-        + `${ui.hasToken ? button(t(S, 'web.connect.cancel'), 'cancelToken', { disabled: ui.saving }) : ''}</div></div>`;
+        + '<label class="tgj-check"><input type="checkbox" data-tgj-input="setProfile"'
+        + `${ui.setProfile ? ' checked' : ''}${busy ? ' disabled' : ''} /><span>${t(S, 'web.connect.setProfile')}</span></label>`
+        + `<div class="tgj-actions">${actionButton({ label: text(S, 'web.connect.save'), act: 'saveToken', kind: 'primary', disabled: busy })}`
+        + `${ui.hasToken ? actionButton({ label: text(S, 'web.connect.cancel'), act: 'cancelToken', disabled: busy }) : ''}</div></div>`;
 }
 
 /**
@@ -427,29 +459,32 @@ function renderTokenForm(ui, S) {
  */
 export function renderConnect(ui, S, links, settings = null) {
     const result = ui.result;
-    const busy = ui.saving;
+    const busy = Boolean(ui.saving);
     if (result && result.kind === 'Connected') {
-        return result.webhookDeleted
-            ? `<div class="verticalSection"><p class="fieldDescription">${t(S, 'web.connect.webhookRemoved')}</p></div>`
-            : '';
+        return result.webhookDeleted ? notice({ kind: 'info', html: t(S, 'web.connect.webhookRemoved') }) : '';
     }
 
     if (ui.hasToken && !ui.changingToken) {
         return '';
     }
 
-    const parts = [`<h2 class="sectionTitle">${t(S, 'web.connect.title')}</h2>`];
+    const title = text(S, 'web.connect.title');
     if (result && result.kind === 'NeedsConfirm') {
-        parts.push(`<p>${esc(result.message)}</p>`
-            + `<div>${button(t(S, 'web.connect.switch'), 'switchBot', { primary: true, disabled: busy })}`
-            + `${button(t(S, 'web.connect.cancel'), 'cancelSwitch', { disabled: busy })}</div>`);
-        return `<div class="verticalSection">${parts.join('')}</div>`;
+        return card({
+            title,
+            body: `<p>${esc(result.message)}</p><div class="tgj-actions">`
+                + actionButton({ label: text(S, 'web.connect.switch'), act: 'switchBot', kind: 'primary', disabled: busy })
+                + actionButton({ label: text(S, 'web.connect.cancel'), act: 'cancelSwitch', disabled: busy })
+                + '</div>',
+        });
     }
 
+    const parts = [];
     if (!ui.mode) {
-        parts.push(`<div>${button(t(S, 'web.connect.createNew'), 'connectNew', { primary: true, disabled: busy })}`
-            + `${button(t(S, 'web.connect.haveBot'), 'connectExisting', { disabled: busy })}`
-            + `${ui.hasToken ? button(t(S, 'web.connect.cancel'), 'cancelToken', { disabled: busy }) : ''}</div>`);
+        parts.push('<div class="tgj-actions">'
+            + actionButton({ label: text(S, 'web.connect.createNew'), act: 'connectNew', kind: 'primary', disabled: busy })
+            + actionButton({ label: text(S, 'web.connect.haveBot'), act: 'connectExisting', disabled: busy })
+            + `${ui.hasToken ? actionButton({ label: text(S, 'web.connect.cancel'), act: 'cancelToken', disabled: busy }) : ''}</div>`);
     } else {
         if (ui.mode === 'new') {
             parts.push('<ol class="tgj-steps">'
@@ -461,20 +496,20 @@ export function renderConnect(ui, S, links, settings = null) {
     }
 
     if (result && result.kind === 'Error') {
-        parts.push(`<p class="tgj-error">${esc(result.message)}</p>`);
+        parts.push(notice({ kind: 'error', html: esc(result.message) }));
     }
 
     if (ui.unreachable) {
         parts.push(`<div class="tgj-unreachable"><h3>${t(S, 'web.connect.unreachableTitle')}</h3>`
-            + `<p class="fieldDescription">${t(S, 'web.connect.unreachableHint')}</p>${renderProxyForm(settings, S, ui.proxy ?? {})}</div>`);
+            + `<p class="tgj-row-hint">${t(S, 'web.connect.unreachableHint')}</p>${renderProxyForm(settings, S, ui.proxy ?? {}, { nested: true })}</div>`);
     }
 
-    return `<div class="verticalSection">${parts.join('')}</div>`;
+    return card({ title, body: parts.join('') });
 }
 
 /**
- * The Bot section (spec §6.6 item 2, §6.4): the username, the access reminder, Change token and Disconnect bot with
- * its inline two-step confirm.
+ * The Bot card (spec §6.6 item 2, §6.4): the username, the access reminder, Open in Telegram, Change token and
+ * Disconnect bot with its inline confirmation.
  * @param {object} status the StatusDto
  * @param {{ OpenBot?: string } | null} links
  * @param {Record<string, string>} S
@@ -486,18 +521,81 @@ export function renderBot(status, links, S, ui) {
         return '';
     }
 
-    const busy = ui.saving;
-    const bot = status.BotUsername;
+    const busy = Boolean(ui.saving);
     const disconnect = ui.confirmDisconnect
-        ? `<p>${t(S, 'web.bot.confirmDisconnect')}</p>${button(t(S, 'web.bot.confirmYes'), 'disconnectYes', { primary: true, disabled: busy })}`
-            + button(t(S, 'web.connect.cancel'), 'disconnectNo', { disabled: busy })
-        : button(t(S, 'web.bot.disconnect'), 'disconnect', { disabled: busy });
-    return '<div class="verticalSection">'
-        + `<h2 class="sectionTitle">${t(S, 'web.bot.title')}</h2>`
-        + `<p><b>@${esc(bot)}</b></p>`
-        + `<p class="fieldDescription">${t(S, 'web.bot.access')}</p>`
-        + `<div>${telegramLink(links && links.OpenBot, t(S, 'web.bot.open'))}`
-        + `${button(t(S, 'web.bot.change'), 'changeToken', { disabled: busy })}${disconnect}</div></div>`;
+        ? inlineConfirm({
+            question: text(S, 'web.bot.confirmDisconnect'),
+            confirmLabel: text(S, 'web.bot.confirmYes'),
+            confirmAct: 'disconnectYes',
+            cancelLabel: text(S, 'web.connect.cancel'),
+            cancelAct: 'disconnectNo',
+        })
+        : actionButton({ label: text(S, 'web.bot.disconnect'), act: 'disconnect', kind: 'danger', disabled: busy });
+    return card({
+        title: text(S, 'web.bot.title'),
+        body: row({ label: text(S, 'web.bot.name'), control: `<b>@${esc(status.BotUsername)}</b>` })
+            + row({ label: text(S, 'web.bot.accessLabel'), hint: text(S, 'web.bot.access'), control: '' })
+            + `<div class="tgj-actions">${telegramLink(links && links.OpenBot, t(S, 'web.bot.open'))}`
+            + `${actionButton({ label: text(S, 'web.bot.change'), act: 'changeToken', disabled: busy })}${disconnect}</div>`,
+    });
+}
+
+/**
+ * The Overview summary card (design §5.2): the destinations and how many need attention, the templates edited and
+ * flagged, and the notices. Each row ends with a button that switches to its section (data-tgj-nav).
+ * @param {object | null} status the StatusDto
+ * @param {object | null} destinations the DestinationsDto, or null until it loads
+ * @param {object | null} templates the TemplatesDto, or null until it loads
+ * @param {Record<string, string>} S
+ * @param {string} [lang]
+ * @returns {string} HTML; '' until a bot is connected
+ */
+export function renderOverviewSummary(status, destinations, templates, S, lang = 'en') {
+    if (!status || !status.HasToken) {
+        return '';
+    }
+
+    const go = section => actionButton({ label: text(S, 'web.summary.open'), act: 'goto', attrs: { 'data-tgj-nav': section } });
+    // Notices are shown on the Overview itself, so that row has no button.
+    const values = [];
+
+    const dests = destinations ? destinations.Items ?? [] : null;
+    if (dests) {
+        if (dests.length === 0) {
+            values.push(stateLabel({ kind: 'muted', text: text(S, 'web.summary.noDestinations') }));
+        } else {
+            const failing = dests.filter(d => d.Health && (d.Health.Status !== 'Ok' || d.Health.PhotosBlocked)).length;
+            values.push(`<span class="tgj-summary-count">${esc(pluralText(S, 'web.summary.destinations', dests.length, {}, lang))}</span>`
+                + (failing > 0
+                    ? stateLabel({ kind: 'warning', text: pluralText(S, 'web.summary.attention', failing, {}, lang) })
+                    : stateLabel({ kind: 'ok', text: text(S, 'web.summary.healthy') })));
+        }
+    }
+
+    const items = templates ? templates.Items ?? [] : null;
+    let templateValue = '';
+    if (items) {
+        const edited = items.filter(i => i.Edited).length;
+        const flagged = items.filter(i => i.Flag).length;
+        templateValue = edited > 0
+            ? `<span class="tgj-summary-count">${esc(pluralText(S, 'web.nav.edited', edited, {}, lang))}</span>`
+            : stateLabel({ kind: 'muted', text: text(S, 'web.summary.templatesDefault') });
+        if (flagged > 0) {
+            templateValue += stateLabel({ kind: 'warning', text: pluralText(S, 'web.summary.flagged', flagged, {}, lang) });
+        }
+    }
+
+    const notices = (status.Notices ?? []).length;
+    const noticeValue = notices > 0
+        ? stateLabel({ kind: 'warning', text: pluralText(S, 'web.summary.noticeCount', notices, {}, lang) })
+        : stateLabel({ kind: 'muted', text: text(S, 'web.summary.noNotices') });
+
+    return card({
+        title: text(S, 'web.summary.title'),
+        body: row({ label: text(S, 'web.nav.destinations'), control: (values[0] ?? '') + go('destinations') })
+            + row({ label: text(S, 'web.nav.templates'), control: templateValue + go('templates') })
+            + row({ label: text(S, 'web.summary.notices'), control: noticeValue }),
+    });
 }
 
 /** The proxy editor's data from a SettingsDto. Username and Password are absent until the user types in them. */
@@ -507,9 +605,10 @@ export function proxyFormData(settings) {
 
 const PRESETS = ['Everything', 'NewMedia', 'AdminAlerts', 'Custom'];
 
-/** The editor's data for one destination from the DestinationDto: the fields Save can send. */
+/** The editor's data for one destination from the DestinationDto: the fields its auto-saves can send. */
 export function destinationFormData(dest) {
     return {
+        Enabled: Boolean(dest.Enabled),
         Preset: dest.Preset,
         Events: [...(dest.Events ?? [])],
         LibraryIds: [...(dest.LibraryIds ?? [])],
@@ -518,7 +617,7 @@ export function destinationFormData(dest) {
 }
 
 /**
- * The body of the PUT that Save sends: only the fields that differ from base, plus ExpectedRevision (spec §7.2, §10.4).
+ * The body of a destination's PUT: only the fields that differ from base, plus ExpectedRevision (spec §7.2, §10.4).
  * Events make the server switch the destination to Custom; a Preset other than Custom sends the Preset alone.
  * @param {object} base the form data the edit started from
  * @param {object} local the form's current data
@@ -534,7 +633,7 @@ export function destinationChanges(base, local, revision) {
         body.Preset = local.Preset;
     }
 
-    for (const key of ['LibraryIds', 'SilentGroups']) {
+    for (const key of ['LibraryIds', 'SilentGroups', 'Enabled']) {
         if (differs(key)) {
             body[key] = local[key];
         }
@@ -546,93 +645,155 @@ export function destinationChanges(base, local, revision) {
 const libraryKey = id => String(id).replaceAll('-', '').toLowerCase();
 const sameLibrary = (a, b) => libraryKey(a) === libraryKey(b);
 
-/** A health badge: the status text, plus a second badge when photos are blocked. */
-function healthBadges(health, S) {
+/**
+ * The dashboard's health words and colours (design §7). The bot's dest.health.* labels carry emoji by design, so the
+ * dashboard has its own web.dest.health.* copies and leaves the bot's strings alone.
+ */
+const HEALTH = {
+    Ok: { key: 'web.dest.health.Ok', kind: 'ok' },
+    PhotosBlocked: { key: 'web.dest.health.PhotosBlocked', kind: 'warning' },
+    NeedsPermissions: { key: 'web.dest.health.NeedsPermissions', kind: 'warning' },
+    TopicMissing: { key: 'web.dest.health.TopicMissing', kind: 'error' },
+    Lost: { key: 'web.dest.health.Lost', kind: 'error' },
+};
+
+/** A health status as a stateLabel's { kind, text }; a status this page doesn't know shows as its name, muted. */
+const healthState = (status, S) => {
+    const known = HEALTH[status || 'Ok'];
+    return known ? { kind: known.kind, text: text(S, known.key) } : { kind: 'muted', text: String(status) };
+};
+
+/** A health status as escaped HTML text, for an outcome line ("Check again", a test send). */
+export const healthText = (status, S) => esc(healthState(status, S).text);
+
+/** The health as coloured words: the status, plus "Photos blocked" when photos are blocked too. */
+function healthLabels(health, S) {
     const status = health && health.Status ? health.Status : 'Ok';
-    const badge = key => `<span class="tgj-badge">${t(S, key)}</span>`;
-    return badge(`dest.health.${status}`) + (health && health.PhotosBlocked && status !== 'PhotosBlocked' ? ' ' + badge('dest.health.PhotosBlocked') : '');
+    return stateLabel(healthState(status, S))
+        + (health && health.PhotosBlocked && status !== 'PhotosBlocked' ? stateLabel(healthState('PhotosBlocked', S)) : '');
 }
 
+/** The save key (and cue key) of one control in a destination's editor: 'dest:<id>:<what>'. */
+const destSaveKey = (id, what) => `dest:${id}:${what}`;
+
 /**
- * The editor under a destination's row (spec §7.2, §7.3): preset, event switches by group, libraries, silent groups,
- * and the Save / Send test / Check again / Remove buttons.
+ * The editor card for one destination (spec §7.2, §7.3; design §6.1, §6.1a): the preset, the event switches by group,
+ * the libraries and the silent groups. Every control saves itself at once (data-tgj-save, with its cue beside it);
+ * Send test, Check again and Remove stay actions, and Remove asks inline first.
  * @param {object} dest the DestinationDto
  * @param {{ EventKeys: string[], Groups: string[] }} catalog
  * @param {{ Id: string, Name: string }[]} libraries
  * @param {Record<string, string>} S
- * @param {{ form?: { local: object, changed: string[] }, confirmRemove?: boolean, leave?: boolean, result?: string }} ui
- *   form defaults to the destination's own values; result is HTML shown under the buttons
+ * @param {{ form?: { local: object }, confirmRemove?: boolean, leave?: boolean, result?: string, presetAsk?: boolean }} ui
+ *   form defaults to the destination's own values; result is HTML shown under the buttons; presetAsk shows the
+ *   "replace your custom events?" question under the preset
  * @returns {string} HTML
  */
 export function renderEditor(dest, catalog, libraries, S, ui) {
     const local = (ui.form && ui.form.local) || destinationFormData(dest);
-    const changedPaths = (ui.form && ui.form.changed) || [];
-    const changed = path => (changedPaths.includes(path) ? ' tgj-changed' : '');
-    const id = esc(dest.Id);
-    const checkbox = (input, attrs, checked, label) => '<label class="emby-checkbox-label">'
-        + `<input is="emby-checkbox" type="checkbox" data-tgj-input="${input}" data-tgj-id="${id}"${attrs}${checked ? ' checked' : ''} />`
-        + `<span>${label}</span></label>`;
+    const id = dest.Id;
+    const toggle = (input, what, checked, label, attrs) => {
+        const key = destSaveKey(id, what);
+        return row({ label, control: switchControl({ input, checked, label, attrs: { 'data-tgj-id': id, ...attrs, 'data-tgj-save': key } }), cueKey: key });
+    };
     const parts = [];
 
-    const options = PRESETS.map(p => `<option value="${p}"${local.Preset === p ? ' selected' : ''}>${t(S, `dest.preset.${p}`)}</option>`);
-    parts.push(`<div class="selectContainer${changed('Preset')}"><select is="emby-select" class="emby-select-withcolor emby-select" `
-        + `label="${t(S, 'web.dest.preset')}" data-tgj-input="destPreset" data-tgj-id="${id}">${options.join('')}</select></div>`);
+    const presetKey = destSaveKey(id, 'Preset');
+    parts.push(row({
+        label: text(S, 'web.dest.preset'),
+        control: selectField({
+            input: 'destPreset',
+            value: local.Preset,
+            options: PRESETS.map(p => ({ value: p, label: text(S, `dest.preset.${p}`) })),
+            attrs: { 'data-tgj-id': id, 'data-tgj-save': presetKey, 'aria-label': text(S, 'web.dest.preset') },
+        }),
+        cueKey: presetKey,
+    }));
+    if (ui.presetAsk) {
+        parts.push(inlineConfirm({
+            question: text(S, 'web.dest.presetConfirm'),
+            confirmLabel: text(S, 'web.dest.presetReplace'),
+            confirmAct: 'presetReplace',
+            cancelAct: 'presetCancel',
+            cancelLabel: text(S, 'dest.btn.cancel'),
+            id,
+        }));
+    }
 
     const events = new Set(local.Events);
-    parts.push(`<h4>${t(S, 'dest.events.title')}</h4><div class="${changed('Events').trim()}">`);
+    parts.push(`<h3 class="tgj-subtitle">${t(S, 'dest.events.title')}</h3>`);
     for (const group of catalog.Groups) {
         const keys = catalog.EventKeys.filter(k => k.startsWith(group + '.'));
-        parts.push(`<h5>${t(S, `groups.${group}`)}</h5>`
-            + keys.map(k => checkbox('destEvent', ` data-tgj-key="${esc(k)}"`, events.has(k), t(S, `dest.event.${k}`))).join(''));
+        parts.push(`<h4 class="tgj-group-title">${t(S, `groups.${group}`)}</h4>`
+            + keys.map(k => toggle('destEvent', `event:${k}`, events.has(k), text(S, `dest.event.${k}`), { 'data-tgj-key': k })).join(''));
     }
 
-    parts.push('</div>');
+    // Removing a leftover library has no switch of its own to show the cue beside, so the Libraries title carries it.
+    parts.push(`<h3 class="tgj-subtitle">${t(S, 'dest.libraries.title')} `
+        + `<span class="tgj-cue" data-tgj-cue="${esc(destSaveKey(id, 'libraries'))}" aria-live="polite"></span></h3>`);
+    if (dest.LibraryFilterBroken) {
+        parts.push(notice({ kind: 'error', html: t(S, 'web.dest.librariesRemoved') }));
+    }
 
     const chosen = new Set(local.LibraryIds.map(libraryKey));
-    parts.push(`<h4>${t(S, 'dest.libraries.title')}</h4><div class="${changed('LibraryIds').trim()}">`);
-    if (dest.LibraryFilterBroken) {
-        parts.push(`<p class="tgj-error">${t(S, 'web.dest.librariesRemoved')}</p>`);
-    }
-
-    parts.push(libraries.map(l => checkbox('destLibrary', ` data-tgj-lib="${esc(l.Id)}"`, chosen.has(libraryKey(l.Id)), esc(l.Name))).join(''));
+    parts.push(libraries.map(l => toggle('destLibrary', `lib:${l.Id}`, chosen.has(libraryKey(l.Id)), l.Name, { 'data-tgj-lib': l.Id })).join(''));
     for (const gone of (dest.RemovedLibraryIds ?? []).filter(x => local.LibraryIds.some(y => sameLibrary(x, y)))) {
-        parts.push(`<div class="tgj-removed-library"><span>${t(S, 'dest.libraries.removed', { id: gone })}</span> `
-            + `<button ${BUTTON} class="raised emby-button" data-tgj-act="removeLibrary" data-tgj-id="${id}" data-tgj-lib="${esc(gone)}">`
-            + `<span>${t(S, 'web.dest.removeLibrary')}</span></button></div>`);
+        parts.push(row({
+            label: text(S, 'dest.libraries.removed', { id: gone }),
+            control: actionButton({ label: text(S, 'web.dest.removeLibrary'), act: 'removeLibrary', id, attrs: { 'data-tgj-lib': gone } }),
+        }));
     }
 
-    parts.push(`<p class="fieldDescription">${t(S, chosen.size === 0 ? 'dest.libraries.all' : 'dest.libraries.hint')}</p></div>`);
+    parts.push(`<p class="tgj-row-hint">${t(S, chosen.size === 0 ? 'dest.libraries.all' : 'dest.libraries.hint')}</p>`);
 
     const silent = new Set(local.SilentGroups);
-    parts.push(`<h4>${t(S, 'dest.silent.title')}</h4><div class="${changed('SilentGroups').trim()}">`
-        + catalog.Groups.map(g => checkbox('destSilent', ` data-tgj-group="${esc(g)}"`, silent.has(g), t(S, `groups.${g}`))).join('')
-        + `<p class="fieldDescription">${t(S, 'dest.silent.hint')}</p></div>`);
+    parts.push(`<h3 class="tgj-subtitle">${t(S, 'dest.silent.title')}</h3>`
+        + catalog.Groups.map(g => toggle('destSilent', `silent:${g}`, silent.has(g), text(S, `groups.${g}`), { 'data-tgj-group': g })).join('')
+        + `<p class="tgj-row-hint">${t(S, 'dest.silent.hint')}</p>`);
 
-    parts.push(`<div>${button(t(S, 'web.dest.save'), 'saveDest', { primary: true, id: dest.Id })}`
-        + `${button(t(S, 'dest.btn.test'), 'testDest', { id: dest.Id })}${button(t(S, 'dest.btn.check'), 'checkDest', { id: dest.Id })}`
-        + `${ui.confirmRemove ? '' : button(t(S, 'dest.btn.remove'), 'remove', { id: dest.Id })}</div>`);
+    parts.push('<div class="tgj-actions">'
+        + actionButton({ label: text(S, 'dest.btn.test'), act: 'testDest', id })
+        + actionButton({ label: text(S, 'dest.btn.check'), act: 'checkDest', id })
+        + (ui.confirmRemove ? '' : actionButton({ label: text(S, 'dest.btn.remove'), act: 'remove', kind: 'danger', id }))
+        + '</div>');
     if (ui.confirmRemove) {
-        parts.push(`<div class="tgj-confirm"><p>${t(S, 'web.dest.confirmRemove', { title: dest.Title })}</p>`
-            + checkbox('destLeave', '', ui.leave, t(S, 'web.dest.leave'))
-            + `<div>${button(t(S, 'dest.btn.remove'), 'removeYes', { primary: true, id: dest.Id })}${button(t(S, 'dest.btn.cancel'), 'removeNo', { id: dest.Id })}</div></div>`);
+        // "Bot leaves the chat" is part of the question, not a setting: it saves nothing.
+        parts.push(row({
+            label: text(S, 'web.dest.leave'),
+            control: switchControl({ input: 'destLeave', checked: Boolean(ui.leave), label: text(S, 'web.dest.leave'), attrs: { 'data-tgj-id': id } }),
+        }));
+        parts.push(inlineConfirm({
+            question: text(S, 'web.dest.confirmRemove', { title: dest.Title }),
+            confirmLabel: text(S, 'dest.btn.remove'),
+            confirmAct: 'removeYes',
+            cancelAct: 'removeNo',
+            cancelLabel: text(S, 'dest.btn.cancel'),
+            id,
+        }));
     }
 
     if (ui.result) {
-        parts.push(`<p class="fieldDescription">${ui.result}</p>`);
+        parts.push(`<p class="tgj-row-hint tgj-dest-result">${ui.result}</p>`);
     }
 
-    return `<div class="tgj-editor">${parts.join('')}</div>`;
+    return card({ title: dest.Title, description: destinationMeta(dest, S), body: parts.join(''), extraClass: 'tgj-dest-editor' });
 }
 
+/** A destination's kind and preset, as plain text: "Supergroup · Everything". */
+const destinationMeta = (dest, S) => text(S, 'web.dest.meta', { kind: text(S, `dest.kind.${dest.Kind}`), preset: text(S, `dest.preset.${dest.Preset}`) });
+
 /**
- * The Destinations section (spec §6.6 item 3): one row per destination, its editor when open, Add destination and the
- * "Set up manually" link once the manual block is unlocked (spec §6.5).
+ * The Destinations section (spec §6.6 item 3; design §5.2): a card with one row per destination (its title, the kind and
+ * preset muted, the health as coloured words, the Sending switch and Edit), then the open destination's editor card.
+ * Add destination, and "Set up manually" once the manual block is unlocked (spec §6.5), close the list, or make its
+ * empty state.
  * @param {object | null} dto the DestinationsDto
  * @param {{ Id: string, Name: string }[]} libraries
  * @param {{ StartAdd?: string } | null} links
  * @param {Record<string, string>} S
  * @param {{ editing?: string | null, forms?: Record<string, object>, confirmRemove?: string | null, leave?: boolean,
- *   results?: Record<string, string> }} ui forms is keyed 'dest:<id>' like the controller's state.forms
+ *   results?: Record<string, string>, presetAsk?: string | null }} ui forms is keyed 'dest:<id>' like the controller's
+ *   state.forms; presetAsk is the id whose editor asks before leaving Custom
  * @returns {string} HTML
  */
 export function renderDestinations(dto, libraries, links, S, ui) {
@@ -640,52 +801,57 @@ export function renderDestinations(dto, libraries, links, S, ui) {
         return '';
     }
 
-    const parts = [`<h2 class="sectionTitle">${t(S, 'web.dest.title')}</h2>`];
-    if (dto.Items.length === 0) {
-        parts.push(`<p class="fieldDescription">${t(S, 'web.dest.empty')}</p>`);
+    const forms = ui.forms ?? {};
+    const add = telegramLink(links && links.StartAdd, t(S, 'web.dest.add'))
+        + (dto.ManualUnlocked
+            ? `<span class="tgj-row-hint">${t(S, 'web.dest.manualHint')}</span>${actionButton({ label: text(S, 'web.dest.manualLink'), act: 'open-manual' })}`
+            : '');
+    const rows = dto.Items.map(dest => {
+        const form = forms[`dest:${dest.Id}`];
+        const key = destSaveKey(dest.Id, 'Enabled');
+        return row({
+            label: dest.Title,
+            hint: destinationMeta(dest, S),
+            extraClass: 'tgj-dest-row',
+            control: healthLabels(dest.Health, S)
+                + `<span class="tgj-switch-pair"><span class="tgj-switch-label">${t(S, 'web.dest.enabled')}</span>`
+                + switchControl({
+                    input: 'destEnabled',
+                    checked: form ? Boolean(form.local.Enabled) : Boolean(dest.Enabled),
+                    label: text(S, 'web.dest.enabled'),
+                    attrs: { 'data-tgj-id': dest.Id, 'data-tgj-save': key },
+                })
+                + '</span>'
+                + actionButton({ label: text(S, ui.editing === dest.Id ? 'web.dest.close' : 'web.dest.edit'), act: 'edit', id: dest.Id }),
+            cueKey: key,
+        });
+    });
+    const body = rows.length === 0
+        ? emptyState({ text: text(S, 'web.dest.empty'), actionHtml: add })
+        : rows.join('') + `<div class="tgj-actions">${add}</div>`;
+    const cards = [card({ title: text(S, 'web.dest.title'), body })];
+
+    const editing = dto.Items.find(d => d.Id === ui.editing);
+    if (editing) {
+        cards.push(renderEditor(editing, dto.Catalog, libraries ?? [], S, {
+            form: forms[`dest:${editing.Id}`],
+            confirmRemove: ui.confirmRemove === editing.Id,
+            leave: ui.leave,
+            result: (ui.results ?? {})[editing.Id],
+            presetAsk: ui.presetAsk === editing.Id,
+        }));
     }
 
-    for (const dest of dto.Items) {
-        parts.push('<div class="tgj-destination">'
-            + `<div class="tgj-destination-row"><strong>${esc(dest.Title)}</strong> `
-            + `<span class="fieldDescription">${t(S, `dest.kind.${dest.Kind}`)}</span> ${healthBadges(dest.Health, S)} `
-            + '<label class="emby-checkbox-label">'
-            + `<input is="emby-checkbox" type="checkbox" data-tgj-act="enabled" data-tgj-id="${esc(dest.Id)}"${dest.Enabled ? ' checked' : ''} />`
-            + `<span>${t(S, 'web.dest.enabled')}</span></label> `
-            + `${button(t(S, ui.editing === dest.Id ? 'web.dest.close' : 'web.dest.edit'), 'edit', { id: dest.Id })}</div>`);
-        if (ui.editing === dest.Id) {
-            parts.push(renderEditor(dest, dto.Catalog, libraries ?? [], S, {
-                form: (ui.forms ?? {})[`dest:${dest.Id}`],
-                confirmRemove: ui.confirmRemove === dest.Id,
-                leave: ui.leave,
-                result: (ui.results ?? {})[dest.Id],
-            }));
-        } else if ((ui.results ?? {})[dest.Id]) {
-            parts.push(`<p class="fieldDescription">${ui.results[dest.Id]}</p>`);
-        }
-
-        parts.push('</div>');
-    }
-
-    parts.push(`<div>${telegramLink(links && links.StartAdd, t(S, 'web.dest.add'))}</div>`);
-    if (dto.ManualUnlocked) {
-        parts.push(`<p class="fieldDescription">${t(S, 'web.dest.manualHint')} `
-            + `<button is="emby-button" type="button" class="button-link" data-tgj-act="open-manual"><strong>${t(S, 'web.dest.manualLink')}</strong></button></p>`);
-    }
-
-    return `<div class="verticalSection">${parts.join('')}</div>`;
+    return `<div class="tgj-stack">${cards.join('')}</div>`;
 }
 
 
-/** A preset select for the manual block; data is the extra attribute text that says which control it is. */
-function presetSelect(S, input, selected, extra = '') {
-    const options = PRESETS.filter(p => p !== 'Custom').map(p => `<option value="${p}"${selected === p ? ' selected' : ''}>${t(S, `dest.preset.${p}`)}</option>`);
-    return `<div class="selectContainer"><select is="emby-select" class="emby-select-withcolor emby-select" label="${t(S, 'web.dest.preset')}" `
-        + `data-tgj-input="${input}"${extra}>${options.join('')}</select></div>`;
-}
+/** The preset choices for the manual block: every preset but Custom. */
+const presetOptions = S => PRESETS.filter(p => p !== 'Custom').map(p => ({ value: p, label: text(S, `dest.preset.${p}`) }));
 
 /**
- * The manual block under Advanced (spec §6.5): "Add chat by ID" and the detected chats. Only when the gate is unlocked.
+ * The manual card under Advanced (spec §6.5): "Add chat by ID" and the detected chats. Only when the gate is unlocked.
+ * These are actions (Add, Set up, Dismiss), not settings: nothing here auto-saves.
  * @param {object | null} dto the DestinationsDto
  * @param {Record<string, string>} S
  * @param {{ input?: string, preset?: string, result?: string, detectedPresets?: Record<string, string>, busy?: boolean }} ui
@@ -697,35 +863,47 @@ export function renderManual(dto, S, ui) {
         return '';
     }
 
-    const parts = [`<h2 class="sectionTitle">${t(S, 'web.manual.title')}</h2>`,
-        `<div class="inputContainer"><input is="emby-input" type="text" label="${t(S, 'web.manual.label')}" autocomplete="off" `
-        + `data-tgj-input="manualInput" value="${esc(ui.input ?? '')}" /></div>`,
-        presetSelect(S, 'manualPreset', ui.preset ?? 'Everything'),
-        `<div>${button(t(S, 'web.manual.add'), 'manualAdd', { primary: true })}</div>`];
+    const parts = [
+        row({
+            label: text(S, 'web.manual.label'),
+            extraClass: 'tgj-row--stack',
+            control: textField({ input: 'manualInput', value: ui.input ?? '', attrs: { autocomplete: 'off', 'aria-label': text(S, 'web.manual.label') } }),
+        }),
+        row({
+            label: text(S, 'web.dest.preset'),
+            control: selectField({ input: 'manualPreset', value: ui.preset ?? 'Everything', options: presetOptions(S), attrs: { 'aria-label': text(S, 'web.dest.preset') } }),
+        }),
+        `<div class="tgj-actions">${actionButton({ label: text(S, 'web.manual.add'), act: 'manualAdd', kind: 'primary' })}</div>`,
+    ];
     if (ui.result) {
         parts.push(`<div class="tgj-manual-result">${ui.result}</div>`);
     }
 
     const detected = dto.DetectedChats ?? [];
     if (detected.length > 0) {
-        parts.push(`<h3>${t(S, 'detected.title')}</h3>`);
+        parts.push(`<h3 class="tgj-subtitle">${t(S, 'detected.title')}</h3>`);
         for (const chat of detected) {
             const id = String(chat.ChatId);
-            parts.push(`<div class="tgj-detected"><p>${t(S, 'detected.line', { title: chat.Title })}</p>`
-                + presetSelect(S, 'detectedPreset', (ui.detectedPresets ?? {})[id] ?? 'Everything', ` data-tgj-id="${esc(id)}"`)
-                + `<div>${button(t(S, 'web.manual.setUp'), 'detectedSetUp', { primary: true, id })}`
-                + `${button(t(S, 'web.manual.dismiss'), 'detectedDismiss', { id })}</div></div>`);
+            parts.push(row({
+                label: text(S, 'detected.line', { title: chat.Title }),
+                extraClass: 'tgj-detected',
+                control: selectField({
+                    input: 'detectedPreset',
+                    value: (ui.detectedPresets ?? {})[id] ?? 'Everything',
+                    options: presetOptions(S),
+                    attrs: { 'data-tgj-id': id, 'aria-label': text(S, 'web.dest.preset') },
+                })
+                    + actionButton({ label: text(S, 'web.manual.setUp'), act: 'detectedSetUp', kind: 'primary', id })
+                    + actionButton({ label: text(S, 'web.manual.dismiss'), act: 'detectedDismiss', id }),
+            }));
         }
     }
 
-    return `<div class="verticalSection">${parts.join('')}</div>`;
+    return card({ title: text(S, 'web.manual.title'), body: parts.join('') });
 }
-
 
 const MESSAGE_TOGGLES = ['ShowPoster', 'ShowOverview', 'ShowRatingGenres', 'ShowOpenInJellyfin', 'ShowProviderLinks', 'AnnounceUpgrades'];
 const UPDATE_MODES = ['SameMajor', 'AnyNewer'];
-const SAVE_LABELS = { messages: 'web.messages.save', batching: 'web.batching.save', updates: 'web.updates.save' };
-const SETTINGS_SECTIONS = ['messages', 'batching', 'updates'];
 
 /** The batching fields with their allowed ranges (spec §10.1) and the strings that label and describe them. */
 const BATCHING_FIELDS = [
@@ -736,15 +914,6 @@ const BATCHING_FIELDS = [
     { key: 'LateEditHours', min: 0, max: 24, label: 'web.batching.lateEdit.label', hint: 'web.batching.lateEdit.hint' },
     { key: 'ReadyTimeoutMinutes', min: 1, max: 120, label: 'web.batching.readyTimeout.label', hint: 'web.batching.readyTimeout.hint' },
 ];
-
-/** Which section shows an error for a settings field path ('' when none of the three does). */
-function settingsSectionOf(field) {
-    if (field === 'PublicUrl' || String(field).startsWith('Message.')) {
-        return 'messages';
-    }
-
-    return String(field).startsWith('Batching.') ? 'batching' : String(field).startsWith('UpdateCheck.') ? 'updates' : '';
-}
 
 /**
  * The settings editor's data from a SettingsDto: the fields PUT Settings takes. Mode may arrive as a name or a number.
@@ -763,32 +932,42 @@ export function settingsFormData(settings) {
     };
 }
 
-/** The top-level settings fields each section owns (spec §6.6): the paths its Save sends from the form. */
-const SECTION_FIELDS = { messages: ['PublicUrl', 'Message'], batching: ['Batching'], updates: ['UpdateCheck'] };
+/** The value at a dotted path ('Message.ShowPoster') of a nested object; undefined when a part is missing. */
+function pathValue(obj, path) {
+    return path.split('.').reduce((node, part) => (isPlainObject(node) ? node[part] : undefined), obj);
+}
 
-/** Copies the fields one section owns from source onto a copy of target (both settings form data). */
-function overlaySection(target, source, section) {
+/** A copy of target with the value at each dotted path taken from source (both settings form data). */
+function overlayPaths(target, source, paths) {
     const out = structuredClone(target);
-    for (const field of SECTION_FIELDS[section]) {
-        out[field] = structuredClone(source[field]);
+    for (const path of paths) {
+        const parts = path.split('.');
+        let node = out;
+        for (const part of parts.slice(0, -1)) {
+            node = node[part] = isPlainObject(node[part]) ? node[part] : {};
+        }
+
+        node[parts.at(-1)] = structuredClone(pathValue(source, path));
     }
 
     return out;
 }
 
 /**
- * The PUT Settings body for one section's Save: that section's fields from the form's values laid over the saved ones
- * (the form's base), so edits waiting in the other sections are not sent. Also the client-side errors that stop it
- * (a batching value that isn't a whole number). Ranges are checked by the server.
+ * The PUT Settings body for an auto-save: the form's values at the given dotted paths (the field that changed) laid
+ * over the saved ones (the form's base), so edits still waiting in other fields are not sent with it. Also the
+ * client-side errors that stop it (a batching value that isn't a whole number); see batchingError for the ranges.
  * @param {{ base: object, local: object }} form
- * @param {string} section messages | batching | updates
- * @returns {{ body: object | null, errors: { Field: string, Html: string }[] }}
+ * @param {string[]} paths e.g. ['Message.ShowPoster']
+ * @param {number} revision the Revision the page last saw (ExpectedRevision)
+ * @param {Record<string, string>} S
+ * @returns {{ body: object | null, errors: { Field: string, Message: string }[] }} Message is plain text
  */
-export function settingsRequest(form, section, revision, S) {
-    const data = overlaySection(form.base, form.local, section);
-    const errors = section !== 'batching' ? [] : BATCHING_FIELDS
+export function settingsRequest(form, paths, revision, S) {
+    const data = overlayPaths(form.base, form.local, paths);
+    const errors = BATCHING_FIELDS
         .filter(f => !Number.isInteger(data.Batching[f.key]))
-        .map(f => ({ Field: `Batching.${f.key}`, Html: t(S, 'web.settings.notNumber') }));
+        .map(f => ({ Field: `Batching.${f.key}`, Message: text(S, 'web.settings.notNumber') }));
     return errors.length > 0
         ? { body: null, errors }
         : {
@@ -803,25 +982,73 @@ export function settingsRequest(form, section, revision, S) {
         };
 }
 
-/** The shared pieces of the three settings sections: highlight, error lines under a field, and the section's own errors. */
-function settingsHelpers(ui, section) {
-    const errors = ui.errors ?? [];
-    const line = e => `<p class="tgj-error">${e.Html ?? esc(e.Message)}</p>`;
-    return {
-        changed: path => ((ui.form.changed ?? []).includes(path) ? ' tgj-changed' : ''),
-        fieldErrors: path => errors.filter(e => e.Field === path).map(line).join(''),
-        // An error for a field this section doesn't show goes under the Save the user pressed.
-        general: () => (ui.section === section ? errors.filter(e => settingsSectionOf(e.Field) !== section).map(line).join('') : ''),
-        save: S => button(t(S, SAVE_LABELS[section]), 'saveSettings', { primary: true, disabled: ui.saving, id: section }),
-    };
+/**
+ * Whether a public URL can be used for the "Open in Jellyfin" buttons: a port of the server's PublicUrlRules.IsValid
+ * (an absolute http or https URL whose host contains a dot and is not an IPv6 literal). Empty text is valid: it turns
+ * the buttons off. The server saves any string, so the page checks before it saves (design §6.3).
+ * @param {unknown} value
+ * @returns {boolean}
+ */
+export function validatePublicUrl(value) {
+    const url = String(value ?? '').trim();
+    if (url === '') {
+        return true;
+    }
+
+    if (!/^https?:\/\//i.test(url)) {
+        return false;
+    }
+
+    let parsed;
+    try {
+        parsed = new URL(url);
+    } catch {
+        return false;
+    }
+
+    // System.Uri refuses a host with an empty label (".", ".a", "a..b"; one trailing dot is fine), with characters
+    // outside letters, digits, "-" and "_" ("*.b"), or with a %-escape ("a%2eb"), all of which URL accepts.
+    const host = parsed.hostname;
+    const rawHost = url.replace(/^https?:\/\//i, '').split(/[/?#]/)[0].replace(/^.*@/, '');
+    const labels = host.replace(/\.$/, '').split('.');
+    return (parsed.protocol === 'http:' || parsed.protocol === 'https:')
+        && !host.startsWith('[')
+        && host.includes('.')
+        && /^[a-z0-9._-]+$/.test(host)
+        && !rawHost.includes('%')
+        && labels.every(label => label !== '');
 }
 
 /**
- * The Messages section (spec §6.6 item 4, §8.3, §8.4): the public URL and the six message toggles.
+ * Why a batching value can't be saved (plain text), or null: the server's rules (SettingsValidator) and its messages,
+ * checked before the save. batching is the Batching object as it would be sent: this field's value with the others.
+ * @param {{ key: string, min: number, max: number }} field one of BATCHING_FIELDS
+ * @param {Record<string, unknown>} batching numbers, or the text typed where it isn't a whole number
+ * @param {Record<string, string>} S
+ * @returns {string | null}
+ */
+export function batchingError(field, batching, S) {
+    const value = batching[field.key];
+    if (!Number.isInteger(value)) {
+        return text(S, 'web.settings.notNumber');
+    }
+
+    if (value < field.min || value > field.max) {
+        return text(S, 'web.settings.range', { min: field.min, max: field.max });
+    }
+
+    const quiet = batching.QuietWindowSeconds;
+    const hold = batching.MaxHoldMinutes;
+    const pair = field.key === 'QuietWindowSeconds' || field.key === 'MaxHoldMinutes';
+    return pair && Number.isInteger(quiet) && Number.isInteger(hold) && hold * 60 < quiet ? text(S, 'web.settings.maxHoldShort') : null;
+}
+
+/**
+ * The Messages card (spec §6.6 item 4, §8.3, §8.4; design §6.1): the public URL, which saves when the field is left
+ * or on Enter, and the six message switches, which save at once. Each row has the cue spot of its own save.
  * @param {object | null} settings the SettingsDto
  * @param {Record<string, string>} S
- * @param {{ form?: { local: object, changed: string[] }, errors?: { Field: string, Message?: string, Html?: string }[],
- *   saving?: boolean, section?: string }} ui form is state.forms.settings
+ * @param {{ form?: { local: object } }} ui form is state.forms.settings
  * @returns {string} HTML
  */
 export function renderMessages(settings, S, ui) {
@@ -829,37 +1056,55 @@ export function renderMessages(settings, S, ui) {
         return '';
     }
 
-    const h = settingsHelpers(ui, 'messages');
     const local = ui.form.local;
     const url = String(local.PublicUrl ?? '');
-    const parts = [`<h2 class="sectionTitle">${t(S, 'web.messages.title')}</h2>`,
-        `<div class="inputContainer${h.changed('PublicUrl')}"><input is="emby-input" type="text" label="${t(S, 'web.messages.url')}" autocomplete="off" `
-        + `data-tgj-input="publicUrl" data-tgj-field="PublicUrl" value="${esc(url)}" />`
-        + `<div class="fieldDescription">${t(S, 'web.messages.urlHint')}</div></div>`,
-        h.fieldErrors('PublicUrl')];
+    const rows = [row({
+        label: text(S, 'web.messages.url'),
+        hint: text(S, 'web.messages.urlHint'),
+        extraClass: 'tgj-row--stack',
+        cueKey: 'PublicUrl',
+        control: textField({
+            input: 'publicUrl',
+            value: url,
+            type: 'url',
+            attrs: { 'data-tgj-field': 'PublicUrl', 'data-tgj-save': 'PublicUrl', autocomplete: 'off', spellcheck: 'false', 'aria-label': text(S, 'web.messages.url') },
+        }),
+    })];
     const suggestion = settings.PublicUrlSuggestion;
     if (suggestion && suggestion !== url) {
-        parts.push(`<p class="fieldDescription">${t(S, 'web.messages.suggested', { url: suggestion })} <strong>${t(S, 'web.messages.verify')}</strong> `
-            + `${button(t(S, 'web.messages.useSuggested'), 'useSuggested')}</p>`);
+        rows.push(notice({
+            kind: 'info',
+            html: `${t(S, 'web.messages.suggested', { url: suggestion })} <strong>${t(S, 'web.messages.verify')}</strong> `
+                + actionButton({ label: text(S, 'web.messages.useSuggested'), act: 'useSuggested' }),
+        }));
     }
 
     // The server judged the saved value; once the user types another one, that verdict no longer applies.
     if (settings.PublicUrl && !settings.PublicUrlValid && url === settings.PublicUrl) {
-        parts.push(`<p class="tgj-error">${t(S, 'web.messages.urlInvalid')}</p>`);
+        rows.push(notice({ kind: 'error', html: t(S, 'web.messages.urlInvalid') }));
     }
 
     for (const key of MESSAGE_TOGGLES) {
-        parts.push(`<label class="emby-checkbox-label${h.changed(`Message.${key}`)}"><input is="emby-checkbox" type="checkbox" data-tgj-input="msgToggle" `
-            + `data-tgj-key="${key}" data-tgj-field="Message.${key}"${local.Message && local.Message[key] ? ' checked' : ''} />`
-            + `<span>${t(S, `settings.msg.${key}`)}</span></label>${h.fieldErrors(`Message.${key}`)}`);
+        const label = text(S, `settings.msg.${key}`);
+        const path = `Message.${key}`;
+        rows.push(row({
+            label,
+            cueKey: path,
+            control: switchControl({
+                input: 'msgToggle',
+                checked: Boolean(local.Message && local.Message[key]),
+                label,
+                attrs: { 'data-tgj-key': key, 'data-tgj-field': path, 'data-tgj-save': path },
+            }),
+        }));
     }
 
-    parts.push(h.general(), `<div>${h.save(S)}</div>`);
-    return `<div class="verticalSection">${parts.join('')}</div>`;
+    return card({ title: text(S, 'web.messages.title'), body: rows.join('') });
 }
 
 /**
- * The batching form under Advanced (spec §10.1): six numeric fields, each with its range in the description.
+ * The batching card under Advanced (spec §10.1): six whole-number fields, each with its range in the explanation.
+ * Each saves 800 ms after the last keystroke, or when the field is left.
  * @param {object | null} settings
  * @param {Record<string, string>} S
  * @param {object} ui as for renderMessages
@@ -870,22 +1115,26 @@ export function renderBatching(settings, S, ui) {
         return '';
     }
 
-    const h = settingsHelpers(ui, 'batching');
-    const parts = [`<h3>${t(S, 'web.batching.title')}</h3>`];
-    for (const f of BATCHING_FIELDS) {
+    const rows = BATCHING_FIELDS.map(f => {
         const path = `Batching.${f.key}`;
-        parts.push(`<div class="inputContainer${h.changed(path)}"><input is="emby-input" type="number" label="${t(S, f.label)}" `
-            + `min="${f.min}" max="${f.max}" step="1" data-tgj-input="batching" data-tgj-key="${f.key}" data-tgj-field="${path}" `
-            + `value="${esc(ui.form.local.Batching[f.key])}" />`
-            + `<div class="fieldDescription">${t(S, f.hint, { min: f.min, max: f.max })}</div></div>${h.fieldErrors(path)}`);
-    }
-
-    parts.push(h.general(), `<div>${h.save(S)}</div>`);
-    return `<div class="verticalSection">${parts.join('')}</div>`;
+        return row({
+            label: text(S, f.label),
+            hint: text(S, f.hint, { min: f.min, max: f.max }),
+            cueKey: path,
+            control: numberField({
+                input: 'batching',
+                value: ui.form.local.Batching[f.key],
+                min: f.min,
+                max: f.max,
+                attrs: { 'data-tgj-key': f.key, 'data-tgj-field': path, 'data-tgj-save': path, 'aria-label': text(S, f.label) },
+            }),
+        });
+    });
+    return card({ title: text(S, 'web.batching.title'), body: rows.join('') });
 }
 
 /**
- * The update-check form under Advanced (spec §7.6): the enabled checkbox and the mode.
+ * The update-check card under Advanced (spec §7.6): the switch and the mode, each saved at once.
  * @param {object | null} settings
  * @param {Record<string, string>} S
  * @param {object} ui as for renderMessages
@@ -896,28 +1145,39 @@ export function renderUpdates(settings, S, ui) {
         return '';
     }
 
-    const h = settingsHelpers(ui, 'updates');
     const local = ui.form.local.UpdateCheck;
-    const options = UPDATE_MODES.map(mode => `<option value="${mode}"${local.Mode === mode ? ' selected' : ''}>${t(S, `settings.updates.mode.${mode}`)}</option>`);
-    const parts = [`<h3>${t(S, 'web.updates.title')}</h3>`,
-        `<p class="fieldDescription">${t(S, 'settings.updates.hint')}</p>`,
-        `<label class="emby-checkbox-label${h.changed('UpdateCheck.Enabled')}"><input is="emby-checkbox" type="checkbox" data-tgj-input="updEnabled" `
-        + `data-tgj-field="UpdateCheck.Enabled"${local.Enabled ? ' checked' : ''} /><span>${t(S, 'settings.updates.enabled')}</span></label>`,
-        h.fieldErrors('UpdateCheck.Enabled'),
-        `<div class="selectContainer${h.changed('UpdateCheck.Mode')}"><select is="emby-select" class="emby-select-withcolor emby-select" `
-        + `label="${t(S, 'web.updates.mode')}" data-tgj-input="updMode" data-tgj-field="UpdateCheck.Mode">${options.join('')}</select></div>`,
-        h.fieldErrors('UpdateCheck.Mode'),
-        h.general(),
-        `<div>${h.save(S)}</div>`];
-    return `<div class="verticalSection">${parts.join('')}</div>`;
+    const enabled = text(S, 'settings.updates.enabled');
+    const body = row({
+        label: enabled,
+        cueKey: 'UpdateCheck.Enabled',
+        control: switchControl({
+            input: 'updEnabled',
+            checked: Boolean(local.Enabled),
+            label: enabled,
+            attrs: { 'data-tgj-field': 'UpdateCheck.Enabled', 'data-tgj-save': 'UpdateCheck.Enabled' },
+        }),
+    }) + row({
+        label: text(S, 'web.updates.mode'),
+        cueKey: 'UpdateCheck.Mode',
+        control: selectField({
+            input: 'updMode',
+            value: local.Mode,
+            options: UPDATE_MODES.map(mode => ({ value: mode, label: text(S, `settings.updates.mode.${mode}`) })),
+            attrs: { 'data-tgj-field': 'UpdateCheck.Mode', 'data-tgj-save': 'UpdateCheck.Mode', 'aria-label': text(S, 'web.updates.mode') },
+        }),
+    });
+    return card({ title: text(S, 'web.updates.title'), description: text(S, 'settings.updates.hint'), body });
 }
 
 const TEMPLATES_DOCS = 'https://github.com/MrSnowball-dev/tgjelly_plugin/blob/main/docs/templates.md';
 
-/** The template form data for one item (what Save sends besides the revision). */
+/** The template form data for one item (what a save sends besides the revision). */
 export function templateFormData(item) {
     return { Text: String(item.Text ?? '') };
 }
+
+/** The auto-save and cue key of an event's template text. */
+const templateSaveKey = key => `template:${key}`;
 
 /** Tags of Telegram HTML that the preview shows as the same tag, without any attribute. */
 const PREVIEW_SAME = new Set(['b', 'strong', 'i', 'em', 'u', 'ins', 's', 'strike', 'del', 'code', 'pre']);
@@ -1005,7 +1265,7 @@ function expandableQuote(children) {
         body = [{ text: children[index].text.slice(cut + 1) }, ...children.slice(index + 1)];
     }
 
-    return `<details class="tgj-quote"><summary>${nodesHtml(summary)}</summary>${nodesHtml(body)}</details>`;
+    return `<details class="tgj-tg-quote"><summary>${nodesHtml(summary)}</summary>${nodesHtml(body)}</details>`;
 }
 
 /** The safe preview markup for one closed Telegram element. */
@@ -1017,9 +1277,9 @@ function previewElement(name, attrs, children) {
 
     switch (name) {
         case 'tg-spoiler':
-            return `<span class="tgj-spoiler">${inner}</span>`;
+            return `<span class="tgj-tg-spoiler">${inner}</span>`;
         case 'span':
-            return String(attrs.class ?? '').trim() === 'tg-spoiler' ? `<span class="tgj-spoiler">${inner}</span>` : inner;
+            return String(attrs.class ?? '').trim() === 'tg-spoiler' ? `<span class="tgj-tg-spoiler">${inner}</span>` : inner;
         case 'blockquote':
             return Object.hasOwn(attrs, 'expandable') ? expandableQuote(children) : `<blockquote>${inner}</blockquote>`;
         case 'a': {
@@ -1036,7 +1296,7 @@ function previewElement(name, attrs, children) {
  * Turns Telegram HTML (from the server's Validate) into markup that is safe to put into the page. It tokenizes the
  * input and re-emits only Telegram's formatting tags, with no attribute from the input except a checked link href:
  * b, strong, i, em, u, ins, s, strike, del, code and pre as themselves; tg-spoiler and span class="tg-spoiler" as a
- * span.tgj-spoiler; blockquote (an expandable one as details/summary); a as a new-tab link for http:, https: and tg:
+ * span.tgj-tg-spoiler; blockquote (an expandable one as details/summary); a as a new-tab link for http:, https: and tg:
  * hrefs only, otherwise its text; tg-emoji and tg-time as their text. An unknown, unclosed or stray tag is shown as text.
  * Entities are decoded once, and all text is escaped on output.
  * @param {string} telegramHtml
@@ -1114,19 +1374,19 @@ export function renderTemplatePreview(result, S, lang = 'en', lastGood = null) {
     }
 
     for (const w of result.Warnings ?? []) {
-        parts.push(`<p class="fieldDescription">${esc(w)}</p>`);
+        parts.push(`<p class="tgj-tpl-warning">${esc(w)}</p>`);
     }
 
     const failed = Boolean(result.RequestError) || (result.Errors ?? []).length > 0;
     const shown = failed ? lastGood : result;
     if (shown) {
-        parts.push(`<div class="tgj-tg${failed ? ' tgj-stale' : ''}">`
+        parts.push(`<div class="tgj-tg-bubble${failed ? ' tgj-tg-stale' : ''}">`
             + (shown.Poster ? `<div class="tgj-tg-poster">${t(S, 'web.templates.poster')}</div>` : '')
             + `<div class="tgj-tg-text">${previewHtml(shown.Html)}</div>${previewButtons(shown.Buttons)}</div>`);
     }
 
     if (!result.RequestError && (!failed || result.Length > 0)) {
-        parts.push(`<p class="fieldDescription">${t(S, 'web.templates.length', { length: formatNumber(result.Length ?? 0, lang), limit: formatNumber(result.Limit ?? 0, lang) })}</p>`);
+        parts.push(`<p class="tgj-row-hint tgj-tpl-length">${t(S, 'web.templates.length', { length: formatNumber(result.Length ?? 0, lang), limit: formatNumber(result.Limit ?? 0, lang) })}</p>`);
     }
 
     return parts.join('');
@@ -1135,17 +1395,18 @@ export function renderTemplatePreview(result, S, lang = 'en', lastGood = null) {
 /** Whether a validation result stops a test send: it had errors, or the request failed. */
 const validationFailed = result => Boolean(result && (result.RequestError || (result.Errors ?? []).length > 0));
 
-/** Whether Send test is off: no destination, the last validation failed, or a send or save is in flight. */
+/** Whether Send test is off: no destination, the last validation failed, or a send or a reset is in flight. */
 export function templateTestBlocked(ui) {
     return (ui.destinations ?? []).length === 0 || validationFailed(ui.result) || Boolean(ui.testing) || Boolean(ui.busy);
 }
 
 /**
  * The Message templates section (spec §8.5): every message comes from a template, and this edits the one in use per
- * event, with a live Telegram-like preview, a test send and a reset to the built-in template.
+ * event, with a live Telegram-like preview, a test send and a reset to the built-in template. The text saves itself
+ * (design §6.1): its cue sits beside the textarea's label.
  * @param {object | null} dto the TemplatesDto
  * @param {Record<string, string>} S
- * @param {{ key?: string, forms?: Record<string, { local: object, changed: string[] }>, result?: object | null,
+ * @param {{ key?: string, forms?: Record<string, { local: object }>, result?: object | null,
  *   good?: object | null, busy?: boolean, lang?: string, destinations?: { Id: string, Title: string }[],
  *   testTo?: string, testing?: boolean, testResult?: string, resetAsk?: boolean }} ui key is the selected event;
  *   result is its last validation, good the last one without errors; testResult is HTML
@@ -1160,51 +1421,63 @@ export function renderTemplates(dto, S, ui) {
     const item = dto.Items.find(i => i.EventKey === ui.key) ?? dto.Items[0];
     const form = (ui.forms ?? {})[`tpl:${item.EventKey}`];
     const local = form ? form.local : templateFormData(item);
-    const changed = path => (form && (form.changed ?? []).includes(path) ? ' tgj-changed' : '');
-    const options = dto.Items.map(i => `<option value="${esc(i.EventKey)}"${i === item ? ' selected' : ''}>${i.Edited ? '● ' : ''}${esc(i.Label)}</option>`);
-    const parts = [`<h2 class="sectionTitle">${t(S, 'web.templates.title')}</h2>`,
-        `<p class="fieldDescription">${t(S, 'web.templates.intro')}</p>`,
-        `<div class="tgj-tpl-head"><div class="selectContainer"><select is="emby-select" class="emby-select-withcolor emby-select" `
-        + `label="${t(S, 'web.templates.event')}" data-tgj-input="tplEvent">${options.join('')}</select></div>`
-        + `<span class="tgj-badge">${item.Edited ? t(S, 'web.templates.edited') : t(S, 'web.templates.builtIn')}</span></div>`];
+    const saveKey = templateSaveKey(item.EventKey);
+    const eventLabel = text(S, 'web.templates.event');
+    const options = dto.Items.map(i => ({ value: i.EventKey, label: i.Edited ? text(S, 'web.templates.eventEdited', { label: i.Label }) : i.Label }));
+    const badge = item.Edited
+        ? `<span class="tgj-badge tgj-badge--edited">${t(S, 'web.templates.edited')}</span>`
+        : `<span class="tgj-badge">${t(S, 'web.templates.builtIn')}</span>`;
+    const parts = [row({
+        label: eventLabel,
+        control: badge + selectField({ input: 'tplEvent', value: item.EventKey, options, attrs: { 'aria-label': eventLabel } }),
+        extraClass: 'tgj-tpl-event',
+    })];
     if (item.Flag) {
         // A truncated template was sent, only shortened; any other flag means the built-in template was sent instead.
         parts.push(item.Flag.Kind === 'truncated'
-            ? `<p class="tgj-error">${t(S, 'web.templates.flagTruncated')}</p>`
-            : `<p class="tgj-error">${t(S, 'web.templates.flagError')} ${esc(item.Flag.Error)}</p>`);
+            ? notice({ kind: 'warning', html: t(S, 'web.templates.flagTruncated') })
+            : notice({ kind: 'error', html: `${t(S, 'web.templates.flagError')} ${esc(item.Flag.Error)}` }));
     }
 
+    // The textarea is told apart by its event key, not an id: a refresh keeps a pending text only in its own template.
     const rows = (item.Fields ?? []).map(f => `<tr><td><code>${esc(f.Name)}</code></td><td>${esc(f.Type)}</td>`
         + `<td>${f.Optional ? t(S, 'web.templates.optional') : ''}</td><td>${esc(f.Description)}</td></tr>`);
-    parts.push(`<div class="tgj-tpl-grid"><div class="tgj-tpl-edit">`
-        + `<div class="${changed('Text').trim()}"><textarea id="tgj-tpl-text" class="tgj-template-text" data-tgj-input="tplText" rows="12" spellcheck="false">${esc(local.Text)}</textarea></div>`
-        + `<details><summary>${t(S, 'web.templates.fields')}</summary><table class="tgj-template-fields">${rows.join('')}</table></details>`
-        + `<p class="fieldDescription"><a is="emby-linkbutton" href="${TEMPLATES_DOCS}" target="_blank" rel="noopener noreferrer">${t(S, 'web.templates.docs')}</a></p></div>`
+    parts.push('<div class="tgj-tpl-grid"><div class="tgj-tpl-edit">'
+        + `<div class="tgj-tpl-label"><span class="tgj-row-label" id="tgj-tpl-label">${t(S, 'web.templates.text')}</span>`
+        + `<span class="tgj-cue" data-tgj-cue="${esc(saveKey)}" aria-live="polite"></span></div>`
+        + `<textarea class="tgj-field tgj-template-text" data-tgj-input="tplText" data-tgj-key="${esc(item.EventKey)}" data-tgj-save="${esc(saveKey)}"`
+        + ` aria-labelledby="tgj-tpl-label" rows="12" spellcheck="false">${esc(local.Text)}</textarea>`
+        + `<details class="tgj-tpl-fields"><summary>${t(S, 'web.templates.fields')}</summary><table class="tgj-template-fields">${rows.join('')}</table></details>`
+        + `<p class="tgj-tpl-docs"><a class="tgj-link" href="${TEMPLATES_DOCS}" target="_blank" rel="noopener noreferrer">${t(S, 'web.templates.docs')}</a></p></div>`
         + `<div id="tgj-tpl-preview" class="tgj-tpl-preview">${renderTemplatePreview(ui.result ?? null, S, lang, ui.good ?? null)}</div></div>`);
 
     const destinations = ui.destinations ?? [];
     const chosen = destinations.some(d => d.Id === ui.testTo) ? ui.testTo : (destinations[0] ? destinations[0].Id : '');
-    const testDisabled = templateTestBlocked(ui);
-    const testButton = `<button ${BUTTON} id="tgj-tpl-test" class="raised emby-button" data-tgj-act="tplTest"${testDisabled ? ' disabled' : ''}>`
-        + `<span>${t(S, 'web.templates.test')}</span></button>`;
+    const testTo = text(S, 'web.templates.testTo');
     const target = destinations.length > 0
-        ? `<div class="selectContainer"><select is="emby-select" class="emby-select-withcolor emby-select" label="${t(S, 'web.templates.testTo')}" `
-          + `data-tgj-input="tplTestTo">${destinations.map(d => `<option value="${esc(d.Id)}"${d.Id === chosen ? ' selected' : ''}>${esc(d.Title)}</option>`).join('')}</select></div>`
-        : `<p class="fieldDescription">${t(S, 'web.templates.noDestinations')}</p>`;
-    parts.push(`<div class="tgj-tpl-test">${target}${testButton}`
-        + `${ui.testResult ? `<span class="tgj-tpl-test-result">${ui.testResult}</span>` : ''}</div>`,
-        `<p class="fieldDescription">${t(S, 'web.templates.testNote')}</p>`);
+        ? selectField({ input: 'tplTestTo', value: chosen, options: destinations.map(d => ({ value: d.Id, label: d.Title })), attrs: { 'aria-label': testTo } })
+        : '';
+    const testButton = actionButton({ label: text(S, 'web.templates.test'), act: 'tplTest', disabled: templateTestBlocked(ui), attrs: { id: 'tgj-tpl-test' } });
+    parts.push(row({
+        label: testTo,
+        hint: text(S, destinations.length > 0 ? 'web.templates.testNote' : 'web.templates.noDestinations'),
+        control: target + testButton + (ui.testResult ? `<span class="tgj-tpl-test-result">${ui.testResult}</span>` : ''),
+        extraClass: 'tgj-tpl-test',
+    }));
 
-    const save = button(t(S, 'web.templates.save'), 'tplSave', { primary: true, disabled: ui.busy });
-    if (item.Edited && ui.resetAsk) {
-        parts.push(`<div class="tgj-notice"><span class="tgj-notice-text">${t(S, 'web.templates.resetAsk')}</span>`
-            + `${button(t(S, 'web.templates.resetConfirm'), 'tplResetConfirm', { disabled: ui.busy })}${button(t(S, 'web.templates.resetCancel'), 'tplResetCancel')}</div>`,
-            `<div>${save}</div>`);
-    } else {
-        parts.push(`<div>${item.Edited ? button(t(S, 'web.templates.reset'), 'tplReset', { disabled: ui.busy }) : ''}${save}</div>`);
+    if (item.Edited) {
+        parts.push(ui.resetAsk
+            ? inlineConfirm({
+                question: text(S, 'web.templates.resetAsk'),
+                confirmLabel: text(S, 'web.templates.resetConfirm'),
+                confirmAct: 'tplResetConfirm',
+                cancelAct: 'tplResetCancel',
+                cancelLabel: text(S, 'web.templates.resetCancel'),
+            })
+            : `<div class="tgj-actions">${actionButton({ label: text(S, 'web.templates.reset'), act: 'tplReset', disabled: ui.busy })}</div>`);
     }
 
-    return `<div class="verticalSection">${parts.join('')}</div>`;
+    return card({ title: text(S, 'web.templates.title'), description: text(S, 'web.templates.intro'), body: parts.join(''), extraClass: 'tgj-tpl' });
 }
 
 /**
@@ -1214,19 +1487,278 @@ export function renderTemplates(dto, S, ui) {
  * @returns {string} HTML
  */
 export function renderDiagnostics(S, ui) {
-    const parts = [`<h3>${t(S, 'web.diag.title')}</h3>`, `<div>${button(t(S, 'web.diag.copy'), 'copyDiagnostics')}</div>`];
+    const parts = [`<div class="tgj-actions">${actionButton({ label: text(S, 'web.diag.copy'), act: 'copyDiagnostics' })}</div>`];
     if (ui.copied) {
-        parts.push(`<p class="fieldDescription">${t(S, 'web.diag.copied')}</p>`);
+        parts.push(`<p class="tgj-row-hint">${t(S, 'web.diag.copied')}</p>`);
     }
 
     if (ui.text) {
-        parts.push(`<p class="fieldDescription">${t(S, 'web.diag.manual')}</p>`
-            + `<textarea id="tgj-diagnostics-text" readonly rows="12" style="width:100%">${esc(ui.text)}</textarea>`);
+        parts.push(`<p class="tgj-row-hint">${t(S, 'web.diag.manual')}</p>`
+            + `<textarea id="tgj-diagnostics-text" class="tgj-field tgj-diag-text" readonly rows="12">${esc(ui.text)}</textarea>`);
     }
 
-    return `<div class="verticalSection">${parts.join('')}</div>`;
+    return card({ title: text(S, 'web.diag.title'), body: parts.join('') });
 }
 
+// --- the shell (plan 8, design §5.1-5.2): header, sidebar, one section shown at a time ---
+
+/** The dashboard's sections, in sidebar order; each label is web.nav.<name>. */
+export const SECTIONS = ['overview', 'destinations', 'messages', 'templates', 'advanced'];
+const NAV_LABELS = {
+    overview: 'web.nav.overview',
+    destinations: 'web.nav.destinations',
+    messages: 'web.nav.messages',
+    templates: 'web.nav.templates',
+    advanced: 'web.nav.advanced',
+};
+
+/** Today's section containers, by the dashboard section that holds them (design §5.2). */
+const SECTION_HOSTS = {
+    // Connect precedes Status: with no bot it leads (design §5.2), and with a bot it is empty, so Status leads.
+    overview: ['tgj-connect', 'tgj-status', 'tgj-bot', 'tgj-summary'],
+    destinations: ['tgj-destinations'],
+    messages: ['tgj-messages'],
+    templates: ['tgj-templates'],
+    advanced: ['tgj-proxy', 'tgj-batching', 'tgj-updates', 'tgj-manual', 'tgj-diagnostics'],
+};
+
+/** How long the first show waits for tgjelly.css before showing the page unstyled. */
+const STYLESHEET_WAIT_MS = 1000;
+
+/** The header's connection label: a state label's HTML, a coloured word and no symbol. */
+const connectionHtml = connection => stateLabel(connection);
+
+/**
+ * The header's connection label for a Status: "Connected · @bot", "Not connected", "Connecting", or a warning when the
+ * connection needs attention or the status can't be read.
+ * @param {object | null} status the last GET Status body
+ * @param {Record<string, string> | null} S
+ * @param {boolean} [failed] the last GET Status failed
+ * @returns {{ kind: 'ok' | 'warning' | 'muted', text: string }} plain text, for stateLabel
+ */
+export function connectionLabel(status, S, failed = false) {
+    if (failed || !status) {
+        return failed ? { kind: 'warning', text: text(S, 'web.header.unknown') } : { kind: 'muted', text: text(S, 'web.header.notConnected') };
+    }
+
+    if (!status.HasToken) {
+        return { kind: 'muted', text: text(S, 'web.header.notConnected') };
+    }
+
+    if (PROBLEM_STATES.has(status.ConnectionState) || status.Compatible === false) {
+        return { kind: 'warning', text: text(S, 'web.header.attention') };
+    }
+
+    if (status.ConnectionState === 'Connected') {
+        return { kind: 'ok', text: status.BotUsername ? text(S, 'web.header.connected', { bot: status.BotUsername }) : text(S, 'web.header.connectedPlain') };
+    }
+
+    return { kind: 'muted', text: text(S, 'web.header.connecting') };
+}
+
+/**
+ * Renders the dashboard shell: the header with the connection label, the sidebar of sections with their muted counts,
+ * and one section per name holding today's containers. Only the active section is visible. The page fills the
+ * containers, the label (#tgj-conn) and the counts (#tgj-nav-count-<name>) afterwards; this is written once.
+ * @param {Record<string, string> | null} S
+ * @param {{ active: string, connection: { kind: string, text: string }, counts?: Record<string, string> }} options
+ *   counts are plain text by section name, e.g. { destinations: '3', templates: '1 edited' }
+ * @returns {string}
+ */
+export function renderShell(S, { active, connection, counts = {} }) {
+    const current = SECTIONS.includes(active) ? active : 'overview';
+    const nav = SECTIONS.map(name => `<button type="button" id="tgj-nav-${name}" data-tgj-nav="${name}"`
+        + `${name === current ? ' aria-current="page"' : ''}>`
+        + `<span class="tgj-nav-label">${t(S, NAV_LABELS[name])}</span>`
+        + `<span id="tgj-nav-count-${name}" class="tgj-nav-count">${esc(counts[name] ?? '')}</span></button>`);
+    const sections = SECTIONS.map(name => `<section id="tgj-sec-${name}" data-tgj-section="${name}" aria-labelledby="tgj-nav-${name}"`
+        + `${name === current ? '' : ' hidden'}>${SECTION_HOSTS[name].map(id => `<div id="${id}"></div>`).join('')}</section>`);
+    return '<div class="tgj-shell">'
+        + `<header class="tgj-header"><h1 class="tgj-header-title">TgJelly</h1><span id="tgj-conn">${connectionHtml(connection)}</span></header>`
+        + `<nav class="tgj-sidebar" aria-label="${t(S, 'web.nav.label')}">${nav.join('')}</nav>`
+        + `<div class="tgj-content">${sections.join('')}</div>`
+        + '</div>';
+}
+
+/** The tgj=<section> parameter in the URL hash. */
+const HASH_SECTION = /([#?&])tgj=([^&]*)/;
+
+/**
+ * The section a URL hash names with tgj=<section>, or 'overview'. Jellyfin routes on the hash
+ * (#/configurationpage?name=TgJelly), so the parameter sits beside the route's own.
+ * @param {string | undefined} hash
+ * @returns {string}
+ */
+export function sectionFromHash(hash) {
+    const match = HASH_SECTION.exec(String(hash ?? ''));
+    let name = '';
+    try {
+        name = match ? decodeURIComponent(match[2]) : '';
+    } catch {
+        name = '';
+    }
+
+    return SECTIONS.includes(name) ? name : 'overview';
+}
+
+/**
+ * The hash with tgj=<name> set: replaced where it is, else added to the route's query, else the whole hash.
+ * @param {string} hash
+ * @param {string} name a SECTIONS name
+ * @returns {string}
+ */
+export function hashWithSection(hash, name) {
+    const current = String(hash ?? '');
+    if (HASH_SECTION.test(current)) {
+        return current.replace(HASH_SECTION, `$1tgj=${name}`);
+    }
+
+    if (current.startsWith('#/')) {
+        return `${current}${current.includes('?') ? '&' : '?'}tgj=${name}`;
+    }
+
+    return current === '' || current === '#' ? `#tgj=${name}` : `${current}&tgj=${name}`;
+}
+
+/** The attributes that tell the page's fields apart (an id alone is enough). */
+const FIELD_ATTRS = ['data-tgj-input', 'data-tgj-id', 'data-tgj-key', 'data-tgj-field', 'data-tgj-lib', 'data-tgj-group'];
+const FIELD_TAGS = new Set(['INPUT', 'TEXTAREA', 'SELECT']);
+// Input types whose value is typed text: their typed value outlives a render. (A checkbox or a select is a choice made
+// at once, so a render shows the state it led to.)
+const TYPED_INPUTS = new Set(['text', 'url', 'password', 'search', 'email', 'tel', 'number']);
+
+const selectorValue = value => String(value).replace(/["\\]/g, c => `\\${c}`);
+
+/**
+ * A selector that finds this field again after its section is written: [id="…"], or its data-tgj-* attributes.
+ * null when the field has none of them. It is also the key of state.pendingFields.
+ * @param {{ getAttribute(name: string): string | null }} el
+ * @returns {string | null}
+ */
+export function fieldSelector(el) {
+    const id = el.getAttribute('id');
+    if (id) {
+        return `[id="${selectorValue(id)}"]`;
+    }
+
+    const parts = FIELD_ATTRS.map(name => [name, el.getAttribute(name)]).filter(([, value]) => value !== null && value !== '')
+        .map(([name, value]) => `[${name}="${selectorValue(value)}"]`);
+    return parts.length > 0 ? parts.join('') : null;
+}
+
+/** An input, textarea or select, or a switch (a button with role=switch): what a section write must not take away. */
+const isField = el => FIELD_TAGS.has(String(el.tagName).toUpperCase())
+    || (typeof el.getAttribute === 'function' && el.getAttribute('role') === 'switch');
+
+const isTyped = el => el.tagName === 'TEXTAREA' || (el.tagName === 'INPUT' && TYPED_INPUTS.has(String(el.type || 'text').toLowerCase()));
+
+/**
+ * Runs a write that may replace fields inside rootEl, so that typing is never interrupted (design §4, generalising
+ * v0.3's template caret fix):
+ * - a focused input, textarea, select or switch inside rootEl is focused again in its new copy, with the same selection and
+ *   scroll; a typed field keeps what the admin typed since the last render (its value differs from its defaultValue);
+ * - a field in pending (selectors from fieldSelector, e.g. a change whose auto-save hasn't gone out) keeps the value it
+ *   had before the write, and does not take the focus.
+ * A write that leaves a field in place (an unchanged section) changes nothing.
+ * @param {Element | null} rootEl
+ * @param {() => void} write
+ * @param {{ pending?: Iterable<string> }} [options]
+ */
+export function keepFocus(rootEl, write, { pending = [] } = {}) {
+    if (!rootEl || typeof rootEl.querySelector !== 'function') {
+        write();
+        return;
+    }
+
+    const doc = rootEl.ownerDocument || globalThis.document;
+    const active = doc ? doc.activeElement : null;
+    const kept = new Map();
+    if (active && isField(active) && typeof rootEl.contains === 'function' && rootEl.contains(active)) {
+        const key = fieldSelector(active);
+        if (key) {
+            kept.set(key, {
+                el: active,
+                focus: true,
+                value: isTyped(active) && active.value !== active.defaultValue ? active.value : undefined,
+                start: active.selectionStart,
+                end: active.selectionEnd,
+                direction: active.selectionDirection || 'none',
+                top: active.scrollTop,
+                left: active.scrollLeft,
+            });
+        }
+    }
+
+    for (const key of pending) {
+        const el = rootEl.querySelector(key);
+        if (el) {
+            const entry = kept.get(key) ?? { el, focus: false };
+            kept.set(key, { ...entry, value: el.value, checked: el.checked });
+        }
+    }
+
+    write();
+    for (const [key, saved] of kept) {
+        const after = rootEl.querySelector(key);
+        if (!after || after === saved.el) {
+            continue;
+        }
+
+        if (saved.value !== undefined && after.value !== saved.value) {
+            after.value = saved.value;
+        }
+
+        if (typeof saved.checked === 'boolean' && after.checked !== saved.checked) {
+            after.checked = saved.checked;
+        }
+
+        if (!saved.focus) {
+            continue;
+        }
+
+        if (typeof after.focus === 'function') {
+            after.focus({ preventScroll: true });
+        }
+
+        if (typeof after.setSelectionRange === 'function' && typeof saved.start === 'number' && typeof saved.end === 'number') {
+            try {
+                after.setSelectionRange(saved.start, saved.end, saved.direction);
+            } catch {
+                // This input type has no selection (e.g. number): the focus is enough.
+            }
+        }
+
+        after.scrollTop = saved.top;
+        after.scrollLeft = saved.left;
+    }
+}
+
+/**
+ * Resolves once the stylesheet <link> has loaded or failed, or after ms. At once when there is no link (as in the
+ * tests) or it has loaded already. The first show waits for it, so the page doesn't paint unstyled and then play every
+ * transition from the browser's defaults.
+ * @param {(EventTarget & { sheet?: unknown }) | null} link
+ * @param {number} [ms]
+ * @returns {Promise<void>}
+ */
+export function waitForStylesheet(link, ms = STYLESHEET_WAIT_MS) {
+    if (!link || typeof link.addEventListener !== 'function' || link.sheet) {
+        return Promise.resolve();
+    }
+
+    return new Promise(resolve => {
+        let timer = null;
+        const done = () => {
+            clearTimeout(timer);
+            link.removeEventListener('load', done);
+            link.removeEventListener('error', done);
+            resolve();
+        };
+        link.addEventListener('load', done);
+        link.addEventListener('error', done);
+        timer = setTimeout(done, ms);
+    });
+}
 
 /**
  * The page controller (spec §11.1). Listeners are bound once, here; viewshow is idempotent.
@@ -1265,28 +1797,23 @@ export default function TgJellyPage(view, params) {
             result: null,
             unreachable: false,
             confirmDisconnect: false,
-            // The proxy form (§9.1): its own messages and in-flight flag.
-            proxyErrors: [],
-            proxySaving: false,
-            // The destinations section (§6.6.3): the open editor, the remove confirm, and the last test/check outcome per id.
+            // The destinations section (§6.6.3): the open editor, the remove confirm, and the last test/check outcome per id;
+            // destPresetAsk is { id, preset } while leaving Custom for that preset waits for Replace (design §6.1a).
             destEditing: null,
             destConfirm: null,
             destLeave: false,
             destResults: {},
+            destPresetAsk: null,
             // The manual block (§6.5): the typed chat ID or link, the presets, and the last add's outcome (HTML).
             manualInput: '',
             manualPreset: 'Everything',
             manualResult: '',
             detectedPresets: {},
-            // The settings sections (§6.6.4-5): the last save's field errors, the section whose Save was pressed, in flight.
-            settingsErrors: [],
-            settingsSection: '',
-            settingsSaving: false,
             // Diagnostics: the text when the clipboard refused it, and whether the last copy worked.
             diagText: '',
             diagCopied: false,
             // The templates section: the selected event key, the last validation and the last one without errors per
-            // key, a save or reset in flight, the test send's destination, in-flight flag and outcome (HTML), and the
+            // key, a reset in flight, the test send's destination, in-flight flag and outcome (HTML), and the
             // open reset question.
             tplKey: '',
             tplResults: {},
@@ -1309,9 +1836,19 @@ export default function TgJellyPage(view, params) {
     const typed = { token: '', proxyUsername: undefined, proxyPassword: undefined };
     // Section load errors (set by reloadSection), so a later good load can clear them without touching action errors.
     const loadErrors = new Set();
-    // The template preview: the newest Validate request's number (older replies are ignored), and the typing debounce.
-    let tplSeq = 0;
+    // The template preview, per event key: the newest Validate request's number (older replies are ignored) and the
+    // text its kept result was for (a save checks exactly the text it sends); and the typing debounce.
+    const tplSeqs = new Map();
+    const tplChecked = new Map();
     let tplTimer = null;
+    // Fields whose change hasn't been saved yet, by fieldSelector: a section write keeps their values (keepFocus).
+    const pendingFields = new Set();
+    // How many section writes are running (see renderSection and the focusout listener).
+    let writing = 0;
+    // The shell: written once, at the first render after the strings and the stylesheet; then the shown section.
+    let shellDrawn = false;
+    let activeSection = 'overview';
+    let stylesheet = null;
 
     /**
      * Sets a container's HTML unless it's the HTML last written there. It compares with its own copy, not with
@@ -1326,70 +1863,44 @@ export default function TgJellyPage(view, params) {
         }
     };
 
-    /**
-     * Runs a write that may replace the template textarea. When the textarea has the focus, the new one gets it back with
-     * the same selection and scroll position, so a render while the admin types (a Destinations render, a revision sync)
-     * doesn't move the caret. The text itself is safe: it renders from the form state.
-     * @param {() => void} write
-     */
-    const keepTemplateCaret = write => {
-        const before = byId('tgj-tpl-text');
-        const doc = (before && before.ownerDocument) || globalThis.document;
-        if (!before || !doc || doc.activeElement !== before) {
-            write();
-            return;
-        }
-
-        const saved = {
-            start: before.selectionStart,
-            end: before.selectionEnd,
-            direction: before.selectionDirection || 'none',
-            top: before.scrollTop,
-            left: before.scrollLeft,
-        };
-        write();
-        const after = byId('tgj-tpl-text');
-        if (!after || after === before) {
-            return;
-        }
-
-        if (typeof after.focus === 'function') {
-            after.focus({ preventScroll: true });
-        }
-
-        if (typeof after.setSelectionRange === 'function' && typeof saved.start === 'number' && typeof saved.end === 'number') {
-            after.setSelectionRange(saved.start, saved.end, saved.direction);
-        }
-
-        after.scrollTop = saved.top;
-        after.scrollLeft = saved.left;
-    };
-
     /** The error line for a section, or ''. */
     const sectionError = name => (state.ui.errors[name] ? `<p class="tgj-error">${state.ui.errors[name]}</p>` : '');
 
     /** The connect card's view of the state: the ui flags, whether a token is stored, and the proxy form's ui. */
     const connectUi = () => ({ ...state.ui, hasToken: Boolean(state.status && state.status.HasToken), proxy: proxyUi() });
-    const proxyUi = () => ({
-        form: state.forms.proxy,
-        proxyErrors: state.ui.proxyErrors,
-        saving: state.ui.proxySaving,
-    });
+    const proxyUi = () => ({ form: state.forms.proxy });
+
+    // The one Revision every save sends (design §6.4: settings, destinations and templates share it). It is the newest
+    // Revision of any data the page took in: a section load, a save's reply or a 409's Current. So a save queued behind
+    // another one sends the Revision that save moved to, not its own section's older copy, which would 409 on the page's
+    // own change. The Status poll doesn't move it: a Revision the page holds no data for must still conflict.
+    let knownRevision = 0;
+    const noteRevision = dto => {
+        if (dto && typeof dto.Revision === 'number' && dto.Revision > knownRevision) {
+            knownRevision = dto.Revision;
+        }
+    };
+    /** The Revision to send as ExpectedRevision with any save. */
+    const pageRevision = () => knownRevision;
+
+    // A section's reply older than the data it holds (a reload sent before a save and answered after it) is dropped:
+    // taking it would show the old values, and the next save would lay its change over them and revert the newer one.
+    const isOlder = (held, dto) => Boolean(held) && typeof dto.Revision === 'number' && dto.Revision < held.Revision;
 
     /** Takes a SettingsDto into the shared settings state and its editor forms (keeping unsaved edits). */
     const takeSettings = dto => {
+        if (isOlder(state.settings, dto)) {
+            return;
+        }
+
+        noteRevision(dto);
         state.settings = dto;
         syncForm('proxy', proxyFormData(dto));
         syncForm('settings', settingsFormData(dto));
     };
 
     /** The settings sections' views of the state. */
-    const settingsUi = () => ({
-        form: state.forms.settings,
-        errors: state.ui.settingsErrors,
-        saving: state.ui.settingsSaving,
-        section: state.ui.settingsSection,
-    });
+    const settingsUi = () => ({ form: state.forms.settings });
 
     // Every section that edits the settings model loads it together: one request while it runs.
     let settingsLoad = null;
@@ -1424,6 +1935,11 @@ export default function TgJellyPage(view, params) {
 
     /** Takes a DestinationsDto into the state and the per-destination editor forms (keeping unsaved edits). */
     const takeDestinations = dto => {
+        if (isOlder(state.destinations, dto)) {
+            return;
+        }
+
+        noteRevision(dto);
         state.destinations = dto;
         const live = new Set(dto.Items.map(d => `dest:${d.Id}`));
         for (const key of Object.keys(state.forms).filter(k => k.startsWith('dest:') && !live.has(k))) {
@@ -1441,6 +1957,29 @@ export default function TgJellyPage(view, params) {
         if (!dto.Items.some(d => d.Id === state.ui.destConfirm)) {
             state.ui.destConfirm = null;
         }
+
+        if (state.ui.destPresetAsk && !dto.Items.some(d => d.Id === state.ui.destPresetAsk.id)) {
+            state.ui.destPresetAsk = null;
+        }
+    };
+
+    /**
+     * Takes a destination's PUT reply (a DestinationDto) in: the item, and the Revision the change moved to, which every
+     * section's next save sends. The list takes that Revision only when the save was based on the list's own one;
+     * otherwise the list was behind, and it reloads to catch up (keeping unsaved edits).
+     */
+    const takeDestination = dto => {
+        noteRevision(dto);
+        const list = state.destinations;
+        if (!list || !list.Items.some(d => d.Id === dto.Id)) {
+            return;
+        }
+
+        const current = typeof dto.Revision === 'number' && list.Revision === dto.Revision - 1;
+        state.destinations = { ...list, Revision: current ? dto.Revision : list.Revision, Items: list.Items.map(d => (d.Id === dto.Id ? dto : d)) };
+        if (!current) {
+            reloadSection('destinations', { fresh: true });
+        }
     };
 
     async function loadDestinations() {
@@ -1455,6 +1994,11 @@ export default function TgJellyPage(view, params) {
 
     /** Takes a TemplatesDto into the state and one editor form per event key (keeping unsaved edits). */
     const takeTemplates = dto => {
+        if (isOlder(state.templates, dto)) {
+            return;
+        }
+
+        noteRevision(dto);
         state.templates = dto;
         const live = new Set(dto.Items.map(i => `tpl:${i.EventKey}`));
         for (const key of Object.keys(state.forms).filter(k => k.startsWith('tpl:') && !live.has(k))) {
@@ -1516,38 +2060,50 @@ export default function TgJellyPage(view, params) {
     };
 
     /**
-     * Validates the selected template's current text and shows the result in the preview. Every request gets the next
-     * number; a reply that is not for the newest request is ignored, so a slow older reply can't overwrite a newer one.
+     * Validates an event's current text (default: the selected event's) and keeps the result for the preview and for the
+     * save's check. Every request gets the key's next number; a reply that is not for the newest request is not kept,
+     * so a slow older reply can't overwrite a newer one.
+     * @returns {Promise<{ text: string, reply: object, failure: string | null } | null>} the text checked, the reply (or
+     *   { RequestError } HTML when the request failed) and then the plain-text reason; null without that template
      */
-    const validateTemplate = async () => {
-        const key = templateKey();
+    const validateTemplate = async (key = templateKey()) => {
         const form = state.forms[`tpl:${key}`];
         if (!key || !form) {
-            return;
+            return null;
         }
 
-        const seq = ++tplSeq;
+        const value = String(form.local.Text ?? '');
+        const seq = (tplSeqs.get(key) ?? 0) + 1;
+        tplSeqs.set(key, seq);
         const S = state.strings;
         let reply;
+        let failure = null;
         try {
-            const result = await api.post('Templates/Validate', { EventKey: key, Text: String(form.local.Text ?? '') });
-            reply = result.status === 200 && result.body ? result.body : { RequestError: requestError(S, result) };
+            const result = await api.post('Templates/Validate', { EventKey: key, Text: value });
+            if (result.status === 200 && result.body) {
+                reply = result.body;
+            } else {
+                reply = { RequestError: requestError(S, result) };
+                failure = failureText(result);
+            }
         } catch (err) {
             reply = { RequestError: t(S, 'web.requestFailed', { reason: err && err.message }) };
+            failure = text(S, 'web.requestFailed', { reason: err && err.message });
         }
 
-        if (seq !== tplSeq) {
-            return;
+        if (seq === tplSeqs.get(key)) {
+            state.ui.tplResults[key] = reply;
+            tplChecked.set(key, value);
+            if (!validationFailed(reply)) {
+                state.ui.tplGood[key] = reply;
+            }
+
+            if (key === templateKey()) {
+                showTemplatePreview();
+            }
         }
 
-        state.ui.tplResults[key] = reply;
-        if (!validationFailed(reply)) {
-            state.ui.tplGood[key] = reply;
-        }
-
-        if (key === templateKey()) {
-            showTemplatePreview();
-        }
+        return { text: value, reply, failure };
     };
 
     /** Drops a pending debounced validation. */
@@ -1583,7 +2139,7 @@ export default function TgJellyPage(view, params) {
             render: () => {
                 const S = state.strings;
                 const html = state.status ? renderStatus(state.status, S, lang()) : '';
-                return state.ui.statusFailed ? html + `<p class="tgj-error">${t(S, 'web.status.failed')}</p>` : html;
+                return state.ui.statusFailed ? html + notice({ kind: 'error', html: t(S, 'web.status.failed') }) : html;
             },
         },
         connect: {
@@ -1597,6 +2153,13 @@ export default function TgJellyPage(view, params) {
             dependsOnStatus: true,
             load: loadLinks,
             render: () => renderBot(state.status, state.links, state.strings, state.ui),
+        },
+        // Reads the status, destinations and templates state, so it has nothing to load itself.
+        summary: {
+            id: 'tgj-summary',
+            dependsOnStatus: true,
+            load: async () => {},
+            render: () => renderOverviewSummary(state.status, state.destinations, state.templates, state.strings, lang()),
         },
         proxy: {
             id: 'tgj-proxy',
@@ -1612,6 +2175,7 @@ export default function TgJellyPage(view, params) {
                 confirmRemove: state.ui.destConfirm,
                 leave: state.ui.destLeave,
                 results: state.ui.destResults,
+                presetAsk: state.ui.destPresetAsk && state.ui.destPresetAsk.id,
             }),
         },
         // Reads the destinations state (same data as the Destinations section), so it has nothing to load itself.
@@ -1661,14 +2225,99 @@ export default function TgJellyPage(view, params) {
         },
     };
 
-    const renderSection = name => {
-        const section = sections[name];
-        const write = () => setHtml(section.id, section.render() + sectionError(name));
-        if (name === 'templates') {
-            keepTemplateCaret(write);
-        } else {
-            write();
+    /** The sidebar counts, plain text by section: the destinations, and how many templates are edited. */
+    const navCounts = () => {
+        const S = state.strings;
+        const counts = {};
+        const destinationCount = state.destinations ? (state.destinations.Items ?? []).length : 0;
+        if (destinationCount > 0) {
+            counts.destinations = formatNumber(destinationCount, lang());
         }
+
+        const edited = state.templates ? (state.templates.Items ?? []).filter(item => item.Edited).length : 0;
+        if (edited > 0) {
+            counts.templates = pluralText(S, 'web.nav.edited', edited, {}, lang());
+        }
+
+        return counts;
+    };
+
+    const connection = () => connectionLabel(state.status, state.strings, state.ui.statusFailed);
+
+    /** Shows one section and marks its sidebar button; with { remember: true } also records it in the URL hash. */
+    const selectSection = (name, { remember = false } = {}) => {
+        if (!SECTIONS.includes(name)) {
+            return;
+        }
+
+        activeSection = name;
+        for (const other of SECTIONS) {
+            const section = byId(`tgj-sec-${other}`);
+            if (section) {
+                section.hidden = other !== name;
+            }
+
+            const button = byId(`tgj-nav-${other}`);
+            if (button) {
+                if (other === name) {
+                    button.setAttribute('aria-current', 'page');
+                } else {
+                    button.removeAttribute('aria-current');
+                }
+            }
+        }
+
+        const location = window.location;
+        const history = window.history;
+        if (remember && location && history && typeof history.replaceState === 'function') {
+            // replaceState: no history entry, and no hashchange, so Jellyfin's router doesn't navigate.
+            history.replaceState(history.state, '', hashWithSection(location.hash, name));
+        }
+    };
+
+    /**
+     * Writes the shell into #tgjelly-root, once. The first section shown is the one in the URL hash, except that
+     * Overview leads until a bot is connected (design §5.2).
+     */
+    const drawShell = () => {
+        const root = byId('tgjelly-root');
+        if (shellDrawn || !root || !state.strings) {
+            return;
+        }
+
+        const connected = Boolean(state.status && state.status.HasToken);
+        const first = connected ? sectionFromHash(window.location && window.location.hash) : 'overview';
+        root.innerHTML = renderShell(state.strings, { active: first, connection: connection(), counts: navCounts() });
+        shellDrawn = true;
+        selectSection(first);
+    };
+
+    /** Brings the header label and the sidebar counts up to date (each written only when it changed). */
+    const renderChrome = () => {
+        if (!shellDrawn) {
+            return;
+        }
+
+        setHtml('tgj-conn', connectionHtml(connection()));
+        const counts = navCounts();
+        for (const name of SECTIONS) {
+            setHtml(`tgj-nav-count-${name}`, esc(counts[name] ?? ''));
+        }
+    };
+
+    const renderSection = name => {
+        drawShell();
+        const section = sections[name];
+        // While the write runs, a focused field it replaces may fire focusout: that is not the admin leaving the field.
+        writing++;
+        try {
+            keepFocus(byId(section.id), () => setHtml(section.id, section.render() + sectionError(name)), { pending: pendingFields });
+        } finally {
+            writing--;
+        }
+
+        paintCues();
+        renderChrome();
 
         if (name === 'destinations') {
             // The manual block shows the same data (detected chats, the gate), so it follows every Destinations render;
@@ -1677,14 +2326,19 @@ export default function TgJellyPage(view, params) {
             renderSection('templates');
         }
 
+        if (name === 'destinations' || name === 'templates') {
+            // The Overview summary counts these.
+            renderSection('summary');
+        }
+
         if (name === 'proxy' || name === 'connect') {
             restoreSecrets();
         }
 
         if (name === 'diagnostics' && state.ui.diagText) {
-            const text = byId('tgj-diagnostics-text');
-            if (text && typeof text.select === 'function') {
-                text.select();
+            const area = byId('tgj-diagnostics-text');
+            if (area && typeof area.select === 'function') {
+                area.select();
             }
         }
     };
@@ -1906,144 +2560,446 @@ export default function TgJellyPage(view, params) {
         }
     };
 
-    /** Saves the proxy form (spec §9.1, §10.4): an untouched username/password is omitted, a cleared one is "". */
-    const saveProxy = async () => {
-        const ui = state.ui;
+    // --- auto-save (plan 8, design §6): the one page-wide queue, the cues, and the saves of Messages and Advanced ---
+    //
+    // The pattern every auto-saved field follows (Tasks 7 and 8 reuse it):
+    // - the control carries data-tgj-input (its handler, and how keepFocus finds it again) and data-tgj-save="<key>",
+    //   the key of its save; its row passes the same key as cueKey, so the cue shows beside it;
+    // - its input handler records the edit in the form (markDirty), then calls queueSave({ key, mode, fields, validate,
+    //   send }) with the field's fieldSelector in fields;
+    // - send() builds today's request from the form at the time it runs, with the current Revision, and maps the reply
+    //   with saveResult(): 200 'saved', 409 'conflict' with a retry that takes body.Current and sends again, 400
+    //   'invalid' with the server's message, anything else 'failed';
+    // - focusout flushes the save named by data-tgj-save, unless the focus moves to another field with the same key (the
+    //   proxy card's fields share one); Enter in an input does too; leaving the page flushes everything.
+
+    /** The cue each data-tgj-cue spot shows, by key ({ state, text }), so a section write can paint it again. */
+    const cues = new Map();
+    // Per save key: the number of the newest change, and the fields it holds in pendingFields until the newest change is
+    // saved. An unsaved change (waiting, in flight, invalid or failed) keeps them: a refresh never replaces its value.
+    const changeSeq = new Map();
+    const heldFields = new Map();
+
+    /** The words a cue shows: the cue states come from tgjelly-autosave.js, the text from the strings. */
+    const cueWords = cue => {
+        const S = state.strings;
+        if (cue.state === 'saved') {
+            return text(S, 'web.autosave.saved');
+        }
+
+        if (cue.state === 'saving') {
+            return text(S, 'web.autosave.saving');
+        }
+
+        if (cue.state === 'error') {
+            return text(S, 'web.autosave.notSaved', { reason: cue.text === CONFLICT_KEY ? text(S, 'web.autosave.conflict') : cue.text ?? '' });
+        }
+
+        return '';
+    };
+
+    /** Writes a key's cue into its spots, in place (the section is not written again). Idle clears class and text. */
+    const paintCue = key => {
+        if (typeof view.querySelectorAll !== 'function') {
+            return;
+        }
+
+        const cue = cues.get(key);
+        const className = cue ? `tgj-cue tgj-cue--${cue.state}` : 'tgj-cue';
+        const words = cue ? cueWords(cue) : '';
+        for (const spot of view.querySelectorAll(`[data-tgj-cue="${selectorValue(key)}"]`)) {
+            if (spot.className !== className) {
+                spot.className = className;
+            }
+
+            if (spot.textContent !== words) {
+                spot.textContent = words;
+            }
+        }
+    };
+
+    /** After a section write, the new cue spots show the cues that are still up. */
+    const paintCues = () => {
+        for (const key of cues.keys()) {
+            paintCue(key);
+        }
+    };
+
+    const onCue = (key, cue) => {
+        if (cue.state === 'idle') {
+            cues.delete(key);
+        } else {
+            cues.set(key, cue);
+        }
+
+        paintCue(key);
+    };
+
+    /** Lets go of the fields a save key holds in pendingFields. */
+    const releaseFields = key => {
+        for (const field of heldFields.get(key) ?? []) {
+            pendingFields.delete(field);
+        }
+
+        heldFields.delete(key);
+    };
+
+    const onSettled = (key, result) => {
+        if (result.status === 'saved') {
+            // Other sections hold the old Revision now (they share it); bring them up to date, keeping their edits.
+            syncRevisions().catch(err => console.error('TgJelly: could not catch up with the new revision', err));
+        }
+    };
+
+    const autosave = createAutosave({
+        clock: { now: () => Date.now(), setTimeout: (fn, ms) => setTimeout(fn, ms), clearTimeout: handle => clearTimeout(handle) },
+        onCue,
+        onSettled,
+    });
+
+    /**
+     * Queues the save of one change (design §6.1): mode 'now' (switches, selects), 'debounce' with delay (typed text and
+     * numbers; flushed on blur too), or 'blur' (fields whose save has side effects: sent only on blur or Enter).
+     * validate returns the reason (plain text) the value can't be saved, or null; a debounced value is checked when it is
+     * due, so a half-typed number doesn't flash an error. fields are fieldSelector keys: kept as typed across section
+     * writes (pendingFields) until the save settles.
+     * @param {{ key: string, mode: 'now' | 'debounce' | 'blur', delay?: number, fields?: (string | null)[],
+     *   validate?: () => string | null, send: () => Promise<object> }} job
+     */
+    const queueSave = ({ key, mode, delay, fields = [], validate = null, send }) => {
+        const seq = (changeSeq.get(key) ?? 0) + 1;
+        changeSeq.set(key, seq);
+        const held = heldFields.get(key) ?? new Set();
+        for (const field of fields.filter(Boolean)) {
+            held.add(field);
+            pendingFields.add(field);
+        }
+
+        heldFields.set(key, held);
+        // Once this change is saved, and no newer one came in meanwhile, its fields follow the server again. A conflict's
+        // retry is followed the same way.
+        const settle = result => {
+            if (result && result.status === 'conflict' && typeof result.retry === 'function') {
+                const retry = result.retry;
+                return { ...result, retry: async () => settle(await retry()) };
+            }
+
+            if (result && result.status === 'saved' && changeSeq.get(key) === seq) {
+                releaseFields(key);
+            }
+
+            return result;
+        };
+        const dueCheck = mode === 'debounce' && validate;
+        autosave.change({
+            key,
+            mode,
+            delay,
+            validate: dueCheck ? undefined : validate ?? undefined,
+            send: async () => {
+                const reason = dueCheck ? validate() : null;
+                return reason ? { status: 'invalid', message: reason } : settle(await send());
+            },
+        });
+    };
+
+    /** The plain-text reason a request failed, for a cue: the server's Message, or the status code. */
+    const failureText = result => (result.body && result.body.Message
+        ? String(result.body.Message)
+        : text(state.strings, 'web.requestFailed', { reason: result.status }));
+
+    /**
+     * Maps a save's reply to the queue's SaveResult: 200 with a body runs saved(body); 409 with Current gives a conflict
+     * whose retry runs conflict(Current) (take the server data, re-apply the change) and sends again; 400 with Errors is
+     * invalid with the server's messages (those for fields when any match them); anything else failed.
+     * @param {{ status: number, body: any }} result
+     * @param {{ saved: (body: any) => void, conflict: (current: any) => void, again: () => Promise<object>, fields?: string[] }} on
+     */
+    const saveResult = (result, { saved, conflict, again, fields = [] }) => {
+        if (result.status === 200 && result.body) {
+            saved(result.body);
+            return { status: 'saved' };
+        }
+
+        if (result.status === 409 && result.body && result.body.Current) {
+            return {
+                status: 'conflict',
+                retry: () => {
+                    conflict(result.body.Current);
+                    return again();
+                },
+            };
+        }
+
+        if (result.status === 400 && result.body && Array.isArray(result.body.Errors)) {
+            const errors = result.body.Errors;
+            const mine = errors.filter(e => fields.some(f => e.Field === f || String(e.Field).startsWith(`${f}.`)));
+            return { status: 'invalid', message: (mine.length > 0 ? mine : errors).map(e => String(e.Message ?? '')).join(' ') };
+        }
+
+        return { status: 'failed', message: failureText(result) };
+    };
+
+    /**
+     * Sends one auto-save of the settings model: the fields at paths, laid over the saved settings, with the current
+     * Revision (spec §10.4). Edits waiting in other fields stay edits, and so does a value typed while the request ran.
+     * @param {string[]} paths
+     */
+    const sendSettings = async paths => {
+        const form = state.forms.settings;
+        const S = state.strings;
+        if (!form || !state.settings) {
+            return { status: 'failed', message: text(S, 'web.requestFailed', { reason: 'no settings' }) };
+        }
+
+        const request = settingsRequest(form, paths, pageRevision(), S);
+        if (!request.body) {
+            return { status: 'invalid', message: request.errors.map(e => e.Message).join(' ') };
+        }
+
+        const sent = overlayPaths(form.base, form.local, paths);
+        return saveResult(await api.put('Settings', request.body), {
+            fields: paths,
+            saved: body => {
+                // The sent values are now the saved ones; anything else that differs from them is still an edit.
+                const now = state.forms.settings;
+                state.forms.settings = syncFormData({ base: overlayPaths(now.base, sent, paths), local: now.local, dirty: true, changed: [] }, settingsFormData(body));
+                takeSettings(body);
+                renderSettingsSections();
+            },
+            conflict: current => {
+                // The form keeps the admin's edits on top of the server data (syncFormData): the admin's value wins.
+                takeSettings(current);
+                renderSettingsSections();
+            },
+            again: () => sendSettings(paths),
+        });
+    };
+
+    /** Queues the save of one settings field (its dotted path is also its save and cue key). */
+    const saveSetting = (path, mode, el, { delay, validate } = {}) => queueSave({
+        key: path,
+        mode,
+        delay,
+        fields: el ? [fieldSelector(el)] : [],
+        validate,
+        send: () => sendSettings([path]),
+    });
+
+    /** Typed text and numbers save this long after the last keystroke (design §6.1). */
+    const TYPING_SAVE_MS = 800;
+
+    const publicUrlError = () => (validatePublicUrl(state.forms.settings && state.forms.settings.local.PublicUrl)
+        ? null
+        : text(state.strings, 'web.messages.urlInvalid'));
+
+    /** A switch's new state on click: the opposite of the form's value at path. */
+    const flipped = path => !pathValue(state.forms.settings && state.forms.settings.local, path);
+
+    const proxyError = () => {
+        const local = state.forms.proxy && state.forms.proxy.local;
+        const withAddress = Boolean(local) && (local.Mode === 'Http' || local.Mode === 'Socks5');
+        return withAddress && String(local.Url ?? '').trim() === '' ? text(state.strings, 'web.proxy.needsAddress') : null;
+    };
+
+    /**
+     * Sends the proxy card as one save (spec §9.1, §10.4): an untouched username/password is omitted, a cleared one is "".
+     * Every proxy save restarts the bot session, so it only runs when the focus leaves the card.
+     */
+    const sendProxy = async () => {
         const form = state.forms.proxy;
         if (!form || !state.settings) {
-            return undefined;
+            return { status: 'failed', message: text(state.strings, 'web.requestFailed', { reason: 'no settings' }) };
         }
 
         const local = form.local;
         const withAddress = local.Mode === 'Http' || local.Mode === 'Socks5';
-        const body = { ExpectedRevision: state.settings.Revision, Mode: local.Mode, Url: withAddress ? String(local.Url ?? '').trim() : '' };
+        const body = { ExpectedRevision: pageRevision(), Mode: local.Mode, Url: withAddress ? String(local.Url ?? '').trim() : '' };
+        const secrets = { Username: typed.proxyUsername, Password: typed.proxyPassword };
         // An untouched field is omitted (the server keeps the stored value); a cleared one is "".
-        if (typed.proxyUsername !== undefined) {
-            body.Username = typed.proxyUsername;
+        for (const [name, value] of Object.entries(secrets)) {
+            if (value !== undefined) {
+                body[name] = value;
+            }
         }
 
-        if (typed.proxyPassword !== undefined) {
-            body.Password = typed.proxyPassword;
-        }
+        const sent = structuredClone(local);
+        return saveResult(await api.put('Proxy', body), {
+            fields: ['Proxy'],
+            saved: dto => {
+                // The proxy form starts over from the saved data, keeping a value typed while the request ran; the
+                // settings form keeps its unsaved edits on top of the fresh data.
+                state.forms.proxy = syncFormData({ base: sent, local: state.forms.proxy.local, dirty: true, changed: [] }, proxyFormData(dto));
+                takeSettings(dto);
+                if (typed.proxyUsername === secrets.Username) {
+                    typed.proxyUsername = undefined;
+                }
 
-        ui.proxySaving = true;
-        ui.proxyErrors = [];
-        renderProxyForms();
-        let result;
-        try {
-            result = await api.put('Proxy', body);
-        } finally {
-            ui.proxySaving = false;
-        }
+                if (typed.proxyPassword === secrets.Password) {
+                    typed.proxyPassword = undefined;
+                }
 
-        const S = state.strings;
-        if (result.status === 200 && result.body) {
-            // The proxy form starts over; the settings form keeps its unsaved edits on top of the fresh data.
-            resetForm('proxy', proxyFormData(result.body));
-            takeSettings(result.body);
-            typed.proxyUsername = undefined;
-            typed.proxyPassword = undefined;
-        } else if (result.status === 409 && result.body && result.body.Current) {
-            takeSettings(result.body.Current);
-            ui.proxyErrors = [t(S, 'web.proxy.conflict')];
-        } else if (result.status === 400 && result.body && Array.isArray(result.body.Errors)) {
-            ui.proxyErrors = result.body.Errors.map(e => esc(e.Message));
-        } else {
-            ui.proxyErrors = [requestError(S, result)];
-        }
-
-        renderProxyForms();
-        renderSettingsSections();
-        return undefined;
+                renderProxyForms();
+                renderSettingsSections();
+            },
+            conflict: current => {
+                takeSettings(current);
+                renderProxyForms();
+            },
+            again: sendProxy,
+        });
     };
 
-    /** Saves the settings form (spec §10.4): the one PUT Settings behind the Save of all three sections. */
-    const saveSettings = async section => {
-        const ui = state.ui;
-        const form = state.forms.settings;
-        if (!form || !state.settings) {
-            return undefined;
-        }
+    /** Queues the proxy card's save: one job, saved when the focus leaves the card (or on Enter). */
+    const saveProxy = el => queueSave({ key: 'proxy', mode: 'blur', fields: [fieldSelector(el)], validate: proxyError, send: sendProxy });
 
+    /**
+     * Why an event's typed template can't be saved (design §6.3), or null: empty text never saves (the server would take
+     * it as "remove the override"; Reset is the way back), nor does text whose latest validation had errors.
+     * @param {string} key the event key
+     */
+    const templateSaveError = key => {
         const S = state.strings;
-        const request = settingsRequest(form, section, state.settings.Revision, S);
-        ui.settingsSection = section;
-        ui.settingsErrors = request.errors;
-        if (!request.body) {
-            renderSettingsSections();
-            return undefined;
+        const form = state.forms[`tpl:${key}`];
+        const value = form ? String(form.local.Text ?? '') : '';
+        if (value.trim() === '') {
+            return text(S, 'web.templates.notSavedEmpty');
         }
 
-        ui.settingsSaving = true;
-        renderSettingsSections();
-        let result;
-        try {
-            result = await api.put('Settings', request.body);
-        } finally {
-            ui.settingsSaving = false;
-        }
-
-        let failed;
-        if (result.status === 200 && result.body) {
-            // This section's fields are saved: the rest of the form keeps its edits, and so does a field of this section
-            // that was typed into while the request ran (its base is what was sent, so a later value counts as an edit).
-            const now = state.forms.settings;
-            const sent = overlaySection(form.base, form.local, section);
-            const others = Object.keys(SECTION_FIELDS).filter(name => name !== section).flatMap(name => SECTION_FIELDS[name]);
-            const kept = (now.changed ?? []).filter(path => others.includes(path.split('.')[0]));
-            state.forms.settings = syncFormData({ base: overlaySection(now.base, sent, section), local: now.local, dirty: true, changed: kept }, settingsFormData(result.body));
-            takeSettings(result.body);
-        } else if (result.status === 409 && result.body && result.body.Current) {
-            takeSettings(result.body.Current);
-            ui.settingsErrors = [{ Field: '', Html: t(S, 'web.settings.conflict') }];
-        } else if (result.status === 400 && result.body && Array.isArray(result.body.Errors)) {
-            ui.settingsErrors = result.body.Errors;
-        } else {
-            failed = result;
-        }
-
-        renderSettingsSections();
-        return failed;
+        const result = state.ui.tplResults[key];
+        return tplChecked.get(key) === value && result && (result.Errors ?? []).length > 0 ? text(S, 'web.templates.notSavedErrors') : null;
     };
+
+    /**
+     * Sends one auto-save of an event's template: its typed text, with the current Revision. A text the preview hasn't
+     * checked yet (its Validate is still on the way, or failed) is checked first, so a broken template never goes live.
+     * On success the form starts over from the reply, keeping text typed while the request ran.
+     * @param {string} key the event key
+     */
+    const sendTemplate = async key => {
+        const S = state.strings;
+        const name = `tpl:${key}`;
+        if (!state.forms[name] || !state.templates) {
+            return { status: 'failed', message: text(S, 'web.requestFailed', { reason: 'no template' }) };
+        }
+
+        const reason = templateSaveError(key);
+        if (reason) {
+            return { status: 'invalid', message: reason };
+        }
+
+        let value = String(state.forms[name].local.Text ?? '');
+        const known = state.ui.tplResults[key];
+        if (tplChecked.get(key) !== value || !known || known.RequestError) {
+            const checked = await validateTemplate(key);
+            if (checked.failure) {
+                return { status: 'failed', message: checked.failure };
+            }
+
+            if ((checked.reply.Errors ?? []).length > 0) {
+                return { status: 'invalid', message: text(S, 'web.templates.notSavedErrors') };
+            }
+
+            value = checked.text;
+        }
+
+        return saveResult(await api.put(`Templates/${encodeURIComponent(key)}`, { ExpectedRevision: pageRevision(), Text: value }), {
+            fields: ['Text'],
+            saved: dto => {
+                // The sent text is now the saved one; text typed while the request ran is still an edit.
+                const now = state.forms[name];
+                state.forms[name] = { base: { Text: value }, local: now ? now.local : { Text: value }, dirty: true, changed: [] };
+                takeTemplates(dto);
+                renderSection('templates');
+            },
+            conflict: current => {
+                // The form keeps the admin's text on top of the server data (syncFormData): the admin's value wins.
+                takeTemplates(current);
+                renderSection('templates');
+            },
+            again: () => sendTemplate(key),
+        });
+    };
+
+    /** Queues the save of an event's typed template, 1 s after the last keystroke or when the textarea is left. */
+    const saveTemplate = (key, el) => queueSave({
+        key: templateSaveKey(key),
+        mode: 'debounce',
+        delay: TEMPLATE_SAVE_MS,
+        fields: [fieldSelector(el)],
+        validate: () => templateSaveError(key),
+        send: () => sendTemplate(key),
+    });
 
     const destination = id => (state.destinations ? state.destinations.Items.find(d => d.Id === id) : undefined);
     const destKey = id => `dest:${id}`;
     const idOf = el => el.getAttribute('data-tgj-id');
 
-    /**
-     * Handles a destination change's reply (spec §10.4): a 409 takes the fresh data in and keeps the unsaved edits, a 400
-     * shows the server's messages. Returns the result only for the other failures, which runAction shows.
-     */
-    const destinationReply = (result, id) => {
+    /** A failed removal's reply (spec §10.4): a 409 shows the fresh data and says so; other failures go to runAction. */
+    const removalReply = result => {
         const S = state.strings;
         if (result.status === 409 && result.body && result.body.Current) {
-            const pending = Boolean(state.forms[destKey(id)] && state.forms[destKey(id)].dirty);
             takeDestinations(result.body.Current);
-            state.ui.errors.destinations = t(S, pending ? 'web.dest.conflict' : 'web.dest.conflictPlain');
-            return undefined;
-        }
-
-        if (result.status === 400 && result.body && Array.isArray(result.body.Errors)) {
-            state.ui.errors.destinations = result.body.Errors.map(e => esc(e.Message)).join(' ');
+            state.ui.errors.destinations = t(S, 'web.dest.conflictPlain');
             return undefined;
         }
 
         return result.status >= 300 ? result : undefined;
     };
 
-    /** PUTs a change to one destination; on success the section starts over from the server's data (keepForm: not the editor). */
-    const putDestination = async (id, body, { keepForm = false } = {}) => {
-        const result = await api.put(`Destinations/${encodeURIComponent(id)}`, body);
-        if (result.status === 200) {
-            if (!keepForm) {
-                delete state.forms[destKey(id)];
-            }
-
-            await reloadSection('destinations', { fresh: true });
-            return undefined;
+    /**
+     * Sends one auto-save of a destination (design §6.1): what its form changed since the server data, with the current
+     * Revision. Changes still waiting behind it go along, so a later job for this destination may find nothing left to
+     * send. On success the form starts over from the reply, keeping a change made while the request ran.
+     * @param {string} id
+     */
+    const sendDestination = async id => {
+        const form = state.forms[destKey(id)];
+        if (!form || !destination(id)) {
+            return { status: 'failed', message: text(state.strings, 'web.requestFailed', { reason: 'no destination' }) };
         }
 
-        return destinationReply(result, id);
+        const body = destinationChanges(form.base, form.local, pageRevision());
+        if (!body) {
+            return { status: 'saved' };
+        }
+
+        const sent = structuredClone(form.local);
+        return saveResult(await api.put(`Destinations/${encodeURIComponent(id)}`, body), {
+            fields: Object.keys(body).filter(key => key !== 'ExpectedRevision'),
+            saved: dto => {
+                const now = state.forms[destKey(id)];
+                state.forms[destKey(id)] = syncFormData({ base: sent, local: now ? now.local : sent, dirty: true, changed: [] }, destinationFormData(dto));
+                takeDestination(dto);
+                renderSection('destinations');
+            },
+            conflict: current => {
+                // The form keeps the admin's edits on top of the server data (syncFormData): the admin's value wins.
+                takeDestinations(current);
+                renderSection('destinations');
+            },
+            again: () => sendDestination(id),
+        });
+    };
+
+    /** Queues the save of one destination control (switches and the preset save at once); field is its fieldSelector. */
+    const saveDestination = (id, what, field) => queueSave({
+        key: destSaveKey(id, what),
+        mode: 'now',
+        fields: [field],
+        send: () => sendDestination(id),
+    });
+
+    /** The preset select of a destination's editor, as fieldSelector finds it. */
+    const presetField = id => fieldSelector({ getAttribute: name => ({ 'data-tgj-input': 'destPreset', 'data-tgj-id': id })[name] ?? null });
+
+    /** Switches a destination to a preset (its events with it), shows it, and saves it. */
+    const applyPreset = (id, preset) => {
+        const events = state.destinations.Catalog.Presets[preset];
+        editDestination(id, events ? { Preset: preset, Events: [...events] } : { Preset: preset });
+        // Rendered before the save holds the select, so the write shows the new preset rather than keeping the old one.
+        renderSection('destinations');
+        saveDestination(id, 'Preset', presetField(id));
     };
 
     const destinationOutcome = (id, html) => {
@@ -2051,18 +3007,14 @@ export default function TgJellyPage(view, params) {
     };
 
     const openManual = () => {
-        const advanced = byId('tgj-advanced');
-        if (advanced) {
-            advanced.open = true;
-        }
-
+        selectSection('advanced', { remember: true });
         const manual = byId('tgj-manual');
         if (manual && typeof manual.scrollIntoView === 'function') {
             manual.scrollIntoView({ behavior: 'smooth', block: 'start' });
         }
     };
 
-    /** Sets one editor value for a destination and re-renders the section. */
+    /** Records editor values for a destination (the caller renders and saves). */
     const editDestination = (id, edits) => {
         for (const [path, value] of Object.entries(edits)) {
             markDirty(destKey(id), path, value);
@@ -2076,7 +3028,7 @@ export default function TgJellyPage(view, params) {
         if (result.status === 200 && body) {
             const outcome = body.Outcome === 'AlreadyExists' ? t(S, 'web.manual.AlreadyExists') : t(S, 'web.manual.Added');
             const test = body.Outcome === 'AlreadyExists' ? ''
-                : ' ' + (body.TestSent ? t(S, 'dest.test.ok') : t(S, 'dest.test.failed', { error: body.TestError }));
+                : ' ' + (body.TestSent ? t(S, 'web.dest.test.ok') : t(S, 'web.dest.test.failed', { error: body.TestError }));
             state.ui.manualResult = `<p>${outcome}${test}</p>`;
             state.ui.manualInput = '';
             await reloadSection('destinations', { fresh: true });
@@ -2153,27 +3105,28 @@ export default function TgJellyPage(view, params) {
                 state.ui.saving = false;
             }
         }),
-        saveProxy: () => runAction('proxy', saveProxy),
         edit: el => {
             const id = idOf(el);
             state.ui.destEditing = state.ui.destEditing === id ? null : id;
             state.ui.destConfirm = null;
+            state.ui.destPresetAsk = null;
             renderSection('destinations');
         },
-        enabled: el => runAction('destinations', () => {
-            const dest = destination(idOf(el));
-            return dest
-                ? putDestination(dest.Id, { ExpectedRevision: state.destinations.Revision, Enabled: !dest.Enabled }, { keepForm: true })
-                : undefined;
-        }),
-        saveDest: el => runAction('destinations', () => {
-            const id = idOf(el);
-            const form = state.forms[destKey(id)];
-            const body = form && state.destinations
-                ? destinationChanges(destinationFormData(destination(id)), form.local, state.destinations.Revision)
-                : null;
-            return body ? putDestination(id, body) : undefined;
-        }),
+        // Leaving Custom for a preset, confirmed: the preset's events replace the hand-picked ones.
+        presetReplace: el => {
+            const ask = state.ui.destPresetAsk;
+            state.ui.destPresetAsk = null;
+            if (ask && ask.id === idOf(el) && state.forms[destKey(ask.id)]) {
+                applyPreset(ask.id, ask.preset);
+            } else {
+                renderSection('destinations');
+            }
+        },
+        presetCancel: () => {
+            state.ui.destPresetAsk = null;
+            renderSection('destinations');
+        },
+        // A leftover library is removed from the filter, and that saves at once (the Libraries title shows the cue).
         removeLibrary: el => {
             const id = idOf(el);
             const form = state.forms[destKey(id)];
@@ -2183,6 +3136,9 @@ export default function TgJellyPage(view, params) {
             }
 
             renderSection('destinations');
+            if (form) {
+                saveDestination(id, 'libraries', null);
+            }
         },
         testDest: el => runAction('destinations', async () => {
             const id = idOf(el);
@@ -2192,7 +3148,7 @@ export default function TgJellyPage(view, params) {
             }
 
             const S = state.strings;
-            destinationOutcome(id, result.body.Sent ? t(S, 'dest.test.ok') : t(S, 'dest.test.failed', { error: result.body.Error }));
+            destinationOutcome(id, result.body.Sent ? t(S, 'web.dest.test.ok') : t(S, 'web.dest.test.failed', { error: result.body.Error }));
             await reloadSection('destinations', { fresh: true });
             return undefined;
         }),
@@ -2205,7 +3161,7 @@ export default function TgJellyPage(view, params) {
 
             const S = state.strings;
             const health = result.body.Health;
-            destinationOutcome(id, result.body.Error ? esc(result.body.Error) : t(S, `dest.health.${health && health.Status ? health.Status : 'Ok'}`));
+            destinationOutcome(id, result.body.Error ? esc(result.body.Error) : healthText(health && health.Status, S));
             await reloadSection('destinations', { fresh: true });
             return undefined;
         }),
@@ -2219,7 +3175,10 @@ export default function TgJellyPage(view, params) {
         },
         removeYes: el => runAction('destinations', async () => {
             const id = idOf(el);
-            const revision = state.destinations ? state.destinations.Revision : 0;
+            // Like every action that sends the Revision: the saves before it go first, so it sends the one they moved to
+            // and doesn't conflict with the page's own change.
+            await autosave.flush();
+            const revision = pageRevision();
             const result = await api.del(`Destinations/${encodeURIComponent(id)}?leave=${state.ui.destLeave}&expectedRevision=${revision}`);
             state.ui.destConfirm = null;
             if (result.status === 204 || result.status === 200) {
@@ -2229,7 +3188,7 @@ export default function TgJellyPage(view, params) {
                 return undefined;
             }
 
-            return destinationReply(result, id);
+            return removalReply(result);
         }),
         'open-manual': openManual,
         manualAdd: () => runAction('manual', async () => {
@@ -2240,7 +3199,8 @@ export default function TgJellyPage(view, params) {
 
             state.ui.manualResult = '';
             const target = /^-?\d+$/.test(value) && Number.isSafeInteger(Number(value)) ? { ChatId: Number(value) } : { TopicLink: value };
-            return manualReply(await api.post('Destinations', { ExpectedRevision: state.destinations.Revision, ...target, Preset: state.ui.manualPreset }));
+            await autosave.flush();
+            return manualReply(await api.post('Destinations', { ExpectedRevision: pageRevision(), ...target, Preset: state.ui.manualPreset }));
         }),
         detectedSetUp: el => runAction('manual', async () => {
             const id = detectedId(el);
@@ -2250,7 +3210,8 @@ export default function TgJellyPage(view, params) {
 
             state.ui.manualResult = '';
             const preset = state.ui.detectedPresets[id] ?? 'Everything';
-            return manualReply(await api.post(`DetectedChats/${id}`, { ExpectedRevision: state.destinations.Revision, Preset: preset }));
+            await autosave.flush();
+            return manualReply(await api.post(`DetectedChats/${id}`, { ExpectedRevision: pageRevision(), Preset: preset }));
         }),
         detectedDismiss: el => runAction('manual', async () => {
             const id = detectedId(el);
@@ -2267,16 +3228,15 @@ export default function TgJellyPage(view, params) {
             await reloadSection('destinations', { fresh: true });
             return undefined;
         }),
-        saveSettings: el => {
-            const section = SETTINGS_SECTIONS.includes(idOf(el)) ? idOf(el) : 'messages';
-            return runAction(section, () => saveSettings(section));
-        },
+        // A whole URL, chosen with a button: it saves at once (the field itself saves on blur or Enter).
         useSuggested: () => {
             if (state.settings && state.settings.PublicUrlSuggestion) {
                 markDirty('settings', 'PublicUrl', state.settings.PublicUrlSuggestion);
+                // The suggestion replaces whatever was typed and waiting, so the field shows it.
+                releaseFields('PublicUrl');
+                renderSection('messages');
+                saveSetting('PublicUrl', 'now', null, { validate: publicUrlError });
             }
-
-            renderSection('messages');
         },
         copyDiagnostics: () => runAction('diagnostics', async () => {
             Object.assign(state.ui, { diagText: '', diagCopied: false });
@@ -2295,45 +3255,6 @@ export default function TgJellyPage(view, params) {
 
             return undefined;
         }),
-        tplSave: () => runAction('templates', async () => {
-            const key = templateKey();
-            const name = `tpl:${key}`;
-            const form = state.forms[name];
-            if (!form || !state.templates) {
-                return undefined;
-            }
-
-            const S = state.strings;
-            state.ui.tplBusy = true;
-            renderSection('templates');
-            let result;
-            try {
-                result = await api.put(`Templates/${encodeURIComponent(key)}`,
-                    { ExpectedRevision: state.templates.Revision, Text: String(form.local.Text ?? '') });
-            } finally {
-                state.ui.tplBusy = false;
-            }
-
-            if (result.status === 200 && result.body) {
-                // Saved: this key starts over from the server's data; other keys keep their unsaved text.
-                delete state.forms[name];
-                takeTemplates(result.body);
-                return undefined;
-            }
-
-            if (result.status === 409 && result.body && result.body.Current) {
-                takeTemplates(result.body.Current);
-                state.ui.errors.templates = t(S, 'web.templates.conflict');
-                return undefined;
-            }
-
-            if (result.status === 400 && result.body && Array.isArray(result.body.Errors)) {
-                state.ui.errors.templates = result.body.Errors.map(e => esc(e.Message)).join(' ');
-                return undefined;
-            }
-
-            return result;
-        }),
         // Reset asks first, inline: Reset or Cancel.
         tplReset: () => {
             state.ui.tplResetAsk = true;
@@ -2351,11 +3272,17 @@ export default function TgJellyPage(view, params) {
             }
 
             const S = state.strings;
+            // The reset replaces the typed text: a save still waiting for it is dropped, and one in flight is waited
+            // for, so the text doesn't come back and the reset sends the Revision that save moved to.
+            const saveKey = templateSaveKey(key);
+            autosave.cancel(saveKey);
+            releaseFields(saveKey);
             state.ui.tplBusy = true;
             renderSection('templates');
+            await autosave.flush(saveKey);
             let result;
             try {
-                result = await api.del(`Templates/${encodeURIComponent(key)}?expectedRevision=${state.templates.Revision}`);
+                result = await api.del(`Templates/${encodeURIComponent(key)}?expectedRevision=${pageRevision()}`);
             } finally {
                 state.ui.tplBusy = false;
                 state.ui.tplResetAsk = false;
@@ -2407,7 +3334,7 @@ export default function TgJellyPage(view, params) {
             const health = reply.Health;
             state.ui.tplTestResult = reply.Sent
                 ? t(S, 'web.templates.sent')
-                : (reply.Error ? esc(reply.Error) : t(S, `dest.health.${health && health.Status ? health.Status : 'Ok'}`));
+                : (reply.Error ? esc(reply.Error) : healthText(health && health.Status, S));
             // The send may have changed the destination's health.
             await reloadSection('destinations', { fresh: true });
             return undefined;
@@ -2421,68 +3348,110 @@ export default function TgJellyPage(view, params) {
         setProfile: el => {
             state.ui.setProfile = Boolean(el.checked);
         },
+        // The proxy fields save together when the focus leaves the card (see the focusout listener).
         proxyMode: (el, event) => {
             markDirty('proxy', 'Mode', el.value);
+            saveProxy(el);
             if (event.type === 'change') {
                 renderProxyForms();
             }
         },
-        proxyUrl: el => markDirty('proxy', 'Url', el.value),
-        proxyUsername: el => {
-            typed.proxyUsername = String(el.value ?? '');
+        // Typed fields act on input only: the change a browser fires on Enter or blur repeats a value already queued, and
+        // queueing it again after Enter's save would send it twice (a second bot restart, for the proxy).
+        proxyUrl: (el, event) => {
+            if (event.type === 'input') {
+                markDirty('proxy', 'Url', el.value);
+                saveProxy(el);
+            }
         },
-        proxyPassword: el => {
-            typed.proxyPassword = String(el.value ?? '');
+        proxyUsername: (el, event) => {
+            if (event.type === 'input') {
+                typed.proxyUsername = String(el.value ?? '');
+                saveProxy(el);
+            }
         },
+        proxyPassword: (el, event) => {
+            if (event.type === 'input') {
+                typed.proxyPassword = String(el.value ?? '');
+                saveProxy(el);
+            }
+        },
+        // Switches are buttons: they reach here on click. Each saves at once, with its cue beside it.
+        destEnabled: (el, event) => {
+            const id = idOf(el);
+            const form = state.forms[destKey(id)];
+            if (form && event.type === 'click') {
+                markDirty(destKey(id), 'Enabled', !form.local.Enabled);
+                renderSection('destinations');
+                saveDestination(id, 'Enabled', fieldSelector(el));
+            }
+        },
+        // A select fires input and then change; the change is the choice. Between presets, or into Custom, it saves at
+        // once; leaving Custom asks first (design §6.1a), and until Replace the select shows Custom and nothing is sent.
         destPreset: (el, event) => {
             const id = idOf(el);
-            const dest = destination(id);
+            const form = state.forms[destKey(id)];
             const preset = el.value;
-            if (!dest || !PRESETS.includes(preset)) {
+            if (event.type !== 'change' || !form || !destination(id) || !PRESETS.includes(preset)) {
                 return;
             }
 
-            const events = state.destinations.Catalog.Presets[preset];
-            editDestination(id, events ? { Preset: preset, Events: [...events] } : { Preset: preset });
-            if (event.type === 'change') {
+            if (preset === form.local.Preset) {
+                state.ui.destPresetAsk = null;
                 renderSection('destinations');
+            } else if (form.local.Preset === 'Custom') {
+                state.ui.destPresetAsk = { id, preset };
+                renderSection('destinations');
+            } else {
+                state.ui.destPresetAsk = null;
+                applyPreset(id, preset);
             }
         },
         destEvent: (el, event) => {
             const id = idOf(el);
             const form = state.forms[destKey(id)];
-            if (!form) {
+            const key = el.getAttribute('data-tgj-key');
+            const keys = state.destinations ? state.destinations.Catalog.EventKeys : [];
+            if (!form || event.type !== 'click' || !keys.includes(key)) {
                 return;
             }
 
-            const keys = state.destinations.Catalog.EventKeys;
-            const chosen = toggled(form.local.Events, el.getAttribute('data-tgj-key'), Boolean(el.checked));
+            const chosen = toggled(form.local.Events, key, !form.local.Events.includes(key));
             editDestination(id, { Events: keys.filter(k => chosen.includes(k)), Preset: 'Custom' });
-            if (event.type === 'change') {
-                renderSection('destinations');
-            }
+            renderSection('destinations');
+            saveDestination(id, `event:${key}`, fieldSelector(el));
         },
         destLibrary: (el, event) => {
             const id = idOf(el);
             const form = state.forms[destKey(id)];
-            if (form) {
-                const lib = el.getAttribute('data-tgj-lib');
-                editDestination(id, { LibraryIds: toggled(form.local.LibraryIds, lib, Boolean(el.checked)) });
-                if (event.type === 'change') {
-                    renderSection('destinations');
-                }
+            const lib = el.getAttribute('data-tgj-lib');
+            if (!form || event.type !== 'click' || !lib) {
+                return;
             }
+
+            const on = !form.local.LibraryIds.some(x => sameLibrary(x, lib));
+            editDestination(id, { LibraryIds: on ? [...form.local.LibraryIds, lib] : form.local.LibraryIds.filter(x => !sameLibrary(x, lib)) });
+            renderSection('destinations');
+            saveDestination(id, `lib:${lib}`, fieldSelector(el));
         },
-        destSilent: el => {
+        destSilent: (el, event) => {
             const id = idOf(el);
             const form = state.forms[destKey(id)];
-            if (form) {
-                const group = el.getAttribute('data-tgj-group');
-                editDestination(id, { SilentGroups: toggled(form.local.SilentGroups, group, Boolean(el.checked)) });
+            const group = el.getAttribute('data-tgj-group');
+            if (!form || event.type !== 'click' || !state.destinations.Catalog.Groups.includes(group)) {
+                return;
             }
+
+            editDestination(id, { SilentGroups: toggled(form.local.SilentGroups, group, !form.local.SilentGroups.includes(group)) });
+            renderSection('destinations');
+            saveDestination(id, `silent:${group}`, fieldSelector(el));
         },
-        destLeave: el => {
-            state.ui.destLeave = Boolean(el.checked);
+        // Part of the remove question: it saves nothing.
+        destLeave: (el, event) => {
+            if (event.type === 'click') {
+                state.ui.destLeave = !state.ui.destLeave;
+                renderSection('destinations');
+            }
         },
         manualInput: el => {
             state.ui.manualInput = String(el.value ?? '');
@@ -2498,40 +3467,71 @@ export default function TgJellyPage(view, params) {
                 state.ui.detectedPresets[id] = el.value;
             }
         },
-        publicUrl: el => markDirty('settings', 'PublicUrl', String(el.value ?? '')),
-        msgToggle: el => {
-            const key = el.getAttribute('data-tgj-key');
-            if (MESSAGE_TOGGLES.includes(key)) {
-                markDirty('settings', `Message.${key}`, Boolean(el.checked));
-            }
-        },
-        batching: el => {
-            const key = el.getAttribute('data-tgj-key');
-            if (BATCHING_FIELDS.some(f => f.key === key)) {
-                const text = String(el.value ?? '').trim();
-                // A value that isn't a whole number stays text, so Save can say so instead of sending it.
-                markDirty('settings', `Batching.${key}`, /^-?\d+$/.test(text) ? Number(text) : text);
-            }
-        },
-        updEnabled: el => markDirty('settings', 'UpdateCheck.Enabled', Boolean(el.checked)),
-        updMode: el => {
-            if (UPDATE_MODES.includes(el.value)) {
-                markDirty('settings', 'UpdateCheck.Mode', el.value);
-            }
-        },
-        // Typing only records the edit and, after a pause, refreshes the preview pane: re-rendering would move the caret.
-        tplText: (el, event) => {
-            markDirty(`tpl:${templateKey()}`, 'Text', String(el.value ?? ''));
+        // A partial URL can pass the rules, and would go live in message buttons: this saves on blur or Enter only.
+        publicUrl: (el, event) => {
             if (event.type === 'input') {
-                cancelTemplateTimer();
-                tplTimer = setTimeout(() => {
-                    tplTimer = null;
-                    validateTemplate().catch(err => console.error('TgJelly: the template preview failed', err));
-                }, PREVIEW_DEBOUNCE_MS);
+                markDirty('settings', 'PublicUrl', String(el.value ?? ''));
+                saveSetting('PublicUrl', 'blur', el, { validate: publicUrlError });
             }
         },
-        tplEvent: el => {
-            if (state.templates && state.templates.Items.some(i => i.EventKey === el.value)) {
+        // Switches are buttons: they reach here on click.
+        msgToggle: (el, event) => {
+            const key = el.getAttribute('data-tgj-key');
+            if (MESSAGE_TOGGLES.includes(key) && event.type === 'click') {
+                const path = `Message.${key}`;
+                markDirty('settings', path, flipped(path));
+                renderSection('messages');
+                saveSetting(path, 'now', el);
+            }
+        },
+        batching: (el, event) => {
+            const field = BATCHING_FIELDS.find(f => f.key === el.getAttribute('data-tgj-key'));
+            if (field && event.type === 'input') {
+                const path = `Batching.${field.key}`;
+                const typedText = String(el.value ?? '').trim();
+                // A value that isn't a whole number stays text, so its save can say so instead of sending it.
+                markDirty('settings', path, /^-?\d+$/.test(typedText) ? Number(typedText) : typedText);
+                saveSetting(path, 'debounce', el, {
+                    delay: TYPING_SAVE_MS,
+                    // Checked as it would be sent: this value with the saved others (the server's cross-field rule too).
+                    validate: () => batchingError(field, overlayPaths(state.forms.settings.base, state.forms.settings.local, [path]).Batching, state.strings),
+                });
+            }
+        },
+        updEnabled: (el, event) => {
+            if (event.type === 'click') {
+                markDirty('settings', 'UpdateCheck.Enabled', flipped('UpdateCheck.Enabled'));
+                renderSection('updates');
+                saveSetting('UpdateCheck.Enabled', 'now', el);
+            }
+        },
+        // A select fires input and then change; the change is the choice.
+        updMode: (el, event) => {
+            if (UPDATE_MODES.includes(el.value) && event.type === 'change') {
+                markDirty('settings', 'UpdateCheck.Mode', el.value);
+                saveSetting('UpdateCheck.Mode', 'now', el);
+            }
+        },
+        // Typing records the edit; after a pause it refreshes the preview pane (only the pane: re-rendering would move the
+        // caret), and after a longer one the text saves itself (design §6.1). Typed text acts on input only.
+        tplText: (el, event) => {
+            const own = el.getAttribute('data-tgj-key');
+            const key = state.templates && state.templates.Items.some(i => i.EventKey === own) ? own : templateKey();
+            if (event.type !== 'input' || !state.forms[`tpl:${key}`]) {
+                return;
+            }
+
+            markDirty(`tpl:${key}`, 'Text', String(el.value ?? ''));
+            cancelTemplateTimer();
+            tplTimer = setTimeout(() => {
+                tplTimer = null;
+                validateTemplate(key).catch(err => console.error('TgJelly: the template preview failed', err));
+            }, PREVIEW_DEBOUNCE_MS);
+            saveTemplate(key, el);
+        },
+        // A select fires input and then change; the change is the choice.
+        tplEvent: (el, event) => {
+            if (event.type === 'change' && state.templates && state.templates.Items.some(i => i.EventKey === el.value)) {
                 cancelTemplateTimer();
                 Object.assign(state.ui, { tplKey: el.value, tplResetAsk: false, tplTestResult: '' });
                 renderSection('templates');
@@ -2589,20 +3589,12 @@ export default function TgJellyPage(view, params) {
         } catch (err) {
             stringsLoad = null;
             console.error('TgJelly: could not load the page strings', err);
-            const el = byId('tgj-status');
-            if (el) {
-                el.textContent = 'Could not load TgJelly.';
-                rendered.delete('tgj-status');
+            const root = byId('tgjelly-root');
+            if (root && !shellDrawn) {
+                root.textContent = 'Could not load TgJelly.';
             }
 
             return false;
-        }
-
-        const S = state.strings;
-        setHtml('tgj-advanced-title', t(S, 'web.advanced'));
-        const advanced = byId('tgj-advanced');
-        if (advanced) {
-            advanced.hidden = false;
         }
 
         return true;
@@ -2611,7 +3603,9 @@ export default function TgJellyPage(view, params) {
     const show = async () => {
         visible = true;
         stopPolling();
-        if (!(await ensureStrings())) {
+        stylesheet ??= waitForStylesheet(byId('tgjelly-css'));
+        const [ready] = await Promise.all([ensureStrings(), stylesheet]);
+        if (!ready) {
             return;
         }
 
@@ -2625,6 +3619,8 @@ export default function TgJellyPage(view, params) {
         visible = false;
         stopPolling();
         cancelTemplateTimer();
+        // Leaving the page saves what is still waiting (a debounce, or a field saved on blur that still has the focus).
+        autosave.flush().catch(logFailure);
     };
 
     /** Finds the handler for an event through the target's closest [attribute]; null when there is none. */
@@ -2667,13 +3663,58 @@ export default function TgJellyPage(view, params) {
     view.addEventListener('change', onInput);
     view.addEventListener('input', onInput);
 
-    // A spoiler in the template preview is revealed (and hidden again) on click, as in Telegram.
+    // A switch (a button with role=switch and data-tgj-input) goes to its input handler on click.
     view.addEventListener('click', event => {
-        const spoiler = event.target && event.target.closest ? event.target.closest('.tgj-spoiler') : null;
-        if (spoiler) {
-            spoiler.classList.toggle('tgj-revealed');
+        const found = findHandler(event, 'data-tgj-input', inputs);
+        if (found && found.el.getAttribute('role') === 'switch' && !found.el.disabled) {
+            event.preventDefault();
+            found.run().catch(logFailure);
         }
     });
 
-    return { api, state, sections, actions, inputs, reloadSection, runAction, syncForm, markDirty, resetForm };
+    /** The save key of the auto-saved field an event is on (its data-tgj-save), or null. */
+    const saveKeyOf = target => {
+        const el = target && target.closest ? target.closest('[data-tgj-save]') : null;
+        return el ? el.getAttribute('data-tgj-save') : null;
+    };
+
+    // Input handlers run a microtask after their event (findHandler), so a flush waits one too: the change it saves is
+    // queued first.
+    const flushSoon = key => Promise.resolve().then(() => autosave.flush(key)).catch(logFailure);
+
+    // Leaving an auto-saved field saves it now (design §6.1). Fields that share a key save when the focus leaves all
+    // of them: the proxy card saves once, when the focus leaves the card.
+    view.addEventListener('focusout', event => {
+        const key = writing > 0 || !state.strings ? null : saveKeyOf(event.target);
+        if (key && saveKeyOf(event.relatedTarget) !== key) {
+            flushSoon(key);
+        }
+    });
+
+    // Enter in a one-line field saves it too.
+    view.addEventListener('keydown', event => {
+        const key = event.key === 'Enter' && state.strings ? saveKeyOf(event.target) : null;
+        if (key && String(event.target.tagName).toUpperCase() === 'INPUT') {
+            flushSoon(key);
+        }
+    });
+
+    // A spoiler in the template preview is revealed (and hidden again) on click, as in Telegram.
+    view.addEventListener('click', event => {
+        const spoiler = event.target && event.target.closest ? event.target.closest('.tgj-tg-spoiler') : null;
+        if (spoiler) {
+            spoiler.classList.toggle('tgj-tg-revealed');
+        }
+    });
+
+    // A sidebar button, or any control carrying data-tgj-nav (e.g. an Overview summary row), shows that section.
+    view.addEventListener('click', event => {
+        const el = event.target && event.target.closest ? event.target.closest('[data-tgj-nav]') : null;
+        if (el) {
+            event.preventDefault();
+            selectSection(el.getAttribute('data-tgj-nav'), { remember: true });
+        }
+    });
+
+    return { api, state, sections, actions, inputs, reloadSection, runAction, syncForm, markDirty, resetForm, pendingFields, queueSave, pageRevision };
 }

@@ -60,4 +60,18 @@ public class StringTableTests
         Assert.Equal("Connected as @{bot}", english["connection.Connected"]);
         Assert.Equal(english.Keys.Order(), StringTable.LoadEmbedded("xx").Snapshot().Keys.Order());
     }
+
+    [Fact]
+    public void WebStrings_HaveNoDecorativeSymbols()
+    {
+        string[] symbols = ["\u25CF", "\u2713", "\u2714", "\u2705", "\u26A0", "\u274C", "\u2717", "\uD83D\uDFE2", "\uD83D\uDD34"];
+
+        foreach (var (key, value) in StringTable.LoadEmbedded("en").Snapshot().Where(pair => pair.Key.StartsWith("web.", System.StringComparison.Ordinal)))
+        {
+            foreach (var symbol in symbols)
+            {
+                Assert.False(value.Contains(symbol, System.StringComparison.Ordinal), $"{key} contains a decorative symbol");
+            }
+        }
+    }
 }

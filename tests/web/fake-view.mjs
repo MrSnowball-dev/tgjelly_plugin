@@ -3,33 +3,62 @@
 /**
  * A fake page element that records what the controller writes to it. Like a browser, reading innerHTML gives the
  * serialized markup, which differs from what was written (&#39; comes back as '); writes counts innerHTML assignments.
+ * It keeps attributes (setAttribute and friends), and has no fields inside unless liveFields gives it some.
  * @param {string} id
+ * @param {(html: string) => void} [onWrite] called with each written markup (makeView registers the ids in it)
  */
-export function makeElement(id) {
+export function makeElement(id, onWrite = () => {}) {
     let html = '';
+    const attributes = new Map();
     return {
         id,
         textContent: '',
         hidden: false,
         writes: 0,
+        attributes,
         get innerHTML() {
             return html;
         },
         set innerHTML(value) {
             this.writes++;
             html = String(value).replaceAll('&#39;', "'");
+            onWrite(html);
         },
+        getAttribute: name => (attributes.has(name) ? attributes.get(name) : null),
+        setAttribute: (name, value) => attributes.set(name, String(value)),
+        removeAttribute: name => attributes.delete(name),
+        hasAttribute: name => attributes.has(name),
+        contains: () => false,
+        querySelector: () => null,
     };
 }
 
 /**
  * A fake Jellyfin view: an EventTarget with isConnected, classList and querySelector('#id').
- * @param {string[]} ids the element IDs the page shell has
+ * Like a browser, markup written to any of its elements creates the elements whose id="…" it holds (an ID already
+ * there keeps its element, so a test's handle on it stays good).
+ * @param {string[]} ids the element IDs the page has before the controller writes anything
  */
 export function makeView(ids) {
     const view = new EventTarget();
     const classes = new Set();
-    const elements = new Map(ids.map(id => [id, makeElement(id)]));
+    const elements = new Map();
+    // The save cue spots (data-tgj-cue="key"): like a browser, each write that holds one makes a new, empty span.
+    const cues = new Map();
+    const register = html => {
+        for (const match of html.matchAll(/\sid="([^"]+)"/g)) {
+            if (!elements.has(match[1])) {
+                elements.set(match[1], makeElement(match[1], register));
+            }
+        }
+
+        for (const match of html.matchAll(/<span class="([^"]*)" data-tgj-cue="([^"]+)"/g)) {
+            cues.set(unescapeHtml(match[2]), { className: match[1], textContent: '' });
+        }
+    };
+    for (const id of ids) {
+        elements.set(id, makeElement(id, register));
+    }
 
     view.isConnected = true;
     view.classList = {
@@ -41,11 +70,123 @@ export function makeView(ids) {
     // Inputs a test registers to stand for rendered form fields: querySelectorAll('[data-tgj-input="x"]') finds them by x.
     view.fields = [];
     view.querySelectorAll = selector => {
+        const cue = /^\[data-tgj-cue="((?:[^"\\]|\\.)*)"\]$/.exec(selector);
+        if (cue) {
+            const spot = cues.get(cue[1].replace(/\\(.)/g, '$1'));
+            return spot ? [spot] : [];
+        }
+
         const name = /data-tgj-input="(\w+)"/.exec(selector)?.[1];
         return view.fields.filter(field => field.name === name);
     };
     view.elements = elements;
+    // The newest cue spot for each key, as { className, textContent }.
+    view.cues = cues;
     return view;
+}
+
+const ENTITIES = { '&amp;': '&', '&lt;': '<', '&gt;': '>', '&quot;': '"', '&#39;': "'" };
+const unescapeHtml = text => text.replace(/&(amp|lt|gt|quot|#39);/g, entity => ENTITIES[entity]);
+const escapeAttr = value => String(value).replace(/[&<>"']/g, c => Object.keys(ENTITIES).find(k => ENTITIES[k] === c));
+
+/** The value a field gets from markup: the value="…" of the input, the textarea's text, or the selected option's value. */
+function valueIn(html, { tag, attributes }) {
+    const tags = tag === 'textarea'
+        ? html.matchAll(/<textarea\b([^>]*)>([\s\S]*?)<\/textarea>/g)
+        : tag === 'select'
+            ? html.matchAll(/<select\b([^>]*)>([\s\S]*?)<\/select>/g)
+            : html.matchAll(/<input\b([^>]*)>()/g);
+    for (const [, attrs, inner] of tags) {
+        if (!Object.entries(attributes).every(([name, value]) => attrs.includes(` ${name}="${escapeAttr(value)}"`))) {
+            continue;
+        }
+
+        if (tag === 'textarea') {
+            return unescapeHtml(inner);
+        }
+
+        if (tag === 'select') {
+            const option = /<option value="([^"]*)" selected/.exec(inner) ?? /<option value="([^"]*)"/.exec(inner);
+            return option ? unescapeHtml(option[1]) : '';
+        }
+
+        const value = /\svalue="([^"]*)"/.exec(attrs);
+        return value ? unescapeHtml(value[1]) : '';
+    }
+
+    return '';
+}
+
+/** Whether a field matches a selector made of [name="value"] parts only, as fieldSelector builds. */
+function matchesSelector(field, selector) {
+    const parts = [...selector.matchAll(/\[([\w-]+)="((?:[^"\\]|\\.)*)"\]/g)];
+    if (parts.length === 0 || parts.map(p => p[0]).join('') !== selector) {
+        return false;
+    }
+
+    return parts.every(([, name, value]) => field.getAttribute(name) === value.replace(/\\(.)/g, '$1'));
+}
+
+/**
+ * Fake form fields inside a host element. Like a browser, every innerHTML write of the host replaces each field with
+ * a new, unfocused one, whose value (and defaultValue) comes from the new markup; a focused field that goes leaves
+ * doc.activeElement empty. The host's contains() and querySelector() find the current fields.
+ * @param {ReturnType<typeof makeView>} view
+ * @param {{ activeElement?: unknown }} doc the fake document
+ * @param {string} hostId
+ * @param {{ tag: 'input' | 'textarea' | 'select', attributes: Record<string, string> }[]} specs the fields, by the
+ *   attributes that find each one in the markup
+ * @returns {(index?: number) => object} the current field at index (default 0)
+ */
+export function liveFields(view, doc, hostId, specs) {
+    const host = view.elements.get(hostId);
+    const make = spec => {
+        const value = valueIn(host.innerHTML, spec);
+        return {
+            tagName: spec.tag.toUpperCase(),
+            type: spec.tag === 'input' ? spec.attributes.type ?? 'text' : spec.tag,
+            value,
+            defaultValue: value,
+            checked: false,
+            selectionStart: 0,
+            selectionEnd: 0,
+            selectionDirection: 'none',
+            scrollTop: 0,
+            scrollLeft: 0,
+            focusCalls: 0,
+            getAttribute: name => spec.attributes[name] ?? null,
+            focus(options) {
+                this.focusCalls++;
+                this.focusOptions = options;
+                doc.activeElement = this;
+            },
+            blur() {
+                if (doc.activeElement === this) {
+                    doc.activeElement = null;
+                }
+            },
+            setSelectionRange(start, end, direction) {
+                Object.assign(this, { selectionStart: start, selectionEnd: end, selectionDirection: direction });
+            },
+        };
+    };
+
+    let fields = specs.map(make);
+    const { get, set } = Object.getOwnPropertyDescriptor(host, 'innerHTML');
+    Object.defineProperty(host, 'innerHTML', {
+        get,
+        set(value) {
+            set.call(host, value);
+            if (fields.includes(doc.activeElement)) {
+                doc.activeElement = null;
+            }
+
+            fields = specs.map(make);
+        },
+    });
+    host.contains = node => fields.includes(node);
+    host.querySelector = selector => fields.find(field => matchesSelector(field, selector)) ?? null;
+    return (index = 0) => fields[index];
 }
 
 /**
@@ -100,17 +241,37 @@ export function makeApiClient(routes) {
 
 /**
  * Fake setInterval/clearInterval that count the live intervals and run them on tick(), and fake setTimeout/clearTimeout
- * whose pending callbacks run (once) on runTimeouts().
+ * whose pending callbacks run (once) on runTimeouts(), or in time order as advance(ms) moves the fake clock on.
  */
 export function fakeTimers() {
     const live = new Map();
     const timeouts = new Map();
     let next = 1;
+    let now = 0;
     return {
         setTimeout: (fn, ms) => {
             const id = next++;
-            timeouts.set(id, { fn, ms });
+            timeouts.set(id, { fn, ms, due: now + (ms ?? 0) });
             return id;
+        },
+        // Moves the clock on by ms, running each timeout that falls due in time order, and letting the promise chains
+        // settle between them (a save's reply, then the cue it leads to).
+        advance: async ms => {
+            const end = now + ms;
+            for (;;) {
+                await flush();
+                const due = [...timeouts.entries()].filter(([, v]) => v.due <= end).sort((a, b) => a[1].due - b[1].due || a[0] - b[0])[0];
+                if (!due) {
+                    break;
+                }
+
+                timeouts.delete(due[0]);
+                now = Math.max(now, due[1].due);
+                due[1].fn();
+            }
+
+            now = end;
+            await flush();
         },
         clearTimeout: id => {
             timeouts.delete(id);
@@ -149,14 +310,11 @@ export async function flush() {
 }
 
 /**
- * Dispatches an event on the view whose target is a fake element carrying the given attributes, the way an event on a
- * rendered element bubbles to the view's delegated listeners. closest('[attr]') finds the element when it has attr.
- * @param {EventTarget} view
- * @param {string} type e.g. 'click', 'change', 'input'
+ * A fake rendered element carrying the given attributes: closest('[attr]') finds it when it has attr.
  * @param {Record<string, string>} attributes
- * @param {object} [extra] more properties for the target, e.g. { value: 'x' }
+ * @param {object} [extra] more properties, e.g. { value: 'x' }
  */
-export function dispatchOn(view, type, attributes, extra = {}) {
+export function fakeTarget(attributes, extra = {}) {
     const target = {
         disabled: false,
         ...extra,
@@ -166,8 +324,26 @@ export function dispatchOn(view, type, attributes, extra = {}) {
             return match && match[1] in attributes ? target : null;
         },
     };
+    return target;
+}
+
+/**
+ * Dispatches an event on the view whose target is a fake element carrying the given attributes, the way an event on a
+ * rendered element bubbles to the view's delegated listeners (see fakeTarget).
+ * @param {EventTarget} view
+ * @param {string} type e.g. 'click', 'change', 'input', 'focusout'
+ * @param {Record<string, string>} attributes
+ * @param {object} [extra] more properties for the target, e.g. { value: 'x' }
+ * @param {object} [eventProps] more properties for the event, e.g. { key: 'Enter' } or { relatedTarget }
+ */
+export function dispatchOn(view, type, attributes, extra = {}, eventProps = {}) {
+    const target = fakeTarget(attributes, extra);
     const event = new Event(type, { cancelable: true });
     Object.defineProperty(event, 'target', { value: target });
+    for (const [name, value] of Object.entries(eventProps)) {
+        Object.defineProperty(event, name, { value });
+    }
+
     view.dispatchEvent(event);
     return { event, target };
 }

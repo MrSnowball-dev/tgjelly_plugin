@@ -45,4 +45,10 @@ public sealed class DestinationDto
 
     /// <summary>Gets the health.</summary>
     public HealthDto Health { get; init; } = new();
+
+    /// <summary>
+    /// Gets the settings revision this destination was read at: after a change, the revision the change moved to, so the
+    /// dashboard's next save (of any section) sends it as <c>expectedRevision</c>.
+    /// </summary>
+    public long Revision { get; init; }
 }
