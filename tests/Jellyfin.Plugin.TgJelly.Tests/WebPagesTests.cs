@@ -14,10 +14,29 @@ public class WebPagesTests
         using var dir = new TempDir();
         var pages = TestPlugin.Create(dir.Path).GetPages().ToList();
 
-        Assert.Equal(["tgjelly", "tgjelly.js", "tgjelly-ui.js", "tgjelly-autosave.js", "tgjelly.css"], pages.Select(p => p.Name));
+        Assert.Equal(["tgjelly", "tgjelly.js", "tgjelly-ui.js", "tgjelly-autosave.js", "tgjelly-messages.js", "tgjelly-preview.js", "tgjelly.css"], pages.Select(p => p.Name));
         Assert.True(pages[0].EnableInMainMenu);
         Assert.Equal("Telegram", pages[0].DisplayName);
         Assert.All(pages.Skip(1), p => Assert.False(p.EnableInMainMenu));
+    }
+
+    [Fact]
+    public void NewModules_RegisteredAndChecked()
+    {
+        // Plan 9: the Messages section and the Telegram preview are their own modules. Each is a page Jellyfin serves,
+        // CI syntax-checks it, and the smoke test checks it is served as JavaScript. (Task 13 adds tgjelly-log.js.)
+        string[] modules = ["tgjelly-messages.js", "tgjelly-preview.js"];
+        using var dir = new TempDir();
+        var pages = TestPlugin.Create(dir.Path).GetPages().Select(p => p.Name).ToList();
+        var smoke = File.ReadAllText(Path.Combine(RepoRoot(), "tests", "integration", "smoke.py"));
+        var ci = File.ReadAllText(Path.Combine(RepoRoot(), ".github", "workflows", "ci.yml"));
+
+        foreach (var module in modules)
+        {
+            Assert.Contains(module, pages);
+            Assert.Contains($"(\"{module}\", \"javascript\")", smoke, StringComparison.Ordinal);
+            Assert.Contains($"node --check src/Jellyfin.Plugin.TgJelly/Web/{module}", ci, StringComparison.Ordinal);
+        }
     }
 
     [Fact]
@@ -69,6 +88,17 @@ public class WebPagesTests
         Assert.Contains("<div id=\"tgjelly-root\"></div>", html, StringComparison.Ordinal);
         Assert.DoesNotContain("<style", html, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("id=\"tgj-status\"", html, StringComparison.Ordinal);
+    }
+
+    private static string RepoRoot()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "Jellyfin.Plugin.TgJelly.slnx")))
+        {
+            dir = dir.Parent;
+        }
+
+        return dir?.FullName ?? throw new InvalidOperationException("Repository root not found.");
     }
 
     private static string ReadResource(string name)

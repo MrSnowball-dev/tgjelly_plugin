@@ -34,6 +34,12 @@ public sealed class TemplateItemDto
     /// <summary>Gets a model as it looks when data is missing.</summary>
     public IReadOnlyDictionary<string, object?> SampleSparse { get; init; } = new Dictionary<string, object?>();
 
+    /// <summary>
+    /// Gets the message switches that change this message, in the order shown (<c>MessageSwitches.Applicable</c>,
+    /// design §6.2): the dashboard shows only these.
+    /// </summary>
+    public IReadOnlyList<string> ApplicableSwitches { get; init; } = [];
+
     /// <summary>Gets the send-time problem flag, or <c>null</c>.</summary>
     public TemplateFlagDto? Flag { get; init; }
 }

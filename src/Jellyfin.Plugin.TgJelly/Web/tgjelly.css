@@ -670,24 +670,82 @@
     padding-left: 1.2em;
 }
 
-/* ---- Templates ---- */
+/* ---- Messages: one page per message (design §6.1) ---- */
 
-#tgjelly-root .tgj-tpl-event .tgj-select {
-    width: 18rem;
-    max-width: 100%;
+/* The pickers across the top; What it shows and the template on the left; the preview beside them, in view on scroll. */
+#tgjelly-root .tgj-msg-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(16rem, 24rem);
+    grid-template-areas:
+        "pick pick"
+        "cards side";
+    align-items: start;
+    gap: var(--tgj-space-4);
 }
 
-#tgjelly-root .tgj-tpl-grid {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    gap: var(--tgj-space-4) var(--tgj-space-5);
-    padding-block: var(--tgj-space-3);
+#tgjelly-root .tgj-msg-pick {
+    grid-area: pick;
+}
+
+#tgjelly-root .tgj-msg-cards {
+    grid-area: cards;
+    display: flex;
+    flex-direction: column;
+    gap: var(--tgj-space-4);
+    min-width: 0;
+}
+
+/* Jellyfin's header stays at the top of the window, so the preview stops below it. */
+#tgjelly-root .tgj-msg-side {
+    grid-area: side;
+    position: sticky;
+    top: 5rem;
+    min-width: 0;
+}
+
+#tgjelly-root .tgj-msg-pickers {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: var(--tgj-space-3) var(--tgj-space-4);
+}
+
+#tgjelly-root .tgj-msg-picker {
+    display: flex;
+    flex: 1 1 12rem;
+    flex-direction: column;
+    gap: var(--tgj-space-1);
+    min-width: 0;
+    max-width: 18rem;
+}
+
+#tgjelly-root .tgj-msg-picker .tgj-select {
+    width: 100%;
+}
+
+/* The Built-in or Edited label sits on the selects' line. */
+#tgjelly-root .tgj-msg-state {
+    display: flex;
+    align-items: center;
+    min-height: 2.25rem;
+}
+
+/* The public URL belongs to Open in Jellyfin: indented under it, between the switch rows' dividers. */
+#tgjelly-root .tgj-msg-nested {
+    padding-inline-start: var(--tgj-space-4);
+    border-top: 1px solid var(--tgj-line);
+    border-inline-start: 2px solid var(--tgj-line-strong);
+}
+
+#tgjelly-root .tgj-msg-nested + .tgj-row {
     border-top: 1px solid var(--tgj-line);
 }
 
-#tgjelly-root .tgj-tpl-grid > * {
-    min-width: 0;
+#tgjelly-root .tgj-msg-nested > .tgj-notice {
+    margin-bottom: var(--tgj-space-3);
 }
+
+/* ---- Templates ---- */
 
 /* The textarea's label, with the save cue beside it. */
 #tgjelly-root .tgj-tpl-label {
@@ -874,10 +932,18 @@
     overflow-wrap: anywhere;
 }
 
-/* The editor and the preview stack once the content column is too narrow for both (was a 700px window query). */
+/* The preview goes under the template once the content column is too narrow for both, and scrolls with the page. */
 @container tgjelly (max-width: 52rem) {
-    #tgjelly-root .tgj-tpl-grid {
+    #tgjelly-root .tgj-msg-layout {
         grid-template-columns: minmax(0, 1fr);
+        grid-template-areas:
+            "pick"
+            "cards"
+            "side";
+    }
+
+    #tgjelly-root .tgj-msg-side {
+        position: static;
     }
 }
 

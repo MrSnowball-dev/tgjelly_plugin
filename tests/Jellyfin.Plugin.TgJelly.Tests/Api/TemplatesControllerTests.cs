@@ -133,6 +133,21 @@ public sealed class TemplatesControllerTests : IAsyncLifetime
     }
 
     [Fact]
+    public void Get_ItemsCarryTheirApplicableSwitches()
+    {
+        // The dashboard's "What it shows" card lists exactly these (design §6.2, Ruling R6): the page reads them from
+        // here rather than keeping its own copy of the table.
+        var items = _controller.Get().Value!.Items;
+
+        Assert.All(items, item => Assert.Equal(MessageSwitches.Applicable(item.EventKey), item.ApplicableSwitches));
+        Assert.Equal(MessageSwitches.Names, items.Single(i => i.EventKey == "media.movie").ApplicableSwitches);
+        Assert.Equal(["ShowPoster", "ShowOpenInJellyfin", "ShowProviderLinks"], items.Single(i => i.EventKey == "media.episodes").ApplicableSwitches);
+        Assert.Equal(["ShowPoster"], items.Single(i => i.EventKey == "security.lockout").ApplicableSwitches);
+        Assert.Equal(["ShowPoster"], items.Single(i => i.EventKey == "server.started").ApplicableSwitches);
+        Assert.Empty(items.Single(i => i.EventKey == "media.digest").ApplicableSwitches);
+    }
+
+    [Fact]
     public void Get_IncludesDigest()
     {
         var digest = _controller.Get().Value!.Items.Single(i => i.EventKey == "media.digest");

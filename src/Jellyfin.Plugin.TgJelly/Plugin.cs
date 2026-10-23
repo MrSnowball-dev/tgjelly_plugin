@@ -92,6 +92,16 @@ public class Plugin : BasePlugin<PluginConfiguration>, IConfigurationHost, IHasW
             },
             new PluginPageInfo
             {
+                Name = "tgjelly-messages.js",
+                EmbeddedResourcePath = resourcePrefix + "tgjelly-messages.js",
+            },
+            new PluginPageInfo
+            {
+                Name = "tgjelly-preview.js",
+                EmbeddedResourcePath = resourcePrefix + "tgjelly-preview.js",
+            },
+            new PluginPageInfo
+            {
                 Name = "tgjelly.css",
                 EmbeddedResourcePath = resourcePrefix + "tgjelly.css",
             },

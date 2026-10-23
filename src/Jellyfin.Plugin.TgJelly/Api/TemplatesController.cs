@@ -345,6 +345,7 @@ public class TemplatesController : ControllerBase
                 Fields = [.. TemplateFieldCatalog.For(key).Select(f => new TemplateFieldDto { Name = f.Name, Type = f.Type, Description = f.Description, Optional = f.Optional })],
                 SampleFull = Plain(TemplateFieldCatalog.SampleFull(key)),
                 SampleSparse = Plain(TemplateFieldCatalog.SampleSparse(key)),
+                ApplicableSwitches = MessageSwitches.Applicable(key),
                 Flag = flag is null ? null : new TemplateFlagDto { Kind = flag.Kind, Error = flag.Error, At = flag.At },
             };
         })],
