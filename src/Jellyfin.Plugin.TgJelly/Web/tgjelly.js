@@ -19,6 +19,8 @@ export { esc };
 const POLL_MS = 3000;
 // The template preview validates this long after the last keystroke.
 const PREVIEW_DEBOUNCE_MS = 500;
+// The template text saves this long after the last keystroke (design §6.1).
+const TEMPLATE_SAVE_MS = 1000;
 
 /** Connection states shown in the error color (the ConnectionState names from GET Status). */
 const PROBLEM_STATES = new Set(['TokenRejected', 'WebhookConflict', 'ConflictingInstance', 'Unreachable', 'InvalidBaseUrl', 'Incompatible']);
@@ -371,14 +373,6 @@ export function renderStatus(status, S, lang = 'en') {
 
     parts.push(`<p class="tgj-row-hint tgj-version">${t(S, 'web.status.version', { version: status.Version, target: status.BuildTarget })}</p>`);
     return card({ title: text(S, 'web.status.title'), body: parts.join('') });
-}
-
-const BUTTON = 'is="emby-button" type="button"';
-
-/** A button for a data-tgj-act action; disabled while a request is in flight. */
-function button(label, act, { primary = false, disabled = false, id = null } = {}) {
-    return `<button ${BUTTON} class="raised${primary ? ' button-submit' : ''} emby-button" data-tgj-act="${act}"`
-        + `${id === null ? '' : ` data-tgj-id="${esc(id)}"`}${disabled ? ' disabled' : ''}><span>${label}</span></button>`;
 }
 
 /** A link to Telegram, or '' when the URL isn't one the server should have sent. */
@@ -1177,10 +1171,13 @@ export function renderUpdates(settings, S, ui) {
 
 const TEMPLATES_DOCS = 'https://github.com/MrSnowball-dev/tgjelly_plugin/blob/main/docs/templates.md';
 
-/** The template form data for one item (what Save sends besides the revision). */
+/** The template form data for one item (what a save sends besides the revision). */
 export function templateFormData(item) {
     return { Text: String(item.Text ?? '') };
 }
+
+/** The auto-save and cue key of an event's template text. */
+const templateSaveKey = key => `template:${key}`;
 
 /** Tags of Telegram HTML that the preview shows as the same tag, without any attribute. */
 const PREVIEW_SAME = new Set(['b', 'strong', 'i', 'em', 'u', 'ins', 's', 'strike', 'del', 'code', 'pre']);
@@ -1377,7 +1374,7 @@ export function renderTemplatePreview(result, S, lang = 'en', lastGood = null) {
     }
 
     for (const w of result.Warnings ?? []) {
-        parts.push(`<p class="fieldDescription">${esc(w)}</p>`);
+        parts.push(`<p class="tgj-tpl-warning">${esc(w)}</p>`);
     }
 
     const failed = Boolean(result.RequestError) || (result.Errors ?? []).length > 0;
@@ -1389,7 +1386,7 @@ export function renderTemplatePreview(result, S, lang = 'en', lastGood = null) {
     }
 
     if (!result.RequestError && (!failed || result.Length > 0)) {
-        parts.push(`<p class="fieldDescription">${t(S, 'web.templates.length', { length: formatNumber(result.Length ?? 0, lang), limit: formatNumber(result.Limit ?? 0, lang) })}</p>`);
+        parts.push(`<p class="tgj-row-hint tgj-tpl-length">${t(S, 'web.templates.length', { length: formatNumber(result.Length ?? 0, lang), limit: formatNumber(result.Limit ?? 0, lang) })}</p>`);
     }
 
     return parts.join('');
@@ -1398,17 +1395,18 @@ export function renderTemplatePreview(result, S, lang = 'en', lastGood = null) {
 /** Whether a validation result stops a test send: it had errors, or the request failed. */
 const validationFailed = result => Boolean(result && (result.RequestError || (result.Errors ?? []).length > 0));
 
-/** Whether Send test is off: no destination, the last validation failed, or a send or save is in flight. */
+/** Whether Send test is off: no destination, the last validation failed, or a send or a reset is in flight. */
 export function templateTestBlocked(ui) {
     return (ui.destinations ?? []).length === 0 || validationFailed(ui.result) || Boolean(ui.testing) || Boolean(ui.busy);
 }
 
 /**
  * The Message templates section (spec §8.5): every message comes from a template, and this edits the one in use per
- * event, with a live Telegram-like preview, a test send and a reset to the built-in template.
+ * event, with a live Telegram-like preview, a test send and a reset to the built-in template. The text saves itself
+ * (design §6.1): its cue sits beside the textarea's label.
  * @param {object | null} dto the TemplatesDto
  * @param {Record<string, string>} S
- * @param {{ key?: string, forms?: Record<string, { local: object, changed: string[] }>, result?: object | null,
+ * @param {{ key?: string, forms?: Record<string, { local: object }>, result?: object | null,
  *   good?: object | null, busy?: boolean, lang?: string, destinations?: { Id: string, Title: string }[],
  *   testTo?: string, testing?: boolean, testResult?: string, resetAsk?: boolean }} ui key is the selected event;
  *   result is its last validation, good the last one without errors; testResult is HTML
@@ -1423,51 +1421,63 @@ export function renderTemplates(dto, S, ui) {
     const item = dto.Items.find(i => i.EventKey === ui.key) ?? dto.Items[0];
     const form = (ui.forms ?? {})[`tpl:${item.EventKey}`];
     const local = form ? form.local : templateFormData(item);
-    const changed = path => (form && (form.changed ?? []).includes(path) ? ' tgj-changed' : '');
-    const options = dto.Items.map(i => `<option value="${esc(i.EventKey)}"${i === item ? ' selected' : ''}>${i.Edited ? '● ' : ''}${esc(i.Label)}</option>`);
-    const parts = [`<h2 class="sectionTitle">${t(S, 'web.templates.title')}</h2>`,
-        `<p class="fieldDescription">${t(S, 'web.templates.intro')}</p>`,
-        `<div class="tgj-tpl-head"><div class="selectContainer"><select is="emby-select" class="emby-select-withcolor emby-select" `
-        + `label="${t(S, 'web.templates.event')}" data-tgj-input="tplEvent">${options.join('')}</select></div>`
-        + `<span class="tgj-badge">${item.Edited ? t(S, 'web.templates.edited') : t(S, 'web.templates.builtIn')}</span></div>`];
+    const saveKey = templateSaveKey(item.EventKey);
+    const eventLabel = text(S, 'web.templates.event');
+    const options = dto.Items.map(i => ({ value: i.EventKey, label: i.Edited ? text(S, 'web.templates.eventEdited', { label: i.Label }) : i.Label }));
+    const badge = item.Edited
+        ? `<span class="tgj-badge tgj-badge--edited">${t(S, 'web.templates.edited')}</span>`
+        : `<span class="tgj-badge">${t(S, 'web.templates.builtIn')}</span>`;
+    const parts = [row({
+        label: eventLabel,
+        control: badge + selectField({ input: 'tplEvent', value: item.EventKey, options, attrs: { 'aria-label': eventLabel } }),
+        extraClass: 'tgj-tpl-event',
+    })];
     if (item.Flag) {
         // A truncated template was sent, only shortened; any other flag means the built-in template was sent instead.
         parts.push(item.Flag.Kind === 'truncated'
-            ? `<p class="tgj-error">${t(S, 'web.templates.flagTruncated')}</p>`
-            : `<p class="tgj-error">${t(S, 'web.templates.flagError')} ${esc(item.Flag.Error)}</p>`);
+            ? notice({ kind: 'warning', html: t(S, 'web.templates.flagTruncated') })
+            : notice({ kind: 'error', html: `${t(S, 'web.templates.flagError')} ${esc(item.Flag.Error)}` }));
     }
 
+    // The textarea is told apart by its event key, not an id: a refresh keeps a pending text only in its own template.
     const rows = (item.Fields ?? []).map(f => `<tr><td><code>${esc(f.Name)}</code></td><td>${esc(f.Type)}</td>`
         + `<td>${f.Optional ? t(S, 'web.templates.optional') : ''}</td><td>${esc(f.Description)}</td></tr>`);
-    parts.push(`<div class="tgj-tpl-grid"><div class="tgj-tpl-edit">`
-        + `<div class="${changed('Text').trim()}"><textarea id="tgj-tpl-text" class="tgj-template-text" data-tgj-input="tplText" rows="12" spellcheck="false">${esc(local.Text)}</textarea></div>`
-        + `<details><summary>${t(S, 'web.templates.fields')}</summary><table class="tgj-template-fields">${rows.join('')}</table></details>`
-        + `<p class="fieldDescription"><a is="emby-linkbutton" href="${TEMPLATES_DOCS}" target="_blank" rel="noopener noreferrer">${t(S, 'web.templates.docs')}</a></p></div>`
+    parts.push('<div class="tgj-tpl-grid"><div class="tgj-tpl-edit">'
+        + `<div class="tgj-tpl-label"><span class="tgj-row-label" id="tgj-tpl-label">${t(S, 'web.templates.text')}</span>`
+        + `<span class="tgj-cue" data-tgj-cue="${esc(saveKey)}" aria-live="polite"></span></div>`
+        + `<textarea class="tgj-field tgj-template-text" data-tgj-input="tplText" data-tgj-key="${esc(item.EventKey)}" data-tgj-save="${esc(saveKey)}"`
+        + ` aria-labelledby="tgj-tpl-label" rows="12" spellcheck="false">${esc(local.Text)}</textarea>`
+        + `<details class="tgj-tpl-fields"><summary>${t(S, 'web.templates.fields')}</summary><table class="tgj-template-fields">${rows.join('')}</table></details>`
+        + `<p class="tgj-tpl-docs"><a class="tgj-link" href="${TEMPLATES_DOCS}" target="_blank" rel="noopener noreferrer">${t(S, 'web.templates.docs')}</a></p></div>`
         + `<div id="tgj-tpl-preview" class="tgj-tpl-preview">${renderTemplatePreview(ui.result ?? null, S, lang, ui.good ?? null)}</div></div>`);
 
     const destinations = ui.destinations ?? [];
     const chosen = destinations.some(d => d.Id === ui.testTo) ? ui.testTo : (destinations[0] ? destinations[0].Id : '');
-    const testDisabled = templateTestBlocked(ui);
-    const testButton = `<button ${BUTTON} id="tgj-tpl-test" class="raised emby-button" data-tgj-act="tplTest"${testDisabled ? ' disabled' : ''}>`
-        + `<span>${t(S, 'web.templates.test')}</span></button>`;
+    const testTo = text(S, 'web.templates.testTo');
     const target = destinations.length > 0
-        ? `<div class="selectContainer"><select is="emby-select" class="emby-select-withcolor emby-select" label="${t(S, 'web.templates.testTo')}" `
-          + `data-tgj-input="tplTestTo">${destinations.map(d => `<option value="${esc(d.Id)}"${d.Id === chosen ? ' selected' : ''}>${esc(d.Title)}</option>`).join('')}</select></div>`
-        : `<p class="fieldDescription">${t(S, 'web.templates.noDestinations')}</p>`;
-    parts.push(`<div class="tgj-tpl-test">${target}${testButton}`
-        + `${ui.testResult ? `<span class="tgj-tpl-test-result">${ui.testResult}</span>` : ''}</div>`,
-        `<p class="fieldDescription">${t(S, 'web.templates.testNote')}</p>`);
+        ? selectField({ input: 'tplTestTo', value: chosen, options: destinations.map(d => ({ value: d.Id, label: d.Title })), attrs: { 'aria-label': testTo } })
+        : '';
+    const testButton = actionButton({ label: text(S, 'web.templates.test'), act: 'tplTest', disabled: templateTestBlocked(ui), attrs: { id: 'tgj-tpl-test' } });
+    parts.push(row({
+        label: testTo,
+        hint: text(S, destinations.length > 0 ? 'web.templates.testNote' : 'web.templates.noDestinations'),
+        control: target + testButton + (ui.testResult ? `<span class="tgj-tpl-test-result">${ui.testResult}</span>` : ''),
+        extraClass: 'tgj-tpl-test',
+    }));
 
-    const save = button(t(S, 'web.templates.save'), 'tplSave', { primary: true, disabled: ui.busy });
-    if (item.Edited && ui.resetAsk) {
-        parts.push(`<div class="tgj-notice"><span class="tgj-notice-text">${t(S, 'web.templates.resetAsk')}</span>`
-            + `${button(t(S, 'web.templates.resetConfirm'), 'tplResetConfirm', { disabled: ui.busy })}${button(t(S, 'web.templates.resetCancel'), 'tplResetCancel')}</div>`,
-            `<div>${save}</div>`);
-    } else {
-        parts.push(`<div>${item.Edited ? button(t(S, 'web.templates.reset'), 'tplReset', { disabled: ui.busy }) : ''}${save}</div>`);
+    if (item.Edited) {
+        parts.push(ui.resetAsk
+            ? inlineConfirm({
+                question: text(S, 'web.templates.resetAsk'),
+                confirmLabel: text(S, 'web.templates.resetConfirm'),
+                confirmAct: 'tplResetConfirm',
+                cancelAct: 'tplResetCancel',
+                cancelLabel: text(S, 'web.templates.resetCancel'),
+            })
+            : `<div class="tgj-actions">${actionButton({ label: text(S, 'web.templates.reset'), act: 'tplReset', disabled: ui.busy })}</div>`);
     }
 
-    return `<div class="verticalSection">${parts.join('')}</div>`;
+    return card({ title: text(S, 'web.templates.title'), description: text(S, 'web.templates.intro'), body: parts.join(''), extraClass: 'tgj-tpl' });
 }
 
 /**
@@ -1803,7 +1813,7 @@ export default function TgJellyPage(view, params) {
             diagText: '',
             diagCopied: false,
             // The templates section: the selected event key, the last validation and the last one without errors per
-            // key, a save or reset in flight, the test send's destination, in-flight flag and outcome (HTML), and the
+            // key, a reset in flight, the test send's destination, in-flight flag and outcome (HTML), and the
             // open reset question.
             tplKey: '',
             tplResults: {},
@@ -1826,8 +1836,10 @@ export default function TgJellyPage(view, params) {
     const typed = { token: '', proxyUsername: undefined, proxyPassword: undefined };
     // Section load errors (set by reloadSection), so a later good load can clear them without touching action errors.
     const loadErrors = new Set();
-    // The template preview: the newest Validate request's number (older replies are ignored), and the typing debounce.
-    let tplSeq = 0;
+    // The template preview, per event key: the newest Validate request's number (older replies are ignored) and the
+    // text its kept result was for (a save checks exactly the text it sends); and the typing debounce.
+    const tplSeqs = new Map();
+    const tplChecked = new Map();
     let tplTimer = null;
     // Fields whose change hasn't been saved yet, by fieldSelector: a section write keeps their values (keepFocus).
     const pendingFields = new Set();
@@ -2032,38 +2044,50 @@ export default function TgJellyPage(view, params) {
     };
 
     /**
-     * Validates the selected template's current text and shows the result in the preview. Every request gets the next
-     * number; a reply that is not for the newest request is ignored, so a slow older reply can't overwrite a newer one.
+     * Validates an event's current text (default: the selected event's) and keeps the result for the preview and for the
+     * save's check. Every request gets the key's next number; a reply that is not for the newest request is not kept,
+     * so a slow older reply can't overwrite a newer one.
+     * @returns {Promise<{ text: string, reply: object, failure: string | null } | null>} the text checked, the reply (or
+     *   { RequestError } HTML when the request failed) and then the plain-text reason; null without that template
      */
-    const validateTemplate = async () => {
-        const key = templateKey();
+    const validateTemplate = async (key = templateKey()) => {
         const form = state.forms[`tpl:${key}`];
         if (!key || !form) {
-            return;
+            return null;
         }
 
-        const seq = ++tplSeq;
+        const value = String(form.local.Text ?? '');
+        const seq = (tplSeqs.get(key) ?? 0) + 1;
+        tplSeqs.set(key, seq);
         const S = state.strings;
         let reply;
+        let failure = null;
         try {
-            const result = await api.post('Templates/Validate', { EventKey: key, Text: String(form.local.Text ?? '') });
-            reply = result.status === 200 && result.body ? result.body : { RequestError: requestError(S, result) };
+            const result = await api.post('Templates/Validate', { EventKey: key, Text: value });
+            if (result.status === 200 && result.body) {
+                reply = result.body;
+            } else {
+                reply = { RequestError: requestError(S, result) };
+                failure = failureText(result);
+            }
         } catch (err) {
             reply = { RequestError: t(S, 'web.requestFailed', { reason: err && err.message }) };
+            failure = text(S, 'web.requestFailed', { reason: err && err.message });
         }
 
-        if (seq !== tplSeq) {
-            return;
+        if (seq === tplSeqs.get(key)) {
+            state.ui.tplResults[key] = reply;
+            tplChecked.set(key, value);
+            if (!validationFailed(reply)) {
+                state.ui.tplGood[key] = reply;
+            }
+
+            if (key === templateKey()) {
+                showTemplatePreview();
+            }
         }
 
-        state.ui.tplResults[key] = reply;
-        if (!validationFailed(reply)) {
-            state.ui.tplGood[key] = reply;
-        }
-
-        if (key === templateKey()) {
-            showTemplatePreview();
-        }
+        return { text: value, reply, failure };
     };
 
     /** Drops a pending debounced validation. */
@@ -2813,6 +2837,84 @@ export default function TgJellyPage(view, params) {
     /** Queues the proxy card's save: one job, saved when the focus leaves the card (or on Enter). */
     const saveProxy = el => queueSave({ key: 'proxy', mode: 'blur', fields: [fieldSelector(el)], validate: proxyError, send: sendProxy });
 
+    /**
+     * Why an event's typed template can't be saved (design §6.3), or null: empty text never saves (the server would take
+     * it as "remove the override"; Reset is the way back), nor does text whose latest validation had errors.
+     * @param {string} key the event key
+     */
+    const templateSaveError = key => {
+        const S = state.strings;
+        const form = state.forms[`tpl:${key}`];
+        const value = form ? String(form.local.Text ?? '') : '';
+        if (value.trim() === '') {
+            return text(S, 'web.templates.notSavedEmpty');
+        }
+
+        const result = state.ui.tplResults[key];
+        return tplChecked.get(key) === value && result && (result.Errors ?? []).length > 0 ? text(S, 'web.templates.notSavedErrors') : null;
+    };
+
+    /**
+     * Sends one auto-save of an event's template: its typed text, with the current Revision. A text the preview hasn't
+     * checked yet (its Validate is still on the way, or failed) is checked first, so a broken template never goes live.
+     * On success the form starts over from the reply, keeping text typed while the request ran.
+     * @param {string} key the event key
+     */
+    const sendTemplate = async key => {
+        const S = state.strings;
+        const name = `tpl:${key}`;
+        if (!state.forms[name] || !state.templates) {
+            return { status: 'failed', message: text(S, 'web.requestFailed', { reason: 'no template' }) };
+        }
+
+        const reason = templateSaveError(key);
+        if (reason) {
+            return { status: 'invalid', message: reason };
+        }
+
+        let value = String(state.forms[name].local.Text ?? '');
+        const known = state.ui.tplResults[key];
+        if (tplChecked.get(key) !== value || !known || known.RequestError) {
+            const checked = await validateTemplate(key);
+            if (checked.failure) {
+                return { status: 'failed', message: checked.failure };
+            }
+
+            if ((checked.reply.Errors ?? []).length > 0) {
+                return { status: 'invalid', message: text(S, 'web.templates.notSavedErrors') };
+            }
+
+            value = checked.text;
+        }
+
+        return saveResult(await api.put(`Templates/${encodeURIComponent(key)}`, { ExpectedRevision: pageRevision(), Text: value }), {
+            fields: ['Text'],
+            saved: dto => {
+                // The sent text is now the saved one; text typed while the request ran is still an edit.
+                const now = state.forms[name];
+                state.forms[name] = { base: { Text: value }, local: now ? now.local : { Text: value }, dirty: true, changed: [] };
+                takeTemplates(dto);
+                renderSection('templates');
+            },
+            conflict: current => {
+                // The form keeps the admin's text on top of the server data (syncFormData): the admin's value wins.
+                takeTemplates(current);
+                renderSection('templates');
+            },
+            again: () => sendTemplate(key),
+        });
+    };
+
+    /** Queues the save of an event's typed template, 1 s after the last keystroke or when the textarea is left. */
+    const saveTemplate = (key, el) => queueSave({
+        key: templateSaveKey(key),
+        mode: 'debounce',
+        delay: TEMPLATE_SAVE_MS,
+        fields: [fieldSelector(el)],
+        validate: () => templateSaveError(key),
+        send: () => sendTemplate(key),
+    });
+
     const destination = id => (state.destinations ? state.destinations.Items.find(d => d.Id === id) : undefined);
     const destKey = id => `dest:${id}`;
     const idOf = el => el.getAttribute('data-tgj-id');
@@ -3132,45 +3234,6 @@ export default function TgJellyPage(view, params) {
 
             return undefined;
         }),
-        tplSave: () => runAction('templates', async () => {
-            const key = templateKey();
-            const name = `tpl:${key}`;
-            const form = state.forms[name];
-            if (!form || !state.templates) {
-                return undefined;
-            }
-
-            const S = state.strings;
-            state.ui.tplBusy = true;
-            renderSection('templates');
-            let result;
-            try {
-                result = await api.put(`Templates/${encodeURIComponent(key)}`,
-                    { ExpectedRevision: pageRevision(), Text: String(form.local.Text ?? '') });
-            } finally {
-                state.ui.tplBusy = false;
-            }
-
-            if (result.status === 200 && result.body) {
-                // Saved: this key starts over from the server's data; other keys keep their unsaved text.
-                delete state.forms[name];
-                takeTemplates(result.body);
-                return undefined;
-            }
-
-            if (result.status === 409 && result.body && result.body.Current) {
-                takeTemplates(result.body.Current);
-                state.ui.errors.templates = t(S, 'web.templates.conflict');
-                return undefined;
-            }
-
-            if (result.status === 400 && result.body && Array.isArray(result.body.Errors)) {
-                state.ui.errors.templates = result.body.Errors.map(e => esc(e.Message)).join(' ');
-                return undefined;
-            }
-
-            return result;
-        }),
         // Reset asks first, inline: Reset or Cancel.
         tplReset: () => {
             state.ui.tplResetAsk = true;
@@ -3188,8 +3251,14 @@ export default function TgJellyPage(view, params) {
             }
 
             const S = state.strings;
+            // The reset replaces the typed text: a save still waiting for it is dropped, and one in flight is waited
+            // for, so the text doesn't come back and the reset sends the Revision that save moved to.
+            const saveKey = templateSaveKey(key);
+            autosave.cancel(saveKey);
+            releaseFields(saveKey);
             state.ui.tplBusy = true;
             renderSection('templates');
+            await autosave.flush(saveKey);
             let result;
             try {
                 result = await api.del(`Templates/${encodeURIComponent(key)}?expectedRevision=${pageRevision()}`);
@@ -3422,19 +3491,26 @@ export default function TgJellyPage(view, params) {
                 saveSetting('UpdateCheck.Mode', 'now', el);
             }
         },
-        // Typing only records the edit and, after a pause, refreshes the preview pane: re-rendering would move the caret.
+        // Typing records the edit; after a pause it refreshes the preview pane (only the pane: re-rendering would move the
+        // caret), and after a longer one the text saves itself (design §6.1). Typed text acts on input only.
         tplText: (el, event) => {
-            markDirty(`tpl:${templateKey()}`, 'Text', String(el.value ?? ''));
-            if (event.type === 'input') {
-                cancelTemplateTimer();
-                tplTimer = setTimeout(() => {
-                    tplTimer = null;
-                    validateTemplate().catch(err => console.error('TgJelly: the template preview failed', err));
-                }, PREVIEW_DEBOUNCE_MS);
+            const own = el.getAttribute('data-tgj-key');
+            const key = state.templates && state.templates.Items.some(i => i.EventKey === own) ? own : templateKey();
+            if (event.type !== 'input' || !state.forms[`tpl:${key}`]) {
+                return;
             }
+
+            markDirty(`tpl:${key}`, 'Text', String(el.value ?? ''));
+            cancelTemplateTimer();
+            tplTimer = setTimeout(() => {
+                tplTimer = null;
+                validateTemplate(key).catch(err => console.error('TgJelly: the template preview failed', err));
+            }, PREVIEW_DEBOUNCE_MS);
+            saveTemplate(key, el);
         },
-        tplEvent: el => {
-            if (state.templates && state.templates.Items.some(i => i.EventKey === el.value)) {
+        // A select fires input and then change; the change is the choice.
+        tplEvent: (el, event) => {
+            if (event.type === 'change' && state.templates && state.templates.Items.some(i => i.EventKey === el.value)) {
                 cancelTemplateTimer();
                 Object.assign(state.ui, { tplKey: el.value, tplResetAsk: false, tplTestResult: '' });
                 renderSection('templates');

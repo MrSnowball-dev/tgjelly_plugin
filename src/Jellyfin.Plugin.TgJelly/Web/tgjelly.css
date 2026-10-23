@@ -612,21 +612,7 @@
     to { opacity: 1; }
 }
 
-/* ---- Today's section markup, moved from the page's old <style> block (Tasks 5-8 restyle it) ---- */
-
-#tgjelly-root .tgj-badge {
-    display: inline-block;
-    padding: 0.1em 0.6em;
-    border: 1px solid currentColor;
-    border-radius: 1em;
-    font-size: 0.85em;
-    white-space: nowrap;
-}
-
-#tgjelly-root .tgj-changed {
-    outline: 2px solid var(--tgj-warning);
-    outline-offset: 2px;
-}
+/* ---- Shared markup moved from the page's old <style> block ---- */
 
 #tgjelly-root .tgj-error {
     color: var(--tgj-error-text);
@@ -652,44 +638,137 @@
     padding-left: 1.2em;
 }
 
-#tgjelly-root .tgj-tpl-head {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--tgj-space-4);
+/* ---- Templates ---- */
+
+/* Built-in or Edited, as a word in a quiet pill beside the event; Edited in the accent colour. */
+#tgjelly-root .tgj-badge {
+    display: inline-block;
+    padding: 0.0625rem var(--tgj-space-2);
+    border: 1px solid var(--tgj-line-strong);
+    border-radius: 999px;
+    color: var(--tgj-fg-2);
+    font-size: var(--tgj-step--1);
+    white-space: nowrap;
 }
 
-#tgjelly-root .tgj-tpl-head > .selectContainer {
-    flex: 1;
-    min-width: 14em;
+#tgjelly-root .tgj-badge--edited {
+    border-color: var(--tgj-accent-ring);
+    color: var(--tgj-accent-text);
+}
+
+#tgjelly-root .tgj-tpl-event .tgj-select {
+    width: 18rem;
+    max-width: 100%;
 }
 
 #tgjelly-root .tgj-tpl-grid {
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    gap: var(--tgj-space-4);
-    margin: var(--tgj-space-4) 0;
+    gap: var(--tgj-space-4) var(--tgj-space-5);
+    padding-block: var(--tgj-space-3);
+    border-top: 1px solid var(--tgj-line);
 }
 
 #tgjelly-root .tgj-tpl-grid > * {
     min-width: 0;
 }
 
-#tgjelly-root .tgj-template-text {
-    width: 100%;
-    font-family: monospace;
-}
-
-#tgjelly-root .tgj-tpl-test {
+/* The textarea's label, with the save cue beside it. */
+#tgjelly-root .tgj-tpl-label {
+    position: relative;
     display: flex;
     flex-wrap: wrap;
-    align-items: center;
-    gap: var(--tgj-space-4);
+    align-items: baseline;
+    gap: var(--tgj-space-1) var(--tgj-space-3);
+    margin-bottom: var(--tgj-space-2);
 }
 
-#tgjelly-root .tgj-tpl-test > .selectContainer {
-    min-width: 14em;
-    margin-bottom: 0;
+/* Beside the label there is room for the whole reason: it wraps as text, not word by word. */
+#tgjelly-root .tgj-tpl-label .tgj-cue,
+#tgjelly-root .tgj-tpl-label .tgj-cue--error {
+    order: 0;
+    flex: 1 1 12rem;
+    min-width: 0;
+    contain: none;
+    text-align: start;
+}
+
+#tgjelly-root .tgj-template-text {
+    display: block;
+    width: 100%;
+    min-height: 16rem;
+    resize: vertical;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: var(--tgj-step--1);
+    line-height: 1.5;
+    tab-size: 4;
+}
+
+#tgjelly-root .tgj-tpl-fields {
+    margin-top: var(--tgj-space-3);
+    font-size: var(--tgj-step--1);
+}
+
+#tgjelly-root .tgj-tpl-fields > summary {
+    color: var(--tgj-fg-2);
+    cursor: pointer;
+}
+
+#tgjelly-root .tgj-tpl-fields > summary:hover {
+    color: var(--tgj-fg);
+}
+
+#tgjelly-root .tgj-template-fields {
+    width: 100%;
+    margin-top: var(--tgj-space-2);
+    border-collapse: collapse;
+}
+
+#tgjelly-root .tgj-template-fields td {
+    padding: var(--tgj-space-1) var(--tgj-space-2) var(--tgj-space-1) 0;
+    border-top: 1px solid var(--tgj-line);
+    vertical-align: top;
+}
+
+#tgjelly-root .tgj-template-fields td:nth-child(2),
+#tgjelly-root .tgj-template-fields td:nth-child(3) {
+    color: var(--tgj-fg-2);
+    white-space: nowrap;
+}
+
+#tgjelly-root .tgj-tpl-docs {
+    margin: var(--tgj-space-3) 0 0;
+    font-size: var(--tgj-step--1);
+}
+
+#tgjelly-root .tgj-link {
+    color: var(--tgj-accent-text);
+    text-decoration: none;
+}
+
+#tgjelly-root .tgj-link:hover,
+#tgjelly-root .tgj-link:focus-visible {
+    text-decoration: underline;
+}
+
+/* The preview column: errors and warnings, then the message bubble, then its length. */
+#tgjelly-root .tgj-tpl-preview > p {
+    margin: 0 0 var(--tgj-space-2);
+    font-size: var(--tgj-step--1);
+}
+
+#tgjelly-root .tgj-tpl-preview > .tgj-tpl-length {
+    margin: var(--tgj-space-2) 0 0;
+}
+
+#tgjelly-root .tgj-tpl-warning {
+    color: var(--tgj-warning-text);
+}
+
+#tgjelly-root .tgj-tpl-test-result {
+    flex-basis: 100%;
+    font-size: var(--tgj-step--1);
+    text-align: end;
 }
 
 /*
