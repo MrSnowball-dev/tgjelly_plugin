@@ -1217,7 +1217,7 @@ test('destList_rowsWithStateLabels_noSymbols', async () => {
         assert.ok(html.includes(`<span class="tgj-row-hint">${m.t(EN, 'web.dest.meta', { kind: EN[`dest.kind.${kind}`], preset: EN[`dest.preset.${preset}`] })}</span>`), kind);
     }
     assert.ok(html.includes('<span class="tgj-row-label">Admins</span>'));
-    assert.ok(html.includes(ui.label('OK', 'good')));
+    assert.ok(!html.includes(ui.label('OK', 'good')), 'a healthy destination shows no label');
     assert.ok(html.includes(ui.label('Needs permissions', 'bad')));
     assert.ok(html.includes(ui.label('Photos blocked', 'attention')));
     assert.ok(html.includes(ui.label('Topic missing', 'bad')));
@@ -1411,7 +1411,7 @@ test('the editor lists events by group, libraries and silent groups', async () =
     await show(view);
     await destAct(view, 'edit', { 'data-tgj-id': 'd1' });
     const html = destEl(el);
-    assert.ok(html.includes(m.t(EN, 'dest.event.security.login_failed')));
+    assert.ok(html.includes(m.t(EN, 'web.event.security.login_failed')));
     assert.ok(html.includes(m.t(EN, 'groups.security')));
     assert.ok(html.includes(m.t(EN, 'dest.preset.AdminAlerts')));
     assert.ok(html.includes('Shows &lt;i&gt;'));
@@ -1420,6 +1420,50 @@ test('the editor lists events by group, libraries and silent groups', async () =
     assert.equal(switchIn(html, 'destSilent', { 'data-tgj-group': 'media' }), true);
     assert.ok(html.includes(m.t(EN, 'dest.libraries.hint')));
     assert.ok(!html.includes(m.t(EN, 'dest.libraries.all')));
+});
+
+test('health_ok_rendersNothing', () => {
+    const row = m.renderDestinations(destinations(), LIBRARIES, LINKS, EN, { editing: null });
+    assert.ok(!row.includes('tgj-label'), 'no label in the row');
+    assert.ok(!row.includes('OK'));
+    const editor = m.renderDestinations(destinations(), LIBRARIES, LINKS, EN, { editing: 'd1' });
+    assert.ok(!editor.includes('tgj-label'), 'no label in the editor');
+    assert.ok(!editor.includes('>OK<'));
+});
+
+test('health_lost_isBadLabel', () => {
+    const lost = dest({ Health: { Status: 'Lost', PhotosBlocked: false, LastError: null, At: null } });
+    const html = m.renderDestinations(destinations({ Items: [lost] }), LIBRARIES, LINKS, EN, { editing: null });
+    assert.ok(html.includes(ui.label('Lost', 'bad')));
+});
+
+test('editor_eventsGroupedInThreeCards', () => {
+    const html = m.renderDestinations(destinations(), LIBRARIES, LINKS, EN, { editing: 'd1' });
+    const cards = html.split('<div class="tgj-subcard"').slice(1);
+    assert.equal(cards.length, 3);
+    const titles = cards.map(c => c.match(/<h3 class="tgj-subcard-title">([^<]*)<\/h3>/)[1]);
+    assert.deepEqual(titles, ['Media', 'Security', 'Server']);
+    assert.ok(cards[0].includes('data-tgj-key="media.movie"') && cards[0].includes('data-tgj-key="media.episodes"'));
+    assert.ok(cards[1].includes('data-tgj-key="security.login_failed"'));
+    assert.ok(cards[2].includes('data-tgj-key="server.started"'));
+    assert.ok(!cards[0].includes('security.login_failed'));
+});
+
+test('editor_eventLabels_haveNoGroupPrefix', () => {
+    const html = m.renderDestinations(destinations(), LIBRARIES, LINKS, EN, { editing: 'd1' });
+    const labels = [...html.matchAll(/<span class="tgj-row-label">([^<]*)<\/span>/g)].map(x => x[1]);
+    for (const k of KEYS) {
+        assert.ok(labels.includes(EN[`web.event.${k}`]), k);
+    }
+    assert.ok(labels.length > 0 && !labels.some(l => /^(Media|Security|Server):/.test(l)));
+    for (const k of Object.keys(EN).filter(k => k.startsWith('dest.event.'))) {
+        assert.ok(EN[`web.event.${k.slice('dest.event.'.length)}`], k);
+    }
+});
+
+test('botEventStrings_unchanged', () => {
+    assert.equal(EN['dest.event.media.movie'], 'Media: Movies');
+    assert.equal(EN['dest.event.server.started'], 'Server: Started');
 });
 
 test('the all-libraries line follows the library switches', async () => {
@@ -2445,7 +2489,8 @@ test('every t(…) key used in tgjelly.js exists in en.json', () => {
 const SERVER_SIDE_KEY = 'web.status.connected';
 
 test('every web.* key in en.json is used by tgjelly.js', () => {
-    for (const key of Object.keys(EN).filter(k => k.startsWith('web.') && k !== SERVER_SIDE_KEY)) {
+    // web.event.* keys are built from the catalog's event keys (editor_eventLabels_haveNoGroupPrefix covers them).
+    for (const key of Object.keys(EN).filter(k => k.startsWith('web.') && !k.startsWith('web.event.') && k !== SERVER_SIDE_KEY)) {
         const base = key.replace(/\.(one|other)$/, '');
         assert.ok(SOURCE.includes(`'${base}'`), key);
     }

@@ -614,11 +614,11 @@ const healthState = (status, S) => {
 /** A health status as escaped HTML text, for an outcome line ("Check again", a test send). */
 export const healthText = (status, S) => esc(healthState(status, S).text);
 
-/** The health as labels: the status, plus "Photos blocked" when photos are blocked too. */
+/** The health as labels, only when something is wrong (a healthy destination shows none): the status, plus "Photos blocked" when photos are blocked too. */
 function healthLabels(health, S) {
     const status = health && health.Status ? health.Status : 'Ok';
     const asLabel = ({ tone, text: words }) => label(words, tone);
-    return asLabel(healthState(status, S))
+    return (status === 'Ok' ? '' : asLabel(healthState(status, S)))
         + (health && health.PhotosBlocked && status !== 'PhotosBlocked' ? asLabel(healthState('PhotosBlocked', S)) : '');
 }
 
@@ -673,8 +673,9 @@ export function renderEditor(dest, catalog, libraries, S, ui) {
     parts.push(`<h3 class="tgj-subtitle">${t(S, 'dest.events.title')}</h3>`);
     for (const group of catalog.Groups) {
         const keys = catalog.EventKeys.filter(k => k.startsWith(group + '.'));
-        parts.push(`<h4 class="tgj-group-title">${t(S, `groups.${group}`)}</h4>`
-            + keys.map(k => toggle('destEvent', `event:${k}`, events.has(k), text(S, `dest.event.${k}`), { 'data-tgj-key': k })).join(''));
+        parts.push(`<div class="tgj-subcard" data-tgj-group-card="${esc(group)}"><h3 class="tgj-subcard-title">${t(S, `web.event.group.${group}`)}</h3>`
+            + keys.map(k => toggle('destEvent', `event:${k}`, events.has(k), text(S, `web.event.${k}`), { 'data-tgj-key': k })).join('')
+            + '</div>');
     }
 
     // Removing a leftover library has no switch of its own to show the cue beside, so the Libraries title carries it.

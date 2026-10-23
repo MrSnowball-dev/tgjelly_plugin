@@ -1058,10 +1058,17 @@
     font-size: var(--tgj-step--1);
 }
 
-#tgjelly-root .tgj-group-title {
-    margin: var(--tgj-space-3) 0 0;
-    color: var(--tgj-fg-2);
-    font-size: var(--tgj-step--1);
+/* One sub-card per event group, titled by the group. */
+#tgjelly-root .tgj-subcard {
+    margin: var(--tgj-space-3) 0;
+    padding: var(--tgj-space-2) var(--tgj-space-3);
+    border: 1px solid var(--tgj-line);
+    border-radius: var(--tgj-radius);
+}
+
+#tgjelly-root .tgj-subcard-title {
+    margin: var(--tgj-space-1) 0;
+    font-size: var(--tgj-step-0);
     font-weight: 600;
 }
 
