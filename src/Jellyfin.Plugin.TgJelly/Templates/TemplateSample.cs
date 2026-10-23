@@ -56,9 +56,28 @@ public sealed class TemplateSample
         var length = HtmlText.PlainLength(unfitted);
 
         var (caption, full, problem) = _renderer.FitBoth(eventKey, text, values, config.Language);
-        return problem is not null
-            ? new SampleMessage(null, poster, poster, buttons, length, limit, problem, null, eventKey)
-            : new SampleMessage(poster ? caption!.Html : full!.Html, poster, poster, buttons, length, limit, null, full!.Html, eventKey);
+        if (problem is not null)
+        {
+            return new SampleMessage(null, poster, poster, buttons, length, limit, problem, null, eventKey);
+        }
+
+        var shown = poster ? caption! : full!;
+        return new SampleMessage(shown.Html, poster, poster, buttons, length, limit, null, full!.Html, eventKey, Marked(text, shown, config.Language));
+    }
+
+    // The shown HTML with each template piece's output marked, for the dashboard's hover link (design §6.5): the fitted
+    // model variant rendered again with markers, then cut where the fitter cut. Marking never changes what is sent; when
+    // the marked render can't give exactly the shown HTML once stripped, the preview gets that HTML without markers.
+    private string Marked(string text, FitResult shown, string language)
+    {
+        var html = shown.Html ?? string.Empty;
+        if (shown.Model is null || _engine.RenderMarked(text, shown.Model, language).Output is not { } marked)
+        {
+            return TemplateMarkers.Strip(html);
+        }
+
+        var aligned = TemplateMarkers.Align(marked, html);
+        return string.Equals(TemplateMarkers.Strip(aligned), html, StringComparison.Ordinal) ? aligned : TemplateMarkers.Strip(html);
     }
 
     private List<IReadOnlyList<OutboxButton>> Buttons(string eventKey, PluginConfiguration config)

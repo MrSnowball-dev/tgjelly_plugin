@@ -350,6 +350,26 @@ public sealed class TemplatesControllerTests : IAsyncLifetime
     }
 
     [Fact]
+    public void Validate_HasPiecesMarkedHtmlAndTheTextItWasFor()
+    {
+        const string text = "<b>{{ title }}</b> ({{ year }})";
+
+        var dto = Validate("media.movie", text);
+
+        Assert.Equal(text, dto.ForText);
+        Assert.Equal(["<b>", "{{ title }}", "</b> (", "{{ year }}", ")"], dto.Pieces.Select(p => text.Substring(p.Start, p.Length)));
+        Assert.Equal(dto.Html, TemplateMarkers.Strip(dto.MarkedHtml));
+        Assert.Contains("\uE0001\uE001", dto.MarkedHtml, System.StringComparison.Ordinal);
+        Assert.Equal(-1, dto.Html.IndexOfAny(['\uE000', '\uE001', '\uE002']));
+        Assert.Equal(-1, dto.Preview.IndexOfAny(['\uE000', '\uE001', '\uE002']));
+
+        var broken = Validate("media.movie", "{{ if }}");
+        Assert.Equal("{{ if }}", broken.ForText);
+        Assert.Empty(broken.Pieces);
+        Assert.Equal(string.Empty, broken.MarkedHtml);
+    }
+
+    [Fact]
     public void Validate_ParseErrorsOnly()
     {
         var dto = Validate("media.movie", "{{ if }}");

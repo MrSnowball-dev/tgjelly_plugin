@@ -2853,6 +2853,14 @@ export default function TgJellyPage(view, params) {
         }
     });
 
+    // The hover link between the template and its preview (design §6.5) follows the pointer; its mirror follows the
+    // textarea's scrolling (scroll events don't bubble, so this listens on the way down).
+    for (const type of ['mouseover', 'mousemove', 'mouseout']) {
+        view.addEventListener(type, messages.hover);
+    }
+
+    view.addEventListener('scroll', messages.scroll, true);
+
     // A spoiler in the template preview is revealed (and hidden again) on click, as in Telegram.
     view.addEventListener('click', event => {
         const spoiler = event.target && event.target.closest ? event.target.closest('.tgj-tg-spoiler') : null;

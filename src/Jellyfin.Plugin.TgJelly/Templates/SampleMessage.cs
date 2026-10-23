@@ -15,6 +15,7 @@ namespace Jellyfin.Plugin.TgJelly.Templates;
 /// <param name="Error">What stops the text from being sent, if anything.</param>
 /// <param name="EventKey">The template key; its group decides whether a test send is silent (the digest counts as media).</param>
 /// <param name="TextHtml">The HTML fitted to the text limit, for when the poster cannot be sent; <c>null</c> falls back to <paramref name="Html"/>.</param>
+/// <param name="MarkedHtml">The shown HTML with each template piece's output marked, for the dashboard's preview only; never sent.</param>
 public sealed record SampleMessage(
     string? Html,
     bool Caption,
@@ -24,4 +25,5 @@ public sealed record SampleMessage(
     int Limit,
     TemplateError? Error,
     string? TextHtml = null,
-    string EventKey = "");
+    string EventKey = "",
+    string? MarkedHtml = null);

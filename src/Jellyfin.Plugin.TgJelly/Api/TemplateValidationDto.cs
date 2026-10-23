@@ -33,4 +33,13 @@ public sealed class TemplateValidationDto
 
     /// <summary>Gets the length limit: 1024 for a caption, otherwise 4096.</summary>
     public int Limit { get; init; }
+
+    /// <summary>Gets the text this result is for, so the page can tell a result for older text.</summary>
+    public string ForText { get; init; } = string.Empty;
+
+    /// <summary>Gets the template's top-level pieces in <see cref="ForText"/>; empty when there are errors.</summary>
+    public IReadOnlyList<TemplatePieceDto> Pieces { get; init; } = [];
+
+    /// <summary>Gets <see cref="Html"/> with each piece's output between invisible markers, for the preview only; empty when there are errors.</summary>
+    public string MarkedHtml { get; init; } = string.Empty;
 }

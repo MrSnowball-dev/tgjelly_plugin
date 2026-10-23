@@ -665,3 +665,135 @@ test('insertCell_isKeyboardActivatable', async () => {
     const { event } = dispatchOn(view, 'mousedown', { 'data-tgj-insert': 'field' });
     assert.ok(event.defaultPrevented);
 });
+
+// --- the hover link between template and preview (Task 10, design §6.5) ---
+
+const HOVER_TEXT = '<b>{{ title }}</b> ({{ year }})';
+// The pieces Templates/Validate gives for HOVER_TEXT: <b>, {{ title }}, </b> (, {{ year }} and ).
+const HOVER_PIECES = [[0, 3], [3, 11], [14, 6], [20, 10], [30, 1]].map(([Start, Length], Index) => ({ Index, Start, Length }));
+const marked = (index, html) => `\uE000${index}\uE001${html}\uE002`;
+const hoverReply = text => ({
+    ...VALIDATION, Html: '<b>Dune</b> (2021)', ForText: text, Pieces: text === HOVER_TEXT ? HOVER_PIECES : [],
+    MarkedHtml: marked(0, '<b>') + marked(1, 'Dune') + marked(2, '</b> (') + marked(3, '2021') + marked(4, ')'),
+});
+
+/** A rendered element's stand-in with a classList and the attributes given. */
+const fakeNode = (attributes, rects = []) => {
+    const classes = new Set();
+    return {
+        classes,
+        getAttribute: name => attributes[name] ?? null,
+        classList: { add: c => classes.add(c), remove: c => classes.delete(c), contains: c => classes.has(c) },
+        getClientRects: () => rects,
+    };
+};
+
+/** The Messages page on the movie, its template HOVER_TEXT, with the preview's piece spans and the mirror's spans faked. */
+async function mountHover({ typed = HOVER_TEXT } = {}) {
+    const items = KEYS.map(key => item(key, key === 'media.movie' ? { Text: HOVER_TEXT } : {}));
+    const mounted = mount({
+        'GET TgJelly/Templates': templates({ Items: items }),
+        'POST TgJelly/Templates/Validate': request => hoverReply(JSON.parse(request.data).Text),
+    });
+    await show(mounted.view);
+    const { el, doc, view } = mounted;
+    const ta = wireTextarea(view, doc, el, { value: typed, start: 4, end: 6 });
+    let selections = 0;
+    const setSelectionRange = ta.setSelectionRange;
+    ta.setSelectionRange = (...args) => { selections++; setSelectionRange.apply(ta, args); };
+    ta.focus();
+    const focusBefore = ta.focus;
+    let focuses = 0;
+    ta.focus = () => { focuses++; focusBefore.call(ta); };
+    const spans = HOVER_PIECES.map(p => fakeNode({ 'data-tgj-piece': String(p.Index) }));
+    el('tgj-tpl-preview').querySelectorAll = selector => {
+        const match = /^\[data-tgj-piece="(\d+)"\]$/.exec(selector);
+        return match ? spans.filter(s => s.getAttribute('data-tgj-piece') === match[1]) : selector === '.tgj-piece-hl' ? spans.filter(s => s.classes.has('tgj-piece-hl')) : [];
+    };
+    // In the mirror, each piece is one line of 20px: piece k from y = 20k to 20k + 20.
+    const mirror = el('tgj-tpl-mirror');
+    const sources = HOVER_PIECES.map(p => fakeNode({ 'data-tgj-src': String(p.Index) }, [{ left: 0, right: 200, top: 20 * p.Index, bottom: 20 * p.Index + 20 }]));
+    mirror.querySelectorAll = selector => (selector === '[data-tgj-src]' ? sources : []);
+    return { ...mounted, ta, spans, mirror, counts: () => ({ focuses, selections }) };
+}
+
+const lit = spans => spans.filter(s => s.classes.has('tgj-piece-hl')).map(s => s.getAttribute('data-tgj-piece'));
+const litSource = mirror => [...mirror.innerHTML.matchAll(/<span data-tgj-src="(\d+)" class="tgj-piece-hl">([^<]*)<\/span>/g)].map(m => [m[1], m[2]]);
+
+test('hover_previewPiece_highlightsSourceRange', async () => {
+    const { view, spans, mirror } = await mountHover();
+
+    dispatchOn(view, 'mouseover', { 'data-tgj-piece': '3' });
+    assert.deepEqual(lit(spans), ['3'], 'the preview piece');
+    assert.deepEqual(litSource(mirror), [['3', '{{ year }}']], 'and its source range, on the same line as {{ title }}');
+    assert.ok(mirror.innerHTML.startsWith('<span data-tgj-src="0">&lt;b&gt;</span><span data-tgj-src="1">{{ title }}</span>'), mirror.innerHTML);
+
+    dispatchOn(view, 'mouseover', { 'data-tgj-piece': '1' });
+    assert.deepEqual(lit(spans), ['1']);
+    assert.deepEqual(litSource(mirror), [['1', '{{ title }}']]);
+
+    // From the template side: the pointer over {{ year }}'s text in the textarea lights its output.
+    dispatchOn(view, 'mousemove', { 'data-tgj-input': 'tplText' }, {}, { clientX: 30, clientY: 65 });
+    assert.deepEqual(lit(spans), ['3']);
+    assert.deepEqual(litSource(mirror), [['3', '{{ year }}']]);
+
+    // Moving away clears both sides.
+    dispatchOn(view, 'mouseover', {});
+    assert.deepEqual(lit(spans), []);
+    assert.deepEqual(litSource(mirror), []);
+    dispatchOn(view, 'mouseover', { 'data-tgj-piece': '4' });
+    dispatchOn(view, 'mouseout', { 'data-tgj-piece': '4' }, {}, { relatedTarget: null });
+    assert.deepEqual(lit(spans), [], 'leaving the page clears it too');
+});
+
+test('hover_ignoresPiecesForOlderText', async () => {
+    // The textarea already holds newer text than the preview's pieces were computed for.
+    const { view, spans, mirror, ta, timers } = await mountHover({ typed: `${HOVER_TEXT} more` });
+    dispatchOn(view, 'mouseover', { 'data-tgj-piece': '3' });
+    dispatchOn(view, 'mousemove', { 'data-tgj-input': 'tplText' }, {}, { clientX: 30, clientY: 65 });
+    assert.deepEqual(lit(spans), []);
+    assert.deepEqual(litSource(mirror), []);
+
+    // Back to the text the pieces are for: hover works; typing drops the highlight at once.
+    ta.value = HOVER_TEXT;
+    dispatchOn(view, 'mouseover', { 'data-tgj-piece': '3' });
+    assert.deepEqual(lit(spans), ['3']);
+    ta.value = `${HOVER_TEXT}!`;
+    dispatchOn(view, 'input', TPL_ATTRS, { value: ta.value });
+    await flush();
+    assert.deepEqual(lit(spans), []);
+    assert.deepEqual(litSource(mirror), []);
+    dispatchOn(view, 'mouseover', { 'data-tgj-piece': '3' });
+    assert.deepEqual(lit(spans), [], 'still the old pieces until the next preview');
+    await timers.advance(500);
+    assert.equal(mirror.innerHTML.includes('tgj-piece-hl'), false);
+});
+
+test('hover_neverMovesCaretOrFocus', async () => {
+    const { view, el, doc, ta, api, counts } = await mountHover();
+    const writes = el('tgj-messages').writes;
+    const calls = api.calls.length;
+
+    dispatchOn(view, 'mouseover', { 'data-tgj-piece': '1' });
+    dispatchOn(view, 'mousemove', { 'data-tgj-input': 'tplText' }, {}, { clientX: 30, clientY: 65 });
+    dispatchOn(view, 'scroll', { 'data-tgj-input': 'tplText' });
+    dispatchOn(view, 'mouseout', { 'data-tgj-input': 'tplText' }, {}, { relatedTarget: null });
+    await flush();
+
+    assert.deepEqual(counts(), { focuses: 0, selections: 0 }, 'no focus() and no setSelectionRange()');
+    assert.equal(doc.activeElement, ta, 'the textarea keeps the focus');
+    assert.deepEqual([ta.selectionStart, ta.selectionEnd, ta.value], [4, 6, HOVER_TEXT], 'and its caret and text');
+    assert.equal(el('tgj-messages').writes, writes, 'the section is not written again');
+    assert.equal(api.calls.length, calls, 'nothing is saved or validated');
+});
+
+test('the mirror sits behind the textarea and never takes the focus', () => {
+    const html = render('media.movie');
+    const field = /<div class="tgj-tpl-field">([\s\S]*?)<\/textarea>/.exec(html);
+    assert.ok(field, html);
+    assert.ok(field[1].startsWith('<div class="tgj-tpl-mirror" id="tgj-tpl-mirror" aria-hidden="true"></div><textarea'), field[1]);
+    const css = readFileSync(new URL('../../src/Jellyfin.Plugin.TgJelly/Web/tgjelly.css', import.meta.url), 'utf8');
+    assert.match(css, /#tgjelly-root \.tgj-tpl-mirror \{[^}]*pointer-events: none;[^}]*color: transparent;/);
+    assert.match(css, /#tgjelly-root \.tgj-tpl-field \.tgj-template-text \{[^}]*background: transparent;/);
+    assert.match(css, /#tgjelly-root \.tgj-piece-hl \{[^}]*background: var\(--tgj-accent-soft\);[^}]*outline: 1px solid var\(--tgj-accent-ring\);/);
+});

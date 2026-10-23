@@ -42,11 +42,13 @@ public static class TemplateFitter
         var fullList = Math.Min(model.ListCount, MaxListItems);
         TemplateError? error = null;
         TemplateError? tooLong = null;
+        IReadOnlyDictionary<string, object?>? last = null;
 
         // Output or a value over the engine's limits is far over any message limit: it does not fit, and a shorter model may.
         string? Render(string? text, int kept)
         {
-            var result = render(model.With(text, kept));
+            last = model.With(text, kept);
+            var result = render(last);
             if (result is { Ok: false, TooLong: true })
             {
                 tooLong ??= result.Error;
@@ -73,7 +75,7 @@ public static class TemplateFitter
 
         if (Fits(html))
         {
-            return new FitResult(html, false, null);
+            return new FitResult(html, false, null, last);
         }
 
         if (text is not null)
@@ -108,7 +110,7 @@ public static class TemplateFitter
 
             if (Fits(html))
             {
-                return new FitResult(html, false, null);
+                return new FitResult(html, false, null, last);
             }
         }
 
@@ -143,13 +145,13 @@ public static class TemplateFitter
 
             if (Fits(html))
             {
-                return new FitResult(html, false, null);
+                return new FitResult(html, false, null, last);
             }
         }
 
         return html is null
             ? new FitResult(null, false, tooLong)
-            : new FitResult(HtmlText.Truncate(html, budget, Ellipsis), true, null);
+            : new FitResult(HtmlText.Truncate(html, budget, Ellipsis), true, null, last);
     }
 
     private static string Prefix(Rune[] runes, int count)

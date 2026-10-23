@@ -355,8 +355,11 @@ export function renderTemplateCard(item, S, ui) {
     parts.push('<div class="tgj-tpl-edit" id="tgj-tpl-edit">'
         + `<div class="tgj-tpl-label"><span class="tgj-row-label" id="tgj-tpl-label">${t(S, 'web.templates.text')}</span>`
         + `<span class="tgj-cue" data-tgj-cue="${esc(saveKey)}" aria-live="polite"></span></div>`
+        // The mirror behind the transparent textarea draws the hover link's highlight (design §6.5); the controller
+        // fills it on hover, from the textarea's current text.
+        + '<div class="tgj-tpl-field"><div class="tgj-tpl-mirror" id="tgj-tpl-mirror" aria-hidden="true"></div>'
         + `<textarea class="tgj-field tgj-template-text" data-tgj-input="tplText" data-tgj-key="${esc(item.EventKey)}" data-tgj-save="${esc(saveKey)}"`
-        + ` aria-labelledby="tgj-tpl-label" rows="12" spellcheck="false">${esc(local.Text)}</textarea>`
+        + ` aria-labelledby="tgj-tpl-label" rows="12" spellcheck="false">${esc(local.Text)}</textarea></div>`
         // The errors and the length, under the text they are about; the controller replaces only this while typing.
         + `<div id="tgj-tpl-check" class="tgj-tpl-check" aria-live="polite">${renderTemplateCheck(ui.result ?? null, S, ui.lang ?? 'en')}</div>`
         + renderTemplateTables(item, S)
@@ -574,6 +577,51 @@ export function formatInsert(format, selected) {
     return { value: open + selected + close, select: null };
 }
 
+// --- the hover link between template and preview (design §6.5) ---
+
+/**
+ * The mirror's markup: the template text, escaped, with each piece of it in a span data-tgj-src="<index>" and the lit
+ * piece carrying tgj-piece-hl. Pieces that overlap or fall outside the text are left out. A last newline gets a space
+ * after it, as a textarea shows an empty last line.
+ * @param {string} value the textarea's text
+ * @param {{ Index: number, Start: number, Length: number }[]} pieces from Templates/Validate, for exactly this text
+ * @param {number | null} lit
+ * @returns {string} HTML
+ */
+export function mirrorHtml(value, pieces, lit) {
+    let html = '';
+    let at = 0;
+    for (const piece of [...pieces].sort((a, b) => a.Start - b.Start)) {
+        const end = piece.Start + piece.Length;
+        if (!Number.isInteger(piece.Index) || piece.Start < at || piece.Length <= 0 || end > value.length) {
+            continue;
+        }
+
+        html += esc(value.slice(at, piece.Start))
+            + `<span data-tgj-src="${piece.Index}"${piece.Index === lit ? ' class="tgj-piece-hl"' : ''}>${esc(value.slice(piece.Start, end))}</span>`;
+        at = end;
+    }
+
+    return html + esc(value.slice(at)) + (value.endsWith('\n') ? ' ' : '');
+}
+
+/** The piece whose mirror span is under the point, or null. */
+function pieceAtPoint(mirror, x, y) {
+    if (typeof mirror.querySelectorAll !== 'function' || typeof x !== 'number' || typeof y !== 'number') {
+        return null;
+    }
+
+    for (const span of mirror.querySelectorAll('[data-tgj-src]')) {
+        for (const r of span.getClientRects()) {
+            if (x >= r.left && x < r.right && y >= r.top && y < r.bottom) {
+                return Number(span.getAttribute('data-tgj-src'));
+            }
+        }
+    }
+
+    return null;
+}
+
 // --- the controller ---
 
 /**
@@ -585,7 +633,8 @@ export function formatInsert(format, selected) {
  *   saveResult(result, on), failureText(result), releaseFields(key), flush(key), cancelSave(key), loadSettings(),
  *   saveSetting(path, mode, el, options), requestError(S, result), healthText(status, S), fieldSelector(el)
  * @returns {{ section: { id: string, load: () => Promise<void>, render: () => string }, actions: object,
- *   inputs: object, hide: () => void }}
+ *   inputs: object, hover: (event: MouseEvent) => void, scroll: (event: Event) => void, hide: () => void }} hover and
+ *   scroll take the page's pointer and (captured) scroll events for the hover link
  */
 export function createMessages(page) {
     const { state, api } = page;
@@ -608,6 +657,9 @@ export function createMessages(page) {
     const tplSeqs = new Map();
     const tplChecked = new Map();
     let tplTimer = null;
+    // The hover link: the lit piece, and what the mirror was last written for (its element, text, pieces and lit piece).
+    let litPiece = null;
+    let mirrored = null;
 
     const items = () => (state.templates ? state.templates.Items : []);
     const itemOf = key => items().find(i => i.EventKey === key);
@@ -668,6 +720,138 @@ export function createMessages(page) {
         };
     };
 
+    /** The selected template's textarea, or null when the Messages section isn't on the page. */
+    const templateArea = () => {
+        const area = page.byId('tgj-tpl-edit');
+        return area ? area.querySelector('textarea') : null;
+    };
+
+    /**
+     * What the hover link works with: the textarea, the mirror and the pieces of the preview on show, or null. The
+     * pieces must be for exactly the text in the textarea (ForText): after a keystroke they are not, until the next
+     * preview arrives, so no highlight ever points at the wrong place.
+     */
+    const pieceLink = () => {
+        const ui = messagesUi();
+        const shown = validationFailed(ui.result) ? ui.good : ui.result;
+        const textarea = templateArea();
+        const mirror = page.byId('tgj-tpl-mirror');
+        if (!shown || !textarea || !mirror || !Array.isArray(shown.Pieces) || shown.Pieces.length === 0
+            || typeof shown.ForText !== 'string' || shown.ForText !== String(textarea.value ?? '')) {
+            return null;
+        }
+
+        return { textarea, mirror, pieces: shown.Pieces };
+    };
+
+    /** Writes the mirror for the textarea's text with the lit piece (only when that changed), level with the textarea. */
+    const paintMirror = (link, lit) => {
+        const value = String(link.textarea.value ?? '');
+        if (!mirrored || mirrored.el !== link.mirror || mirrored.value !== value || mirrored.pieces !== link.pieces || mirrored.lit !== lit) {
+            link.mirror.innerHTML = mirrorHtml(value, link.pieces, lit);
+            mirrored = { el: link.mirror, value, pieces: link.pieces, lit };
+        }
+
+        // A scrollbar narrows the textarea's text; the mirror's text must wrap at the same width.
+        const ta = link.textarea;
+        if (link.mirror.style && [ta.offsetWidth, ta.clientWidth, ta.clientLeft].every(n => typeof n === 'number')) {
+            link.mirror.style.right = `${Math.max(0, ta.offsetWidth - ta.clientWidth - 2 * ta.clientLeft)}px`;
+        }
+
+        link.mirror.scrollTop = ta.scrollTop;
+    };
+
+    /**
+     * Lights one piece on both sides, or none (null): its output's spans in the preview and its range in the mirror.
+     * It only reads the textarea, so the focus, the caret and typing are never disturbed.
+     */
+    const lightPiece = piece => {
+        const link = piece === null ? null : pieceLink();
+        const next = link ? piece : null;
+        const pane = page.byId('tgj-tpl-preview');
+        if (next !== litPiece && pane && typeof pane.querySelectorAll === 'function') {
+            for (const el of pane.querySelectorAll('.tgj-piece-hl')) {
+                el.classList.remove('tgj-piece-hl');
+            }
+
+            if (next !== null) {
+                for (const el of pane.querySelectorAll(`[data-tgj-piece="${next}"]`)) {
+                    el.classList.add('tgj-piece-hl');
+                }
+            }
+        }
+
+        litPiece = next;
+        if (link) {
+            paintMirror(link, next);
+        } else {
+            const mirror = page.byId('tgj-tpl-mirror');
+            if (mirror && mirrored && mirrored.el === mirror && mirrored.lit !== null) {
+                mirror.innerHTML = '';
+                mirrored = null;
+            }
+        }
+    };
+
+    /** Whether an element is the template's textarea. */
+    const isTemplateArea = el => Boolean(el && el.closest && el.closest('[data-tgj-input]')
+        && el.closest('[data-tgj-input]').getAttribute('data-tgj-input') === 'tplText');
+
+    /**
+     * The page's pointer events (mouseover, mousemove, mouseout): a piece in the preview lights itself and its source; the
+     * pointer over the template's text lights the piece under it (found through the mirror's spans); anywhere else, or
+     * off the page, nothing is lit.
+     * @param {MouseEvent} event
+     */
+    const hover = event => {
+        if (!state.strings) {
+            return;
+        }
+
+        if (event.type === 'mouseout') {
+            if (!event.relatedTarget) {
+                lightPiece(null);
+            }
+
+            return;
+        }
+
+        const target = event.target;
+        const onArea = isTemplateArea(target);
+        if (event.type === 'mousemove' && !onArea) {
+            return;
+        }
+
+        const spot = !onArea && target && target.closest ? target.closest('[data-tgj-piece]') : null;
+        if (spot) {
+            lightPiece(Number(spot.getAttribute('data-tgj-piece')));
+            return;
+        }
+
+        if (!onArea) {
+            lightPiece(null);
+            return;
+        }
+
+        // The mirror holds the spans to measure: write it (unlit, or with the piece lit now) before reading it.
+        const link = pieceLink();
+        if (!link) {
+            lightPiece(null);
+            return;
+        }
+
+        paintMirror(link, litPiece);
+        lightPiece(pieceAtPoint(link.mirror, event.clientX, event.clientY));
+    };
+
+    /** The page's scroll events (captured): the mirror follows the template's textarea. */
+    const scroll = event => {
+        const mirror = page.byId('tgj-tpl-mirror');
+        if (mirror && isTemplateArea(event.target) && typeof event.target.scrollTop === 'number') {
+            mirror.scrollTop = event.target.scrollTop;
+        }
+    };
+
     /**
      * Shows the selected template's last validation: its errors and length under the textarea, the message in the
      * preview pane. It turns Send test on or off to match. Only those two are replaced: the textarea keeps its focus
@@ -682,6 +866,8 @@ export function createMessages(page) {
         }
 
         if (pane) {
+            // The new preview's pieces are other spans: nothing is lit until the pointer moves again.
+            lightPiece(null);
             pane.innerHTML = renderTemplatePreview(ui.result, state.strings, ui.good);
         }
 
@@ -864,8 +1050,7 @@ export function createMessages(page) {
     const actions = {
         // Clicking a field or a format puts it into the template at the caret, as typing (the input handler saves it).
         tplInsert: el => {
-            const area = page.byId('tgj-tpl-edit');
-            const textarea = area ? area.querySelector('textarea') : null;
+            const textarea = templateArea();
             if (!textarea) {
                 return;
             }
@@ -1038,6 +1223,8 @@ export function createMessages(page) {
             }
 
             page.markDirty(`tpl:${key}`, 'Text', String(el.value ?? ''));
+            // The preview's pieces are for the text before this keystroke.
+            lightPiece(null);
             cancelTemplateTimer();
             tplTimer = setTimeout(() => {
                 tplTimer = null;
@@ -1050,5 +1237,5 @@ export function createMessages(page) {
         },
     };
 
-    return { section, actions, inputs, hide: cancelTemplateTimer };
+    return { section, actions, inputs, hover, scroll, hide: cancelTemplateTimer };
 }

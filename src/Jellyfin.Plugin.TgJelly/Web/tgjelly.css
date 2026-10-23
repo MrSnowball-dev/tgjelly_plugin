@@ -953,18 +953,47 @@
 }
 
 /*
- * The template preview imitates a Telegram message bubble on purpose (design §3), so these tgj-tg- rules keep their
- * own colours (R3; tests/web/css.test.mjs exempts exactly this prefix).
+ * The template preview copies Telegram's dark theme on purpose (design §6.4), so these tgj-tg- rules keep Telegram's
+ * own colours (R3; tests/web/css.test.mjs exempts exactly this prefix): the chat background, the incoming bubble with
+ * its tail and the time in its corner, the photo on top, and the inline keys under the bubble.
  */
-#tgjelly-root .tgj-tg-bubble {
-    max-width: 28em;
-    border-radius: 0.8em;
-    overflow: hidden;
-    background: var(--jf-palette-background-paper, rgba(127, 127, 127, 0.15));
-    box-shadow: 0 0 0 1px rgba(127, 127, 127, 0.25);
+#tgjelly-root .tgj-tg-chat {
+    padding: 1rem 0.75rem 1rem 1.25rem;
+    border-radius: var(--tgj-radius-sm);
+    background: #0e1621 radial-gradient(circle at 20% 20%, #13202e 0, #0e1621 60%);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    font-size: 0.9375rem;
+    line-height: 1.35;
 }
 
-#tgjelly-root .tgj-tg-bubble.tgj-tg-stale {
+#tgjelly-root .tgj-tg-msg {
+    display: inline-flex;
+    flex-direction: column;
+    gap: 0.25em;
+    max-width: min(100%, 25em);
+    vertical-align: top;
+}
+
+#tgjelly-root .tgj-tg-bubble {
+    position: relative;
+    border-radius: 0.85em 0.85em 0.85em 0;
+    background: #182533;
+    color: #f5f5f5;
+    box-shadow: 0 1px 1px rgba(0, 0, 0, 0.25);
+}
+
+/* The tail: the corner outside an ellipse, so its edge curves in to the bubble's side. */
+#tgjelly-root .tgj-tg-bubble::before {
+    content: "";
+    position: absolute;
+    left: -0.5em;
+    bottom: 0;
+    width: 0.5em;
+    height: 0.85em;
+    background: radial-gradient(ellipse 100% 100% at 0 0, transparent 98%, #182533 100%);
+}
+
+#tgjelly-root .tgj-tg-stale {
     opacity: 0.45;
 }
 
@@ -972,63 +1001,117 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    height: 9em;
-    background: rgba(127, 127, 127, 0.3);
-    opacity: 0.8;
+    width: 22em;
+    max-width: 100%;
+    height: 15em;
+    border-radius: 0.85em 0.85em 0 0;
+    background: linear-gradient(160deg, #3a5068, #1c2a3a 70%);
+    color: rgba(255, 255, 255, 0.7);
 }
 
 #tgjelly-root .tgj-tg-text {
-    padding: 0.6em 0.8em;
+    padding: 0.4em 0.65em 0.45em;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
+}
+
+#tgjelly-root .tgj-tg-text b,
+#tgjelly-root .tgj-tg-text strong {
+    font-weight: 600;
+}
+
+/* The time: a spacer at the end of the text keeps room for it, so a full last line pushes it onto a line of its own. */
+#tgjelly-root .tgj-tg-time {
+    display: inline-block;
+    width: 2.8em;
+    height: 1em;
+}
+
+#tgjelly-root .tgj-tg-time > span {
+    position: absolute;
+    right: 0.65em;
+    bottom: 0.4em;
+    color: #6d7f8f;
+    font-size: 0.78em;
+    line-height: 1;
+    white-space: nowrap;
 }
 
 #tgjelly-root .tgj-tg-text.tgj-tg-sample {
     display: inline-block;
     padding: 0.3em 0.6em;
     border-radius: 0.6em;
-    background: var(--jf-palette-background-paper, rgba(127, 127, 127, 0.15));
-    box-shadow: 0 0 0 1px rgba(127, 127, 127, 0.25);
+    background: #182533;
+    color: #f5f5f5;
 }
 
 #tgjelly-root .tgj-tg-text a {
-    color: var(--jf-palette-primary-main, #00a4dc);
+    color: #6ab3f3;
+    text-decoration: none;
+}
+
+/*
+ * Quotes and code blocks are whole-width boxes on a line of their own. As inline blocks, the line break that follows
+ * one in the text only ends its line, as in Telegram, instead of adding an empty line under the box.
+ */
+#tgjelly-root .tgj-tg-text blockquote,
+#tgjelly-root .tgj-tg-quote,
+#tgjelly-root .tgj-tg-text pre {
+    display: inline-block;
+    width: 100%;
+    vertical-align: top;
 }
 
 #tgjelly-root .tgj-tg-text blockquote,
 #tgjelly-root .tgj-tg-quote {
-    margin: 0.3em 0;
-    padding: 0.2em 0.6em;
-    border-left: 3px solid var(--jf-palette-primary-main, #00a4dc);
-    background: rgba(127, 127, 127, 0.1);
+    margin: 0.25em 0;
+    padding: 0.15em 0.5em;
+    border-left: 3px solid #6ab3f3;
+    border-radius: 0.25em;
+    background: rgba(106, 179, 243, 0.1);
 }
 
 #tgjelly-root .tgj-tg-quote > summary {
     cursor: pointer;
 }
 
+#tgjelly-root .tgj-tg-text code,
 #tgjelly-root .tgj-tg-text pre {
-    margin: 0.3em 0;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.9em;
+}
+
+#tgjelly-root .tgj-tg-text pre {
+    margin: 0.25em 0;
+    padding: 0.35em 0.5em;
+    border-left: 3px solid #6ab3f3;
+    border-radius: 0.25em;
+    background: rgba(106, 179, 243, 0.08);
     white-space: pre-wrap;
 }
 
+/* A spoiler is a block of dots until clicked, as in Telegram. */
 #tgjelly-root .tgj-tg-spoiler {
     border-radius: 0.2em;
-    background: rgba(127, 127, 127, 0.35);
-    filter: blur(0.25em);
+    background: radial-gradient(circle, rgba(255, 255, 255, 0.6) 0.05em, transparent 0.07em) 0 0 / 0.3em 0.3em, #2b3d50;
+    color: transparent;
     cursor: pointer;
 }
 
-#tgjelly-root .tgj-tg-spoiler.tgj-tg-revealed {
-    background: rgba(127, 127, 127, 0.15);
-    filter: none;
+#tgjelly-root .tgj-tg-spoiler:not(.tgj-tg-revealed) * {
+    color: transparent;
 }
 
+#tgjelly-root .tgj-tg-spoiler.tgj-tg-revealed {
+    background: rgba(255, 255, 255, 0.08);
+    color: inherit;
+}
+
+/* The inline keyboard: separate keys under the bubble, in the reply_markup rows. */
 #tgjelly-root .tgj-tg-buttons {
     display: flex;
     flex-direction: column;
     gap: 0.25em;
-    padding: 0 0.4em 0.4em;
 }
 
 #tgjelly-root .tgj-tg-row {
@@ -1037,14 +1120,76 @@
 }
 
 #tgjelly-root .tgj-tg-button {
-    flex: 1;
-    padding: 0.4em;
-    border-radius: 0.4em;
-    background: rgba(127, 127, 127, 0.25);
-    color: inherit;
+    position: relative;
+    flex: 1 1 0;
+    min-width: 0;
+    padding: 0.55em 1.1em;
+    border-radius: 0.5em;
+    background: rgba(24, 37, 51, 0.75);
+    color: #ffffff;
+    font-size: 0.93em;
+    font-weight: 500;
     text-align: center;
     text-decoration: none;
     overflow-wrap: anywhere;
+}
+
+#tgjelly-root a.tgj-tg-button:hover {
+    background: rgba(36, 54, 74, 0.85);
+}
+
+#tgjelly-root .tgj-tg-url::after {
+    content: "↗";
+    position: absolute;
+    top: 0.25em;
+    right: 0.35em;
+    color: rgba(255, 255, 255, 0.75);
+    font-size: 0.7em;
+    line-height: 1;
+}
+
+/*
+ * The hover link (design §6.5): the piece under the pointer, lit on both sides at once. In the template a mirror of the
+ * text lies behind the transparent textarea and draws the highlight; it never takes the pointer, the focus or the caret.
+ */
+#tgjelly-root .tgj-piece-hl {
+    border-radius: 2px;
+    background: var(--tgj-accent-soft);
+    outline: 1px solid var(--tgj-accent-ring);
+}
+
+#tgjelly-root .tgj-tg-text .tgj-piece-hl {
+    background: rgba(106, 179, 243, 0.28);
+    outline: 1px solid rgba(106, 179, 243, 0.75);
+}
+
+#tgjelly-root .tgj-tpl-field {
+    position: relative;
+    border-radius: var(--tgj-radius-sm);
+    background: var(--tgj-field-bg);
+}
+
+#tgjelly-root .tgj-tpl-field .tgj-template-text {
+    position: relative;
+    background: transparent;
+}
+
+#tgjelly-root .tgj-tpl-mirror {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    margin: 0;
+    padding: var(--tgj-space-2) var(--tgj-space-3);
+    border: 1px solid transparent;
+    pointer-events: none;
+    user-select: none;
+    color: transparent;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: var(--tgj-step--1);
+    line-height: 1.5;
+    tab-size: 4;
+    white-space: pre-wrap;
+    overflow-wrap: break-word;
 }
 
 /* The preview goes under the template once the content column is too narrow for both, and scrolls with the page. */
