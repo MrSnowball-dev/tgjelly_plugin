@@ -3100,6 +3100,36 @@ test('disconnect_asksInline', async () => {
     assert.ok(!/\b(confirm|alert|prompt)\(/.test(SOURCE.replace(/inlineConfirm\(/g, '')), 'no browser dialog in the page');
 });
 
+test('disconnectConfirm_hasRemoveSwitch_offByDefault', async () => {
+    const { view, api, el } = mount();
+    await show(view);
+    await click(view, 'disconnect');
+    const html = el('tgj-bot').innerHTML;
+    assert.equal(switchIn(html, 'disconnectRemoveDestinations'), false);
+    assert.ok(html.includes('Also remove all destinations'));
+    assert.ok(html.includes(m.t(EN, 'web.bot.disconnect.removeHint')), 'one line says what each choice keeps');
+    await flip(view, 'disconnectRemoveDestinations');
+    assert.equal(switchIn(el('tgj-bot').innerHTML, 'disconnectRemoveDestinations'), true);
+    assert.equal(putBodies(api).length, 0, 'the switch is part of the question, not an auto-saved setting');
+    await click(view, 'disconnectNo');
+    await click(view, 'disconnect');
+    assert.equal(switchIn(el('tgj-bot').innerHTML, 'disconnectRemoveDestinations'), false, 'cancelling resets it');
+});
+
+test('disconnectConfirm_switchOn_sendsFlag', async () => {
+    const { view, api } = mount({ 'DELETE TgJelly/Token': { status: 204 } });
+    await show(view);
+    await click(view, 'disconnect');
+    await click(view, 'disconnectYes');
+    assert.equal(api.calls.filter(c => c.type === 'DELETE')[0].url, '/jf/TgJelly/Token?removeDestinations=false');
+
+    await show(view);
+    await click(view, 'disconnect');
+    await flip(view, 'disconnectRemoveDestinations');
+    await click(view, 'disconnectYes');
+    assert.equal(api.calls.filter(c => c.type === 'DELETE')[1].url, '/jf/TgJelly/Token?removeDestinations=true');
+});
+
 // --- Messages and Advanced, with auto-save (plan 8, task 6) ---
 
 const MESSAGE_KEYS = ['ShowPoster', 'ShowOverview', 'ShowRatingGenres', 'ShowOpenInJellyfin', 'ShowProviderLinks', 'AnnounceUpgrades'];

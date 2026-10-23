@@ -520,7 +520,7 @@ export function renderConnect(ui, S, links, settings = null) {
  * @param {object} status the StatusDto
  * @param {{ OpenBot?: string } | null} links
  * @param {Record<string, string>} S
- * @param {{ confirmDisconnect?: boolean, saving?: boolean }} ui
+ * @param {{ confirmDisconnect?: boolean, removeDestinations?: boolean, saving?: boolean }} ui
  * @returns {string} HTML
  */
 export function renderBot(status, links, S, ui) {
@@ -529,8 +529,12 @@ export function renderBot(status, links, S, ui) {
     }
 
     const busy = Boolean(ui.saving);
+    // The switch is part of the question, not a setting: it saves nothing (like "Bot leaves the chat" on a destination).
     const disconnect = ui.confirmDisconnect
-        ? inlineConfirm({
+        ? row({
+            label: text(S, 'web.bot.disconnect.removeDestinations'),
+            control: switchControl({ input: 'disconnectRemoveDestinations', checked: Boolean(ui.removeDestinations), label: text(S, 'web.bot.disconnect.removeDestinations') }),
+        }) + `<p class="tgj-row-hint">${t(S, 'web.bot.disconnect.removeHint')}</p>` + inlineConfirm({
             question: text(S, 'web.bot.confirmDisconnect'),
             confirmLabel: text(S, 'web.bot.confirmYes'),
             confirmAct: 'disconnectYes',
@@ -1762,6 +1766,7 @@ export default function TgJellyPage(view, params) {
             result: null,
             unreachable: false,
             confirmDisconnect: false,
+            removeDestinations: false,
             // The destinations section (§6.6.3): the open editor, the remove confirm, and the last test/check outcome per id;
             // destPresetAsk is { id, preset } while leaving Custom for that preset waits for Replace (design §6.1a).
             destEditing: null,
@@ -2463,6 +2468,7 @@ export default function TgJellyPage(view, params) {
 
     const setConfirmDisconnect = value => {
         state.ui.confirmDisconnect = value;
+        state.ui.removeDestinations = false;
         renderSection('bot');
     };
 
@@ -3059,13 +3065,13 @@ export default function TgJellyPage(view, params) {
             state.ui.saving = true;
             renderSection('bot');
             try {
-                const result = await api.del('Token');
+                const result = await api.del(`Token?removeDestinations=${state.ui.removeDestinations}`);
                 if (result.status >= 300) {
                     return result;
                 }
 
-                Object.assign(state.ui, { confirmDisconnect: false, result: null, mode: null, changingToken: false });
-                await Promise.all([reloadSection('status', { fresh: true }), reloadSection('bot', { fresh: true })]);
+                Object.assign(state.ui, { confirmDisconnect: false, removeDestinations: false, result: null, mode: null, changingToken: false });
+                await Promise.all([reloadSection('status', { fresh: true }), reloadSection('bot', { fresh: true }), reloadSection('destinations', { fresh: true })]);
                 return result;
             } finally {
                 state.ui.saving = false;
@@ -3411,6 +3417,13 @@ export default function TgJellyPage(view, params) {
             editDestination(id, { SilentGroups: toggled(form.local.SilentGroups, group, !form.local.SilentGroups.includes(group)) });
             renderSection('destinations');
             saveDestination(id, `silent:${group}`, fieldSelector(el));
+        },
+        // Part of the disconnect question: it saves nothing.
+        disconnectRemoveDestinations: (el, event) => {
+            if (event.type === 'click') {
+                state.ui.removeDestinations = !state.ui.removeDestinations;
+                renderSection('bot');
+            }
         },
         // Part of the remove question: it saves nothing.
         destLeave: (el, event) => {

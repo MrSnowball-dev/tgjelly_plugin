@@ -354,6 +354,8 @@
   "web.bot.disconnect": "Disconnect bot",
   "web.bot.confirmDisconnect": "Disconnect this bot? Notifications stop until you connect a bot.",
   "web.bot.confirmYes": "Yes, disconnect",
+  "web.bot.disconnect.removeDestinations": "Also remove all destinations",
+  "web.bot.disconnect.removeHint": "Off keeps your destinations for the next bot. On removes them and their queued messages.",
   "web.proxy.title": "Proxy",
   "web.proxy.mode": "Mode",
   "web.proxy.modeSystem": "System default",

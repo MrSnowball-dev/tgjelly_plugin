@@ -65,10 +65,21 @@ public sealed class BotControllerTests : IAsyncLifetime
     {
         _h.Secrets.Save(new BotSecrets { BotToken = FakeBotApi.Token });
 
-        Assert.IsType<NoContentResult>(await _controller.DeleteToken(CancellationToken.None));
+        Assert.IsType<NoContentResult>(await _controller.DeleteToken(false, CancellationToken.None));
 
         Assert.Equal(string.Empty, _h.Secrets.Load().BotToken);
         Assert.Equal(1, _supervisor.Restarts);
+    }
+
+    [Fact]
+    public async Task DeleteToken_RemoveDestinations_PassesTheFlagOn()
+    {
+        _h.AddDestination(-1001);
+        _h.Secrets.Save(new BotSecrets { BotToken = FakeBotApi.Token });
+
+        Assert.IsType<NoContentResult>(await _controller.DeleteToken(true, CancellationToken.None));
+
+        Assert.Empty(_h.Settings.Current.Destinations);
     }
 
     [Fact]
@@ -101,7 +112,7 @@ public sealed class BotControllerTests : IAsyncLifetime
         Assert.Equal(503, Assert.IsType<ObjectResult>(result.Result).StatusCode);
         Assert.False(System.IO.File.Exists(_h.Paths.Secrets));
         Assert.Empty(_h.Api.Calls);
-        Assert.Equal(503, Assert.IsType<ObjectResult>(await controller.DeleteToken(CancellationToken.None)).StatusCode);
+        Assert.Equal(503, Assert.IsType<ObjectResult>(await controller.DeleteToken(false, CancellationToken.None)).StatusCode);
     }
 
     [Fact]
