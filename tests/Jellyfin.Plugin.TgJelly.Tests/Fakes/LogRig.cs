@@ -31,7 +31,7 @@ public sealed class LogRig
         h.Track(gate);
         Health = new HealthService(gate, h.Connection, new DestinationChecker(h.Connection, h.Strings), h.Settings, h.State, h.Time, NullLogger<HealthService>.Instance);
         h.Track(Health);
-        Recorder = new LogRecorder(log, Library, h.Strings, h.Time, NullLogger<LogRecorder>.Instance, Health);
+        Recorder = new LogRecorder(log, Library, h.Strings, h.Time, NullLogger<LogRecorder>.Instance, Health, h.Settings);
         Pipeline = new PipelineRig(h, Library, new FakeScanState(), recorder: Recorder);
         Pipeline.Pipeline.Start();
         Delivery = new OutboxDelivery(
@@ -65,10 +65,13 @@ public sealed class LogRig
     public OutboxDelivery Delivery { get; }
 
     /// <summary>Delivers, once each, every queued entry that isn't waiting for a retry time.</summary>
-    public async Task DeliverAllAsync()
+    public Task DeliverAllAsync() => DeliverAsync(_ => true);
+
+    /// <summary>Delivers, once each, the queued entries that match and aren't waiting for a retry time.</summary>
+    public async Task DeliverAsync(Func<Jellyfin.Plugin.TgJelly.State.Documents.OutboxEntry, bool> which)
     {
         var now = _h.Time.GetUtcNow();
-        foreach (var entry in Pipeline.Outbox.Snapshot().Where(e => e.NotBefore is null || e.NotBefore <= now))
+        foreach (var entry in Pipeline.Outbox.Snapshot().Where(e => (e.NotBefore is null || e.NotBefore <= now) && which(e)))
         {
             var destination = _h.Settings.Current.Destinations.First(d => d.Id == entry.DestinationId);
             await Delivery.DeliverAsync(entry, destination, TestContext.Current.CancellationToken);

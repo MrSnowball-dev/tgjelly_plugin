@@ -16,8 +16,8 @@ public sealed class LogQuery
     /// <summary>Gets the event key to show, or <c>null</c> for all.</summary>
     public string? EventKey { get; init; }
 
-    /// <summary>Gets the paging cursor: only rows recorded before this time.</summary>
-    public DateTimeOffset? Before { get; init; }
+    /// <summary>Gets the paging cursor: the <see cref="LogPage.Next"/> of the previous page, or <c>null</c> for the newest rows.</summary>
+    public string? Before { get; init; }
 
     /// <summary>Gets the most rows to return.</summary>
     public int Limit { get; init; } = 100;

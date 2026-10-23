@@ -10,4 +10,5 @@ namespace Jellyfin.Plugin.TgJelly.Log;
 /// <param name="LastSentAt">When a message last reached Telegram, as far as the log knows.</param>
 /// <param name="LastEventAt">When the newest row was recorded: the last event TgJelly acted on.</param>
 /// <param name="StartedEmpty">Whether the log file was missing or unreadable when this run started.</param>
-public sealed record LogPage(IReadOnlyList<LogEntry> Items, DateTimeOffset? LastSentAt, DateTimeOffset? LastEventAt, bool StartedEmpty);
+/// <param name="Next">The cursor for the next (older) page, or <c>null</c> when there are no older rows.</param>
+public sealed record LogPage(IReadOnlyList<LogEntry> Items, DateTimeOffset? LastSentAt, DateTimeOffset? LastEventAt, bool StartedEmpty, string? Next = null);

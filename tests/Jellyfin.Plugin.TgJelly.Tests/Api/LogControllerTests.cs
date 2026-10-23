@@ -44,8 +44,10 @@ public sealed class LogControllerTests : IDisposable
         Assert.Equal(Now + TimeSpan.FromMinutes(8), first.LastEventAt);
         Assert.True(first.StartedEmpty);
 
-        var older = controller.Get(problemsOnly: true, before: first.Items[^1].At, limit: 3).Value!;
+        Assert.NotNull(first.Next);
+        var older = controller.Get(problemsOnly: true, before: first.Next, limit: 3).Value!;
         Assert.Equal(["late", "failed"], older.Items.Select(i => i.Id));
+        Assert.Null(older.Next);
         Assert.Equal("403 Forbidden: bot was kicked from the supergroup chat", older.Items[1].Telegram);
 
         Assert.Equal(8, controller.Get().Value!.Items.Count);
@@ -53,6 +55,17 @@ public sealed class LogControllerTests : IDisposable
         Assert.Equal(["builtin"], controller.Get(eventKey: "security.login_failed").Value!.Items.Select(i => i.Id));
         Assert.Equal(["nophoto"], controller.Get(limit: 0).Value!.Items.Select(i => i.Id));
         Assert.Equal(8, controller.Get(limit: 100_000).Value!.Items.Count);
+    }
+
+    [Fact]
+    public async Task LogController_UnknownCursor_IsABadRequestThatSaysWhy()
+    {
+        await _log.Loaded;
+
+        var result = new LogController(_log).Get(before: "yesterday").Result;
+
+        var bad = Assert.IsType<Microsoft.AspNetCore.Mvc.BadRequestObjectResult>(result);
+        Assert.Contains("Next", Assert.IsType<MessageDto>(bad.Value).Message, StringComparison.Ordinal);
     }
 
     [Fact]

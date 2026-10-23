@@ -78,6 +78,12 @@ public sealed class EventLog : IDisposable
     /// <summary>Gets or sets how long the writer waits after a change, so a burst becomes one write.</summary>
     internal TimeSpan WriteDelay { get; set; } = TimeSpan.FromSeconds(1);
 
+    /// <summary>Gets or sets how the file is read (replaced in tests).</summary>
+    internal Func<string, string[]> ReadFile { get; set; } = File.ReadAllLines;
+
+    /// <summary>Gets or sets a value indicating whether every change throws (tests: a broken log must not stop sending).</summary>
+    internal bool Broken { get; set; }
+
     /// <summary>Gets or sets how the file is written (replaced in tests).</summary>
     internal Action<string, string> WriteFile { get; set; } = (path, text) => AtomicFile.WriteAllText(path, text);
 
@@ -100,9 +106,18 @@ public sealed class EventLog : IDisposable
     /// </summary>
     /// <param name="query">The filters and paging.</param>
     /// <returns>The page.</returns>
+    /// <exception cref="ArgumentException"><see cref="LogQuery.Before"/> isn't a cursor this log made.</exception>
     public LogPage Query(LogQuery query)
     {
         ArgumentNullException.ThrowIfNull(query);
+        (long Ticks, string Id)? before = null;
+        if (query.Before is { } cursor)
+        {
+            before = TryParseCursor(cursor, out var ticks, out var id)
+                ? (ticks, id)
+                : throw new ArgumentException("The cursor must be the Next value of an earlier page.", nameof(query));
+        }
+
         EnsureStarted();
         var now = _time.GetUtcNow();
         LogPage page;
@@ -117,12 +132,19 @@ public sealed class EventLog : IDisposable
                 .Where(r => (!query.ProblemsOnly || IsProblem(r))
                     && (query.DestinationId is null || string.Equals(r.DestinationId, query.DestinationId, StringComparison.Ordinal))
                     && (query.EventKey is null || string.Equals(r.EventKey, query.EventKey, StringComparison.Ordinal))
-                    && (query.Before is not { } before || r.At < before))
-                .OrderByDescending(r => r.At)
+                    && (before is not { } b || r.At.UtcTicks < b.Ticks || (r.At.UtcTicks == b.Ticks && string.CompareOrdinal(r.Id, b.Id) < 0)))
+                .OrderByDescending(r => r.At.UtcTicks)
                 .ThenByDescending(r => r.Id, StringComparer.Ordinal)
-                .Take(Math.Max(0, query.Limit))
+                .Take(Math.Max(0, query.Limit) + 1)
                 .ToList();
-            page = new LogPage(items, lastSent, lastEvent, _startedEmpty);
+            string? next = null;
+            if (items.Count > Math.Max(0, query.Limit))
+            {
+                items.RemoveAt(items.Count - 1);
+                next = items.Count > 0 ? CursorOf(items[^1]) : null;
+            }
+
+            page = new LogPage(items, lastSent, lastEvent, _startedEmpty, next);
         }
 
         if (pruned)
@@ -131,6 +153,24 @@ public sealed class EventLog : IDisposable
         }
 
         return page;
+    }
+
+    /// <summary>
+    /// Reads a paging cursor: the row's time in UTC ticks and its ID, as <c>ticks:id</c>. An opaque string to the page,
+    /// so it survives JSON and JavaScript exactly; rows recorded at the same instant are ordered by ID.
+    /// </summary>
+    /// <param name="cursor">The cursor.</param>
+    /// <param name="ticks">The row's time in UTC ticks.</param>
+    /// <param name="id">The row's ID.</param>
+    /// <returns><c>true</c> when it is a cursor.</returns>
+    public static bool TryParseCursor(string cursor, out long ticks, out string id)
+    {
+        ArgumentNullException.ThrowIfNull(cursor);
+        var colon = cursor.IndexOf(':', StringComparison.Ordinal);
+        id = colon > 0 ? cursor[(colon + 1)..] : string.Empty;
+        ticks = 0;
+        return colon > 0 && id.Length > 0
+            && long.TryParse(cursor.AsSpan(0, colon), System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out ticks);
     }
 
     /// <summary>
@@ -245,9 +285,15 @@ public sealed class EventLog : IDisposable
     private static bool IsSent(LogResult result)
         => result is LogResult.Sent or LogResult.SentLate or LogResult.SentWithBuiltIn or LogResult.SentWithoutPhoto;
 
+    // Failed and attention rows, rows waiting after a failed try or held by a destination's problem, and sent rows
+    // whose later update failed (a plain Sent row has no details).
     private static bool IsProblem(LogEntry row)
         => row.Result is LogResult.Failed or LogResult.SentLate or LogResult.SentWithBuiltIn or LogResult.SentWithoutPhoto
-            || (row.Result == LogResult.Waiting && row.Telegram is not null);
+            || (row.Result == LogResult.Waiting && row.Telegram is not null)
+            || (row.Result == LogResult.Sent && row.Details.Count > 0);
+
+    private static string CursorOf(LogEntry row)
+        => row.At.UtcTicks.ToString(System.Globalization.CultureInfo.InvariantCulture) + ":" + row.Id;
 
     private static List<LogEntry>? Parse(string[] lines)
     {
@@ -304,6 +350,11 @@ public sealed class EventLog : IDisposable
 
     private void Change(Func<bool> change)
     {
+        if (Broken)
+        {
+            throw new InvalidOperationException("The event log is broken (test).");
+        }
+
         EnsureStarted();
         var now = _time.GetUtcNow();
         bool changed;
@@ -363,7 +414,7 @@ public sealed class EventLog : IDisposable
         {
             if (File.Exists(_path))
             {
-                rows = Parse(File.ReadAllLines(_path));
+                rows = Parse(ReadFile(_path));
                 if (rows is null)
                 {
                     MoveAside("it is unreadable or was written by a newer version of TgJelly");
@@ -374,8 +425,11 @@ public sealed class EventLog : IDisposable
                 }
             }
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
+            // Whatever went wrong, the log must still start (empty) so it records and writes from now on.
+            rows = null;
+            empty = true;
             MoveAside(ex.Message);
         }
 
@@ -407,7 +461,7 @@ public sealed class EventLog : IDisposable
         {
             File.Move(_path, _path + ".corrupt", overwrite: true);
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             _logger.LogWarning("TgJelly could not move the unreadable event log aside: {Error}", ex.Message);
         }
@@ -468,7 +522,7 @@ public sealed class EventLog : IDisposable
                 WriteFile(_path, text.ToString());
                 _lastWriteError = null;
             }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 lock (_gate)
                 {

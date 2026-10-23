@@ -4,6 +4,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Text.Json;
 using Jellyfin.Plugin.TgJelly.Configuration;
+using Jellyfin.Plugin.TgJelly.Log;
 using Jellyfin.Plugin.TgJelly.State;
 using Jellyfin.Plugin.TgJelly.State.Documents;
 using Jellyfin.Plugin.TgJelly.Strings;
@@ -44,6 +45,7 @@ public sealed class Outbox
     private readonly StateStore _state;
     private readonly StringTable _strings;
     private readonly TimeProvider _time;
+    private readonly LogRecorder? _log;
 
     // The entry Pick last handed to delivery, read and written under the state lock. A late edit must not merge into
     // it: delivery holds a copy and writes that copy back (Complete, Replace), which would drop the merged content.
@@ -55,8 +57,10 @@ public sealed class Outbox
     /// <param name="state">The state store holding <c>queue.json</c>.</param>
     /// <param name="strings">The string table, for the rolling summary.</param>
     /// <param name="time">The clock.</param>
-    public Outbox(StateStore state, StringTable strings, TimeProvider time)
+    /// <param name="log">Where entries the Outbox drops are recorded for the Log, if anywhere.</param>
+    public Outbox(StateStore state, StringTable strings, TimeProvider time, LogRecorder? log = null)
     {
+        _log = log;
         _state = state;
         _strings = strings;
         _time = time;
@@ -111,7 +115,7 @@ public sealed class Outbox
         ArgumentNullException.ThrowIfNull(entry);
         var now = _time.GetUtcNow();
         var group = EventCatalog.GroupOf(entry.EventKey);
-        var dropped = 0;
+        var dropped = new List<string>();
         (string LogId, int Summary) carrier = (entry.LogId, 0);
         _state.UpdateQueue(
             q =>
@@ -156,7 +160,7 @@ public sealed class Outbox
                     for (var i = 0; i <= media.Count - MediaCap; i++)
                     {
                         q.Outbox.Remove(media[i]);
-                        dropped++;
+                        dropped.Add(RowId(media[i]));
                     }
                 }
                 else if (IsAlert(entry) && mine.Count(IsAlert) >= AlertCap)
@@ -187,7 +191,12 @@ public sealed class Outbox
             },
             urgent: group != "media");
 
-        AddCounters(droppedOutbox: dropped);
+        AddCounters(droppedOutbox: dropped.Count);
+        if (dropped.Count > 0)
+        {
+            _log?.OverCap(dropped, MediaCap);
+        }
+
         Changed?.Invoke(this, EventArgs.Empty);
         return carrier;
     }
@@ -375,10 +384,19 @@ public sealed class Outbox
             return 0;
         }
 
-        var removed = 0;
-        _state.UpdateQueue(q => removed = q.Outbox.RemoveAll(e => e.QueuedAt + Ttl <= now));
-        AddCounters(droppedOutbox: removed);
-        return removed;
+        var removed = new List<string>();
+        _state.UpdateQueue(q =>
+        {
+            removed.AddRange(q.Outbox.Where(e => e.QueuedAt + Ttl <= now).Select(RowId));
+            q.Outbox.RemoveAll(e => e.QueuedAt + Ttl <= now);
+        });
+        AddCounters(droppedOutbox: removed.Count);
+        if (removed.Count > 0)
+        {
+            _log?.Expired(removed);
+        }
+
+        return removed.Count;
     }
 
     /// <summary>
@@ -388,14 +406,21 @@ public sealed class Outbox
     public void RemoveDestination(string destinationId)
     {
         var prefix = destinationId + "|";
+        var removed = new List<string>();
         _state.UpdateQueue(q =>
         {
+            removed.AddRange(q.Outbox.Where(e => e.DestinationId == destinationId).Select(RowId));
             q.Outbox.RemoveAll(e => e.DestinationId == destinationId);
             foreach (var key in q.SentMessages.Keys.Where(k => k.StartsWith(prefix, StringComparison.Ordinal)).ToList())
             {
                 q.SentMessages.Remove(key);
             }
         });
+        foreach (var id in removed.Distinct(StringComparer.Ordinal))
+        {
+            _log?.DestinationRemoved(id);
+        }
+
         Changed?.Invoke(this, EventArgs.Empty);
     }
 
@@ -521,6 +546,8 @@ public sealed class Outbox
     }
 
     private static string SentKey(string destinationId, string key) => destinationId + "|" + key;
+
+    private static string RowId(OutboxEntry e) => e.LogId.Length > 0 ? e.LogId : e.EntryId;
 
     private static bool IsAlert(OutboxEntry e)
         => e.Op == OutboxOp.Send && e.Summary == 0 && EventCatalog.GroupOf(e.EventKey) is "security" or "server";

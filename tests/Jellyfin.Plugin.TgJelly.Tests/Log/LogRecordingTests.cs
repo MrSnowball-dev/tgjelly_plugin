@@ -18,6 +18,8 @@ public sealed class LogRecordingTests : IDisposable
     private static readonly LibraryRef Movies = new(Guid.NewGuid(), "Movies", "movies");
     private static readonly LibraryRef Kids = new(Guid.NewGuid(), "Kids", "movies");
     private static readonly LibraryRef Shows = new(Guid.NewGuid(), "Shows", "tvshows");
+    private static readonly Guid BearSeries = Guid.NewGuid();
+    private static readonly Guid BearSeason = Guid.NewGuid();
     private readonly BotTestHarness _h = new();
     private readonly EventLog _log;
     private readonly LogRig _rig;
@@ -131,7 +133,7 @@ public sealed class LogRecordingTests : IDisposable
         Assert.NotNull(retrying.Advice);
         Assert.Equal(["Couldn't reach Telegram, trying again"], retrying.Details);
 
-        _h.Api.OnSequence("sendMessage", FakeBotApi.Ok("""{"message_id":5,"date":1790000000,"chat":{"id":-1001,"type":"supergroup"},"text":"x"}"""));
+        _h.Api.OnSequence("sendMessage", SentOk);
         _h.Time.Advance(TimeSpan.FromSeconds(3));
         await _rig.DeliverAllAsync();
 
@@ -145,7 +147,7 @@ public sealed class LogRecordingTests : IDisposable
     }
 
     [Fact]
-    public async Task Log_QueuedLongerThanAMinute_SentLate()
+    public async Task Log_PacedButNoRetry_IsSent()
     {
         _h.AddDestination(-1001, preset: PresetKind.AdminAlerts);
 
@@ -154,8 +156,217 @@ public sealed class LogRecordingTests : IDisposable
         await _rig.DeliverAllAsync();
 
         var row = Assert.Single(Rows());
-        Assert.Equal(LogResult.SentLate, row.Result);
-        Assert.Equal(["Sent 3 min after it was ready"], row.Details);
+        Assert.Equal(LogResult.Sent, row.Result);
+        Assert.Empty(row.Details);
+    }
+
+    [Fact]
+    public async Task Log_LostThenRecovered_SameRowSentLate()
+    {
+        _h.AddDestination(-1001, preset: PresetKind.AdminAlerts);
+        _h.Api.On("sendMessage", _ => FakeBotApi.Error(403, "Forbidden: bot was kicked from the supergroup chat"));
+        LoginFailed();
+        await _rig.DeliverAllAsync();
+        Assert.Equal(LogResult.Failed, Assert.Single(Rows()).Result);
+
+        _h.Api.OnSequence("sendMessage", SentOk);
+        _h.Time.Advance(TimeSpan.FromMinutes(10));
+        await _rig.DeliverAllAsync();
+
+        var row = Assert.Single(Rows());
+        Assert.Equal((LogResult.SentLate, 2), (row.Result, row.Tries));
+        Assert.Equal(["Held while the destination had a problem (403 Forbidden: bot was kicked from the supergroup chat), sent 10 min after it was ready, once it was fixed"], row.Details);
+    }
+
+    [Fact]
+    public async Task Log_QueuedBeforeTheDestinationWasLost_GetsTheHeldReason()
+    {
+        var d = _h.AddDestination(-1001, preset: PresetKind.AdminAlerts);
+        _h.Api.On("sendMessage", _ => FakeBotApi.Error(403, "Forbidden: bot was kicked from the supergroup chat"));
+        LoginFailed();
+        LoginFailed("bob");
+        Assert.All(Rows(), r => Assert.Equal(["Queued for Telegram"], r.Details));
+
+        await _rig.DeliverAsync(e => e.Model!.Values["user"] == "alice");
+
+        Assert.Equal(LogResult.Failed, Assert.Single(Rows(), r => r.Title == "alice").Result);
+        var bob = Assert.Single(Rows(), r => r.Title == "bob");
+        Assert.Equal(LogResult.Waiting, bob.Result);
+        Assert.Equal(["Held: the bot was removed from this chat or blocked. It goes out once the destination works again"], bob.Details);
+        Assert.Contains("Add the bot back to " + d.Title, bob.Advice, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Log_LateEditRetries_RowStaysSent()
+    {
+        _h.AddDestination(-1001, preset: PresetKind.NewMedia);
+        var (e1, e2) = (Episode(1), Episode(2));
+        Ready(e1);
+        _rig.RunFor(150);
+        await _rig.DeliverAllAsync();
+        Assert.Equal(LogResult.Sent, Assert.Single(Rows()).Result);
+        _h.Api.On("editMessageText", _ => throw new HttpRequestException("connection reset"));
+
+        Ready(e2);
+        Assert.Equal((LogResult.Sent, "The Bear, S04E01–E02"), (Assert.Single(Rows()).Result, Assert.Single(Rows()).Title));
+        await _rig.DeliverAllAsync();
+
+        var row = Assert.Single(Rows());
+        Assert.Equal(LogResult.Sent, row.Result);
+        var why = Assert.Single(row.Details);
+        Assert.StartsWith("Updating this message failed, trying again: ", why, StringComparison.Ordinal);
+        Assert.Contains("connection reset", why, StringComparison.Ordinal);
+        Assert.Contains(row, _log.Query(new LogQuery { ProblemsOnly = true }).Items);
+
+        _h.Api.OnSequence("editMessageText", SentOk);
+        _h.Time.Advance(TimeSpan.FromSeconds(3));
+        await _rig.DeliverAllAsync();
+
+        row = Assert.Single(Rows());
+        Assert.Equal(LogResult.Sent, row.Result);
+        Assert.Empty(row.Details);
+        Assert.Null(row.Advice);
+    }
+
+    [Fact]
+    public async Task Log_LateEditDropped_RowStaysSentWithDetail()
+    {
+        _h.AddDestination(-1001, preset: PresetKind.NewMedia);
+        var (e1, e2) = (Episode(1), Episode(2));
+        Ready(e1);
+        _rig.RunFor(150);
+        await _rig.DeliverAllAsync();
+        _h.Api.On("editMessageText", _ => FakeBotApi.Error(400, "Bad Request: wrong parameter action in request"));
+
+        Ready(e2);
+        await _rig.DeliverAllAsync();
+
+        Assert.Equal(0, _rig.Pipeline.Outbox.Count);
+        var row = Assert.Single(Rows());
+        Assert.Equal(LogResult.Sent, row.Result);
+        Assert.Equal(["Updating this message failed, so the chat still shows the earlier version: Bad Request: wrong parameter action in request"], row.Details);
+        Assert.False(string.IsNullOrWhiteSpace(row.Advice));
+    }
+
+    [Fact]
+    public void Log_OverTheMediaCap_OldestRowFailedWithReason()
+    {
+        var d = _h.AddDestination(-1001, preset: PresetKind.NewMedia);
+        for (var i = 0; i <= Jellyfin.Plugin.TgJelly.Delivery.Outbox.MediaCap; i++)
+        {
+            var id = "m" + i.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            _log.Upsert(new LogEntry { Id = id, At = Now, UpdatedAt = Now, EventKey = "media.movie", Title = id, DestinationId = d.Id, Result = LogResult.Waiting, Details = ["Queued for Telegram"] });
+            _rig.Pipeline.Outbox.Enqueue(new Jellyfin.Plugin.TgJelly.State.Documents.OutboxEntry
+            {
+                EntryId = id, LogId = id, DestinationId = d.Id, EventKey = "media.movie", QueuedAt = Now + TimeSpan.FromMilliseconds(i),
+            });
+        }
+
+        var dropped = Assert.Single(Rows(), r => r.Id == "m0");
+        Assert.Equal(LogResult.Failed, dropped.Result);
+        Assert.Equal(["More than 500 messages were waiting for this destination, so this one, the oldest, was dropped"], dropped.Details);
+        Assert.False(string.IsNullOrWhiteSpace(dropped.Advice));
+        Assert.Equal(LogResult.Waiting, Assert.Single(Rows(), r => r.Id == "m1").Result);
+    }
+
+    [Fact]
+    public void Log_DestinationRemovedWithAQueuedMessage_RowSkipped()
+    {
+        var d = _h.AddDestination(-1001, preset: PresetKind.AdminAlerts);
+        LoginFailed();
+
+        _rig.Pipeline.Outbox.RemoveDestination(d.Id);
+
+        var row = Assert.Single(Rows());
+        Assert.Equal((LogResult.Skipped, d.Id), (row.Result, row.DestinationId));
+        Assert.Equal(["The destination was removed before the message went out"], row.Details);
+    }
+
+    [Fact]
+    public void Log_QueuedPast24Hours_RowFailedAsExpired()
+    {
+        _h.AddDestination(-1001, preset: PresetKind.AdminAlerts);
+        LoginFailed();
+        _h.Time.Advance(TimeSpan.FromHours(25));
+
+        Assert.Equal(1, _rig.Pipeline.Outbox.PurgeExpired(Now));
+
+        var row = Assert.Single(Rows());
+        Assert.Equal(LogResult.Failed, row.Result);
+        Assert.Equal(["It couldn't be delivered within 24 hours, so it was dropped"], row.Details);
+        Assert.False(string.IsNullOrWhiteSpace(row.Advice));
+    }
+
+    [Fact]
+    public void Log_StaleWaitingRow_SweepSaysTgJellyLostTrack()
+    {
+        _log.Upsert(new LogEntry { Id = "lost", At = Now - TimeSpan.FromHours(31), UpdatedAt = Now - TimeSpan.FromHours(31), EventKey = "media.movie", Title = "Arrival", Result = LogResult.Waiting });
+
+        _rig.Pipeline.Pipeline.RunOnce();
+
+        var row = Assert.Single(Rows());
+        Assert.Equal(LogResult.Failed, row.Result);
+        Assert.Equal(["TgJelly lost track of this message: it was still waiting after 30 hours, so it was most likely never sent"], row.Details);
+    }
+
+    [Fact]
+    public async Task Log_BrokenLog_StillQueuesAndSends()
+    {
+        _h.AddDestination(-1001);
+        _log.Broken = true;
+
+        Ready(Movie("Arrival", Movies));
+        _rig.RunFor(150);
+        LoginFailed();
+        await _rig.DeliverAllAsync();
+
+        Assert.Equal(2, _h.Api.CallsTo("sendMessage").Count());
+        Assert.Equal(0, _rig.Pipeline.Outbox.Count);
+        Assert.Equal(0, _rig.Pipeline.Logger.Count(LogLevel.Error));
+        Assert.Empty(_h.State.LastErrorsSnapshot());
+    }
+
+    [Fact]
+    public void Log_FailedWithATelegramAnswer_SaysTelegramRefusedIt()
+    {
+        var d = _h.AddDestination(-1001);
+
+        _rig.Recorder.Failed(AnEntry(d), d, new Jellyfin.Plugin.TgJelly.Bot.DeliveryError(Jellyfin.Plugin.TgJelly.Bot.DeliveryErrorKind.Other, "Bad Request: x"), "400 Bad Request: x", fromTelegram: true);
+
+        Assert.Equal(["Telegram refused it: Bad Request: x"], Assert.Single(Rows()).Details);
+    }
+
+    [Fact]
+    public void Log_FailedWithoutATelegramAnswer_SaysTgJellyCouldntSendIt()
+    {
+        var d = _h.AddDestination(-1001);
+
+        _rig.Recorder.Failed(AnEntry(d), d, new Jellyfin.Plugin.TgJelly.Bot.DeliveryError(Jellyfin.Plugin.TgJelly.Bot.DeliveryErrorKind.Other, "Object reference not set to an instance of an object."), "Object reference not set to an instance of an object.", fromTelegram: false);
+
+        var row = Assert.Single(Rows());
+        Assert.Equal(["TgJelly couldn't send it: Object reference not set to an instance of an object."], row.Details);
+        Assert.Contains("Copy diagnostics", row.Advice, StringComparison.Ordinal);
+        Assert.DoesNotContain("Telegram refused", row.Advice, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Log_WaitingForMetadata_DashRowMovesOn()
+    {
+        var d = _h.AddDestination(-1001, preset: PresetKind.NewMedia);
+        var movie = Movie("Arrival", Movies);
+
+        _rig.Pipeline.Added(movie);
+        _rig.Pipeline.Pipeline.RunOnce();
+
+        var pending = Assert.Single(Rows());
+        Assert.Equal((LogResult.Waiting, (string?)null, "Arrival", "media.movie"), (pending.Result, pending.DestinationId, pending.Title, pending.EventKey));
+        Assert.Equal(["Waiting for Jellyfin to finish reading this item's details (up to 15 min)"], pending.Details);
+
+        _rig.Pipeline.Updated(movie);
+        _rig.Pipeline.Pipeline.RunOnce();
+
+        var held = Assert.Single(Rows());
+        Assert.Equal((LogResult.Waiting, d.Id), (held.Result, held.DestinationId));
     }
 
     [Fact]
@@ -245,22 +456,28 @@ public sealed class LogRecordingTests : IDisposable
     }
 
     [Fact]
-    public async Task Log_PhotosBlockedAndLate_LabelIsMostSerious_WhyListsBoth()
+    public async Task Log_PhotosBlockedAfterARetry_LabelIsMostSerious_WhyListsBoth()
     {
         _h.AddDestination(-1001, preset: PresetKind.NewMedia);
-        _h.Api.On("sendPhoto", _ => FakeBotApi.Error(400, "Bad Request: not enough rights to send photos to the chat"));
+        var photoCalls = 0;
+        _h.Api.On("sendPhoto", _ => ++photoCalls == 1 ? throw new HttpRequestException("connection reset") : FakeBotApi.Error(400, "Bad Request: not enough rights to send photos to the chat"));
         var poster = System.IO.Path.Combine(_h.Dir.Path, "poster.jpg");
         System.IO.File.WriteAllBytes(poster, [1, 2, 3]);
         var movie = _rig.Library.Add(new MediaItem { Id = Guid.NewGuid(), Kind = MediaKind.Movie, Name = "Arrival", Primary = new ImageRef(poster, true, DateTime.UnixEpoch) }, Movies);
 
         Ready(movie);
         _rig.RunFor(150);
-        _h.Time.Advance(TimeSpan.FromMinutes(2));
+        await _rig.DeliverAllAsync();
+        _h.Time.Advance(TimeSpan.FromSeconds(3));
         await _rig.DeliverAllAsync();
 
         var row = Assert.Single(Rows());
         Assert.Equal(LogResult.SentWithoutPhoto, row.Result);
-        Assert.Equal(["This chat doesn't allow photos, so the text was sent alone", "Sent 2 min after it was ready"], row.Details);
+        Assert.Equal(2, row.Details.Count);
+        Assert.Equal("This chat doesn't allow photos, so the text was sent alone", row.Details[0]);
+        Assert.StartsWith("Couldn't get through to Telegram for ", row.Details[1], StringComparison.Ordinal);
+        Assert.Contains("connection reset", row.Details[1], StringComparison.Ordinal);
+        Assert.EndsWith("sent on try 2", row.Details[1], StringComparison.Ordinal);
     }
 
     [Fact]
@@ -332,9 +549,20 @@ public sealed class LogRecordingTests : IDisposable
         _rig.Pipeline.Pipeline.RunOnce();
     }
 
-    private void LoginFailed()
+    private const string SentOk = """{"ok":true,"result":{"message_id":5,"date":1790000000,"chat":{"id":-1001,"type":"supergroup"},"text":"x"}}""";
+
+    private Jellyfin.Plugin.TgJelly.State.Documents.OutboxEntry AnEntry(Destination d) => new()
     {
-        _rig.Pipeline.Queues.Publish("security.login_failed", new System.Collections.Generic.Dictionary<string, string> { ["user"] = "alice", ["user_key"] = "ALICE", ["ip"] = "1.1.1.1" });
+        EntryId = "e1", LogId = "e1", DestinationId = d.Id, EventKey = "security.login_failed", QueuedAt = Now,
+    };
+
+    private MediaItem Episode(int number) => _rig.Library.Add(
+        new MediaItem { Id = Guid.NewGuid(), Kind = MediaKind.Episode, Name = "E" + number, SeriesId = BearSeries, SeriesName = "The Bear", SeasonId = BearSeason, SeasonNumber = 4, EpisodeNumber = number },
+        Shows);
+
+    private void LoginFailed(string user = "alice")
+    {
+        _rig.Pipeline.Queues.Publish("security.login_failed", new System.Collections.Generic.Dictionary<string, string> { ["user"] = user, ["user_key"] = user.ToUpperInvariant(), ["ip"] = "1.1.1.1" });
         _rig.Pipeline.Pipeline.RunOnce();
     }
 }

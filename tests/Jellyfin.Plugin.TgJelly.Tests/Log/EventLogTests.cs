@@ -147,6 +147,67 @@ public sealed class EventLogTests : IDisposable
         Assert.Equal(1002, (await File.ReadAllLinesAsync(_paths.EventLog, TestContext.Current.CancellationToken)).Length);
     }
 
+    [Fact]
+    public async Task EventLog_Paging_TiedTimestamps_NoRowSkipped()
+    {
+        using var log = NewLog();
+        await log.Loaded;
+        foreach (var id in new[] { "a", "b|1", "c:2", "d", "e" })
+        {
+            log.Upsert(Row(id, Now, LogResult.Sent));
+        }
+
+        var seen = new System.Collections.Generic.List<string>();
+        string? cursor = null;
+        var pages = 0;
+        do
+        {
+            var page = log.Query(new LogQuery { Limit = 2, Before = cursor });
+            seen.AddRange(page.Items.Select(i => i.Id));
+            cursor = page.Next;
+            pages++;
+        }
+        while (cursor is not null && pages < 10);
+
+        Assert.Equal(["e", "d", "c:2", "b|1", "a"], seen);
+        Assert.Equal(3, pages);
+    }
+
+    [Fact]
+    public async Task EventLog_UnexpectedReadError_StartsEmptyAndKeepsWorking()
+    {
+        Directory.CreateDirectory(_paths.Root);
+        await File.WriteAllTextAsync(_paths.EventLog, "{\"tgjellyEventLog\":1}\n", TestContext.Current.CancellationToken);
+        using var log = NewLog();
+        log.ReadFile = _ => throw new InvalidOperationException("boom");
+        await log.Loaded;
+
+        log.Upsert(Row("m1", Now, LogResult.Sent));
+        var page = log.Query(new LogQuery());
+
+        Assert.True(page.StartedEmpty);
+        Assert.Single(page.Items);
+        log.Flush();
+        Assert.Equal(2, (await File.ReadAllLinesAsync(_paths.EventLog, TestContext.Current.CancellationToken)).Length);
+    }
+
+    [Fact]
+    public async Task EventLog_UnexpectedWriteError_KeepsRowsAndRetries()
+    {
+        using var log = NewLog();
+        log.WriteDelay = TimeSpan.FromHours(1);
+        log.WriteFile = (_, _) => throw new InvalidOperationException("boom");
+        await log.Loaded;
+
+        log.Upsert(Row("m1", Now, LogResult.Sent));
+        log.Flush();
+        Assert.False(File.Exists(_paths.EventLog));
+
+        log.WriteFile = (path, text) => AtomicFile.WriteAllText(path, text);
+        log.Flush();
+        Assert.Equal(2, (await File.ReadAllLinesAsync(_paths.EventLog, TestContext.Current.CancellationToken)).Length);
+    }
+
     public void Dispose() => _dir.Dispose();
 
     private static LogEntry Row(string id, DateTimeOffset at, LogResult result) => new()

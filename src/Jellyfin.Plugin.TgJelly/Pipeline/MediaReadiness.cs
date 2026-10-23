@@ -216,7 +216,13 @@ public sealed class MediaReadiness
             CountEvictions(1);
         }
 
-        _state.UpdateQueue(q => q.PendingMedia.TryAdd(key, now));
+        var added = false;
+        _state.UpdateQueue(q => added = q.PendingMedia.TryAdd(key, now));
+        if (added)
+        {
+            _log?.Pending(id, _settings.Current.Batching.ReadyTimeoutMinutes);
+        }
+
         return ready;
     }
 
@@ -241,6 +247,7 @@ public sealed class MediaReadiness
                 if (!_settings.Current.Message.AnnounceUpgrades)
                 {
                     _logger.LogDebug("TgJelly skipped {Item}: an upgrade of something already announced", item.Name);
+                    _log?.PendingDone(id);
                     _log?.UpgradeSkipped(item);
                     return [];
                 }
@@ -251,6 +258,7 @@ public sealed class MediaReadiness
 
         var newSeries = item.Kind == MediaKind.Episode
             && _state.ReadQueue(q => q.NewSeries.TryGetValue(Key(item.SeriesId), out var at) && at + NewSeriesTtl > now);
+        _log?.PendingDone(id);
         return [new MediaReady(item, libraries, upgraded, newSeries, now)];
     }
 }

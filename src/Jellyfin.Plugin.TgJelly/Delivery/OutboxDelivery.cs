@@ -101,6 +101,7 @@ public sealed class OutboxDelivery
 
         DeliveryError? last = null;
         var lastTelegram = string.Empty;
+        var lastFromTelegram = false;
         for (var hop = 0; hop <= MaxResends; hop++)
         {
             var attempt = Prepare(entry, destination);
@@ -117,6 +118,7 @@ public sealed class OutboxDelivery
             catch (Exception ex)
             {
                 lastTelegram = TelegramText(ex);
+                lastFromTelegram = ex is ApiRequestException;
                 last = TelegramErrorClassifier.ClassifyDelivery(ex);
                 var resend = OnFailure(entry, destination, attempt, ex, last, lastTelegram);
                 if (resend is null)
@@ -129,7 +131,7 @@ public sealed class OutboxDelivery
             }
         }
 
-        Drop(entry, destination, "too many fallbacks", last ?? new DeliveryError(DeliveryErrorKind.Other, "too many fallbacks"), lastTelegram, afterFallbacks: true);
+        Drop(entry, destination, "too many fallbacks", last ?? new DeliveryError(DeliveryErrorKind.Other, "too many fallbacks"), lastTelegram, afterFallbacks: true, fromTelegram: lastFromTelegram);
     }
 
     /// <summary>
@@ -267,10 +269,17 @@ public sealed class OutboxDelivery
 
         if (_log is not null)
         {
-            // A poster left out because this chat blocks photos may have been decided by an earlier message (Prepare).
-            var noPhoto = entry.Message.NoPhoto
-                ?? (attempt.EditTarget is null && !attempt.Photo && entry.Message.PosterPath is not null && _health.Get(destination.Id).PhotosBlocked ? "blocked" : null);
-            _log.Delivered(entry, destination, noPhoto);
+            try
+            {
+                // A poster left out because this chat blocks photos may have been decided by an earlier message (Prepare).
+                var noPhoto = entry.Message.NoPhoto
+                    ?? (attempt.EditTarget is null && !attempt.Photo && entry.Message.PosterPath is not null && _health.Get(destination.Id).PhotosBlocked ? "blocked" : null);
+                _log.Delivered(entry, destination, noPhoto);
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                _logger.LogWarning(ex, "TgJelly could not record a Log row; sending is not affected");
+            }
         }
     }
 
@@ -386,17 +395,17 @@ public sealed class OutboxDelivery
                 return null;
         }
 
-        Drop(entry, destination, error.Description, error, telegram);
+        Drop(entry, destination, error.Description, error, telegram, fromTelegram: exception is ApiRequestException);
         return null;
     }
 
-    private void Drop(OutboxEntry entry, Destination destination, string reason, DeliveryError error, string telegram, bool afterFallbacks = false)
+    private void Drop(OutboxEntry entry, Destination destination, string reason, DeliveryError error, string telegram, bool afterFallbacks = false, bool fromTelegram = true)
     {
         _logger.LogWarning("TgJelly dropped a message to {Destination}: {Reason}", destination.Title, reason);
         _outbox.Drop(entry.EntryId);
         // The ID, not the title: last errors outlive the destination, and diagnostics must never show its title (§12).
         _state.RecordError("outbox", DestinationRef.Of(destination) + ": " + reason);
-        _log?.Failed(entry, destination, error, telegram, afterFallbacks);
+        _log?.Failed(entry, destination, error, telegram, afterFallbacks, fromTelegram);
     }
 
     private sealed record Attempt(SentMessage? EditTarget, int? ReplyTo, bool Photo, string? FileId, string? UploadPath);

@@ -35,24 +35,30 @@ public class LogController : ControllerBase
     /// <param name="problemsOnly">Only failed and attention rows, and rows waiting after a failed try.</param>
     /// <param name="destinationId">Only this destination's rows.</param>
     /// <param name="eventKey">Only this event's rows.</param>
-    /// <param name="before">Only rows recorded before this time (the next page).</param>
+    /// <param name="before">The <c>Next</c> value of the previous page, for the next, older page.</param>
     /// <param name="limit">The most rows, 1 to 500.</param>
-    /// <returns>The page.</returns>
+    /// <returns>The page, or 400 when <paramref name="before"/> isn't a <c>Next</c> value.</returns>
     [HttpGet("Log")]
     [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public ActionResult<LogDto> Get(
         [FromQuery] bool problemsOnly = false,
         [FromQuery] string? destinationId = null,
         [FromQuery] string? eventKey = null,
-        [FromQuery] DateTimeOffset? before = null,
+        [FromQuery] string? before = null,
         [FromQuery] int limit = 100)
     {
+        if (!string.IsNullOrEmpty(before) && !EventLog.TryParseCursor(before, out _, out _))
+        {
+            return BadRequest(new MessageDto { Message = "The before parameter must be the Next value of an earlier Log page; leave it out for the newest rows." });
+        }
+
         var page = _log.Query(new LogQuery
         {
             ProblemsOnly = problemsOnly,
             DestinationId = string.IsNullOrEmpty(destinationId) ? null : destinationId,
             EventKey = string.IsNullOrEmpty(eventKey) ? null : eventKey,
-            Before = before,
+            Before = string.IsNullOrEmpty(before) ? null : before,
             Limit = Math.Clamp(limit, 1, MaxLimit),
         });
         return new LogDto
@@ -76,6 +82,7 @@ public class LogController : ControllerBase
             LastSentAt = page.LastSentAt,
             LastEventAt = page.LastEventAt,
             StartedEmpty = page.StartedEmpty,
+            Next = page.Next,
         };
     }
 }

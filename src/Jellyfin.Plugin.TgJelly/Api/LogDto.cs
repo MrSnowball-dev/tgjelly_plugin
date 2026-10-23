@@ -17,6 +17,9 @@ public sealed class LogDto
     /// <summary>Gets when TgJelly last acted on an event from Jellyfin, as far as the Log knows.</summary>
     public DateTimeOffset? LastEventAt { get; init; }
 
+    /// <summary>Gets the value to pass as <c>before</c> for the next, older page; <c>null</c> when there are no older rows.</summary>
+    public string? Next { get; init; }
+
     /// <summary>Gets a value indicating whether the Log file was missing or unreadable when this run started.</summary>
     public bool StartedEmpty { get; init; }
 }

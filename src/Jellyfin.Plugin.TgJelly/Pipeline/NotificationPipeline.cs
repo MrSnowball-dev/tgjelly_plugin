@@ -154,20 +154,20 @@ public sealed class NotificationPipeline
 
                 var (key, eventKey, _) = GroupKeys.For(item.Item);
                 var routed = Router.Route(eventKey, item.Libraries.Select(l => l.Id).ToList(), destinations);
-                var outputs = _media.Add(item, routed);
-                if (_log is not null)
+                EnqueueMedia(_media.Add(item, routed), destinations);
+
+                // Only after the message is on its way: recording must never keep it from the Outbox.
+                Record(log =>
                 {
-                    _log.MediaRouted(item, destinations);
+                    log.MediaRouted(item, destinations);
                     foreach (var destination in routed)
                     {
                         if (_media.FindHeld(destination.Id, key) is { } held)
                         {
-                            _log.Held(destination, key, eventKey, held.FirstAt, held.ItemIds);
+                            log.Held(destination, key, eventKey, held.FirstAt, held.ItemIds);
                         }
                     }
-                }
-
-                EnqueueMedia(outputs, destinations);
+                });
             });
         }
     }
@@ -218,9 +218,17 @@ public sealed class NotificationPipeline
                         At = _time.GetUtcNow(),
                         Groups = wanted.Select(g => g.Model).ToList(),
                     };
+                    var groupRows = wanted.Select(g => (Id: LogRecorder.MediaId(g.Key, destination.Id, g.FirstAt), g.Model)).ToList();
                     if (Enqueue(destination, digest, OutboxOp.Send, "digest", sentKey: null, targetKey: null, replyToKey: null, logId: null) is not null)
                     {
-                        _log?.Merged([.. wanted.Select(g => LogRecorder.MediaId(g.Key, destination.Id, g.FirstAt))]);
+                        _log?.Merged([.. groupRows.Select(r => r.Id)]);
+                    }
+                    else
+                    {
+                        foreach (var (id, model) in groupRows)
+                        {
+                            _log?.NothingToSend(id, destination, model);
+                        }
                     }
 
                     return;
@@ -230,7 +238,7 @@ public sealed class NotificationPipeline
                 var edit = output.Kind == MediaOutputKind.LateEdit;
 
                 // A late arrival updates the row of the message it edits; a released group moves its Waiting row on.
-                var logId = edit ? _outbox.LogIdOf(destination.Id, first.Key) : LogRecorder.MediaId(first.Key, destination.Id, first.FirstAt);
+                var logId = edit ? LogIdOf(destination.Id, first.Key) : LogRecorder.MediaId(first.Key, destination.Id, first.FirstAt);
                 Enqueue(destination, first.Model, edit ? OutboxOp.Edit : OutboxOp.Send, first.Key, first.Key, edit ? first.Key : null, replyToKey: null, logId);
             });
         }
@@ -247,7 +255,7 @@ public sealed class NotificationPipeline
                 // of an earlier alert updates that alert's row.
                 Guard(() =>
                 {
-                    var logId = output.Op == OutboxOp.Edit && output.TargetKey is { } target ? _outbox.LogIdOf(destination.Id, target) : null;
+                    var logId = output.Op == OutboxOp.Edit && output.TargetKey is { } target ? LogIdOf(destination.Id, target) : null;
                     Enqueue(destination, Copy(output.Model), output.Op, output.Model.EventKey, output.SentKey, output.TargetKey, output.ReplyToKey, logId);
                 });
             }
@@ -261,7 +269,12 @@ public sealed class NotificationPipeline
         logId ??= entryId;
         if (_renderer.Render(model, destination) is not { } message)
         {
-            _log?.NothingToSend(logId, destination, model);
+            // A digest's caller settles the rows of the groups it held.
+            if (model.Kind != RenderKind.Digest)
+            {
+                _log?.NothingToSend(logId, destination, model);
+            }
+
             return null;
         }
 
@@ -282,6 +295,43 @@ public sealed class NotificationPipeline
         });
         _log?.Queued(carrier, destination, model, summary);
         return carrier;
+    }
+
+    // Log-only reads and writes: a failure is logged and the message goes on as if there were no Log.
+    private void Record(Action<LogRecorder> record)
+    {
+        if (_log is null)
+        {
+            return;
+        }
+
+        try
+        {
+            record(_log);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            _logger.LogWarning(ex, "TgJelly could not record a Log row; sending is not affected");
+        }
+    }
+
+    // The Log row of the message an edit changes; null (a row of its own) when it can't be found.
+    private string? LogIdOf(string destinationId, string key)
+    {
+        if (_log is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            return _outbox.LogIdOf(destinationId, key);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            _logger.LogWarning(ex, "TgJelly could not find the Log row of an edited message; sending is not affected");
+            return null;
+        }
     }
 
     private void Guard(Action step)

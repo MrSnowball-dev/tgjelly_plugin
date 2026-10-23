@@ -24,7 +24,7 @@ public sealed class PipelineRig
         State = state ?? h.State;
         Queues = new IntakeQueues(Compatible, h.Time);
         Readiness = new MediaReadiness(State, h.Settings, library, new PendingIdSet(), h.Time, NullLogger<MediaReadiness>.Instance, recorder);
-        Outbox = new Outbox(State, h.Strings, h.Time);
+        Outbox = new Outbox(State, h.Strings, h.Time, recorder);
         Aggregator = new MediaAggregator(State, h.Settings, Outbox, scan, h.Time);
         Alerts = new AlertCoalescer(State, h.Strings, h.Time);
         var formatter = new Formatter(h.Strings);

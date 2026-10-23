@@ -573,7 +573,7 @@
   "web.log.why.noPhoto.rejected": "Telegram rejected the poster image, so the text was sent alone",
   "web.log.why.noPhoto.unreadable": "The poster file couldn't be read, so the text was sent alone",
   "web.log.why.noPhoto.upload": "Uploading the poster kept failing, so the text was sent alone",
-  "web.log.why.late": "Sent {delay} after it was ready",
+  "web.log.why.late": "Sent on try {tries}, {delay} after it was ready",
   "web.log.why.lateRetried": "Couldn't get through to Telegram for {delay} ({error}), sent on try {tries}",
   "web.log.why.retry.Transport": "Couldn't reach Telegram, trying again",
   "web.log.why.retry.ServerError": "Telegram had a server error, trying again",
@@ -611,5 +611,16 @@
   "web.log.title.digest.other": "{count} new items",
   "web.log.title.summary.one": "{count} more security or server event",
   "web.log.title.summary.other": "{count} more security and server events",
-  "web.log.title.removedItem": "Removed item {id}"
+  "web.log.title.removedItem": "Removed item {id}",
+  "web.log.why.lateRecovered": "Held while the destination had a problem ({error}), sent {delay} after it was ready, once it was fixed",
+  "web.log.why.pending": "Waiting for Jellyfin to finish reading this item's details (up to {minutes} min)",
+  "web.log.why.edit.retry": "Updating this message failed, trying again: {error}",
+  "web.log.why.edit.failed": "Updating this message failed, so the chat still shows the earlier version: {error}",
+  "web.log.why.failed.cap": "More than {count} messages were waiting for this destination, so this one, the oldest, was dropped",
+  "web.log.why.failed.unaccounted": "TgJelly lost track of this message: it was still waiting after 30 hours, so it was most likely never sent",
+  "web.log.why.failed.ours": "TgJelly couldn't send it: {error}",
+  "web.log.advice.edit": "Nothing to do for this message: the chat shows the version sent before. If updates keep failing, check this destination on the Destinations page.",
+  "web.log.advice.cap": "Messages pile up when a destination can't receive them. Check its health on the Destinations page and the connection to Telegram in Advanced.",
+  "web.log.advice.unaccounted": "Check this destination on the Destinations page. If it happens again, press Copy diagnostics in Advanced and include it in a bug report.",
+  "web.log.advice.ours": "This is a problem in TgJelly or on the Jellyfin server, not in Telegram. Press Copy diagnostics in Advanced and include it in a bug report."
 }

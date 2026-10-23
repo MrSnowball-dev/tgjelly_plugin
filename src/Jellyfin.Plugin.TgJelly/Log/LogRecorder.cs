@@ -23,10 +23,10 @@ public sealed class LogRecorder
 {
     private const int SkipMergeCap = 1_000;
 
-    /// <summary>A message sent later than this after it was queued is "Sent late".</summary>
-    public static readonly TimeSpan LateAfter = TimeSpan.FromSeconds(60);
-
-    /// <summary>A row still waiting this long after it was recorded was dropped unseen (the Outbox TTL is 24 h).</summary>
+    /// <summary>
+    /// A row still waiting this long after it was recorded was lost track of: the Outbox drops entries after 24 h and
+    /// reports it, and batching holds groups for at most a few hours, so only a gap in the recording leaves one.
+    /// </summary>
     public static readonly TimeSpan StaleAfter = TimeSpan.FromHours(30);
 
     // Skipped items of one group (episodes of a season) within this window share one row.
@@ -40,6 +40,7 @@ public sealed class LogRecorder
     private readonly TimeProvider _time;
     private readonly ILogger<LogRecorder> _logger;
     private readonly HealthService? _health;
+    private readonly SettingsStore? _settings;
     private readonly Dictionary<string, SkipGroup> _skips = new(StringComparer.Ordinal);
     private DateTimeOffset _lastSweep = DateTimeOffset.MinValue;
 
@@ -52,9 +53,16 @@ public sealed class LogRecorder
     /// <param name="time">The clock.</param>
     /// <param name="logger">The logger.</param>
     /// <param name="health">The destinations' health, to say why a queued message is held.</param>
-    public LogRecorder(EventLog log, ILibraryAccess library, StringTable strings, TimeProvider time, ILogger<LogRecorder> logger, HealthService? health = null)
+    /// <param name="settings">The settings, to name a destination whose health changed.</param>
+    public LogRecorder(EventLog log, ILibraryAccess library, StringTable strings, TimeProvider time, ILogger<LogRecorder> logger, HealthService? health = null, SettingsStore? settings = null)
     {
         _health = health;
+        _settings = settings;
+        if (health is not null)
+        {
+            health.ProblemFound += OnProblemFound;
+        }
+
         _log = log;
         _library = library;
         _strings = strings;
@@ -183,10 +191,56 @@ public sealed class LogRecorder
     {
         var now = _time.GetUtcNow();
         var why = Why(SkipReason.DestinationRemoved, string.Empty, null);
-        _log.Update(logId, existing => existing is null
+        _log.Update(logId, existing => existing is null || IsFinal(existing.Result)
             ? null
             : existing with { Result = LogResult.Skipped, UpdatedAt = now, Details = [why], RetryAt = null, Advice = null });
     });
+
+    /// <summary>
+    /// Records Outbox entries dropped because more than <paramref name="cap"/> media messages waited for one destination.
+    /// </summary>
+    /// <param name="logIds">The dropped entries' rows.</param>
+    /// <param name="cap">The cap.</param>
+    public void OverCap(IReadOnlyList<string> logIds, int cap)
+        => Discard(logIds, _strings.Get("web.log.why.failed.cap", ("count", cap)), _strings.Get("web.log.advice.cap"));
+
+    /// <summary>
+    /// Records Outbox entries dropped because they waited longer than the Outbox keeps them.
+    /// </summary>
+    /// <param name="logIds">The dropped entries' rows.</param>
+    public void Expired(IReadOnlyList<string> logIds)
+        => Discard(logIds, _strings.Get("web.log.why.failed.expired"), _strings.Get("web.log.advice.expired"));
+
+    /// <summary>
+    /// Records an item that is waiting for Jellyfin to finish reading its details, as Waiting without a destination.
+    /// </summary>
+    /// <param name="itemId">The item.</param>
+    /// <param name="timeoutMinutes">How long it waits at most.</param>
+    public void Pending(Guid itemId, int timeoutMinutes) => Safe(() =>
+    {
+        if (_library.GetItem(itemId) is not { } item || !GroupKeys.IsGrouped(item.Kind))
+        {
+            return;
+        }
+
+        var now = _time.GetUtcNow();
+        _log.Upsert(new LogEntry
+        {
+            Id = PendingId(itemId),
+            At = now,
+            UpdatedAt = now,
+            EventKey = GroupKeys.For(item).EventKey,
+            Title = TitleOfItems([item]),
+            Result = LogResult.Waiting,
+            Details = [_strings.Get("web.log.why.pending", ("minutes", timeoutMinutes))],
+        });
+    });
+
+    /// <summary>
+    /// Removes an item's waiting-for-details row once it is ready; its message has rows of its own from then on.
+    /// </summary>
+    /// <param name="itemId">The item.</param>
+    public void PendingDone(Guid itemId) => Safe(() => _log.Remove([PendingId(itemId)]));
 
     /// <summary>
     /// Records a message handed to the Outbox as Waiting; an edit of a message already sent keeps that message's result.
@@ -251,8 +305,19 @@ public sealed class LogRecorder
     /// <param name="itemId">The item.</param>
     public void ItemGone(Guid itemId) => Safe(() =>
     {
-        var title = _strings.Get("web.log.title.removedItem", ("id", itemId.ToString("N", CultureInfo.InvariantCulture)));
-        Skip(NewId("gone"), "media", title, null, Why(SkipReason.ItemGone, "media", null));
+        var now = _time.GetUtcNow();
+        var why = Why(SkipReason.ItemGone, "media", null);
+        var converted = false;
+        _log.Update(PendingId(itemId), existing =>
+        {
+            converted = existing is not null;
+            return existing is null ? null : existing with { Id = NewId("gone"), UpdatedAt = now, Result = LogResult.Skipped, Details = [why] };
+        });
+        if (!converted)
+        {
+            var title = _strings.Get("web.log.title.removedItem", ("id", itemId.ToString("N", CultureInfo.InvariantCulture)));
+            Skip(NewId("gone"), "media", title, null, why);
+        }
     });
 
     /// <summary>
@@ -282,7 +347,10 @@ public sealed class LogRecorder
         {
             if (entry.Op == OutboxOp.Edit && existing is { } sent && IsSent(sent.Result))
             {
-                return sent with { Title = title, UpdatedAt = now, DestinationId = destination.Id, DestinationTitle = destination.Title };
+                // The update went through: an earlier failed update of it no longer matters.
+                List<string> kept = [.. sent.Details.Where(d => !IsEditProblem(d))];
+                var advice = kept.Count == 0 && sent.Result == LogResult.Sent ? null : sent.Advice;
+                return sent with { Title = title, UpdatedAt = now, DestinationId = destination.Id, DestinationTitle = destination.Title, Details = kept, Advice = advice };
             }
 
             var tries = (existing?.Tries ?? 0) + 1;
@@ -298,14 +366,19 @@ public sealed class LogRecorder
             }
 
             var delay = now - entry.QueuedAt;
+            // Ruling R7: late means a try failed or Telegram made it wait; time in the queue (pacing) doesn't count.
             var lastError = existing?.Telegram;
             if (lastError is not null)
             {
-                details.Add((LogResult.SentLate, _strings.Get("web.log.why.lateRetried", ("delay", Duration(delay)), ("error", lastError), ("tries", tries)), _strings.Get("web.log.advice.late")));
+                var recovered = existing!.Result == LogResult.Failed || existing.Tries == 0;
+                var why = recovered
+                    ? _strings.Get("web.log.why.lateRecovered", ("delay", Duration(delay)), ("error", lastError))
+                    : _strings.Get("web.log.why.lateRetried", ("delay", Duration(delay)), ("error", lastError), ("tries", tries));
+                details.Add((LogResult.SentLate, why, _strings.Get("web.log.advice.late")));
             }
-            else if (entry.Attempts > 0 || delay > LateAfter)
+            else if (entry.Attempts > 0)
             {
-                details.Add((LogResult.SentLate, _strings.Get("web.log.why.late", ("delay", Duration(delay))), _strings.Get("web.log.advice.late")));
+                details.Add((LogResult.SentLate, _strings.Get("web.log.why.late", ("delay", Duration(delay)), ("tries", tries)), _strings.Get("web.log.advice.late")));
             }
 
             return new LogEntry
@@ -337,7 +410,9 @@ public sealed class LogRecorder
     public void Retrying(OutboxEntry entry, Destination destination, DeliveryErrorKind kind, string telegram, DateTimeOffset retryAt) => Safe(() =>
     {
         var now = _time.GetUtcNow();
-        _log.Update(RowId(entry), existing => (existing ?? NewRow(entry, destination, now)) with
+        _log.Update(RowId(entry), existing => entry.Op == OutboxOp.Edit && existing is { } sent && IsSent(sent.Result)
+            ? EditProblem(sent, _strings.Get("web.log.why.edit.retry", ("error", telegram)), now)
+            : (existing ?? NewRow(entry, destination, now)) with
         {
             UpdatedAt = now,
             DestinationId = destination.Id,
@@ -359,17 +434,23 @@ public sealed class LogRecorder
     /// <param name="error">The classified error.</param>
     /// <param name="telegram">What Telegram or the network said, with the error code, redacted.</param>
     /// <param name="afterFallbacks">Whether it failed after every fallback was tried.</param>
-    public void Failed(OutboxEntry entry, Destination destination, DeliveryError error, string telegram, bool afterFallbacks = false) => Safe(() =>
+    /// <param name="fromTelegram">Whether Telegram answered with the error; <c>false</c> when TgJelly or the server failed.</param>
+    public void Failed(OutboxEntry entry, Destination destination, DeliveryError error, string telegram, bool afterFallbacks = false, bool fromTelegram = true) => Safe(() =>
     {
         var now = _time.GetUtcNow();
         var (why, advice) = error.Kind switch
         {
             DeliveryErrorKind.Lost or DeliveryErrorKind.NeedsPermissions or DeliveryErrorKind.TopicMissing or DeliveryErrorKind.Migrated when !afterFallbacks
                 => ("web.log.why.failed." + error.Kind, "web.log.advice." + error.Kind),
+            _ when !fromTelegram => ("web.log.why.failed.ours", "web.log.advice.ours"),
             _ => (afterFallbacks ? "web.log.why.failed.fallbacks" : "web.log.why.failed.Other", "web.log.advice.Other"),
         };
         var args = Args(destination, error.Description);
-        _log.Update(RowId(entry), existing => (existing ?? NewRow(entry, destination, now)) with
+
+        // A refused update leaves the message in the chat as it was: the row keeps its result and says so.
+        _log.Update(RowId(entry), existing => entry.Op == OutboxOp.Edit && existing is { } sent && IsSent(sent.Result)
+            ? EditProblem(sent, _strings.Get("web.log.why.edit.failed", ("error", error.Description)), now)
+            : (existing ?? NewRow(entry, destination, now)) with
         {
             UpdatedAt = now,
             DestinationId = destination.Id,
@@ -395,8 +476,8 @@ public sealed class LogRecorder
         }
 
         _lastSweep = now;
-        var why = _strings.Get("web.log.why.failed.expired");
-        var advice = _strings.Get("web.log.advice.expired");
+        var why = _strings.Get("web.log.why.failed.unaccounted");
+        var advice = _strings.Get("web.log.advice.unaccounted");
         _log.UpdateWhere(
             r => r.Result == LogResult.Waiting && now - r.At > StaleAfter,
             r => r with { Result = LogResult.Failed, UpdatedAt = now, Details = [why], RetryAt = null, Advice = advice });
@@ -404,6 +485,10 @@ public sealed class LogRecorder
 
     private static bool IsSent(LogResult result)
         => result is LogResult.Sent or LogResult.SentLate or LogResult.SentWithBuiltIn or LogResult.SentWithoutPhoto;
+
+    private static bool IsFinal(LogResult result) => IsSent(result) || result is LogResult.Failed or LogResult.Skipped;
+
+    private static string PendingId(Guid itemId) => "pending|" + itemId.ToString("N", CultureInfo.InvariantCulture);
 
     private static string RowId(OutboxEntry entry) => entry.LogId.Length > 0 ? entry.LogId : entry.EntryId;
 
@@ -436,6 +521,59 @@ public sealed class LogRecorder
                 return first.Name;
         }
     }
+
+    // The text before the placeholder of each "updating this message failed" detail, to find them again.
+    private bool IsEditProblem(string detail)
+        => new[] { "web.log.why.edit.retry", "web.log.why.edit.failed" }
+            .Select(key => _strings.Get(key))
+            .Select(text => text.IndexOf('{', StringComparison.Ordinal) is var at and > 0 ? text[..at] : text)
+            .Any(prefix => detail.StartsWith(prefix, StringComparison.Ordinal));
+
+    private LogEntry EditProblem(LogEntry sent, string detail, DateTimeOffset now) => sent with
+    {
+        UpdatedAt = now,
+        Details = [detail, .. sent.Details.Where(d => !IsEditProblem(d))],
+        Advice = sent.Advice ?? _strings.Get("web.log.advice.edit"),
+    };
+
+    private void Discard(IReadOnlyList<string> logIds, string why, string advice) => Safe(() =>
+    {
+        var now = _time.GetUtcNow();
+        foreach (var id in logIds.Distinct(StringComparer.Ordinal))
+        {
+            _log.Update(id, existing => existing switch
+            {
+                null or { Result: LogResult.Skipped } => null,
+                { } sent when IsSent(sent.Result) => EditProblem(sent, _strings.Get("web.log.why.edit.failed", ("error", why)), now),
+                { Result: LogResult.Failed } failed => failed with { UpdatedAt = now, Details = [why, .. failed.Details.Where(d => d != why)] },
+                { } waiting => waiting with { Result = LogResult.Failed, UpdatedAt = now, Details = [why], RetryAt = null, Advice = advice },
+            });
+        }
+    });
+
+    // Messages already queued for a destination that just turned Lost (or similar) are held: say so on their rows.
+    private void OnProblemFound(object? sender, string destinationId) => Safe(() =>
+    {
+        if (_health is null || _settings?.Current.Destinations.FirstOrDefault(d => d.Id == destinationId) is not { } destination)
+        {
+            return;
+        }
+
+        var health = _health.Get(destinationId);
+        if (health.Status is not (HealthStatus.Lost or HealthStatus.NeedsPermissions or HealthStatus.TopicMissing))
+        {
+            return;
+        }
+
+        var now = _time.GetUtcNow();
+        var queued = _strings.Get("web.log.why.queued");
+        var args = Args(destination);
+        var why = _strings.Get("web.log.why.held." + health.Status, args);
+        var advice = _strings.Get("web.log.advice." + health.Status, args);
+        _log.UpdateWhere(
+            r => r.DestinationId == destinationId && r.Result == LogResult.Waiting && r.Details.Count == 1 && r.Details[0] == queued,
+            r => r with { UpdatedAt = now, Details = [why], Advice = advice, Telegram = health.LastError });
+    });
 
     private (string Name, object? Value)[] Args(Destination destination, string? error = null)
     {
