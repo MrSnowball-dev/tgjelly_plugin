@@ -52,9 +52,21 @@ You can also limit a destination to some libraries, send media, security or serv
 
 <!-- screenshot: the destination editor with the event switches -->
 
+## The dashboard
+
+The **Telegram** page in the Jellyfin Dashboard has a sidebar of sections. On a phone it becomes a row of tabs.
+
+- **Overview:** the connection state, notices, the bot, and a summary of your destinations and templates. With no bot connected, it starts with Connect.
+- **Destinations:** the chats that get messages, with their events, libraries, silent groups, pause, and test.
+- **Messages:** the public URL and what each message shows.
+- **Templates:** the editor for every message.
+- **Advanced:** proxy, batching, update checks, adding a chat by ID, and diagnostics.
+
+There are no Save buttons. Every setting saves itself, and a short cue beside it says what happened. "Saved" fades after two seconds. "Not saved:" stays, with the reason, until you fix the value. A value that is not valid is never saved. Buttons are only for actions, like Remove, Send test and Reset.
+
 ## Message templates
 
-Every message is a template, and you can change any of them. Open the event in the dashboard's Message templates section. The editor shows the built-in template, so you start from what you already get. A live preview shows how it will look in Telegram. Press Send test to send it to a destination, and Reset to go back to the built-in one. The poster and buttons keep following their own switches. See [docs/templates.md](docs/templates.md) for the syntax, the fields you can use, and the built-in templates.
+Every message is a template, and you can change any of them. Open the event in the dashboard's Message templates section. The editor shows the built-in template, so you start from what you already get. A live preview shows how it will look in Telegram. Your changes save themselves a second after you stop typing, unless the template has errors. Press Send test to send it to a destination, and Reset to go back to the built-in one. The poster and buttons keep following their own switches. See [docs/templates.md](docs/templates.md) for the syntax, the fields you can use, and the built-in templates.
 
 <!-- screenshot: the Message templates section with its live preview -->
 

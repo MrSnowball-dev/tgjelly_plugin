@@ -3012,7 +3012,7 @@ export default function TgJellyPage(view, params) {
         if (result.status === 200 && body) {
             const outcome = body.Outcome === 'AlreadyExists' ? t(S, 'web.manual.AlreadyExists') : t(S, 'web.manual.Added');
             const test = body.Outcome === 'AlreadyExists' ? ''
-                : ' ' + (body.TestSent ? t(S, 'dest.test.ok') : t(S, 'dest.test.failed', { error: body.TestError }));
+                : ' ' + (body.TestSent ? t(S, 'web.dest.test.ok') : t(S, 'web.dest.test.failed', { error: body.TestError }));
             state.ui.manualResult = `<p>${outcome}${test}</p>`;
             state.ui.manualInput = '';
             await reloadSection('destinations', { fresh: true });
@@ -3132,7 +3132,7 @@ export default function TgJellyPage(view, params) {
             }
 
             const S = state.strings;
-            destinationOutcome(id, result.body.Sent ? t(S, 'dest.test.ok') : t(S, 'dest.test.failed', { error: result.body.Error }));
+            destinationOutcome(id, result.body.Sent ? t(S, 'web.dest.test.ok') : t(S, 'web.dest.test.failed', { error: result.body.Error }));
             await reloadSection('destinations', { fresh: true });
             return undefined;
         }),

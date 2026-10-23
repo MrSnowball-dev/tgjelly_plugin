@@ -129,6 +129,8 @@ function mount(routes = {}, { hash = '#/configurationpage?name=TgJelly' } = {}) 
         'GET TgJelly/Settings': settings(),
         'GET TgJelly/Destinations': destinations(),
         'GET TgJelly/Libraries': LIBRARIES,
+        'GET TgJelly/Templates': templates(),
+        'POST TgJelly/Templates/Validate': validation(),
         ...routes,
     });
     const doc = { hidden: false, documentElement: { lang: 'en' } };
@@ -265,6 +267,7 @@ test('viewshow loads strings and status, and renders the status', async () => {
         'GET /jf/TgJelly/Destinations',
         'GET /jf/TgJelly/Libraries',
         'GET /jf/TgJelly/Templates',
+        'POST /jf/TgJelly/Templates/Validate',
     ]);
     assert.ok(el('tgj-status').innerHTML.includes('Connected to Telegram'));
     assert.equal(el('tgjelly-root').writes, 1, 'the shell is written once');
@@ -480,8 +483,8 @@ test('dismiss posts the notice id', async () => {
     const { event } = clickOn(view, { 'data-tgj-act': 'dismiss', 'data-tgj-id': 'n1' });
     await flush();
 
-    const post = api.calls.find(c => c.type === 'POST');
-    assert.equal(post.url, '/jf/TgJelly/Status/Dismiss');
+    const post = api.calls.find(c => c.type === 'POST' && c.url.endsWith('/Status/Dismiss'));
+    assert.ok(post);
     assert.deepEqual(JSON.parse(post.data), { NoticeId: 'n1' });
     assert.ok(event.defaultPrevented);
     assert.equal(api.calls.at(-1).url, '/jf/TgJelly/Status', 'refreshes the status after');
@@ -2206,7 +2209,7 @@ test('template_withErrors_notSaved', async () => {
     tplType(view, 'Hi {{ oops');
     await timers.advance(1000);
     assert.deepEqual(tplPuts(api), []);
-    assert.equal(EN['web.templates.notSavedErrors'], 'fix the errors above');
+    assert.equal(EN['web.templates.notSavedErrors'], 'fix the template errors');
     assert.deepEqual(cue(view, TPL_CUE), errorCue(EN['web.templates.notSavedErrors']));
 
     // Leaving the field doesn't send it either, and the reason stays until the text is fixed (design §6.2).
@@ -3339,4 +3342,33 @@ test('batching uses the server rules and messages, the longest hold against the 
     assert.equal(putSettings(api).length, 1);
     assert.equal(putSettings(api)[0].Batching.MaxHoldMinutes, 60);
     assert.equal(putSettings(api)[0].Batching.QuietWindowSeconds, 120, 'the quiet window edit is not sent with it');
+});
+
+// --- no decorative symbols (Plan 8 Task 9) ---
+
+const NO_SYMBOLS = /[●✓✔✅⚠❌✗🟢🔴]/u;
+
+test('renderedDashboard_hasNoDecorativeSymbols', async () => {
+    const unhealthy = dest({ Id: 'd2', Title: 'Broken', Health: { Status: 'Lost', PhotosBlocked: true, LastError: 'gone', At: '2026-10-20T10:00:00Z' } });
+    const failing = mount({
+        'GET TgJelly/Destinations': destinations({ Items: [dest(), unhealthy], DetectedChats: [{ ChatId: -5, ThreadId: 0, Title: 'New chat', Kind: 'Group' }] }),
+        'GET TgJelly/Diagnostics': { Text: 'TgJelly 1.0' },
+        'POST TgJelly/Destinations/d1/Test': { Sent: false, Error: 'bot kicked', Health: { Status: 'Lost' } },
+    });
+    await show(failing.view);
+    await destAct(failing.view, 'edit', { 'data-tgj-id': 'd1' });
+    await destAct(failing.view, 'testDest', { 'data-tgj-id': 'd1' });
+    const everything = view => [...IDS.map(id => view.elements.get(id)?.innerHTML ?? ''), view.elements.get('tgjelly-root').innerHTML].join('\n');
+    assert.ok(everything(failing.view).includes('bot kicked'), 'the failed test outcome is on the page');
+    assert.ok(!NO_SYMBOLS.test(everything(failing.view)), 'failed test outcome');
+
+    const passing = mount({ 'POST TgJelly/Destinations/d1/Test': { Sent: true, Error: null, Health: { Status: 'Ok' } } });
+    await show(passing.view);
+    await destAct(passing.view, 'edit', { 'data-tgj-id': 'd1' });
+    await destAct(passing.view, 'testDest', { 'data-tgj-id': 'd1' });
+    assert.ok(!NO_SYMBOLS.test(everything(passing.view)), 'sent test outcome');
+
+    const unconnected = mount({ 'GET TgJelly/Status': status({ ConnectionState: 'NotConfigured', HasToken: false, BotUsername: null }) });
+    await show(unconnected.view);
+    assert.ok(!NO_SYMBOLS.test(everything(unconnected.view)), 'not connected');
 });

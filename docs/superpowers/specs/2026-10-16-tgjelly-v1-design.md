@@ -340,13 +340,26 @@ At that point the dashboard's Destinations section shows "Telegram setup didn't 
 - A detected chat receives nothing.
 
 ### 6.6 Dashboard page after setup
-Sections, top to bottom:
-1. **Status:** connection state (Connected / Token rejected / Another app is polling this bot / Another app set a webhook `[Take over]` / Telegram unreachable, check proxy / Wrong build for this server / Waiting for the previous instance to stop), last errors, counts (pending media, outbox, dropped), notices (backup restored, template flagged, public URL flagged, update check failing, removed libraries in a filter), each with `[Dismiss]`.
-2. **Bot:** @username (shown only here), the access reminder (§6.4), `[Open in Telegram]`, `[Change token]`, `[Disconnect bot]` (confirm → §10.4).
-3. **Destinations:** a list with health badges (OK / Photos blocked / Needs permissions / Topic missing / Lost) and a **Pause/Resume** switch (`Enabled`). The editor covers event switches with the preset, a library multi-select, and silent groups, plus `[Send test]` `[Check again]` `[Remove]` (with a "Bot leaves the chat" checkbox → `leaveChat`). `[Add destination]` opens `https://t.me/<bot>?start=add`. The "Set up manually" link appears per §6.5.
-4. **Messages:** public URL (pre-filled with a suggestion marked "verify", §8.3) and the toggles in §8.4.
-5. **Message templates:** its own section after Messages, no longer in Advanced (amended by the [templates design](2026-10-21-tgjelly-templates-design.md)). One editor per template key, starting from the built-in template, with a live Telegram preview, `[Send test]`, `[Reset]` and the guide link under the template (§8.5).
-6. **Advanced** (`<details>`): proxy (§9.1), batching values (§7.4, with the ranges in §10.1), update checks (on/off, mode), the manual block (§6.5, only when it is unlocked), `[Copy diagnostics]`.
+Amended by the [dashboard redesign](2026-10-22-tgjelly-dashboard-redesign-design.md). The page has its own scoped stylesheet and no Save buttons. A header shows the title and the connection state in words. A sidebar lists the sections and shows one at a time. On a narrow page the sidebar becomes a row of tabs. Each section is made of cards, and each setting is a row: a label, a one-line explanation and the control, with a cue beside it. The active section is kept in the URL hash.
+
+Sections, in sidebar order:
+1. **Overview:** the connection state with its last errors, counts (pending media, outbox, dropped) and notices (backup restored, template flagged, public URL flagged, update check failing, removed libraries in a filter), each with `[Dismiss]`; `[Take over]` on a webhook conflict. With no bot, it leads with Connect. After that it shows the bot: @username (shown only here), the access reminder (§6.4), `[Open in Telegram]`, `[Change token]`, `[Disconnect bot]` (confirm → §10.4). An "At a glance" card sums up destinations and their health, templates edited or flagged, and notices, with an Open link to each section.
+2. **Destinations:** a card per destination with a health word (OK / Photos blocked / Needs permissions / Topic missing / Lost) and a **Pause/Resume** switch (`Enabled`). The editor covers the preset, event switches, a library multi-select and silent groups, plus `[Send test]` `[Check again]` `[Remove]` (inline confirmation, with a "Bot leaves the chat" choice → `leaveChat`). Leaving a Custom event list for a preset asks first. `[Add destination]` opens `https://t.me/<bot>?start=add`. The "Set up manually" link appears per §6.5.
+3. **Messages:** public URL (pre-filled with a suggestion marked "verify", §8.3) and the toggles in §8.4.
+4. **Templates:** one editor per template key, starting from the built-in template, with a live Telegram preview, `[Send test]`, `[Reset]` and the guide link under the template (§8.5).
+5. **Advanced:** proxy (§9.1), batching values (§7.4, with the ranges in §10.1), update checks (on/off, mode), the manual block (§6.5, only when it is unlocked), `[Copy diagnostics]`.
+
+**Auto-save.** Every setting saves itself, and a cue beside it says what happened: "Saving…" if the request is slow, "Saved" for about two seconds, or "Not saved:" with the reason until the value is fixed.
+- Switches and selects save at once.
+- Text and number fields save 800 ms after the last keystroke, or when you leave the field.
+- The public URL and the proxy fields save only when you leave the field or press Enter, because a partial value would go live or restart the bot session.
+- Templates save 1 s after the last keystroke, only when the preview shows no errors and never with empty text. **Reset** is the one way to go back to the built-in template.
+- An invalid value is never sent.
+- All saves share one queue and one `Revision`. On a 409 the page takes the server data, applies the pending change again and retries once. A second 409 shows "Not saved: changed elsewhere, check the value".
+- A field that has focus or a pending change is never replaced by a refresh.
+- Actions keep their buttons: connect, add, remove, Reset, Send test, Check again, Copy diagnostics.
+
+The dashboard shows no decorative symbols. State is words and colour. The dashboard has its own `web.*` copies of strings the bot shares, such as the health labels, so the bot keeps its emoji.
 
 Everything in §6.3 not marked dashboard-only can be done in both the dashboard and the bot.
 
@@ -1032,6 +1045,12 @@ They are parsed with Telegram.Bot and passed to `UpdateRouter`, FlowEngine and t
   - Edit the Movie template, preview it, send a test to a channel and to a forum topic, save, and wait for a real movie to arrive.
   - Reset it, and confirm that the next real movie looks like v0.2.
   - Check the editor on a phone (one column, preview under the template).
+- **Dashboard redesign and auto-save** (redesign design §10):
+  - Open the dashboard in Jellyfin's default dark theme, a light theme and one other theme. Each section should look consistent, with clear separation and even spacing.
+  - On a phone: the tabs row, and each section readable without horizontal scrolling.
+  - Change a switch, a text field and a template. Each shows "Saved" beside it. An invalid public URL shows "Not saved:" with the reason, and isn't saved. A template with an error doesn't go live.
+  - Change a setting in the bot while the dashboard is open, then change another in the dashboard. Nothing is lost.
+  - Go to another Jellyfin settings page and back. The other page looks unchanged, so no styles leaked.
 - **Icons** on a bot whose owner has no Telegram Premium: every screen still sends; icons absent or stripped (TelegramSender fallback).
 
 ### 14.5 Process

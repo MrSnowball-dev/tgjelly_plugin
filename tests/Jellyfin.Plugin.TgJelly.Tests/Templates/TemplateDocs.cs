@@ -111,7 +111,8 @@ internal static class TemplateDocs
 
         ### Previews, flags and fallbacks
 
-        The dashboard renders your template live and shows what it would look like in Telegram, with errors and warnings. Saving does not block on errors.
+        The dashboard renders your template live and shows what it would look like in Telegram, with errors and warnings.
+        Your template saves itself a second after you stop typing. A template with errors is not saved, and the last saved text stays live until you fix them. Empty text is never saved: use Reset to go back to the built-in template.
         When an edited template fails while a message is sent, the built-in template is sent instead, and your template is flagged with the error.
         A template that produces no text counts as failed.
         If the built-in template fails too, the plugin sends a minimal text with the event name and the item or user name.

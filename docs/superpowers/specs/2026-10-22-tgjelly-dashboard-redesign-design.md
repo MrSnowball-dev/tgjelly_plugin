@@ -135,7 +135,7 @@ One set of reusable render helpers and CSS classes, used by every section:
   - not an IPv6 literal.
 
   It reuses the existing `web.messages.urlInvalid` text. An **empty** URL is valid and saves, since it turns the buttons off. The server is not changed (§3) (*my call*).
-- **A template** saves only when the last validation has **no errors**; warnings don't block saving. **Empty text is never auto-saved** (*my call*). The server treats empty text as "remove the override", so **Reset to built-in** stays the one way to reset. With errors, the cue says "Not saved: fix the errors above". The live template keeps the last good saved text until then. This way a broken template never goes live.
+- **A template** saves only when the last validation has **no errors**; warnings don't block saving. **Empty text is never auto-saved** (*my call*). The server treats empty text as "remove the override", so **Reset to built-in** stays the one way to reset. With errors, the cue says "Not saved: fix the template errors". The live template keeps the last good saved text until then. This way a broken template never goes live.
 - If the server rejects a value anyway (400 with errors), the cue shows the server's message. The field keeps the admin's text, so nothing is lost.
 
 ### 6.4 Conflicts and concurrency
