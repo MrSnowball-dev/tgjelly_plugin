@@ -3175,6 +3175,9 @@ export default function TgJellyPage(view, params) {
         },
         removeYes: el => runAction('destinations', async () => {
             const id = idOf(el);
+            // Like every action that sends the Revision: the saves before it go first, so it sends the one they moved to
+            // and doesn't conflict with the page's own change.
+            await autosave.flush();
             const revision = pageRevision();
             const result = await api.del(`Destinations/${encodeURIComponent(id)}?leave=${state.ui.destLeave}&expectedRevision=${revision}`);
             state.ui.destConfirm = null;
@@ -3196,6 +3199,7 @@ export default function TgJellyPage(view, params) {
 
             state.ui.manualResult = '';
             const target = /^-?\d+$/.test(value) && Number.isSafeInteger(Number(value)) ? { ChatId: Number(value) } : { TopicLink: value };
+            await autosave.flush();
             return manualReply(await api.post('Destinations', { ExpectedRevision: pageRevision(), ...target, Preset: state.ui.manualPreset }));
         }),
         detectedSetUp: el => runAction('manual', async () => {
@@ -3206,6 +3210,7 @@ export default function TgJellyPage(view, params) {
 
             state.ui.manualResult = '';
             const preset = state.ui.detectedPresets[id] ?? 'Everything';
+            await autosave.flush();
             return manualReply(await api.post(`DetectedChats/${id}`, { ExpectedRevision: pageRevision(), Preset: preset }));
         }),
         detectedDismiss: el => runAction('manual', async () => {

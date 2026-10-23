@@ -3476,3 +3476,53 @@ test('a templates reload sent before a template save and answered after it is ig
     assert.ok(el('tgj-templates').innerHTML.includes('>New {{ title }}</textarea>'), 'the textarea shows the saved text');
     assert.equal(text, 'New {{ title }}');
 });
+
+// --- actions wait for the auto-save queue (final review F3) ---
+
+test('remove, add and set up started while a settings save is in flight send the Revision it moved to: no false conflict', async () => {
+    const conflict = m.t(EN, 'web.dest.conflictPlain');
+    const cases = [
+        {
+            act: 'removeYes', attrs: { 'data-tgj-id': 'd1' },
+            sent: api => Number(/expectedRevision=(\d+)/.exec(api.calls.find(c => c.type === 'DELETE').url)[1]),
+            section: el => destEl(el),
+        },
+        {
+            act: 'manualAdd', attrs: {}, before: view => typeManual(view, '-100123'),
+            sent: api => JSON.parse(posts(api, 'Destinations')[0].data).ExpectedRevision,
+            section: el => manualEl(el),
+        },
+        {
+            act: 'detectedSetUp', attrs: { 'data-tgj-id': '-100777' },
+            sent: api => JSON.parse(posts(api, 'DetectedChats/-100777')[0].data).ExpectedRevision,
+            section: el => manualEl(el),
+        },
+    ];
+    for (const { act, attrs, before, sent, section } of cases) {
+        let revision = 5;
+        const list = () => destinations({ Revision: revision, ManualUnlocked: true, DetectedChats: DETECTED });
+        const checked = (expected, ok) => (expected === revision ? (revision++, ok()) : { status: 409, body: { Current: list() } });
+        const { view, api, el } = mount({
+            'GET TgJelly/Settings': () => settings({ Revision: revision }),
+            'GET TgJelly/Destinations': list,
+            'PUT TgJelly/Settings': r => checked(JSON.parse(r.data).ExpectedRevision, () => settings({ Revision: revision })),
+            'DELETE TgJelly/Destinations/d1': r => checked(Number(/expectedRevision=(\d+)/.exec(r.url)[1]), () => ({ status: 204 })),
+            'POST TgJelly/Destinations': r => checked(JSON.parse(r.data).ExpectedRevision, () => added()),
+            'POST TgJelly/DetectedChats/-100777': r => checked(JSON.parse(r.data).ExpectedRevision, () => added()),
+        });
+        await show(view);
+        await before?.(view);
+        const puts = holdPuts(api);
+        toggle(view, 'ShowPoster');
+        await flush();
+        assert.equal(putSettings(api).length, 1, `${act}: the settings save is in flight`);
+        clickOn(view, { 'data-tgj-act': act, ...attrs });
+        await flush();
+        puts.release();
+        await flush();
+
+        assert.equal(sent(api), 6, `${act}: it sends the Revision the settings save moved to`);
+        assert.equal(revision, 7, `${act}: the server took it`);
+        assert.ok(!section(el).includes(conflict), `${act}: no changed-elsewhere message`);
+    }
+});
