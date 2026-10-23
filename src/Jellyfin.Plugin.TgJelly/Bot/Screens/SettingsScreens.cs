@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -20,13 +21,9 @@ public sealed class SettingsScreens
 {
     private const string InputKey = "input";
     private const string PublicUrlInput = "publicUrl";
-    private const string ShownKey = "media.movie";
 
-    /// <summary>
-    /// The message switches, in the order shown. Until this screen picks a message first (plan 9, Task 7) it shows the
-    /// movie's switches, and a change applies to every media message, as v0.4's one set did.
-    /// </summary>
-    private static readonly string[] Toggles = [.. MessageSwitches.Names, nameof(MessageOptions.AnnounceUpgrades)];
+    /// <summary>The kinds of release the update checker can announce, in the order shown.</summary>
+    private static readonly string[] UpdateKinds = [nameof(UpdateCheckOptions.Fixes), nameof(UpdateCheckOptions.NewReleases), nameof(UpdateCheckOptions.NewMajor)];
 
     private readonly SettingsStore _settings;
     private readonly StateStore _state;
@@ -72,23 +69,36 @@ public sealed class SettingsScreens
             case "s":
                 return Menu();
             case "sm":
-                return Messages();
+                return MessageSections();
+            case "sms":
+                return Array.IndexOf(EventCatalog.Groups.ToArray(), arg) >= 0 ? MessageList(arg) : MessageSections();
+            case "smk":
+                return MessageOptions.IsKey(arg) ? MessageSwitchesScreen(arg) : MessageSections();
             case "smt":
-                if (Array.IndexOf(Toggles, arg) >= 0)
+                var name = args.Count > 1 ? args[1] : string.Empty;
+                if (!MessageOptions.IsKey(arg))
                 {
-                    _settings.Update(null, c => FlipMessageOption(c.Message, arg));
+                    return MessageSections();
                 }
 
-                return Messages();
+                if (MessageSwitches.Applicable(arg).Contains(name))
+                {
+                    _settings.Update(null, c => c.Message.Change(arg, m => m.Set(name, !m.Get(name))));
+                }
+
+                return MessageSwitchesScreen(arg);
+            case "smu":
+                _settings.Update(null, c => c.Message.AnnounceUpgrades = !c.Message.AnnounceUpgrades);
+                return MessageList("media");
             case "su":
                 return Updates();
             case "sut":
                 _settings.Update(null, c => c.UpdateCheck.Enabled = !c.UpdateCheck.Enabled);
                 return Updates();
-            case "sum":
-                if (Enum.TryParse<UpdateCheckMode>(arg, out var mode) && Enum.IsDefined(mode))
+            case "suk":
+                if (Array.IndexOf(UpdateKinds, arg) >= 0)
                 {
-                    _settings.Update(null, c => c.UpdateCheck.Mode = mode);
+                    _settings.Update(null, c => FlipUpdateKind(c.UpdateCheck, arg));
                 }
 
                 return Updates();
@@ -160,26 +170,28 @@ public sealed class SettingsScreens
         }
     }
 
-    private static void FlipMessageOption(MessageOptions o, string name)
+    private static void FlipUpdateKind(UpdateCheckOptions o, string kind)
     {
-        if (name == nameof(MessageOptions.AnnounceUpgrades))
+        switch (kind)
         {
-            o.AnnounceUpgrades = !o.AnnounceUpgrades;
-            return;
-        }
-
-        var value = !o.For(ShownKey).Get(name);
-        foreach (var key in MessageOptions.Keys)
-        {
-            if (EventCatalog.GroupOf(key) == "media")
-            {
-                o.Change(key, s => s.Set(name, value));
-            }
+            case nameof(UpdateCheckOptions.Fixes):
+                o.Fixes = !o.Fixes;
+                break;
+            case nameof(UpdateCheckOptions.NewReleases):
+                o.NewReleases = !o.NewReleases;
+                break;
+            default:
+                o.NewMajor = !o.NewMajor;
+                break;
         }
     }
 
-    private static bool Get(MessageOptions o, string name)
-        => name == nameof(MessageOptions.AnnounceUpgrades) ? o.AnnounceUpgrades : o.For(ShownKey).Get(name);
+    private static bool Get(UpdateCheckOptions o, string kind) => kind switch
+    {
+        nameof(UpdateCheckOptions.Fixes) => o.Fixes,
+        nameof(UpdateCheckOptions.NewReleases) => o.NewReleases,
+        _ => o.NewMajor,
+    };
 
     private static string Mark(bool on) => on ? "✅ " : "⬜ ";
 
@@ -220,37 +232,77 @@ public sealed class SettingsScreens
             guide);
     }
 
-    private Screen Messages()
+    /// <summary>The first step of Message style: the section (Media, Security, Server).</summary>
+    private Screen MessageSections()
     {
-        var options = _settings.Current.Message;
         var rows = new List<InlineKeyboardButton[]>();
-        foreach (var name in Toggles)
+        var shown = new List<(string, string)>();
+        foreach (var group in EventCatalog.Groups)
         {
-            rows.Add(Row(Mark(Get(options, name)) + _strings.Get("settings.msg." + name), "smt", name));
+            rows.Add(Row(_strings.Get("events.group." + group), "sms", group));
+            shown.Add(("events.group." + group, "events.group." + group + ".about"));
         }
 
         rows.Add(Button("menu.back", "s"));
-        return Titled("settings.messages.title", "settings.messages.hint", rows, "\n\n" + _formatter.Escape(_strings.Get("settings.messages.pick")));
+        return Titled("settings.messages.title", "settings.messages.hint", rows, ButtonGuide.Lines(_strings, _formatter, [.. shown]));
+    }
+
+    /// <summary>The second step: the messages of a section. The media list also holds the global Announce upgrades switch.</summary>
+    private Screen MessageList(string group)
+    {
+        var options = _settings.Current.Message;
+        var rows = new List<InlineKeyboardButton[]>();
+        foreach (var key in MessageOptions.Keys.Where(k => EventCatalog.GroupOf(k) == group))
+        {
+            rows.Add(Row(_strings.Get("settings.msg.of." + key), "smk", key));
+        }
+
+        var guide = "\n\n" + _formatter.Escape(_strings.Get("settings.messages.pickMessage"));
+        if (group == "media")
+        {
+            rows.Add(Row(Mark(options.AnnounceUpgrades) + _strings.Get("settings.msg.AnnounceUpgrades"), "smu"));
+            guide += ButtonGuide.Lines(_strings, _formatter, ("settings.msg.AnnounceUpgrades", "settings.msg.AnnounceUpgrades.about"));
+        }
+
+        rows.Add(Button("menu.back", "sm"));
+        return Titled("settings.messages.title", "settings.messages.hint.list", rows, guide);
+    }
+
+    /// <summary>The third step: one message's applicable switches.</summary>
+    private Screen MessageSwitchesScreen(string key)
+    {
+        var switches = _settings.Current.Message.For(key);
+        var applicable = MessageSwitches.Applicable(key);
+        var rows = new List<InlineKeyboardButton[]>();
+        foreach (var name in applicable)
+        {
+            rows.Add(Row(Mark(switches.Get(name)) + _strings.Get("settings.msg." + name), "smt", key, name));
+        }
+
+        rows.Add(Row(_strings.Get("menu.back"), "sms", EventCatalog.GroupOf(key)));
+        var message = _strings.Get("settings.msg.of." + key);
+        var guide = applicable.Count == 0
+            ? "\n\n" + _formatter.Escape(_strings.Get("settings.messages.none"))
+            : "\n\n" + _formatter.Escape(_strings.Get("settings.messages.pick"))
+                + ButtonGuide.Lines(_strings, _formatter, [.. applicable.Select(n => ("settings.msg." + n, "settings.msg." + n + ".about"))]);
+        var html = "<b>" + Icons.Heading(_strings, _formatter, "settings.messages.title") + "</b>\n"
+            + _formatter.Escape(_strings.Get("settings.messages.of", ("message", message)));
+        return new Screen(html + guide, new InlineKeyboardMarkup(rows));
     }
 
     private Screen Updates()
     {
         var check = _settings.Current.UpdateCheck;
         var rows = new List<InlineKeyboardButton[]> { Row(Mark(check.Enabled) + _strings.Get("settings.updates.enabled"), "sut") };
-        foreach (var mode in new[] { UpdateCheckMode.SameMajor, UpdateCheckMode.AnyNewer })
+        var shown = new List<(string, string)> { ("settings.updates.enabled", "settings.updates.enabled.about") };
+        foreach (var kind in UpdateKinds)
         {
-            var name = mode.ToString();
-            rows.Add(Row((check.Mode == mode ? "🔘 " : "⚪ ") + _strings.Get("settings.updates.mode." + name), "sum", name));
+            rows.Add(Row(Mark(Get(check, kind)) + _strings.Get("settings.updates.kind." + kind), "suk", kind));
+            shown.Add(("settings.updates.kind." + kind, "settings.updates.kind." + kind + ".about"));
         }
 
         rows.Add(Button("menu.back", "s"));
-        var guide = ButtonGuide.Lines(
-            _strings,
-            _formatter,
-            ("settings.updates.enabled", "settings.updates.enabled.about"),
-            ("settings.updates.mode.SameMajor", "settings.updates.mode.SameMajor.about"),
-            ("settings.updates.mode.AnyNewer", "settings.updates.mode.AnyNewer.about"));
-        return Titled("settings.updates.title", "settings.updates.hint", rows, guide);
+        return Titled("settings.updates.title", "settings.updates.hint", rows, ButtonGuide.Lines(_strings, _formatter, [.. shown]));
     }
 
     private Screen PublicUrl()

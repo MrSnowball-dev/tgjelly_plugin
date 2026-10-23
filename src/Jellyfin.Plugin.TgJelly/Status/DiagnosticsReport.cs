@@ -135,7 +135,7 @@ public sealed class DiagnosticsReport
 
         var b = settings.Batching;
         Line(sb, "batching", $"quiet window {b.QuietWindowSeconds}s, max hold {b.MaxHoldMinutes}min, release quiet {b.ReleaseQuietSeconds}s, digest threshold {b.DigestThreshold}, late edit {b.LateEditHours}h, ready timeout {b.ReadyTimeoutMinutes}min");
-        Line(sb, "update check", settings.UpdateCheck.Enabled ? settings.UpdateCheck.Mode.ToString() : "off");
+        Line(sb, "update check", settings.UpdateCheck.Enabled ? $"fixes {YesNo(settings.UpdateCheck.Fixes)}, new releases {YesNo(settings.UpdateCheck.NewReleases)}, new major {YesNo(settings.UpdateCheck.NewMajor)}" : "off");
 
         Section(sb, "Destinations");
         foreach (var d in settings.Destinations)

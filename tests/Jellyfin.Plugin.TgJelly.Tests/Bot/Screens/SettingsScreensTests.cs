@@ -21,41 +21,122 @@ public sealed class SettingsScreensTests : IDisposable, IAsyncLifetime
     public void Dispose() => _h.Dispose();
 
     [Fact]
-    public async Task MessageToggle_FlipsOnlyThatOption()
+    public async Task MessageStyle_SectionThenMessageThenSwitches()
     {
-        var before = _h.Settings.Current.Message;
-        Assert.True(before.For("media.movie").ShowPoster);
-        Assert.False(before.AnnounceUpgrades);
+        await Click("1|sm");
+        var sections = LastEdit();
+        Assert.Equal(["Media", "Security", "Server", "Back"], Labels(sections));
+        Assert.Equal(["1|sms|media", "1|sms|security", "1|sms|server", "1|s"], Data(sections));
+        sections.Explains("Media", "Security", "Server");
 
-        await Click("1|smt|ShowPoster");
-        await Click("1|smt|AnnounceUpgrades");
+        await Click("1|sms|media");
+        var messages = LastEdit();
+        Assert.Equal(["Movies", "Episodes", "Albums", "Music videos", "Books", "Digest", "⬜ Announce upgraded files", "Back"], Labels(messages));
+        Assert.Equal("1|sm", Data(messages)[^1]);
+        Assert.Contains("Announce upgraded files", (string)messages.Body["text"]!, StringComparison.Ordinal);
+
+        await Click("1|smk|media.episodes");
+        var switches = LastEdit();
+        Assert.Equal(["✅ Poster", "✅ Open in Jellyfin button", "✅ IMDb and TMDb buttons", "Back"], Labels(switches));
+        Assert.Equal("1|sms|media", Data(switches)[^1]);
+        switches.Explains("Poster", "Open in Jellyfin button", "IMDb and TMDb buttons");
+
+        await Click("1|smt|media.episodes|ShowPoster");
 
         var message = _h.Settings.Current.Message;
-        Assert.True(message.AnnounceUpgrades);
-        Assert.False(message.For("security.lockout").ShowPoster);
-        foreach (var key in new[] { "media.movie", "media.episodes", "media.album", "media.musicvideo", "media.book", "media.digest" })
+        Assert.False(message.For("media.episodes").ShowPoster);
+        Assert.True(message.For("media.episodes").ShowOpenInJellyfin);
+        foreach (var other in new[] { "media.movie", "media.album", "media.musicvideo", "media.book", "media.digest" })
         {
-            // Until the screen picks a message (Task 7), a change applies to every media message, as v0.4's one set did.
-            var after = message.For(key);
-            Assert.False(after.ShowPoster, key);
-            Assert.True(after.ShowOverview);
-            Assert.True(after.ShowRatingGenres);
-            Assert.True(after.ShowOpenInJellyfin);
-            Assert.True(after.ShowProviderLinks);
+            Assert.True(message.For(other).ShowPoster, other);
         }
 
-        Assert.Equal(7, Labels(LastEdit()).Length);
+        Assert.StartsWith("⬜ Poster", Labels(LastEdit())[0], StringComparison.Ordinal);
     }
 
     [Fact]
-    public async Task UpdateMode_Switches()
+    public async Task MessageStyle_OnlyTheApplicableSwitchesAreShown()
     {
-        await Click("1|sum|AnyNewer");
-        Assert.Equal(UpdateCheckMode.AnyNewer, _h.Settings.Current.UpdateCheck.Mode);
-        await Click("1|sum|SameMajor");
-        Assert.Equal(UpdateCheckMode.SameMajor, _h.Settings.Current.UpdateCheck.Mode);
+        await Click("1|smk|media.movie");
+        Assert.Equal(["✅ Poster", "✅ Overview", "✅ Rating and genres", "✅ Open in Jellyfin button", "✅ IMDb and TMDb buttons", "Back"], Labels(LastEdit()));
+        await Click("1|smk|media.album");
+        Assert.Equal(["✅ Poster", "✅ Open in Jellyfin button", "Back"], Labels(LastEdit()));
+        await Click("1|smk|media.book");
+        Assert.DoesNotContain(Labels(LastEdit()), l => l.Contains("IMDb", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task MessageStyle_SecurityShowsOnlyPoster()
+    {
+        await Click("1|sms|security");
+        var messages = LastEdit();
+        Assert.Equal(["Failed logins", "Lockouts", "Successful logins", "User created", "User deleted", "Password changed", "Back"], Labels(messages));
+        Assert.Equal("1|sm", Data(messages)[^1]);
+
+        await Click("1|smk|security.lockout");
+        var switches = LastEdit();
+        Assert.Equal(["⬜ Poster", "Back"], Labels(switches));
+        Assert.Equal("1|sms|security", Data(switches)[^1]);
+
+        await Click("1|smt|security.lockout|ShowPoster");
+
+        Assert.True(_h.Settings.Current.Message.For("security.lockout").ShowPoster);
+        Assert.False(_h.Settings.Current.Message.For("security.login_failed").ShowPoster);
+        Assert.Equal(["✅ Poster", "Back"], Labels(LastEdit()));
+    }
+
+    [Fact]
+    public async Task MessageStyle_TheDigestHasNoSwitches_AndSaysSo()
+    {
+        await Click("1|smk|media.digest");
+
+        var edit = LastEdit();
+        Assert.Equal(["Back"], Labels(edit));
+        Assert.Contains("no switches", (string)edit.Body["text"]!, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task MessageStyle_ASwitchThatDoesNotApplyIsNotChanged()
+    {
+        await Click("1|smt|media.album|ShowProviderLinks");
+        await Click("1|smt|security.lockout|ShowOverview");
+        await Click("1|smk|nonsense");
+
+        Assert.True(_h.Settings.Current.Message.For("media.album").ShowProviderLinks);
+        Assert.False(_h.Settings.Current.Message.For("security.lockout").ShowOverview);
+        Assert.Equal(["Media", "Security", "Server", "Back"], Labels(LastEdit()));
+    }
+
+    [Fact]
+    public async Task AnnounceUpgrades_FlipsFromTheMediaList()
+    {
+        await Click("1|sms|media");
+        await Click("1|smu");
+
+        Assert.True(_h.Settings.Current.Message.AnnounceUpgrades);
+        Assert.Contains("✅ Announce upgraded files", Labels(LastEdit()));
+    }
+
+    [Fact]
+    public async Task UpdateToggles_SaveEachKind()
+    {
+        await Click("1|suk|NewMajor");
+        Assert.Equal((true, true, true), Kinds());
+        await Click("1|suk|Fixes");
+        await Click("1|suk|NewReleases");
+        Assert.Equal((false, false, true), Kinds());
+        await Click("1|suk|NewMajor");
+        Assert.Equal((false, false, false), Kinds());
         await Click("1|sut");
         Assert.False(_h.Settings.Current.UpdateCheck.Enabled);
+        await Click("1|suk|Bogus");
+        Assert.Equal((false, false, false), Kinds());
+    }
+
+    private (bool, bool, bool) Kinds()
+    {
+        var u = _h.Settings.Current.UpdateCheck;
+        return (u.Fixes, u.NewReleases, u.NewMajor);
     }
 
     [Fact]
@@ -220,31 +301,43 @@ public sealed class SettingsScreensTests : IDisposable, IAsyncLifetime
         edit.Explains("Message style", "Update checks", "Public URL");
         var text = (string)edit.Body["text"]!;
         Assert.Contains("<b>Message style</b> — what notifications show: poster, overview and buttons", text, StringComparison.Ordinal);
-        Assert.Contains("<b>Update checks</b> — turn release checks on or off, and choose which versions count", text, StringComparison.Ordinal);
+        Assert.Contains("<b>Update checks</b> — turn Jellyfin release checks on or off, and choose which kinds count", text, StringComparison.Ordinal);
         Assert.Contains("<b>Public URL</b> — the address the Open in Jellyfin button uses", text, StringComparison.Ordinal);
     }
 
     [Fact]
     public async Task MessageStyle_SaysWhatTappingDoes()
     {
-        await Click("1|sm");
+        await Click("1|smk|media.movie");
 
         var text = (string)LastEdit().Body["text"]!;
-        Assert.EndsWith("\n\nTap a switch to turn it on (✅) or off (⬜).", text, StringComparison.Ordinal);
+        Assert.Contains("Tap a switch to turn it on (✅) or off (⬜).", text, StringComparison.Ordinal);
         Assert.DoesNotContain("<b>Back</b>", text, StringComparison.Ordinal);
     }
 
     [Fact]
-    public async Task Updates_ExplainsEachButton()
+    public async Task UpdatesScreen_SaysJellyfinReleases()
+    {
+        await Click("1|su");
+
+        var text = (string)LastEdit().Body["text"]!;
+        Assert.Contains("Jellyfin releases", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("plugin release", text, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task UpdatesScreen_ThreeTogglesExplained()
     {
         await Click("1|su");
 
         var edit = LastEdit();
-        edit.Explains("Check for updates", "Same major version only", "Any newer version");
+        Assert.Equal(["✅ Check for updates", "✅ Fixes for my version", "✅ New releases", "⬜ New major versions", "Back"], Labels(edit));
+        edit.Explains("Check for updates", "Fixes for my version", "New releases", "New major versions");
         var text = (string)edit.Body["text"]!;
-        Assert.Contains("<b>Check for updates</b> — look for new releases and tell you here", text, StringComparison.Ordinal);
-        Assert.Contains("<b>Same major version only</b> — only versions with the same major number as yours", text, StringComparison.Ordinal);
-        Assert.Contains("<b>Any newer version</b> — every newer version", text, StringComparison.Ordinal);
+        Assert.Contains("<b>Fixes for my version</b> — 10.11.1 to 10.11.2", text, StringComparison.Ordinal);
+        Assert.Contains("<b>New releases</b> — 10.11 to 10.12", text, StringComparison.Ordinal);
+        Assert.Contains("<b>New major versions</b> — 10.x to 12.0", text, StringComparison.Ordinal);
+        Assert.Contains("all three off", text, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

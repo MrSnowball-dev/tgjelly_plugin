@@ -74,7 +74,7 @@ function settings(overrides = {}) {
         PublicUrlSuggestion: '',
         Message: messageDto(),
         Batching: { QuietWindowSeconds: 120, MaxHoldMinutes: 30, ReleaseQuietSeconds: 20, DigestThreshold: 10, LateEditHours: 6, ReadyTimeoutMinutes: 15 },
-        UpdateCheck: { Enabled: true, Mode: 'SameMajor' },
+        UpdateCheck: { Enabled: true, Fixes: true, NewReleases: true, NewMajor: false },
         ProxyMode: 'System',
         ProxyUrl: '',
         HasProxyUsername: false,
@@ -1769,7 +1769,7 @@ test('each message toggle is a switch with its own cue, and a save sends only it
     assert.equal(hooks.state.forms.settings.base.Message.ShowProviderLinks, true, 'the saved value shows');
     assert.equal(hooks.state.forms.settings.base.Message.ShowPoster, false);
     assert.equal(second.PublicUrl, '');
-    assert.deepEqual(second.UpdateCheck, { Enabled: true, Mode: 'SameMajor' });
+    assert.deepEqual(second.UpdateCheck, { Enabled: true, Fixes: true, NewReleases: true, NewMajor: false });
     assert.equal(second.Batching.QuietWindowSeconds, 120);
 });
 
@@ -1875,7 +1875,7 @@ test('the update switch and the mode select each save at once', async () => {
     dispatchOn(view, 'input', { 'data-tgj-input': 'updMode', 'data-tgj-field': 'UpdateCheck.Mode' }, { value: 'AnyNewer' });
     dispatchOn(view, 'change', { 'data-tgj-input': 'updMode', 'data-tgj-field': 'UpdateCheck.Mode' }, { value: 'AnyNewer' });
     await flush();
-    assert.deepEqual(putSettings(api).map(b => b.UpdateCheck), [{ Enabled: false, Mode: 'SameMajor' }, { Enabled: false, Mode: 'AnyNewer' }]);
+    assert.deepEqual(putSettings(api).map(b => b.UpdateCheck), [{ Enabled: false, Fixes: true, NewReleases: true, NewMajor: false }, { Enabled: false, Fixes: true, NewReleases: true, NewMajor: true }]);
     assert.deepEqual(cue(view, 'UpdateCheck.Enabled'), SAVED_CUE);
     assert.deepEqual(cue(view, 'UpdateCheck.Mode'), SAVED_CUE);
 });
@@ -2937,7 +2937,7 @@ test('a focused select keeps the focus; a field outside the section is left alon
     mode().focus();
     const focused = mode();
 
-    current = settings({ Revision: 6, UpdateCheck: { Enabled: true, Mode: 'AnyNewer' } });
+    current = settings({ Revision: 6, UpdateCheck: { Enabled: true, Fixes: true, NewReleases: true, NewMajor: true } });
     await hooks.reloadSection('messages', { fresh: true });
     assert.equal(doc.activeElement, focused, 'a write of Messages does not touch the Updates select');
     await hooks.reloadSection('updates', { fresh: true });

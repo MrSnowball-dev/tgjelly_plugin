@@ -109,6 +109,7 @@ public class PluginConfiguration : BasePluginConfiguration
 
         MigrateTemplates();
         MigrateMessageOptions();
+        UpdateCheck.MigrateMode();
     }
 
     /// <summary>

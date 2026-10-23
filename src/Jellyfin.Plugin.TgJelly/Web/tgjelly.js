@@ -907,16 +907,24 @@ const BATCHING_FIELDS = [
  * @param {object} settings
  */
 export function settingsFormData(settings) {
-    const mode = settings.UpdateCheck ? settings.UpdateCheck.Mode : undefined;
+    const check = settings.UpdateCheck ?? {};
     return {
         PublicUrl: settings.PublicUrl ?? '',
         Message: messageFormData(settings.Message),
         Batching: { ...(settings.Batching ?? {}) },
         UpdateCheck: {
-            Enabled: Boolean(settings.UpdateCheck && settings.UpdateCheck.Enabled),
-            Mode: typeof mode === 'number' ? UPDATE_MODES[mode] ?? UPDATE_MODES[0] : mode ?? UPDATE_MODES[0],
+            Enabled: Boolean(check.Enabled),
+            // Interim (plan 9, Task 11 builds the three switches): the server keeps three switches, the page still edits one mode.
+            Fixes: check.Fixes !== false,
+            NewReleases: check.NewReleases !== false,
+            Mode: check.NewMajor ? 'AnyNewer' : 'SameMajor',
         },
     };
+}
+
+/** The UpdateCheck a PUT sends: the page's one mode sets New major versions (AnyNewer: on); Fixes and New releases are kept as loaded. */
+function updateCheckRequest(check) {
+    return { Enabled: check.Enabled, Fixes: check.Fixes, NewReleases: check.NewReleases, NewMajor: check.Mode === 'AnyNewer' };
 }
 
 /** The value at a dotted path ('Message.ShowPoster') of a nested object; undefined when a part is missing. */
@@ -963,7 +971,7 @@ export function settingsRequest(form, paths, revision, S) {
                 PublicUrl: String(data.PublicUrl ?? '').trim(),
                 Message: messageRequest(data.Message, paths),
                 Batching: data.Batching,
-                UpdateCheck: data.UpdateCheck,
+                UpdateCheck: updateCheckRequest(data.UpdateCheck),
             },
             errors: [],
         };

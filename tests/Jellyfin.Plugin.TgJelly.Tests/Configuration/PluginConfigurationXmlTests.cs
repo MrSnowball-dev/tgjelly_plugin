@@ -30,7 +30,8 @@ public class PluginConfigurationXmlTests
         Assert.Equal(6, c.Batching.LateEditHours);
         Assert.Equal(15, c.Batching.ReadyTimeoutMinutes);
         Assert.True(c.UpdateCheck.Enabled);
-        Assert.Equal(UpdateCheckMode.SameMajor, c.UpdateCheck.Mode);
+        c.Normalize();
+        Assert.Equal((true, true, false), (c.UpdateCheck.Fixes, c.UpdateCheck.NewReleases, c.UpdateCheck.NewMajor));
         Assert.Empty(c.Destinations);
         Assert.Empty(c.Templates);
     }
@@ -125,7 +126,8 @@ public class PluginConfigurationXmlTests
 
         Assert.Equal(3, c.Revision);
         Assert.Equal(ProxyMode.System, c.Proxy.Mode);
-        Assert.Equal(UpdateCheckMode.SameMajor, c.UpdateCheck.Mode);
+        c.Normalize();
+        Assert.Equal((true, true, false), (c.UpdateCheck.Fixes, c.UpdateCheck.NewReleases, c.UpdateCheck.NewMajor));
         var d = Assert.Single(c.Destinations);
         Assert.Equal(ChatKind.Private, d.Kind);
         Assert.Equal(PresetKind.Custom, d.Preset); // never silently "Everything"
