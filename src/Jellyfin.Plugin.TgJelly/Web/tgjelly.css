@@ -46,6 +46,8 @@
     --tgj-error-tint: color-mix(in srgb, var(--tgj-error) 14%, transparent);
     --tgj-error-line: color-mix(in srgb, var(--tgj-error) 50%, transparent);
     --tgj-error-ring: color-mix(in srgb, var(--tgj-error) 35%, transparent);
+    --tgj-success-ring: color-mix(in srgb, var(--tgj-success) 35%, transparent);
+    --tgj-warning-ring: color-mix(in srgb, var(--tgj-warning) 35%, transparent);
 
     /* One spacing scale; the larger steps grow a little with the plugin's width. */
     --tgj-space-1: 0.25rem;
@@ -539,31 +541,52 @@
     margin-top: var(--tgj-space-3);
 }
 
-/* ---- State label: a coloured word, no symbol ---- */
+/* ---- Label (plan 9 design §3): every state is a word in an outlined pill, no fill and no symbol ---- */
 
-#tgjelly-root .tgj-state {
-    font-weight: 600;
+/* A soft tint of the tone's colour outlines it, and the text is in the tone's colour. Neutral is today's Built-in. */
+#tgjelly-root .tgj-label {
+    display: inline-block;
+    padding: 0.0625rem var(--tgj-space-2);
+    border: 1px solid var(--tgj-line-strong);
+    border-radius: 999px;
+    color: var(--tgj-fg-2);
+    font-size: var(--tgj-step--1);
+    font-weight: 500;
+    line-height: 1.4;
     white-space: nowrap;
 }
 
-#tgjelly-root .tgj-state--ok {
+#tgjelly-root .tgj-label--good {
+    border-color: var(--tgj-success-ring);
     color: var(--tgj-success-text);
 }
 
-#tgjelly-root .tgj-state--warning {
+#tgjelly-root .tgj-label--progress {
+    border-color: var(--tgj-accent-ring);
+    color: var(--tgj-accent-text);
+}
+
+#tgjelly-root .tgj-label--neutral {
+    border-color: var(--tgj-line-strong);
+    color: var(--tgj-fg-2);
+}
+
+#tgjelly-root .tgj-label--attention {
+    border-color: var(--tgj-warning-ring);
     color: var(--tgj-warning-text);
 }
 
-#tgjelly-root .tgj-state--error {
+#tgjelly-root .tgj-label--bad {
+    border-color: var(--tgj-error-ring);
     color: var(--tgj-error-text);
 }
 
-#tgjelly-root .tgj-state--muted {
-    color: var(--tgj-fg-2);
-    font-weight: 400;
+#tgjelly-root .tgj-label--accent {
+    border-color: var(--tgj-accent-ring);
+    color: var(--tgj-accent-text);
 }
 
-/* ---- Save cue (design §6.2): Saved fades out over its 2 s; Not saved stays ---- */
+/* ---- Save cue (design §6.2, plan 9 §3): a label; Saved fades out over its 2 s; Not saved stays with its reason ---- */
 
 #tgjelly-root .tgj-cue {
     order: -1;
@@ -581,12 +604,10 @@
 }
 
 #tgjelly-root .tgj-cue--saved {
-    color: var(--tgj-success-text);
     animation: tgj-cue-saved 2000ms ease-in-out forwards;
 }
 
 #tgjelly-root .tgj-cue--saving {
-    color: var(--tgj-fg-2);
     animation: tgj-cue-in var(--tgj-dur) ease-out;
 }
 
@@ -595,9 +616,13 @@
     order: 1;
     flex-basis: 100%;
     contain: inline-size;
-    color: var(--tgj-error-text);
     text-align: end;
     white-space: normal;
+}
+
+/* The reason after the Not saved label: plain error-coloured text, which wraps. */
+#tgjelly-root .tgj-cue-reason {
+    color: var(--tgj-error-text);
 }
 
 @keyframes tgj-cue-saved {
@@ -639,22 +664,6 @@
 }
 
 /* ---- Templates ---- */
-
-/* Built-in or Edited, as a word in a quiet pill beside the event; Edited in the accent colour. */
-#tgjelly-root .tgj-badge {
-    display: inline-block;
-    padding: 0.0625rem var(--tgj-space-2);
-    border: 1px solid var(--tgj-line-strong);
-    border-radius: 999px;
-    color: var(--tgj-fg-2);
-    font-size: var(--tgj-step--1);
-    white-space: nowrap;
-}
-
-#tgjelly-root .tgj-badge--edited {
-    border-color: var(--tgj-accent-ring);
-    color: var(--tgj-accent-text);
-}
 
 #tgjelly-root .tgj-tpl-event .tgj-select {
     width: 18rem;
@@ -988,7 +997,6 @@
     color: var(--tgj-fg);
 }
 
-#tgjelly-root .tgj-row-control .tgj-state,
 #tgjelly-root .tgj-row-control .tgj-summary-count {
     margin-right: var(--tgj-space-2);
 }

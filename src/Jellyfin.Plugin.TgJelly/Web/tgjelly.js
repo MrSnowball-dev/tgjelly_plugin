@@ -9,7 +9,7 @@
 // Sibling modules are imported by the URL Jellyfin serves them under (plan 8); tests/web/jellyfin-resolve.mjs maps it
 // to the file for Node.
 import {
-    esc, stateLabel, card, row, actionButton, inlineConfirm, notice, emptyState, textField, switchControl, selectField, numberField,
+    esc, label, card, row, actionButton, inlineConfirm, notice, emptyState, textField, switchControl, selectField, numberField,
 } from './configurationpage?name=tgjelly-ui.js';
 import { createAutosave, CONFLICT_KEY } from './configurationpage?name=tgjelly-autosave.js';
 
@@ -324,13 +324,16 @@ export function renderStatus(status, S, lang = 'en') {
     if (!status.Compatible) {
         parts.push(notice({ kind: 'error', extraClass: 'tgj-compat', html: esc(status.CompatMessage) }));
     } else {
-        const kind = PROBLEM_STATES.has(status.ConnectionState) ? 'error' : status.ConnectionState === 'Connected' ? 'ok' : 'muted';
+        // Connecting and the two waits are in progress; no token is neutral.
+        const tone = PROBLEM_STATES.has(status.ConnectionState) ? 'bad'
+            : status.ConnectionState === 'Connected' ? 'good'
+                : status.ConnectionState === 'NoToken' ? 'neutral' : 'progress';
         const takeOver = status.ConnectionState === 'WebhookConflict'
             ? actionButton({ label: text(S, 'web.status.takeOver'), act: 'takeover', kind: 'primary' })
             : '';
         parts.push(row({
             label: text(S, 'web.status.connection'),
-            control: stateLabel({ kind, text: status.ConnectionMessage }) + takeOver,
+            control: label(status.ConnectionMessage, tone) + takeOver,
         }));
     }
 
@@ -562,13 +565,13 @@ export function renderOverviewSummary(status, destinations, templates, S, lang =
     const dests = destinations ? destinations.Items ?? [] : null;
     if (dests) {
         if (dests.length === 0) {
-            values.push(stateLabel({ kind: 'muted', text: text(S, 'web.summary.noDestinations') }));
+            values.push(label(text(S, 'web.summary.noDestinations'), 'neutral'));
         } else {
             const failing = dests.filter(d => d.Health && (d.Health.Status !== 'Ok' || d.Health.PhotosBlocked)).length;
             values.push(`<span class="tgj-summary-count">${esc(pluralText(S, 'web.summary.destinations', dests.length, {}, lang))}</span>`
                 + (failing > 0
-                    ? stateLabel({ kind: 'warning', text: pluralText(S, 'web.summary.attention', failing, {}, lang) })
-                    : stateLabel({ kind: 'ok', text: text(S, 'web.summary.healthy') })));
+                    ? label(pluralText(S, 'web.summary.attention', failing, {}, lang), 'attention')
+                    : label(text(S, 'web.summary.healthy'), 'good')));
         }
     }
 
@@ -579,16 +582,16 @@ export function renderOverviewSummary(status, destinations, templates, S, lang =
         const flagged = items.filter(i => i.Flag).length;
         templateValue = edited > 0
             ? `<span class="tgj-summary-count">${esc(pluralText(S, 'web.nav.edited', edited, {}, lang))}</span>`
-            : stateLabel({ kind: 'muted', text: text(S, 'web.summary.templatesDefault') });
+            : label(text(S, 'web.summary.templatesDefault'), 'neutral');
         if (flagged > 0) {
-            templateValue += stateLabel({ kind: 'warning', text: pluralText(S, 'web.summary.flagged', flagged, {}, lang) });
+            templateValue += label(pluralText(S, 'web.summary.flagged', flagged, {}, lang), 'attention');
         }
     }
 
     const notices = (status.Notices ?? []).length;
     const noticeValue = notices > 0
-        ? stateLabel({ kind: 'warning', text: pluralText(S, 'web.summary.noticeCount', notices, {}, lang) })
-        : stateLabel({ kind: 'muted', text: text(S, 'web.summary.noNotices') });
+        ? label(pluralText(S, 'web.summary.noticeCount', notices, {}, lang), 'attention')
+        : label(text(S, 'web.summary.noNotices'), 'neutral');
 
     return card({
         title: text(S, 'web.summary.title'),
@@ -650,27 +653,28 @@ const sameLibrary = (a, b) => libraryKey(a) === libraryKey(b);
  * dashboard has its own web.dest.health.* copies and leaves the bot's strings alone.
  */
 const HEALTH = {
-    Ok: { key: 'web.dest.health.Ok', kind: 'ok' },
-    PhotosBlocked: { key: 'web.dest.health.PhotosBlocked', kind: 'warning' },
-    NeedsPermissions: { key: 'web.dest.health.NeedsPermissions', kind: 'warning' },
-    TopicMissing: { key: 'web.dest.health.TopicMissing', kind: 'error' },
-    Lost: { key: 'web.dest.health.Lost', kind: 'error' },
+    Ok: { key: 'web.dest.health.Ok', tone: 'good' },
+    PhotosBlocked: { key: 'web.dest.health.PhotosBlocked', tone: 'attention' },
+    NeedsPermissions: { key: 'web.dest.health.NeedsPermissions', tone: 'bad' },
+    TopicMissing: { key: 'web.dest.health.TopicMissing', tone: 'bad' },
+    Lost: { key: 'web.dest.health.Lost', tone: 'bad' },
 };
 
-/** A health status as a stateLabel's { kind, text }; a status this page doesn't know shows as its name, muted. */
+/** A health status as a label's { tone, text }; a status this page doesn't know shows as its name, neutral. */
 const healthState = (status, S) => {
     const known = HEALTH[status || 'Ok'];
-    return known ? { kind: known.kind, text: text(S, known.key) } : { kind: 'muted', text: String(status) };
+    return known ? { tone: known.tone, text: text(S, known.key) } : { tone: 'neutral', text: String(status) };
 };
 
 /** A health status as escaped HTML text, for an outcome line ("Check again", a test send). */
 export const healthText = (status, S) => esc(healthState(status, S).text);
 
-/** The health as coloured words: the status, plus "Photos blocked" when photos are blocked too. */
+/** The health as labels: the status, plus "Photos blocked" when photos are blocked too. */
 function healthLabels(health, S) {
     const status = health && health.Status ? health.Status : 'Ok';
-    return stateLabel(healthState(status, S))
-        + (health && health.PhotosBlocked && status !== 'PhotosBlocked' ? stateLabel(healthState('PhotosBlocked', S)) : '');
+    const asLabel = ({ tone, text: words }) => label(words, tone);
+    return asLabel(healthState(status, S))
+        + (health && health.PhotosBlocked && status !== 'PhotosBlocked' ? asLabel(healthState('PhotosBlocked', S)) : '');
 }
 
 /** The save key (and cue key) of one control in a destination's editor: 'dest:<id>:<what>'. */
@@ -1424,9 +1428,7 @@ export function renderTemplates(dto, S, ui) {
     const saveKey = templateSaveKey(item.EventKey);
     const eventLabel = text(S, 'web.templates.event');
     const options = dto.Items.map(i => ({ value: i.EventKey, label: i.Edited ? text(S, 'web.templates.eventEdited', { label: i.Label }) : i.Label }));
-    const badge = item.Edited
-        ? `<span class="tgj-badge tgj-badge--edited">${t(S, 'web.templates.edited')}</span>`
-        : `<span class="tgj-badge">${t(S, 'web.templates.builtIn')}</span>`;
+    const badge = item.Edited ? label(text(S, 'web.templates.edited'), 'accent') : label(text(S, 'web.templates.builtIn'), 'neutral');
     const parts = [row({
         label: eventLabel,
         control: badge + selectField({ input: 'tplEvent', value: item.EventKey, options, attrs: { 'aria-label': eventLabel } }),
@@ -1525,8 +1527,8 @@ const SECTION_HOSTS = {
 /** How long the first show waits for tgjelly.css before showing the page unstyled. */
 const STYLESHEET_WAIT_MS = 1000;
 
-/** The header's connection label: a state label's HTML, a coloured word and no symbol. */
-const connectionHtml = connection => stateLabel(connection);
+/** The header's connection label: a label's HTML, a word in an outline and no symbol. */
+const connectionHtml = connection => label(connection.text, connection.tone);
 
 /**
  * The header's connection label for a Status: "Connected · @bot", "Not connected", "Connecting", or a warning when the
@@ -1534,26 +1536,26 @@ const connectionHtml = connection => stateLabel(connection);
  * @param {object | null} status the last GET Status body
  * @param {Record<string, string> | null} S
  * @param {boolean} [failed] the last GET Status failed
- * @returns {{ kind: 'ok' | 'warning' | 'muted', text: string }} plain text, for stateLabel
+ * @returns {{ tone: 'good' | 'progress' | 'neutral' | 'attention', text: string }} plain text, for label
  */
 export function connectionLabel(status, S, failed = false) {
     if (failed || !status) {
-        return failed ? { kind: 'warning', text: text(S, 'web.header.unknown') } : { kind: 'muted', text: text(S, 'web.header.notConnected') };
+        return failed ? { tone: 'attention', text: text(S, 'web.header.unknown') } : { tone: 'neutral', text: text(S, 'web.header.notConnected') };
     }
 
     if (!status.HasToken) {
-        return { kind: 'muted', text: text(S, 'web.header.notConnected') };
+        return { tone: 'neutral', text: text(S, 'web.header.notConnected') };
     }
 
     if (PROBLEM_STATES.has(status.ConnectionState) || status.Compatible === false) {
-        return { kind: 'warning', text: text(S, 'web.header.attention') };
+        return { tone: 'attention', text: text(S, 'web.header.attention') };
     }
 
     if (status.ConnectionState === 'Connected') {
-        return { kind: 'ok', text: status.BotUsername ? text(S, 'web.header.connected', { bot: status.BotUsername }) : text(S, 'web.header.connectedPlain') };
+        return { tone: 'good', text: status.BotUsername ? text(S, 'web.header.connected', { bot: status.BotUsername }) : text(S, 'web.header.connectedPlain') };
     }
 
-    return { kind: 'muted', text: text(S, 'web.header.connecting') };
+    return { tone: 'progress', text: text(S, 'web.header.connecting') };
 }
 
 /**
@@ -1561,7 +1563,7 @@ export function connectionLabel(status, S, failed = false) {
  * and one section per name holding today's containers. Only the active section is visible. The page fills the
  * containers, the label (#tgj-conn) and the counts (#tgj-nav-count-<name>) afterwards; this is written once.
  * @param {Record<string, string> | null} S
- * @param {{ active: string, connection: { kind: string, text: string }, counts?: Record<string, string> }} options
+ * @param {{ active: string, connection: { tone: string, text: string }, counts?: Record<string, string> }} options
  *   counts are plain text by section name, e.g. { destinations: '3', templates: '1 edited' }
  * @returns {string}
  */
@@ -2580,25 +2582,34 @@ export default function TgJellyPage(view, params) {
     const changeSeq = new Map();
     const heldFields = new Map();
 
-    /** The words a cue shows: the cue states come from tgjelly-autosave.js, the text from the strings. */
-    const cueWords = cue => {
+    /**
+     * The markup a cue shows (design §3): the state word as a label, Saved good, Saving… progress and Not saved bad, and
+     * after Not saved the reason as plain text, so it can be long. The states come from tgjelly-autosave.js, the words
+     * from the strings.
+     */
+    const cueHtml = cue => {
         const S = state.strings;
         if (cue.state === 'saved') {
-            return text(S, 'web.autosave.saved');
+            return label(text(S, 'web.autosave.saved'), 'good');
         }
 
         if (cue.state === 'saving') {
-            return text(S, 'web.autosave.saving');
+            return label(text(S, 'web.autosave.saving'), 'progress');
         }
 
         if (cue.state === 'error') {
-            return text(S, 'web.autosave.notSaved', { reason: cue.text === CONFLICT_KEY ? text(S, 'web.autosave.conflict') : cue.text ?? '' });
+            const reason = cue.text === CONFLICT_KEY ? text(S, 'web.autosave.conflict') : cue.text ?? '';
+            return `${label(text(S, 'web.autosave.notSaved'), 'bad')} <span class="tgj-cue-reason">${esc(reason)}</span>`;
         }
 
         return '';
     };
 
-    /** Writes a key's cue into its spots, in place (the section is not written again). Idle clears class and text. */
+    // What each spot shows now: a spot is written only when its markup changes, so a repaint after another section's
+    // write doesn't make its live region say the same words again.
+    const painted = new WeakMap();
+
+    /** Writes a key's cue into its spots, in place (the section is not written again). Idle clears class and markup. */
     const paintCue = key => {
         if (typeof view.querySelectorAll !== 'function') {
             return;
@@ -2606,14 +2617,15 @@ export default function TgJellyPage(view, params) {
 
         const cue = cues.get(key);
         const className = cue ? `tgj-cue tgj-cue--${cue.state}` : 'tgj-cue';
-        const words = cue ? cueWords(cue) : '';
+        const html = cue ? cueHtml(cue) : '';
         for (const spot of view.querySelectorAll(`[data-tgj-cue="${selectorValue(key)}"]`)) {
             if (spot.className !== className) {
                 spot.className = className;
             }
 
-            if (spot.textContent !== words) {
-                spot.textContent = words;
+            if ((painted.get(spot) ?? '') !== html) {
+                spot.innerHTML = html;
+                painted.set(spot, html);
             }
         }
     };

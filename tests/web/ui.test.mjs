@@ -136,16 +136,22 @@ test('emptyState_escapesText_actionHtmlTrusted', () => {
     assert.ok(!ui.emptyState({ text: 'x' }).includes('tgj-empty-actions'));
 });
 
-test('stateLabel_hasNoSymbol', () => {
-    for (const kind of ['ok', 'warning', 'error', 'muted']) {
-        const html = ui.stateLabel({ kind, text: 'Connected' });
-        assert.equal(html, `<span class="tgj-state tgj-state--${kind}">Connected</span>`);
+test('label_rendersOutlinedPillWithTone', () => {
+    for (const tone of ['good', 'progress', 'neutral', 'attention', 'bad', 'accent']) {
+        const html = ui.label('Connected', tone);
+        assert.equal(html, `<span class="tgj-label tgj-label--${tone}">Connected</span>`);
         assert.ok(!SYMBOLS.test(html), html);
     }
 
-    assert.ok(ui.stateLabel({ kind: 'ok', text: EVIL }).includes(EVIL_ESCAPED));
-    assert.throws(() => ui.stateLabel({ kind: 'good', text: 'x' }));
-    assert.ok(ui.stateLabel({ text: 'x' }).includes('tgj-state--ok'), 'ok is the default, as the interface lists it first');
+    assert.equal(ui.label(EVIL, 'bad'), `<span class="tgj-label tgj-label--bad">${EVIL_ESCAPED}</span>`, 'the text is escaped');
+    assert.equal(ui.label('x', 'shiny'), '<span class="tgj-label tgj-label--neutral">x</span>', 'an unknown tone is neutral');
+    assert.equal(ui.label('x', 'constructor'), '<span class="tgj-label tgj-label--neutral">x</span>');
+    assert.equal(ui.label('x'), '<span class="tgj-label tgj-label--neutral">x</span>');
+    assert.equal(ui.label('x', 'accent', { id: 'a"b', title: 'T', hidden: false }),
+        '<span class="tgj-label tgj-label--accent" id="a&quot;b" title="T">x</span>', 'attrs are escaped');
+    assert.equal(ui.label('x', 'good', { class: 'x"y' }), '<span class="tgj-label tgj-label--good x&quot;y">x</span>',
+        'a class joins the class list');
+    assert.throws(() => ui.label('x', 'good', { onclick: 'alert(1)' }), 'no inline handlers');
     assert.ok(!SYMBOLS.test(SOURCE), 'no symbols anywhere in the components module');
 });
 
@@ -162,7 +168,7 @@ test('extraClass_isAppendedAndEscaped_onEveryHelper', () => {
         ui.inlineConfirm({ question: 'q', confirmLabel: 'c', cancelLabel: 'n', confirmAct: 'a', cancelAct: 'b', extraClass }),
         ui.notice({ html: '', extraClass }),
         ui.emptyState({ text: 't', extraClass }),
-        ui.stateLabel({ kind: 'ok', text: 't', extraClass }),
+        ui.label('t', 'good', { class: extraClass }),
     ];
     for (const html of out) {
         assert.match(html, /class="[^"]* x&quot;y"/, html);

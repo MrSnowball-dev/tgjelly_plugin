@@ -470,6 +470,6 @@
   "web.templates.conflict": "The templates changed on the server. Your unsaved text is kept on top of the new data; check it and try again.",
   "web.autosave.saved": "Saved",
   "web.autosave.saving": "Saving…",
-  "web.autosave.notSaved": "Not saved: {reason}",
+  "web.autosave.notSaved": "Not saved",
   "web.autosave.conflict": "changed elsewhere, check the value"
 }

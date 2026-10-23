@@ -838,12 +838,16 @@ test('bot username is escaped', async () => {
 
 // --- auto-save helpers (plan 8, task 6) ---
 
-/** The newest cue spot for a key, as { className, textContent } (an empty one when the key has none). */
-const cue = (view, key) => ({ className: 'tgj-cue', textContent: '', ...view.cues.get(key) });
-const SAVED_CUE = { className: 'tgj-cue tgj-cue--saved', textContent: EN['web.autosave.saved'] };
-const SAVING_CUE = { className: 'tgj-cue tgj-cue--saving', textContent: EN['web.autosave.saving'] };
-const IDLE_CUE = { className: 'tgj-cue', textContent: '' };
-const errorCue = reason => ({ className: 'tgj-cue tgj-cue--error', textContent: m.text(EN, 'web.autosave.notSaved', { reason }) });
+/** The newest cue spot for a key, as { className, innerHTML } (an empty one when the key has none). */
+const cue = (view, key) => ({ className: 'tgj-cue', innerHTML: '', ...view.cues.get(key) });
+const SAVED_CUE = { className: 'tgj-cue tgj-cue--saved', innerHTML: ui.label(EN['web.autosave.saved'], 'good') };
+const SAVING_CUE = { className: 'tgj-cue tgj-cue--saving', innerHTML: ui.label(EN['web.autosave.saving'], 'progress') };
+const IDLE_CUE = { className: 'tgj-cue', innerHTML: '' };
+/** A Not saved cue: the bad label, then the reason as plain text (escaped: nothing in it is markup). */
+const errorCue = reason => ({
+    className: 'tgj-cue tgj-cue--error',
+    innerHTML: `${ui.label(EN['web.autosave.notSaved'], 'bad')} <span class="tgj-cue-reason">${ui.esc(reason)}</span>`,
+});
 /** A focus change: focus leaves the field with these attributes, for the one with to's attributes (null: outside). */
 const leave = (view, attrs, to = null) => dispatchOn(view, 'focusout', attrs, {}, { relatedTarget: to ? fakeTarget(to) : null });
 const proxyAttrs = name => ({ 'data-tgj-input': name, 'data-tgj-save': 'proxy' });
@@ -944,6 +948,61 @@ test('proxy 400 shows the field errors, escaped', async () => {
     assert.deepEqual(cue(view, 'proxy'), errorCue('Must be <host:port>'), 'the cue is text: nothing in it is markup');
     await hooks.reloadSection('proxy', { fresh: true });
     assert.ok(proxyEl(el).includes('value="nonsense"'), 'a refresh keeps what was typed');
+});
+
+// --- labels (plan 9, task 1; design §3): every state word is an outlined label ---
+
+test('cue_saved_isGoodLabel', async () => {
+    const { view, api, timers } = mount({
+        'GET TgJelly/Settings': settings({ ProxyMode: 'Http', ProxyUrl: 'p:8080' }),
+        'PUT TgJelly/Proxy': () => settings({ Revision: 6, ProxyMode: 'Http', ProxyUrl: 'p:9090' }),
+    });
+    await show(view);
+    const hold = holdPuts(api);
+    proxyType(view, 'proxyUrl', 'p:9090');
+    leave(view, proxyAttrs('proxyUrl'));
+    await flush();
+    await timers.advance(300);
+    assert.equal(view.cues.get('proxy').innerHTML, ui.label(EN['web.autosave.saving'], 'progress'), 'Saving… is a progress label');
+
+    hold.release();
+    await flush();
+    const spot = view.cues.get('proxy');
+    assert.equal(spot.className, 'tgj-cue tgj-cue--saved', 'the spot keeps its fade');
+    assert.equal(spot.innerHTML, ui.label(EN['web.autosave.saved'], 'good'));
+    assert.equal(EN['web.autosave.saved'], 'Saved');
+});
+
+test('cue_notSaved_labelPlusReason', async () => {
+    const { view } = mount({
+        'PUT TgJelly/Proxy': { status: 400, body: { Errors: [{ Field: 'Proxy.Url', Message: 'Must be <host:port>' }] } },
+    });
+    await show(view);
+    proxyMode(view, 'Http');
+    proxyType(view, 'proxyUrl', 'nonsense');
+    leave(view, proxyAttrs('proxyUrl'));
+    await flush();
+    const spot = view.cues.get('proxy');
+    assert.equal(EN['web.autosave.notSaved'], 'Not saved');
+    assert.equal(spot.className, 'tgj-cue tgj-cue--error');
+    assert.equal(spot.innerHTML, `${ui.label('Not saved', 'bad')} <span class="tgj-cue-reason">Must be &lt;host:port&gt;</span>`,
+        'the state word is a bad label, and the reason follows as plain text');
+});
+
+test('header_connected_isGoodLabel', async () => {
+    assert.deepEqual(m.connectionLabel(status(), EN), { tone: 'good', text: 'Connected · @jf_bot' });
+    assert.deepEqual(m.connectionLabel(status({ ConnectionState: 'Connecting' }), EN), { tone: 'progress', text: EN['web.header.connecting'] });
+    const { view, el } = mount();
+    await show(view);
+    assert.equal(el('tgj-conn').innerHTML, ui.label('Connected · @jf_bot', 'good'));
+});
+
+test('templateBadge_edited_isAccentLabel', () => {
+    const edited = m.renderTemplates(templates(), EN, tplUi({ key: 'media.digest' }));
+    assert.ok(edited.includes(ui.label(EN['web.templates.edited'], 'accent')), edited);
+    const builtIn = m.renderTemplates(templates(), EN, tplUi());
+    assert.ok(builtIn.includes(ui.label(EN['web.templates.builtIn'], 'neutral')), builtIn);
+    assert.ok(!/tgj-badge/.test(edited + builtIn), 'one label style, not a parallel badge');
 });
 
 // --- fix round 1: secrets stay out of the page and state ---
@@ -1160,11 +1219,11 @@ test('destList_rowsWithStateLabels_noSymbols', async () => {
         assert.ok(html.includes(`<span class="tgj-row-hint">${m.t(EN, 'web.dest.meta', { kind: EN[`dest.kind.${kind}`], preset: EN[`dest.preset.${preset}`] })}</span>`), kind);
     }
     assert.ok(html.includes('<span class="tgj-row-label">Admins</span>'));
-    assert.ok(html.includes(ui.stateLabel({ kind: 'ok', text: 'OK' })));
-    assert.ok(html.includes(ui.stateLabel({ kind: 'warning', text: 'Needs permissions' })));
-    assert.ok(html.includes(ui.stateLabel({ kind: 'warning', text: 'Photos blocked' })));
-    assert.ok(html.includes(ui.stateLabel({ kind: 'error', text: 'Topic missing' })));
-    assert.ok(html.includes(ui.stateLabel({ kind: 'error', text: 'Lost' })));
+    assert.ok(html.includes(ui.label('OK', 'good')));
+    assert.ok(html.includes(ui.label('Needs permissions', 'bad')));
+    assert.ok(html.includes(ui.label('Photos blocked', 'attention')));
+    assert.ok(html.includes(ui.label('Topic missing', 'bad')));
+    assert.ok(html.includes(ui.label('Lost', 'bad')));
     // The dashboard has its own words; the bot's labels keep their emoji.
     assert.equal(EN['dest.health.Ok'], '✅ OK');
     assert.equal(EN['dest.health.Lost'], '⛔ Lost');
@@ -1871,8 +1930,8 @@ test('previewHtml_tgTime_showsFallbackText', () => {
 
 test('renderTemplates_builtInBadge_noResetButton', () => {
     const html = m.renderTemplates(templates(), EN, tplUi());
-    assert.ok(html.includes(`<span class="tgj-badge">${m.t(EN, 'web.templates.builtIn')}</span>`), html);
-    assert.ok(!html.includes('tgj-badge--edited'));
+    assert.ok(html.includes(ui.label(EN['web.templates.builtIn'], 'neutral')), html);
+    assert.ok(!html.includes(ui.label(EN['web.templates.edited'], 'accent')));
     assert.ok(!html.includes('data-tgj-act="tplReset"'));
     assert.ok(html.includes(`<h2 class="tgj-card-title">${m.t(EN, 'web.templates.title')}</h2>`));
     // The select lists every event (templateSelect_marksEditedWithWord checks the edited mark).
@@ -1881,7 +1940,7 @@ test('renderTemplates_builtInBadge_noResetButton', () => {
 
 test('renderTemplates_editedBadge_resetAsksInline', () => {
     const html = m.renderTemplates(templates(), EN, tplUi({ key: 'media.digest' }));
-    assert.ok(html.includes(`<span class="tgj-badge tgj-badge--edited">${m.t(EN, 'web.templates.edited')}</span>`), html);
+    assert.ok(html.includes(ui.label(EN['web.templates.edited'], 'accent')), html);
     assert.ok(html.includes('data-tgj-act="tplReset"'));
     assert.ok(!html.includes('data-tgj-act="tplResetConfirm"'));
 
@@ -2057,7 +2116,7 @@ test('reset asks inline, cancel keeps the template, confirm sends DELETE with th
     assert.equal(del.url, '/jf/TgJelly/Templates/media.digest?expectedRevision=5');
     const html = el('tgj-templates').innerHTML;
     assert.ok(html.includes('>Digest {{ count }}</textarea>'), html);
-    assert.ok(html.includes(`<span class="tgj-badge">${m.t(EN, 'web.templates.builtIn')}</span>`));
+    assert.ok(html.includes(ui.label(EN['web.templates.builtIn'], 'neutral')));
     assert.ok(!html.includes(m.t(EN, 'web.templates.resetAsk')));
     assert.deepEqual(posted(api, 'Templates/Validate').at(-1), { EventKey: 'media.digest', Text: 'Digest {{ count }}' });
 });
@@ -2560,12 +2619,12 @@ test('shell_rendersAllSections_onlyActiveVisible', () => {
     assert.deepEqual(m.SECTIONS, ['overview', 'destinations', 'messages', 'templates', 'advanced']);
     const html = m.renderShell(EN, {
         active: 'messages',
-        connection: { kind: 'ok', text: 'Connected · @jf_bot' },
+        connection: { tone: 'good', text: 'Connected · @jf_bot' },
         counts: { destinations: '3', templates: '1 edited' },
     });
 
     assert.match(html, /<h1 class="tgj-header-title">TgJelly<\/h1>/);
-    assert.ok(html.includes(ui.stateLabel({ kind: 'ok', text: 'Connected · @jf_bot' })), 'the connection is a state label');
+    assert.ok(html.includes(ui.label('Connected · @jf_bot', 'good')), 'the connection is a state label');
     assert.match(html, /<nav class="tgj-sidebar" aria-label="[^"]+">/);
 
     const nav = shellNav(html);
@@ -2598,7 +2657,7 @@ test('shell_rendersAllSections_onlyActiveVisible', () => {
 });
 
 test('renderShell escapes the label and counts, and an unknown active section shows Overview', () => {
-    const html = m.renderShell(EN, { active: 'nope', connection: { kind: 'warning', text: '<b>x</b>' }, counts: { destinations: '<i>' } });
+    const html = m.renderShell(EN, { active: 'nope', connection: { tone: 'attention', text: '<b>x</b>' }, counts: { destinations: '<i>' } });
     assert.ok(html.includes('&lt;b&gt;x&lt;/b&gt;') && !html.includes('<b>x</b>'));
     assert.ok(html.includes('class="tgj-nav-count">&lt;i&gt;</span>'));
     const hidden = [...shellSections(html)].filter(([, s]) => !/\shidden(\s|$)/.test(s.attrs)).map(([name]) => name);
@@ -2613,12 +2672,12 @@ test('text is the plain-text lookup: no escaping, same fallbacks as t', () => {
     assert.equal(m.pluralText({ 'x.one': "{count} chat's", 'x.other': '{count} chats' }, 'x', 1000), '1,000 chats');
 });
 
-test('connectionLabel: connected names the bot, no token is muted, problems are a warning', () => {
-    assert.deepEqual(m.connectionLabel(status(), EN), { kind: 'ok', text: 'Connected · @jf_bot' });
-    assert.deepEqual(m.connectionLabel(status({ HasToken: false, BotUsername: null, ConnectionState: 'NoToken' }), EN), { kind: 'muted', text: EN['web.header.notConnected'] });
-    assert.deepEqual(m.connectionLabel(status({ ConnectionState: 'TokenRejected' }), EN), { kind: 'warning', text: EN['web.header.attention'] });
-    assert.deepEqual(m.connectionLabel(status({ ConnectionState: 'Connecting' }), EN), { kind: 'muted', text: EN['web.header.connecting'] });
-    assert.deepEqual(m.connectionLabel(null, EN, true), { kind: 'warning', text: EN['web.header.unknown'] });
+test('connectionLabel: connected names the bot, no token is neutral, problems need attention', () => {
+    assert.deepEqual(m.connectionLabel(status(), EN), { tone: 'good', text: 'Connected · @jf_bot' });
+    assert.deepEqual(m.connectionLabel(status({ HasToken: false, BotUsername: null, ConnectionState: 'NoToken' }), EN), { tone: 'neutral', text: EN['web.header.notConnected'] });
+    assert.deepEqual(m.connectionLabel(status({ ConnectionState: 'TokenRejected' }), EN), { tone: 'attention', text: EN['web.header.attention'] });
+    assert.deepEqual(m.connectionLabel(status({ ConnectionState: 'Connecting' }), EN), { tone: 'progress', text: EN['web.header.connecting'] });
+    assert.deepEqual(m.connectionLabel(null, EN, true), { tone: 'attention', text: EN['web.header.unknown'] });
     for (const key of ['web.header.connected', 'web.header.notConnected', 'web.header.attention', 'web.header.connecting', 'web.header.unknown']) {
         assert.doesNotMatch(EN[key], /[●✓✔✅⚠❌✗🟢🔴]/u, key);
     }
@@ -2628,14 +2687,14 @@ test('the header and the sidebar counts follow the data', async () => {
     let current = status();
     const { view, el, timers } = mount({ 'GET TgJelly/Status': () => current, 'GET TgJelly/Templates': templates() });
     await show(view);
-    assert.equal(el('tgj-conn').innerHTML, ui.stateLabel({ kind: 'ok', text: 'Connected · @jf_bot' }));
+    assert.equal(el('tgj-conn').innerHTML, ui.label('Connected · @jf_bot', 'good'));
     assert.equal(el('tgj-nav-count-destinations').innerHTML, '1');
     assert.equal(el('tgj-nav-count-templates').innerHTML, '1 edited');
 
     current = status({ ConnectionState: 'Unreachable' });
     timers.tick();
     await flush();
-    assert.equal(el('tgj-conn').innerHTML, ui.stateLabel({ kind: 'warning', text: EN['web.header.attention'] }));
+    assert.equal(el('tgj-conn').innerHTML, ui.label(EN['web.header.attention'], 'attention'));
     assert.equal(el('tgjelly-root').writes, 1, 'the shell is not written again');
 });
 
@@ -2697,7 +2756,7 @@ test('notConnected_opensOverview', async () => {
     const { view, el, timers } = mount({ 'GET TgJelly/Status': noToken() }, { hash: '#/configurationpage?name=TgJelly&tgj=messages' });
     await show(view);
     assert.equal(shownSection(el), 'overview', 'Overview leads with Connect');
-    assert.equal(el('tgj-conn').innerHTML, ui.stateLabel({ kind: 'muted', text: EN['web.header.notConnected'] }));
+    assert.equal(el('tgj-conn').innerHTML, ui.label(EN['web.header.notConnected'], 'neutral'));
 
     // The other sections stay reachable.
     clickOn(view, { 'data-tgj-nav': 'messages' });
@@ -2869,7 +2928,7 @@ test('overview_cards_statusBotSummary', async () => {
 
     const statusHtml = el('tgj-status').innerHTML;
     assert.ok(statusHtml.includes('class="tgj-card"') && statusHtml.includes('>Status</h2>'));
-    assert.ok(statusHtml.includes(ui.stateLabel({ kind: 'ok', text: 'Connected to Telegram' })), 'health is a state label');
+    assert.ok(statusHtml.includes(ui.label('Connected to Telegram', 'good')), 'health is a state label');
     assert.ok(statusHtml.includes('class="tgj-row'));
 
     const botHtml = el('tgj-bot').innerHTML;
@@ -2884,9 +2943,9 @@ test('overview_cards_statusBotSummary', async () => {
     const summary = el('tgj-summary').innerHTML;
     assert.ok(summary.includes('class="tgj-card"'));
     assert.ok(summary.includes('2 destinations'));
-    assert.ok(summary.includes(ui.stateLabel({ kind: 'warning', text: '1 needs attention' })));
+    assert.ok(summary.includes(ui.label('1 needs attention', 'attention')));
     assert.ok(summary.includes('1 edited'));
-    assert.ok(summary.includes(ui.stateLabel({ kind: 'warning', text: '1 flagged' })));
+    assert.ok(summary.includes(ui.label('1 flagged', 'attention')));
     assert.ok(summary.includes('No notices'));
 });
 

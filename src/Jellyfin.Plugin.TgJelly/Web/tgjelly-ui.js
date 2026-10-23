@@ -6,7 +6,8 @@
 //   esc()/t() output or from these helpers;
 // - every helper takes an optional extraClass, appended to its outer element's class list.
 // Controls carry the page's usual hooks: data-tgj-input for inputs, data-tgj-act and data-tgj-id for actions.
-// No browser dialogs and no status symbols: a destructive action asks with inlineConfirm, and a state is a coloured word.
+// No browser dialogs and no status symbols: a destructive action asks with inlineConfirm, and a state is a label (a
+// word in an outline).
 
 const ESCAPES = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
 
@@ -187,13 +188,23 @@ export function emptyState({ text, actionHtml = '', extraClass = '' }) {
         + `${actionHtml ? `<div class="tgj-empty-actions">${actionHtml}</div>` : ''}</div>`;
 }
 
-const STATE_KINDS = ['ok', 'warning', 'error', 'muted'];
+const LABEL_TONES = ['good', 'progress', 'neutral', 'attention', 'bad', 'accent'];
 
 /**
- * A state shown as a coloured word, with no dot or symbol: "Connected", "Not connected", "2 failing".
- * @param {{ kind?: 'ok' | 'warning' | 'error' | 'muted', text: string, extraClass?: string }} options
+ * A label (design §3): a state word in an outlined pill, coloured by its tone, with no fill and no symbol. It is the
+ * one way the dashboard shows a state: "Saved", "Connected", "Edited", "Lost".
+ * - good is success (Saved, Connected); progress is the accent (Saving…, Connecting); neutral is muted (Built-in,
+ *   Off); attention is the warning colour (Photos blocked); bad is the error colour (Not saved, Lost); accent marks a
+ *   change (Edited);
+ * - an unknown tone shows as neutral, so a state this page doesn't know is still a word;
+ * - attrs are extra attributes, as the other helpers take them; a class in attrs joins the class list.
+ * @param {string} text plain text, escaped here
+ * @param {'good' | 'progress' | 'neutral' | 'attention' | 'bad' | 'accent'} [tone]
+ * @param {Record<string, unknown>} [attrs]
  * @returns {string}
  */
-export function stateLabel({ kind = 'ok', text, extraClass = '' }) {
-    return `<span class="${cls(`tgj-state tgj-state--${oneOf(kind, STATE_KINDS, 'stateLabel kind')}`, extraClass)}">${esc(text)}</span>`;
+export function label(text, tone = 'neutral', attrs = {}) {
+    const { class: extraClass = '', ...rest } = attrs ?? {};
+    const known = LABEL_TONES.includes(tone) ? tone : 'neutral';
+    return `<span class="${cls(`tgj-label tgj-label--${known}`, extraClass)}"${attributes(rest)}>${esc(text)}</span>`;
 }

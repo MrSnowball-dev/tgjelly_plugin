@@ -53,7 +53,7 @@ export function makeView(ids) {
         }
 
         for (const match of html.matchAll(/<span class="([^"]*)" data-tgj-cue="([^"]+)"/g)) {
-            cues.set(unescapeHtml(match[2]), { className: match[1], textContent: '' });
+            cues.set(unescapeHtml(match[2]), { className: match[1], innerHTML: '' });
         }
     };
     for (const id of ids) {
@@ -80,7 +80,7 @@ export function makeView(ids) {
         return view.fields.filter(field => field.name === name);
     };
     view.elements = elements;
-    // The newest cue spot for each key, as { className, textContent }.
+    // The newest cue spot for each key, as { className, innerHTML }.
     view.cues = cues;
     return view;
 }
