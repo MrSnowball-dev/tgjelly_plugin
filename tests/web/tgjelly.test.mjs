@@ -2043,7 +2043,7 @@ test('renderTemplates_gridHasPreviewPane', () => {
     const html = renderTemplates(templates(), EN, tplUi({ result: good, good }));
     const grid = html.indexOf('<div class="tgj-msg-layout">');
     const textarea = html.indexOf('<textarea');
-    const fields = html.indexOf(`<summary>${m.t(EN, 'web.templates.fields')}</summary>`);
+    const fields = html.indexOf('class="tgj-tpl-tables"');
     const pane = html.indexOf('<div id="tgj-tpl-preview"');
     assert.ok(grid >= 0 && grid < textarea && textarea < fields && fields < pane, html);
     assert.ok(html.includes('>&lt;b&gt;{{ title }}&lt;/b&gt;</textarea>'));
@@ -2279,9 +2279,9 @@ test('template section shows events, fields and the docs link', async () => {
     const html = el('tgj-messages').innerHTML;
     // Spec §6.1: the guide link sits under the template, after the fields list, inside the left column.
     const link = html.indexOf('href="https://github.com/MrSnowball-dev/tgjelly_plugin/blob/main/docs/templates.md"');
-    const left = html.indexOf('<div class="tgj-tpl-edit">');
+    const left = html.indexOf('<div class="tgj-tpl-edit"');
     const textarea = html.indexOf('<textarea');
-    const fieldsEnd = html.indexOf('</details>', html.indexOf(`<summary>${m.t(EN, 'web.templates.fields')}</summary>`));
+    const fieldsEnd = html.indexOf('data-tgj-id="formatting"');
     const pane = html.indexOf('<div id="tgj-tpl-preview"');
     assert.ok(left >= 0 && left < textarea && textarea < fieldsEnd && fieldsEnd < link && link < pane, html);
     assert.equal(html.split('docs/templates.md').length, 2, 'one guide link');

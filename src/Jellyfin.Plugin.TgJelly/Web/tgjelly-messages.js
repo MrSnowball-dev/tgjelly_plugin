@@ -11,7 +11,7 @@
 import {
     esc, t, text, label, card, row, actionButton, inlineConfirm, notice, textField, switchControl, selectField,
 } from './configurationpage?name=tgjelly-ui.js';
-import { renderTemplateCheck, renderTemplatePreview } from './configurationpage?name=tgjelly-preview.js';
+import { renderTemplateCheck, renderTemplatePreview, previewHtml } from './configurationpage?name=tgjelly-preview.js';
 
 // The template preview validates this long after the last keystroke.
 const PREVIEW_DEBOUNCE_MS = 500;
@@ -330,7 +330,7 @@ export function templateTestBlocked(ui) {
 
 /**
  * The Template card (spec §8.5): the message's template text, which saves itself (its cue sits beside the textarea's
- * label), its errors and length under it, the fields it can use, the guide, then Send test and, for an edited
+ * label), its errors and length under it, the Fields and Formatting tables, the guide, then Send test and, for an edited
  * template, Reset.
  * @param {object} item the selected template item
  * @param {Record<string, string>} S
@@ -352,16 +352,14 @@ export function renderTemplateCard(item, S, ui) {
     }
 
     // The textarea is told apart by its event key, not an id: a refresh keeps a pending text only in its own template.
-    const rows = (item.Fields ?? []).map(f => `<tr><td><code>${esc(f.Name)}</code></td><td>${esc(f.Type)}</td>`
-        + `<td>${f.Optional ? t(S, 'web.templates.optional') : ''}</td><td>${esc(f.Description)}</td></tr>`);
-    parts.push('<div class="tgj-tpl-edit">'
+    parts.push('<div class="tgj-tpl-edit" id="tgj-tpl-edit">'
         + `<div class="tgj-tpl-label"><span class="tgj-row-label" id="tgj-tpl-label">${t(S, 'web.templates.text')}</span>`
         + `<span class="tgj-cue" data-tgj-cue="${esc(saveKey)}" aria-live="polite"></span></div>`
         + `<textarea class="tgj-field tgj-template-text" data-tgj-input="tplText" data-tgj-key="${esc(item.EventKey)}" data-tgj-save="${esc(saveKey)}"`
         + ` aria-labelledby="tgj-tpl-label" rows="12" spellcheck="false">${esc(local.Text)}</textarea>`
         // The errors and the length, under the text they are about; the controller replaces only this while typing.
         + `<div id="tgj-tpl-check" class="tgj-tpl-check" aria-live="polite">${renderTemplateCheck(ui.result ?? null, S, ui.lang ?? 'en')}</div>`
-        + `<details class="tgj-tpl-fields"><summary>${t(S, 'web.templates.fields')}</summary><table class="tgj-template-fields">${rows.join('')}</table></details>`
+        + renderTemplateTables(item, S)
         + `<p class="tgj-tpl-docs"><a class="tgj-link" href="${TEMPLATES_DOCS}" target="_blank" rel="noopener noreferrer">${t(S, 'web.templates.docs')}</a></p></div>`);
 
     const destinations = ui.destinations ?? [];
@@ -426,6 +424,154 @@ export function renderMessagesSection(state, S, ui) {
         + '</div>'
         + `<div class="tgj-msg-side">${preview}</div>`
         + '</div>';
+}
+
+// --- the Fields and Formatting tables (design §6.3) ---
+
+/** What the Formatting table lists: Telegram's tags first, then the template constructs people need. */
+export const FORMATTING = [
+    { write: '<b>…</b>', snippet: '<b>text</b>', placeholder: 'text', descriptionKey: 'web.format.b', looksLikeHtml: '<b>Bold</b>' },
+    { write: '<i>…</i>', snippet: '<i>text</i>', placeholder: 'text', descriptionKey: 'web.format.i', looksLikeHtml: '<i>Italic</i>' },
+    { write: '<u>…</u>', snippet: '<u>text</u>', placeholder: 'text', descriptionKey: 'web.format.u', looksLikeHtml: '<u>Underlined</u>' },
+    { write: '<s>…</s>', snippet: '<s>text</s>', placeholder: 'text', descriptionKey: 'web.format.s', looksLikeHtml: '<s>Struck out</s>' },
+    { write: '<tg-spoiler>…</tg-spoiler>', snippet: '<tg-spoiler>text</tg-spoiler>', placeholder: 'text', descriptionKey: 'web.format.spoiler', looksLikeHtml: '<tg-spoiler>Hidden</tg-spoiler>' },
+    { write: '<a href="…">…</a>', snippet: '<a href="https://example.com">text</a>', placeholder: 'text', descriptionKey: 'web.format.a', looksLikeHtml: '<a href="https://example.com">A link</a>' },
+    { write: '<code>…</code>', snippet: '<code>text</code>', placeholder: 'text', descriptionKey: 'web.format.code', looksLikeHtml: '<code>monospace</code>' },
+    { write: '<pre>…</pre>', snippet: '<pre>text</pre>', placeholder: 'text', descriptionKey: 'web.format.pre', looksLikeHtml: '<pre>a block\nof code</pre>' },
+    { write: '<blockquote>…</blockquote>', snippet: '<blockquote>text</blockquote>', placeholder: 'text', descriptionKey: 'web.format.quote', looksLikeHtml: '<blockquote>A quote</blockquote>' },
+    { write: '<blockquote expandable>…</blockquote>', snippet: '<blockquote expandable>text</blockquote>', placeholder: 'text', descriptionKey: 'web.format.quoteExpandable', looksLikeHtml: '<blockquote expandable>First line\nThe rest, shown when opened</blockquote>' },
+    { write: '{{ if field }}…{{ end }}', snippet: '{{ if field }}text{{ end }}', placeholder: 'text', descriptionKey: 'web.format.if', looksLikeHtml: '(2021)' },
+    { write: '{{ plural n "a" "b" }}', snippet: '{{ plural n "one" "many" }}', placeholder: 'n', descriptionKey: 'web.format.plural', looksLikeHtml: '3 episodes' },
+    { write: '{{ raw value }}', snippet: '{{ raw value }}', placeholder: 'value', descriptionKey: 'web.format.raw', looksLikeHtml: '<b>Dune</b>' },
+    { write: '{{- field -}}', snippet: '{{- field -}}', placeholder: 'field', descriptionKey: 'web.format.trim', looksLikeHtml: 'Two lines become one' },
+];
+
+const TABLE_STORE = 'tgj.tables.';
+const TABLES = ['fields', 'formatting'];
+
+/** Whether a table is open for this viewer; closed when nothing is kept or the browser refuses storage. */
+function tableOpen(name) {
+    try {
+        return globalThis.localStorage.getItem(TABLE_STORE + name) === '1';
+    } catch {
+        return false;
+    }
+}
+
+/** Keeps a table's state for this viewer; the table works without it when the browser refuses storage. */
+function rememberTable(name, open) {
+    try {
+        globalThis.localStorage.setItem(TABLE_STORE + name, open ? '1' : '0');
+    } catch {
+        // Private mode or blocked site data: the state lasts until the page reloads.
+    }
+}
+
+/** A sample value as the preview shows it: text as it is, a list joined by commas; null for no value. */
+function sampleText(value) {
+    if (value === null || value === undefined) {
+        return null;
+    }
+
+    if (Array.isArray(value)) {
+        const parts = value.map(sampleText).filter(part => part !== null);
+        return parts.length > 0 ? parts.join(', ') : null;
+    }
+
+    const shown = typeof value === 'object' ? JSON.stringify(value) : String(value);
+    return shown === '' ? null : shown;
+}
+
+/** An insert cell: a button, so Tab reaches it and Enter or Space press it. The page routes its click (tplInsert). */
+const insertCell = (kind, id, shown, S) => `<td><button type="button" class="tgj-insert" data-tgj-act="tplInsert" data-tgj-insert="${kind}"`
+    + ` data-tgj-id="${esc(id)}" data-tgj-instant title="${esc(text(S, 'web.tables.insert'))}"><code>${esc(shown)}</code></button></td>`;
+
+/**
+ * The Available fields table: Field, What it is and Example, one row per field of the message. Clicking a field inserts
+ * it into the template.
+ * @param {object} item the selected template item
+ * @param {Record<string, string>} S
+ * @returns {string} HTML
+ */
+export function renderFieldsTable(item, S) {
+    const sample = item.SampleFull ?? {};
+    const rows = (item.Fields ?? []).map(f => {
+        const example = sampleText(sample[f.Name]);
+        return `<tr>${insertCell('field', f.Name, `{{ ${f.Name} }}`, S)}`
+            + `<td data-label="${esc(text(S, 'web.tables.what'))}">${esc(f.Description)}${f.Optional ? ` ${label(text(S, 'web.templates.optional'), 'neutral')}` : ''}</td>`
+            + `<td data-label="${esc(text(S, 'web.tables.example'))}">${example === null ? '<span class="tgj-muted">-</span>' : esc(example)}</td></tr>`;
+    });
+    return `<table class="tgj-ref-table"><thead><tr><th scope="col">${t(S, 'web.tables.field')}</th><th scope="col">${t(S, 'web.tables.what')}</th>`
+        + `<th scope="col">${t(S, 'web.tables.example')}</th></tr></thead><tbody>${rows.join('')}</tbody></table>`;
+}
+
+/**
+ * The Formatting table: Write, What it does and Looks like. Clicking a format inserts it, or wraps the selection.
+ * @param {Record<string, string>} S
+ * @returns {string} HTML
+ */
+export function renderFormattingTable(S) {
+    const rows = FORMATTING.map((f, index) => `<tr>${insertCell('format', String(index), f.write, S)}<td data-label="${esc(text(S, 'web.tables.does'))}">${esc(text(S, f.descriptionKey))}</td>`
+        + `<td data-label="${esc(text(S, 'web.tables.looks'))}"><div class="tgj-tg-text tgj-tg-sample">${previewHtml(f.looksLikeHtml)}</div></td></tr>`);
+    return `<table class="tgj-ref-table"><thead><tr><th scope="col">${t(S, 'web.tables.write')}</th><th scope="col">${t(S, 'web.tables.does')}</th>`
+        + `<th scope="col">${t(S, 'web.tables.looks')}</th></tr></thead><tbody>${rows.join('')}</tbody></table>`;
+}
+
+/** One expandable table: a toggle button carrying aria-expanded, and the panel it shows. */
+const tableSection = (name, title, body) => {
+    const open = tableOpen(name);
+    return `<div class="tgj-ref"><button type="button" class="tgj-ref-toggle" data-tgj-act="tplTable" data-tgj-id="${name}" data-tgj-instant`
+        + ` aria-expanded="${open}" aria-controls="tgj-tbl-${name}">${esc(title)}</button>`
+        + `<div class="tgj-ref-panel" id="tgj-tbl-${name}"${open ? '' : ' hidden'}>${body}</div></div>`;
+};
+
+/** Both tables under the template, collapsed until the viewer opens them. */
+export function renderTemplateTables(item, S) {
+    return `<div class="tgj-tpl-tables">${tableSection('fields', text(S, 'web.templates.fields'), renderFieldsTable(item, S))}`
+        + `${tableSection('formatting', text(S, 'web.templates.formatting'), renderFormattingTable(S))}</div>`;
+}
+
+/**
+ * Puts text into a textarea at its caret as typing: through execCommand when the browser has it (so Ctrl+Z undoes it,
+ * and the browser fires input), else setRangeText and an input event. The textarea keeps the focus. The caret lands
+ * after the insert, or the range select (offsets inside text) is selected.
+ * @param {HTMLTextAreaElement} el
+ * @param {string} value the text to insert in place of the selection
+ * @param {[number, number] | null} select
+ */
+export function insertText(el, value, select = null) {
+    el.focus({ preventScroll: true });
+    const start = el.selectionStart;
+    const end = el.selectionEnd;
+    const doc = globalThis.document;
+    let done = false;
+    if (doc && typeof doc.execCommand === 'function') {
+        try {
+            done = doc.execCommand('insertText', false, value) === true;
+        } catch {
+            done = false;
+        }
+    }
+
+    if (!done) {
+        el.setRangeText(value, start, end, 'end');
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+
+    const [from, to] = select ?? [value.length, value.length];
+    el.setSelectionRange(start + from, start + to);
+}
+
+/** What a format puts in place of the selection (selected, possibly ''): the snippet with the selection at its placeholder. */
+export function formatInsert(format, selected) {
+    const at = format.snippet.indexOf(format.placeholder);
+    const open = format.snippet.slice(0, at);
+    const close = format.snippet.slice(at + format.placeholder.length);
+    if (selected === '') {
+        return { value: format.snippet, select: [open.length, open.length + format.placeholder.length] };
+    }
+
+    return { value: open + selected + close, select: null };
 }
 
 // --- the controller ---
@@ -716,6 +862,37 @@ export function createMessages(page) {
     };
 
     const actions = {
+        // Clicking a field or a format puts it into the template at the caret, as typing (the input handler saves it).
+        tplInsert: el => {
+            const area = page.byId('tgj-tpl-edit');
+            const textarea = area ? area.querySelector('textarea') : null;
+            if (!textarea) {
+                return;
+            }
+
+            const kind = el.getAttribute('data-tgj-insert');
+            const id = el.getAttribute('data-tgj-id');
+            if (kind === 'field') {
+                insertText(textarea, `{{ ${id} }}`);
+            } else if (kind === 'format' && FORMATTING[Number(id)]) {
+                const selected = String(textarea.value ?? '').slice(textarea.selectionStart, textarea.selectionEnd);
+                const { value, select } = formatInsert(FORMATTING[Number(id)], selected);
+                insertText(textarea, value, select);
+            }
+        },
+        // Opens or closes a table in place (a re-render would cost the textarea its caret) and keeps the choice.
+        tplTable: el => {
+            const name = el.getAttribute('data-tgj-id');
+            const panel = TABLES.includes(name) ? page.byId(`tgj-tbl-${name}`) : null;
+            if (!panel) {
+                return;
+            }
+
+            const open = el.getAttribute('aria-expanded') !== 'true';
+            panel.hidden = !open;
+            el.setAttribute('aria-expanded', String(open));
+            rememberTable(name, open);
+        },
         // A whole URL, chosen with a button: it saves at once (the field itself saves on blur or Enter).
         useSuggested: () => {
             if (state.settings && state.settings.PublicUrlSuggestion) {

@@ -465,3 +465,203 @@ test('templateErrors_updateWithoutTouchingTextarea', async () => {
     assert.equal(doc.activeElement, typing, 'it keeps the focus');
     assert.deepEqual([typing.selectionStart, typing.selectionEnd, typing.selectionDirection], [4, 6, 'forward'], 'and the caret');
 });
+
+// --- the Fields and Formatting tables, click to insert (Task 9, design §6.3) ---
+
+const TPL_ATTRS = { 'data-tgj-input': 'tplText', 'data-tgj-key': 'media.movie', 'data-tgj-save': 'template:media.movie' };
+const fieldItem = () => item('media.movie', {
+    Fields: [
+        { Name: 'title', Type: 'string', Description: 'The <title>.', Optional: false },
+        { Name: 'year', Type: 'int', Description: 'The year.', Optional: true },
+        { Name: 'library', Type: 'string', Description: 'The library.', Optional: true },
+    ],
+    SampleFull: { title: 'Dune', year: 2021, library: '' },
+});
+
+/** Runs fn with globalThis.localStorage set to storage (or removed), then puts the old one back. */
+async function withStorage(storage, fn) {
+    const before = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+    Object.defineProperty(globalThis, 'localStorage', { value: storage, configurable: true, writable: true });
+    try {
+        return await fn();
+    } finally {
+        if (before) {
+            Object.defineProperty(globalThis, 'localStorage', before);
+        } else {
+            delete globalThis.localStorage;
+        }
+    }
+}
+
+const memoryStorage = (initial = {}) => {
+    const data = { ...initial };
+    return { data, getItem: k => (k in data ? data[k] : null), setItem: (k, v) => { data[k] = String(v); } };
+};
+const throwingStorage = () => ({ getItem() { throw new Error('denied'); }, setItem() { throw new Error('denied'); } });
+
+/** A fake template textarea inside the Template card, with the editing calls the insert uses. */
+function wireTextarea(view, doc, el, { value, start = value.length, end = start, execCommand = true }) {
+    const ta = {
+        value, selectionStart: start, selectionEnd: end, inputs: 0,
+        focus() { doc.activeElement = this; },
+        setSelectionRange(s, e) { this.selectionStart = s; this.selectionEnd = e; },
+        setRangeText(text, s, e, mode) {
+            this.value = this.value.slice(0, s) + text + this.value.slice(e);
+            if (mode === 'end') {
+                this.selectionStart = this.selectionEnd = s + text.length;
+            }
+        },
+        dispatchEvent() { this.inputs++; dispatchOn(view, 'input', TPL_ATTRS, { value: this.value }); },
+    };
+    doc.execCommand = execCommand
+        ? (command, _ui, text) => { assert.equal(command, 'insertText'); ta.setRangeText(text, ta.selectionStart, ta.selectionEnd, 'end'); ta.dispatchEvent(); return true; }
+        : undefined;
+    el('tgj-tpl-edit').querySelector = selector => (selector === 'textarea' ? ta : null);
+    return ta;
+}
+
+const clickInsert = (view, kind, id) => dispatchOn(view, 'click', { 'data-tgj-act': 'tplInsert', 'data-tgj-insert': kind, 'data-tgj-id': id, 'data-tgj-instant': '' });
+const formatIndex = snippet => msg.FORMATTING.findIndex(f => f.snippet === snippet);
+
+test('fieldsTable_rowsWithDescriptionAndExample', () => {
+    const html = msg.renderFieldsTable(fieldItem(), EN);
+    for (const head of ['web.tables.field', 'web.tables.what', 'web.tables.example']) {
+        assert.ok(html.includes(`<th scope="col">${ui.esc(EN[head])}</th>`), head);
+    }
+
+    const rows = [...html.matchAll(/<tr>([\s\S]*?)<\/tr>/g)].map(r => r[1]).filter(r => r.includes('data-tgj-insert'));
+    assert.equal(rows.length, 3);
+    assert.ok(rows[0].includes('data-tgj-insert="field"') && rows[0].includes('data-tgj-id="title"') && rows[0].includes('{{ title }}'), rows[0]);
+    assert.ok(rows[0].includes('The &lt;title&gt;.') && rows[0].includes('Dune'));
+    assert.ok(!rows[0].includes(ui.label(EN['web.templates.optional'], 'neutral')), 'title is not optional');
+    assert.ok(rows[1].includes(ui.label(EN['web.templates.optional'], 'neutral')) && rows[1].includes('2021'));
+    assert.ok(rows[2].includes('tgj-muted'), 'an empty example is a muted dash');
+});
+
+test('fieldClick_insertsAtCaret_andSavesOnce', async () => {
+    const { view, api, el, doc, timers } = mount({ 'PUT TgJelly/Templates/media.movie': templates({ Revision: 6 }) });
+    await show(view);
+    const ta = wireTextarea(view, doc, el, { value: 'Hi  there', start: 3 });
+    const writes = el('tgj-messages').writes;
+    const { event } = clickInsert(view, 'field', 'title');
+    await flush();
+    assert.equal(ta.value, 'Hi {{ title }} there');
+    assert.equal(ta.selectionStart, 'Hi {{ title }}'.length);
+    assert.equal(ta.selectionEnd, ta.selectionStart, 'the caret lands after the insert');
+    assert.equal(doc.activeElement, ta, 'the focus stays in the textarea');
+    assert.equal(el('tgj-messages').writes, writes, 'nothing is re-rendered');
+    assert.ok(event.defaultPrevented);
+    await timers.advance(1000);
+    await flush();
+    const puts = api.calls.filter(c => c.type === 'PUT' && c.url === '/jf/TgJelly/Templates/media.movie');
+    assert.equal(puts.length, 1, 'exactly one save follows');
+    assert.equal(JSON.parse(puts[0].data).Text, 'Hi {{ title }} there');
+});
+
+test('fieldClick_withoutExecCommand_usesSetRangeText_andFiresInput', async () => {
+    const { view, el, doc } = mount();
+    await show(view);
+    const ta = wireTextarea(view, doc, el, { value: 'ab', start: 1, execCommand: false });
+    clickInsert(view, 'field', 'year');
+    await flush();
+    assert.equal(ta.value, 'a{{ year }}b');
+    assert.equal(ta.inputs, 1);
+    assert.equal(doc.activeElement, ta);
+});
+
+test('formatClick_wrapsSelection', async () => {
+    const { view, el, doc } = mount();
+    await show(view);
+    const ta = wireTextarea(view, doc, el, { value: 'Hello world', start: 6, end: 11 });
+    clickInsert(view, 'format', String(formatIndex('<b>text</b>')));
+    await flush();
+    assert.equal(ta.value, 'Hello <b>world</b>');
+    assert.deepEqual([ta.selectionStart, ta.selectionEnd], [18, 18]);
+    assert.equal(doc.activeElement, ta);
+});
+
+test('formatClick_noSelection_insertsAndSelectsPlaceholder', async () => {
+    const { view, el, doc } = mount();
+    await show(view);
+    const ta = wireTextarea(view, doc, el, { value: 'Hello', start: 5 });
+    clickInsert(view, 'format', String(formatIndex('<b>text</b>')));
+    await flush();
+    assert.equal(ta.value, 'Hello<b>text</b>');
+    assert.equal(ta.value.slice(ta.selectionStart, ta.selectionEnd), 'text');
+    assert.equal(doc.activeElement, ta);
+});
+
+test('formatting_listsEveryConstruct', () => {
+    assert.deepEqual(msg.FORMATTING.map(f => f.snippet), [
+        '<b>text</b>', '<i>text</i>', '<u>text</u>', '<s>text</s>', '<tg-spoiler>text</tg-spoiler>', '<a href="https://example.com">text</a>',
+        '<code>text</code>', '<pre>text</pre>', '<blockquote>text</blockquote>', '<blockquote expandable>text</blockquote>',
+        '{{ if field }}text{{ end }}', '{{ plural n "one" "many" }}', '{{ raw value }}', '{{- field -}}',
+    ]);
+    // A placeholder sits inside its snippet, and each format has a description.
+    for (const f of msg.FORMATTING) {
+        assert.ok(f.snippet.includes(f.placeholder), f.snippet);
+        assert.ok(EN[f.descriptionKey], f.descriptionKey);
+    }
+    assert.ok(msg.renderFormattingTable(EN).includes('tgj-tg-'), 'Looks like uses the preview classes');
+});
+
+test('tables_collapsedByDefault_rememberState', async () => {
+    await withStorage(memoryStorage(), async () => {
+        const closed = msg.renderTemplateTables(fieldItem(), EN);
+        assert.equal((closed.match(/aria-expanded="false"/g) ?? []).length, 2);
+        assert.ok(!closed.includes('aria-expanded="true"'));
+        assert.equal((closed.match(/\shidden\b/g) ?? []).length, 2, 'both panels hidden');
+
+        const { view, el } = mount();
+        await show(view);
+        const attrs = new Map();
+        const panel = el('tgj-tbl-fields');
+        dispatchOn(view, 'click', { 'data-tgj-act': 'tplTable', 'data-tgj-id': 'fields', 'data-tgj-instant': '' },
+            { setAttribute: (k, v) => attrs.set(k, v), getAttribute: k => (k === 'data-tgj-act' ? 'tplTable' : k === 'data-tgj-id' ? 'fields' : k === 'data-tgj-instant' ? '' : attrs.get(k) ?? null) });
+        await flush();
+        assert.equal(attrs.get('aria-expanded'), 'true');
+        assert.equal(panel.hidden, false);
+        assert.equal(globalThis.localStorage.getItem('tgj.tables.fields'), '1');
+        const reopened = msg.renderTemplateTables(fieldItem(), EN);
+        assert.equal((reopened.match(/aria-expanded="true"/g) ?? []).length, 1, 'only Fields is open');
+        assert.ok(globalThis.localStorage.getItem('tgj.tables.formatting') === null);
+    });
+});
+
+test('tables_storageThrows_stillWork', async () => {
+    await withStorage(throwingStorage(), async () => {
+        assert.equal((msg.renderTemplateTables(fieldItem(), EN).match(/aria-expanded="false"/g) ?? []).length, 2);
+        const { view, el, doc } = mount();
+        await show(view);
+        const attrs = new Map();
+        dispatchOn(view, 'click', { 'data-tgj-act': 'tplTable', 'data-tgj-id': 'formatting', 'data-tgj-instant': '' },
+            { setAttribute: (k, v) => attrs.set(k, v), getAttribute: k => (k === 'data-tgj-act' ? 'tplTable' : k === 'data-tgj-id' ? 'formatting' : k === 'data-tgj-instant' ? '' : attrs.get(k) ?? null) });
+        await flush();
+        assert.equal(attrs.get('aria-expanded'), 'true', 'the panel still opens');
+        assert.equal(el('tgj-tbl-formatting').hidden, false);
+        const ta = wireTextarea(view, doc, el, { value: '', start: 0 });
+        clickInsert(view, 'field', 'title');
+        await flush();
+        assert.equal(ta.value, '{{ title }}');
+    });
+    await withStorage(undefined, async () => {
+        assert.ok(msg.renderTemplateTables(fieldItem(), EN).includes('aria-expanded="false"'));
+    });
+});
+
+test('insertCell_isKeyboardActivatable', async () => {
+    const html = msg.renderTemplateTables(fieldItem(), EN);
+    const cells = [...html.matchAll(/<button\b[^>]*data-tgj-insert[^>]*>/g)].map(m2 => m2[0]);
+    assert.equal(cells.length, 3 + msg.FORMATTING.length);
+    for (const cell of cells) {
+        assert.ok(cell.includes('type="button"') && cell.includes('data-tgj-act="tplInsert"'), cell);
+        assert.ok(!cell.includes('tabindex') && !cell.includes('disabled'), cell);
+    }
+    // Each table row starts with its insert cell.
+    assert.equal([...html.matchAll(/<tr>\s*<td[^>]*><button\b[^>]*data-tgj-insert/g)].length, cells.length);
+    // A press on a cell must not take the focus (and the caret) from the textarea.
+    const { view } = mount();
+    await show(view);
+    const { event } = dispatchOn(view, 'mousedown', { 'data-tgj-insert': 'field' });
+    assert.ok(event.defaultPrevented);
+});

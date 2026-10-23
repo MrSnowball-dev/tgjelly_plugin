@@ -2788,6 +2788,13 @@ export default function TgJellyPage(view, params) {
             return;
         }
 
+        // A quick, repeatable action (inserting into the template, opening a table) never disables its button: that
+        // would take the keyboard focus from it.
+        if (found.el.getAttribute('data-tgj-instant') !== null) {
+            found.run().catch(logFailure);
+            return;
+        }
+
         found.el.disabled = true;
         found.run().catch(logFailure).finally(() => {
             found.el.disabled = false;
@@ -2836,6 +2843,13 @@ export default function TgJellyPage(view, params) {
         const key = event.key === 'Enter' && state.strings ? saveKeyOf(event.target) : null;
         if (key && String(event.target.tagName).toUpperCase() === 'INPUT') {
             flushSoon(key);
+        }
+    });
+
+    // Pressing a field or format cell of the template tables must not take the focus (and the caret) from the textarea.
+    view.addEventListener('mousedown', event => {
+        if (event.target && event.target.closest && event.target.closest('[data-tgj-insert]')) {
+            event.preventDefault();
         }
     });
 
