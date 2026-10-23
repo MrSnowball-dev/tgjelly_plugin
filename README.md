@@ -66,9 +66,9 @@ There are no Save buttons. Every setting saves itself, and a short cue beside it
 
 ## Message templates
 
-Every message is a template, and you can change any of them. Open the event in the dashboard's Message templates section. The editor shows the built-in template, so you start from what you already get. A live preview shows how it will look in Telegram. Your changes save themselves a second after you stop typing, unless the template has errors. Press Send test to send it to a destination, and Reset to go back to the built-in one. The poster and buttons keep following their own switches. See [docs/templates.md](docs/templates.md) for the syntax, the fields you can use, and the built-in templates.
+Every message is a template, and you can change any of them. Open the event in the dashboard's Templates section. The editor shows the built-in template, so you start from what you already get. A live preview shows how it will look in Telegram. Your changes save themselves a second after you stop typing, unless the template has errors. Press Send test to send it to a destination, and Reset to go back to the built-in one. The poster and buttons keep following their own switches. See [docs/templates.md](docs/templates.md) for the syntax, the fields you can use, and the built-in templates.
 
-<!-- screenshot: the Message templates section with its live preview -->
+<!-- screenshot: the Templates section with its live preview -->
 
 ## Privacy
 
