@@ -24,7 +24,7 @@ public sealed class NotificationRendererTests : IDisposable
         var flags = new Jellyfin.Plugin.TgJelly.Templates.TemplateFlags(_h.State, _h.Settings, _h.Time);
         _renderer = new NotificationRenderer(
             new MediaLayouts(formatter, new LinkBuilder(new FakeServerInfo()), _library, _h.Settings),
-            new AlertLayouts(formatter),
+            new AlertLayouts(formatter, _h.Settings, _h.Logo),
             new Jellyfin.Plugin.TgJelly.Templates.TemplateRenderer(engine, models, flags, _h.Settings, _h.Strings, Microsoft.Extensions.Logging.Abstractions.NullLogger<Jellyfin.Plugin.TgJelly.Templates.TemplateRenderer>.Instance));
         _movie = _library.Add(new MediaItem { Id = Guid.NewGuid(), Kind = MediaKind.Movie, Name = "Arrival" });
     }

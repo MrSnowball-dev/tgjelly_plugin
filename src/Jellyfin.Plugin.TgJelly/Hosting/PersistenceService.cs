@@ -21,6 +21,7 @@ public sealed class PersistenceService : BackgroundService
     private readonly SettingsStore _settings;
     private readonly SecretsStore _secrets;
     private readonly TimeProvider _time;
+    private readonly Rendering.LogoFile? _logo;
     private readonly ILogger<PersistenceService> _logger;
     private bool _restoreChecked;
     private bool _presetsUpgraded;
@@ -36,14 +37,17 @@ public sealed class PersistenceService : BackgroundService
     /// <param name="secrets">The secrets store.</param>
     /// <param name="time">The clock.</param>
     /// <param name="logger">The logger.</param>
+    /// <param name="logo">The logo file, written at startup.</param>
     public PersistenceService(
         InstanceGate gate,
         StateStore state,
         SettingsStore settings,
         SecretsStore secrets,
         TimeProvider time,
-        ILogger<PersistenceService> logger)
+        ILogger<PersistenceService> logger,
+        Rendering.LogoFile? logo = null)
     {
+        _logo = logo;
         _gate = gate;
         _state = state;
         _settings = settings;
@@ -110,6 +114,8 @@ public sealed class PersistenceService : BackgroundService
         {
             _logger.LogWarning(ex, "TgJelly could not read secrets.json");
         }
+
+        _ = _logo?.Ensure();
 
         using var timer = new PeriodicTimer(TimeSpan.FromSeconds(1), _time);
         while (await timer.WaitForNextTickAsync(stoppingToken).ConfigureAwait(false))

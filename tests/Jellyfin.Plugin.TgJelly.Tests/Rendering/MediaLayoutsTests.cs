@@ -37,7 +37,7 @@ public sealed class MediaLayoutsTests : IDisposable
         var models = new TemplateModelBuilder(_library, links, _h.Settings, formatter, _h.Time);
         _renderer = new NotificationRenderer(
             _layouts,
-            new AlertLayouts(formatter),
+            new AlertLayouts(formatter, _h.Settings, _h.Logo),
             new TemplateRenderer(new TemplateEngine(TimeProvider.System), models, new TemplateFlags(_h.State, _h.Settings, _h.Time), _h.Settings, _h.Strings, NullLogger<TemplateRenderer>.Instance));
     }
 

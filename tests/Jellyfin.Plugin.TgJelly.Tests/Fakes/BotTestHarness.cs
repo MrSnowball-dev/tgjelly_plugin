@@ -34,6 +34,7 @@ public sealed class BotTestHarness : IDisposable
         Settings = new SettingsStore(Host, Paths, State, Time, NullLogger<SettingsStore>.Instance);
         Secrets = new SecretsStore(Paths, Time, NullLogger<SecretsStore>.Instance);
         Strings = StringTable.LoadEmbedded();
+        Logo = new Jellyfin.Plugin.TgJelly.Rendering.LogoFile(Paths, NullLogger<Jellyfin.Plugin.TgJelly.Rendering.LogoFile>.Instance);
         Api = new FakeBotApi();
         Connection = new BotConnection();
     }
@@ -53,6 +54,8 @@ public sealed class BotTestHarness : IDisposable
     public SecretsStore Secrets { get; }
 
     public StringTable Strings { get; }
+
+    public Jellyfin.Plugin.TgJelly.Rendering.LogoFile Logo { get; }
 
     public FakeBotApi Api { get; }
 

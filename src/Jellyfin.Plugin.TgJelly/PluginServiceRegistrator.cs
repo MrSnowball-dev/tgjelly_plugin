@@ -42,6 +42,7 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddRedactedLogger<SecretsStore>();
         serviceCollection.AddRedactedLogger<StateStore>();
         serviceCollection.AddRedactedLogger<SettingsStore>();
+        serviceCollection.AddRedactedLogger<Rendering.LogoFile>();
         serviceCollection.AddRedactedLogger<InstanceGate>();
         serviceCollection.AddRedactedLogger<PersistenceService>();
         serviceCollection.AddRedactedLogger<HealthService>();
@@ -131,6 +132,7 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<Rendering.Formatter>();
         serviceCollection.AddSingleton<Rendering.LinkBuilder>();
         serviceCollection.AddSingleton<Rendering.MediaLayouts>();
+        serviceCollection.AddSingleton<Rendering.LogoFile>();
         serviceCollection.AddSingleton<Rendering.AlertLayouts>();
         serviceCollection.AddSingleton<Rendering.NotificationRenderer>();
         serviceCollection.AddSingleton<Templates.TemplateEngine>();

@@ -49,7 +49,7 @@ public sealed class TemplateSample
         ArgumentNullException.ThrowIfNull(text);
         var config = _settings.Current;
         var values = _models.Sample(eventKey);
-        var poster = eventKey != TemplateKeys.Digest && TemplateFieldCatalog.IsMedia(eventKey) && config.Message.For(eventKey).ShowPoster;
+        var poster = eventKey != TemplateKeys.Digest && config.Message.For(eventKey).ShowPoster;
         var limit = poster ? TemplateFitter.CaptionLimit : TemplateFitter.TextLimit;
         var buttons = Buttons(eventKey, config);
         var unfitted = _engine.Render(eventKey, text, values.Values, strict: false, config.Language).Output ?? string.Empty;

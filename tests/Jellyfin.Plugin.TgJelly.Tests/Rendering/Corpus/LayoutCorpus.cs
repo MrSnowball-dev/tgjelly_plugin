@@ -33,7 +33,7 @@ internal static class CorpusRig
         var flags = new TemplateFlags(h.State, h.Settings, time);
         var renderer = new NotificationRenderer(
             new MediaLayouts(formatter, link, library, h.Settings),
-            new AlertLayouts(formatter),
+            new AlertLayouts(formatter, h.Settings, h.Logo),
             new TemplateRenderer(engine, models, flags, h.Settings, h.Strings, NullLogger<TemplateRenderer>.Instance));
         var message = renderer.Render(c.Model, new Destination { Id = "d1" })
             ?? throw new InvalidOperationException($"Case {c.Name} rendered nothing.");

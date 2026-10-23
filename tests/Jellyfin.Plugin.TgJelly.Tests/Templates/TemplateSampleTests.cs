@@ -91,6 +91,19 @@ public sealed class TemplateSampleTests : IDisposable
         Assert.DoesNotContain(_sample.Build("media.movie", "x").Buttons.SelectMany(r => r), b => b.Text == "Open in Jellyfin");
     }
 
+    [Theory]
+    [InlineData("security.lockout")]
+    [InlineData("server.started")]
+    public void Validate_SecurityPosterOn_ReportsPoster(string key)
+    {
+        Assert.False(_sample.Build(key, "x").Poster);
+
+        _h.Settings.Update(null, c => c.Message.Change(key, s => s.ShowPoster = true));
+
+        var sample = _sample.Build(key, "x");
+        Assert.True(sample.Poster && sample.Caption);
+    }
+
     [Fact]
     public void PosterAndCaption_OnlyForMediaKeys_WithShowPoster()
     {

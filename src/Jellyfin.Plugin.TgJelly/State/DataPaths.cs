@@ -35,4 +35,7 @@ public sealed class DataPaths
 
     /// <summary>Gets the path of state.lock.</summary>
     public string Lock => Path.Combine(Root, "state.lock");
+
+    /// <summary>Gets the path of logo.png, the poster of Security and Server messages.</summary>
+    public string LogoPath => Path.Combine(Root, "logo.png");
 }
