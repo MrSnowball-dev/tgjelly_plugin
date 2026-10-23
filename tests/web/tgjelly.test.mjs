@@ -901,13 +901,50 @@ function holdPuts(api) {
 const proxyEl = el => el('tgj-proxy').innerHTML;
 
 test('the proxy form shows the stored mode, and hides the address for System', async () => {
-    const { view, el } = mount({ 'GET TgJelly/Settings': settings({ HasProxyPassword: true }) });
+    const { view, el } = mount({ 'GET TgJelly/Settings': settings({ ProxyMode: 'Http', HasProxyPassword: true }) });
     await show(view);
     const html = proxyEl(el);
-    assert.match(html, /<option value="System" selected>/);
-    assert.ok(!html.includes('data-tgj-input="proxyUrl"'));
+    assert.match(html, /<option value="Http" selected>/);
     assert.match(html, /data-tgj-input="proxyPassword"[^>]*placeholder="\(saved\)"/);
     assert.ok(!/data-tgj-input="proxyUsername"[^>]*placeholder=/.test(html));
+    const system = mount();
+    await show(system.view);
+    assert.match(proxyEl(system.el), /<option value="System" selected>/);
+    assert.ok(!proxyEl(system.el).includes('data-tgj-input="proxyUrl"'));
+});
+
+test('proxy_noProxy_hidesCredentials', async () => {
+    for (const ProxyMode of ['System', 'None']) {
+        const { view, el } = mount({ 'GET TgJelly/Settings': settings({ ProxyMode, HasProxyUsername: true }) });
+        await show(view);
+        assert.ok(!proxyEl(el).includes('proxyUsername'), ProxyMode);
+        assert.ok(!proxyEl(el).includes('proxyPassword'), ProxyMode);
+    }
+});
+
+test('proxy_socks5_showsCredentials, and hiding them again sends nothing but the mode', async () => {
+    const { view, el, api } = mount({ 'PUT TgJelly/Proxy': request => settings({ Revision: 6, ProxyMode: JSON.parse(request.data).Mode }) });
+    await show(view);
+    proxyMode(view, 'Socks5');
+    await flush();
+    assert.ok(proxyEl(el).includes('data-tgj-input="proxyUsername"'));
+    assert.ok(proxyEl(el).includes('data-tgj-input="proxyPassword"'));
+    assert.equal(putProxy(api).length, 0, 'showing sends nothing');
+    proxyMode(view, 'None');
+    await flush();
+    assert.ok(!proxyEl(el).includes('proxyUsername'));
+    leave(view, proxyAttrs('proxyMode'));
+    await flush();
+    assert.deepEqual(putProxy(api).map(b => Object.keys(b).sort()), [['ExpectedRevision', 'Mode', 'Url']], 'no credentials in the save');
+});
+
+test('proxy_hint_mentionsMtproto', async () => {
+    const { view, el } = mount();
+    await show(view);
+    assert.ok(proxyEl(el).includes(EN['web.proxy.typesHint']));
+    assert.match(EN['web.proxy.typesHint'], /SOCKS5/);
+    assert.match(EN['web.proxy.typesHint'], /HTTP/);
+    assert.match(EN['web.proxy.typesHint'], /MTProto/);
 });
 
 test('choosing Socks5 shows the address field', async () => {
@@ -1872,20 +1909,29 @@ test('a proxy save keeps unsaved settings edits, and a settings save keeps the p
     assert.ok(el('tgj-batching').innerHTML.includes('value="20"'));
 });
 
-test('the update switch and the mode select each save at once', async () => {
+test('updates_threeSwitches_saveAtOnce', async () => {
     const { view, api, el } = mount({ 'PUT TgJelly/Settings': echoSettings() });
     await show(view);
-    assert.match(el('tgj-updates').innerHTML, /<option value="SameMajor" selected>/);
+    for (const key of ['Fixes', 'NewReleases', 'NewMajor']) {
+        assert.ok(el('tgj-updates').innerHTML.includes(`data-tgj-cue="UpdateCheck.${key}"`), key);
+    }
+
+    assert.match(el('tgj-updates').innerHTML, /role="switch"[^>]*aria-checked="false"[^>]*data-tgj-input="updNewMajor"/);
     assert.match(el('tgj-updates').innerHTML, /role="switch"[^>]*aria-checked="true"[^>]*data-tgj-input="updEnabled"/);
     dispatchOn(view, 'click', { 'data-tgj-input': 'updEnabled', 'data-tgj-field': 'UpdateCheck.Enabled', role: 'switch' });
     await flush();
-    // A select fires input, then change: one save.
-    dispatchOn(view, 'input', { 'data-tgj-input': 'updMode', 'data-tgj-field': 'UpdateCheck.Mode' }, { value: 'AnyNewer' });
-    dispatchOn(view, 'change', { 'data-tgj-input': 'updMode', 'data-tgj-field': 'UpdateCheck.Mode' }, { value: 'AnyNewer' });
+    dispatchOn(view, 'click', { 'data-tgj-input': 'updNewMajor', 'data-tgj-field': 'UpdateCheck.NewMajor', role: 'switch' });
     await flush();
-    assert.deepEqual(putSettings(api).map(b => b.UpdateCheck), [{ Enabled: false, Fixes: true, NewReleases: true, NewMajor: false }, { Enabled: false, Fixes: true, NewReleases: true, NewMajor: true }]);
+    dispatchOn(view, 'click', { 'data-tgj-input': 'updFixes', 'data-tgj-field': 'UpdateCheck.Fixes', role: 'switch' });
+    await flush();
+    assert.deepEqual(putSettings(api).map(b => b.UpdateCheck), [
+        { Enabled: false, Fixes: true, NewReleases: true, NewMajor: false },
+        { Enabled: false, Fixes: true, NewReleases: true, NewMajor: true },
+        { Enabled: false, Fixes: false, NewReleases: true, NewMajor: true },
+    ], 'one partial save per switch');
     assert.deepEqual(cue(view, 'UpdateCheck.Enabled'), SAVED_CUE);
-    assert.deepEqual(cue(view, 'UpdateCheck.Mode'), SAVED_CUE);
+    assert.deepEqual(cue(view, 'UpdateCheck.NewMajor'), SAVED_CUE);
+    assert.deepEqual(cue(view, 'UpdateCheck.Fixes'), SAVED_CUE);
 });
 
 test('a non-number batching value is not sent', async () => {
@@ -1895,6 +1941,21 @@ test('a non-number batching value is not sent', async () => {
     await timers.advance(800);
     assert.equal(putSettings(api).length, 0);
     assert.deepEqual(cue(view, 'Batching.MaxHoldMinutes'), errorCue(EN['web.settings.notNumber']));
+});
+
+test('diagnostics_hasInfoNoticeListingContents', async () => {
+    const { view, el } = mount();
+    await show(view);
+    const html = el('tgj-diagnostics').innerHTML;
+    assert.match(html, /tgj-notice[^"]*info|info[^>]*tgj-notice/);
+    for (const key of ['web.diag.contains', 'web.diag.never', 'web.diag.why']) {
+        assert.ok(html.includes(m.t(EN, key)) || html.includes(EN[key]), key);
+    }
+
+    assert.match(EN['web.diag.never'], /token is never included/);
+    assert.match(EN['web.diag.never'], /Log is not part of the report/);
+    assert.match(EN['web.diag.contains'], /update checks/);
+    assert.match(EN['web.diag.why'], /bug report/);
 });
 
 test('copy diagnostics writes to the clipboard', async () => {
@@ -2935,18 +2996,18 @@ test('a focused select keeps the focus; a field outside the section is left alon
     let current = settings();
     const { view, doc, hooks } = mount({ 'GET TgJelly/Settings': () => current });
     await show(view);
-    const mode = liveFields(view, doc, 'tgj-updates', [{ tag: 'select', attributes: { 'data-tgj-input': 'updMode' } }]);
+    const mode = liveFields(view, doc, 'tgj-proxy', [{ tag: 'select', attributes: { 'data-tgj-input': 'proxyMode' } }]);
     const url = liveFields(view, doc, 'tgj-messages', URL_FIELD);
     mode().focus();
     const focused = mode();
 
-    current = settings({ Revision: 6, UpdateCheck: { Enabled: true, Fixes: true, NewReleases: true, NewMajor: true } });
+    current = settings({ Revision: 6, ProxyMode: 'Http', ProxyUrl: 'p:1' });
     await hooks.reloadSection('messages', { fresh: true });
-    assert.equal(doc.activeElement, focused, 'a write of Messages does not touch the Updates select');
-    await hooks.reloadSection('updates', { fresh: true });
+    assert.equal(doc.activeElement, focused, 'a write of Messages does not touch the proxy select');
+    await hooks.reloadSection('proxy', { fresh: true });
     assert.equal(doc.activeElement, mode());
     assert.notEqual(mode(), focused);
-    assert.equal(mode().value, 'AnyNewer', 'a select shows the new value: its choice was already made');
+    assert.equal(mode().value, 'Http', 'a select shows the new value: its choice was already made');
     assert.equal(url().focusCalls, 0);
 });
 
@@ -3285,12 +3346,13 @@ test('proxy_savesOnceWhenLeavingCard_notPerKeystroke', async () => {
         },
     });
     await show(view);
+    proxyMode(view, 'Socks5');
+    await flush();
     for (const name of ['proxyMode', 'proxyUsername', 'proxyPassword']) {
         assert.match(proxyEl(el), new RegExp(`data-tgj-input="${name}"[^>]*data-tgj-save="proxy"`), name);
     }
     assert.equal((proxyEl(el).match(/data-tgj-cue=/g) ?? []).length, 1, 'one cue for the card: it saves as one');
 
-    proxyMode(view, 'Socks5');
     leave(view, proxyAttrs('proxyMode'), proxyAttrs('proxyUrl'));
     for (const typed of ['p', 'pr', 'proxy:1080']) {
         proxyType(view, 'proxyUrl', typed);
@@ -3349,7 +3411,7 @@ test('noSaveButtons_inMessagesOrAdvanced', async () => {
     assert.ok(!SYMBOLS.test(html));
 
     // Every setting has its cue spot beside it.
-    const cueKeys = ['PublicUrl', ...MESSAGE_KEYS.map(toggleCue), ...BATCHING_KEYS.map(k => `Batching.${k}`), 'UpdateCheck.Enabled', 'UpdateCheck.Mode', 'proxy'];
+    const cueKeys = ['PublicUrl', ...MESSAGE_KEYS.map(toggleCue), ...BATCHING_KEYS.map(k => `Batching.${k}`), 'UpdateCheck.Enabled', 'UpdateCheck.Fixes', 'UpdateCheck.NewReleases', 'UpdateCheck.NewMajor', 'proxy'];
     for (const key of cueKeys) {
         assert.ok(html.includes(`data-tgj-cue="${key}"`), key);
     }
@@ -3359,7 +3421,7 @@ test('noSaveButtons_inMessagesOrAdvanced', async () => {
     const settingsHtml = ['tgj-messages', 'tgj-proxy', 'tgj-batching', 'tgj-updates'].map(id => el(id).innerHTML).join('');
     const controls = settingsHtml.match(/<(?:input|select)\b[^>]*>|<button[^>]*role="switch"[^>]*>/g)
         .filter(control => !/data-tgj-input="(?:msgSection|msgKey|tplTestTo)"/.test(control));
-    assert.equal(controls.length, 1 + 6 + 4 + 6 + 2);
+    assert.equal(controls.length, 1 + 6 + 4 + 6 + 4);
     for (const control of controls) {
         assert.match(control, /data-tgj-input="[^"]+"[\s\S]*data-tgj-save="[^"]+"/, control);
     }

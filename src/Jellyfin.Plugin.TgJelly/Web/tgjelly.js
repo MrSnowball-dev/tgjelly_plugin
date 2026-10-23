@@ -323,8 +323,13 @@ export function renderProxyForm(settings, S, ui, { nested = false } = {}) {
         rows.push(field('proxyUrl', 'web.proxy.url', 'text', local.Url ?? ''));
     }
 
-    rows.push(field('proxyUsername', 'web.proxy.username', 'text', '', settings.HasProxyUsername ? text(S, 'web.proxy.saved') : ''));
-    rows.push(field('proxyPassword', 'web.proxy.password', 'password', '', settings.HasProxyPassword ? text(S, 'web.proxy.saved') : ''));
+    // Hiding the credentials changes nothing: what was typed or saved stays (design §7).
+    if (local.Mode === 'Http' || local.Mode === 'Socks5') {
+        rows.push(field('proxyUsername', 'web.proxy.username', 'text', '', settings.HasProxyUsername ? text(S, 'web.proxy.saved') : ''));
+        rows.push(field('proxyPassword', 'web.proxy.password', 'password', '', settings.HasProxyPassword ? text(S, 'web.proxy.saved') : ''));
+    }
+
+    rows.push(`<p class="tgj-row-hint">${t(S, 'web.proxy.typesHint')}</p>`);
     return nested
         ? `<div class="tgj-proxy-form"><h3 class="tgj-subtitle">${t(S, 'web.proxy.title')}</h3>${rows.join('')}</div>`
         : card({ title: text(S, 'web.proxy.title'), body: rows.join(''), extraClass: 'tgj-proxy-form' });
@@ -756,7 +761,12 @@ export function renderManual(dto, S, ui) {
     return card({ title: text(S, 'web.manual.title'), body: parts.join('') });
 }
 
-const UPDATE_MODES = ['SameMajor', 'AnyNewer'];
+/** The three update kinds (design §7): the settings path's last part, the switch's input name and its strings. */
+const UPDATE_KINDS = [
+    { key: 'Fixes', input: 'updFixes', label: 'web.updates.fixes', hint: 'web.updates.fixesHint' },
+    { key: 'NewReleases', input: 'updNewReleases', label: 'web.updates.newReleases', hint: 'web.updates.newReleasesHint' },
+    { key: 'NewMajor', input: 'updNewMajor', label: 'web.updates.newMajor', hint: 'web.updates.newMajorHint' },
+];
 
 /** The batching fields with their allowed ranges (spec §10.1) and the strings that label and describe them. */
 const BATCHING_FIELDS = [
@@ -780,17 +790,16 @@ export function settingsFormData(settings) {
         Batching: { ...(settings.Batching ?? {}) },
         UpdateCheck: {
             Enabled: Boolean(check.Enabled),
-            // Interim (plan 9, Task 11 builds the three switches): the server keeps three switches, the page still edits one mode.
             Fixes: check.Fixes !== false,
             NewReleases: check.NewReleases !== false,
-            Mode: check.NewMajor ? 'AnyNewer' : 'SameMajor',
+            NewMajor: Boolean(check.NewMajor),
         },
     };
 }
 
-/** The UpdateCheck a PUT sends: the page's one mode sets New major versions (AnyNewer: on); Fixes and New releases are kept as loaded. */
+/** The UpdateCheck a PUT sends. */
 function updateCheckRequest(check) {
-    return { Enabled: check.Enabled, Fixes: check.Fixes, NewReleases: check.NewReleases, NewMajor: check.Mode === 'AnyNewer' };
+    return { Enabled: check.Enabled, Fixes: check.Fixes, NewReleases: check.NewReleases, NewMajor: check.NewMajor };
 }
 
 /** The value at a dotted path ('UpdateCheck.Enabled') of a nested object; undefined when a part is missing. */
@@ -899,7 +908,7 @@ export function renderBatching(settings, S, ui) {
 }
 
 /**
- * The update-check card under Advanced (spec §7.6): the switch and the mode, each saved at once.
+ * The update-check card under Advanced (spec §7.6): the Check switch and the three kinds, each saved at once.
  * @param {object | null} settings
  * @param {Record<string, string>} S
  * @param {{ form?: { local: object } }} ui form is state.forms.settings
@@ -921,16 +930,21 @@ export function renderUpdates(settings, S, ui) {
             label: enabled,
             attrs: { 'data-tgj-field': 'UpdateCheck.Enabled', 'data-tgj-save': 'UpdateCheck.Enabled' },
         }),
-    }) + row({
-        label: text(S, 'web.updates.mode'),
-        cueKey: 'UpdateCheck.Mode',
-        control: selectField({
-            input: 'updMode',
-            value: local.Mode,
-            options: UPDATE_MODES.map(mode => ({ value: mode, label: text(S, `settings.updates.mode.${mode}`) })),
-            attrs: { 'data-tgj-field': 'UpdateCheck.Mode', 'data-tgj-save': 'UpdateCheck.Mode', 'aria-label': text(S, 'web.updates.mode') },
-        }),
-    });
+    }) + UPDATE_KINDS.map(kind => {
+        const path = `UpdateCheck.${kind.key}`;
+        const name = text(S, kind.label);
+        return row({
+            label: name,
+            hint: text(S, kind.hint),
+            cueKey: path,
+            control: switchControl({
+                input: kind.input,
+                checked: Boolean(local[kind.key]),
+                label: name,
+                attrs: { 'data-tgj-field': path, 'data-tgj-save': path },
+            }),
+        });
+    }).join('');
     return card({ title: text(S, 'web.updates.title'), description: text(S, 'settings.updates.hint'), body });
 }
 
@@ -951,7 +965,8 @@ export function renderDiagnostics(S, ui) {
             + `<textarea id="tgj-diagnostics-text" class="tgj-field tgj-diag-text" readonly rows="12">${esc(ui.text)}</textarea>`);
     }
 
-    return card({ title: text(S, 'web.diag.title'), body: parts.join('') });
+    const info = notice({ kind: 'info', html: `<p>${t(S, 'web.diag.contains')}</p><p>${t(S, 'web.diag.never')}</p><p>${t(S, 'web.diag.why')}</p>` });
+    return card({ title: text(S, 'web.diag.title'), body: info + parts.join('') });
 }
 
 // --- the shell (plan 8, design §5.1-5.2): header, sidebar, one section shown at a time ---
@@ -2672,13 +2687,14 @@ export default function TgJellyPage(view, params) {
                 saveSetting('UpdateCheck.Enabled', 'now', el);
             }
         },
-        // A select fires input and then change; the change is the choice.
-        updMode: (el, event) => {
-            if (UPDATE_MODES.includes(el.value) && event.type === 'change') {
-                markDirty('settings', 'UpdateCheck.Mode', el.value);
-                saveSetting('UpdateCheck.Mode', 'now', el);
+        ...Object.fromEntries(UPDATE_KINDS.map(kind => [kind.input, (el, event) => {
+            if (event.type === 'click') {
+                const path = `UpdateCheck.${kind.key}`;
+                markDirty('settings', path, flipped(path));
+                renderSection('updates');
+                saveSetting(path, 'now', el);
             }
-        },
+        }])),
     };
 
     // The Messages section's own clicks and inputs (tgjelly-messages.js).
