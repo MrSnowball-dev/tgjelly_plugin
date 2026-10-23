@@ -1883,8 +1883,16 @@ export default function TgJellyPage(view, params) {
     /** The Revision to send as ExpectedRevision with any save. */
     const pageRevision = () => knownRevision;
 
+    // A section's reply older than the data it holds (a reload sent before a save and answered after it) is dropped:
+    // taking it would show the old values, and the next save would lay its change over them and revert the newer one.
+    const isOlder = (held, dto) => Boolean(held) && typeof dto.Revision === 'number' && dto.Revision < held.Revision;
+
     /** Takes a SettingsDto into the shared settings state and its editor forms (keeping unsaved edits). */
     const takeSettings = dto => {
+        if (isOlder(state.settings, dto)) {
+            return;
+        }
+
         noteRevision(dto);
         state.settings = dto;
         syncForm('proxy', proxyFormData(dto));
@@ -1927,6 +1935,10 @@ export default function TgJellyPage(view, params) {
 
     /** Takes a DestinationsDto into the state and the per-destination editor forms (keeping unsaved edits). */
     const takeDestinations = dto => {
+        if (isOlder(state.destinations, dto)) {
+            return;
+        }
+
         noteRevision(dto);
         state.destinations = dto;
         const live = new Set(dto.Items.map(d => `dest:${d.Id}`));
@@ -1982,6 +1994,10 @@ export default function TgJellyPage(view, params) {
 
     /** Takes a TemplatesDto into the state and one editor form per event key (keeping unsaved edits). */
     const takeTemplates = dto => {
+        if (isOlder(state.templates, dto)) {
+            return;
+        }
+
         noteRevision(dto);
         state.templates = dto;
         const live = new Set(dto.Items.map(i => `tpl:${i.EventKey}`));

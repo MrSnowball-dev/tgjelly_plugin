@@ -3372,3 +3372,107 @@ test('renderedDashboard_hasNoDecorativeSymbols', async () => {
     await show(unconnected.view);
     assert.ok(!NO_SYMBOLS.test(everything(unconnected.view)), 'not connected');
 });
+
+// --- a section reload that lands after a newer save (final review F1) ---
+
+/** Holds the reply to the next GET of this path (the reply is read from the routes when it is sent); release() lets it land. */
+function holdNextGet(api, path) {
+    const fetch = api.fetch;
+    let held = null;
+    api.fetch = request => {
+        const answer = fetch(request);
+        if (request.type !== 'GET' || request.url !== `/jf/TgJelly/${path}` || held) {
+            return answer;
+        }
+
+        answer.catch(() => {});
+        return new Promise(resolve => {
+            held = () => resolve(answer);
+        });
+    };
+    return { sent: () => held !== null, release: () => held() };
+}
+
+test('a settings reload sent before a settings save and answered after it is ignored: the next save keeps the first change', async () => {
+    let server = settings();
+    const { view, api, el, hooks } = mount({
+        'GET TgJelly/Settings': () => server,
+        'PUT TgJelly/Destinations/d1': () => {
+            server = { ...server, Revision: server.Revision + 1 };
+            return { ...dest({ Enabled: false }), Revision: server.Revision };
+        },
+        'PUT TgJelly/Settings': request => {
+            const body = JSON.parse(request.data);
+            if (body.ExpectedRevision !== server.Revision) {
+                return { status: 409, body: { Current: server } };
+            }
+
+            server = { ...server, Revision: server.Revision + 1, Message: body.Message, Batching: body.Batching };
+            return server;
+        },
+    });
+    await show(view);
+    const reload = holdNextGet(api, 'Settings');
+    // A destination save: once it settles, the page reloads the settings sections at the Revision it moved to (6).
+    await flip(view, 'destEnabled', { 'data-tgj-id': 'd1', 'data-tgj-save': 'dest:d1:Enabled' });
+    assert.ok(reload.sent(), 'a GET Settings is on its way, read at Revision 6');
+    toggle(view, 'ShowPoster');
+    await flush();
+    assert.equal(server.Message.ShowPoster, false);
+    assert.equal(server.Revision, 7);
+
+    reload.release();
+    await flush();
+    assert.equal(hooks.state.settings.Revision, 7, 'the older reply is not taken');
+    assert.equal(hooks.state.forms.settings.local.Message.ShowPoster, false);
+    assert.equal(switchIn(el('tgj-messages').innerHTML, 'msgToggle', { 'data-tgj-key': 'ShowPoster' }), false);
+
+    toggle(view, 'ShowOverview');
+    await flush();
+    assert.deepEqual(putSettings(api).map(p => [p.ExpectedRevision, p.Message.ShowPoster, p.Message.ShowOverview]), [[6, false, true], [7, false, false]]);
+    assert.equal(server.Message.ShowPoster, false, 'the first change is not reverted');
+    assert.equal(server.Message.ShowOverview, false);
+    assert.deepEqual(cue(view, 'Message.ShowOverview'), SAVED_CUE);
+});
+
+test('a templates reload sent before a template save and answered after it is ignored: the textarea keeps the saved text', async () => {
+    let revision = 5;
+    let text = '<b>{{ title }}</b>';
+    const current = () => {
+        const dto = templates({ Revision: revision });
+        dto.Items[0] = { ...dto.Items[0], Text: text, Edited: text !== dto.Items[0].BuiltIn };
+        return dto;
+    };
+    const { view, api, el, hooks, timers } = mount({
+        'GET TgJelly/Templates': current,
+        'PUT TgJelly/Destinations/d1': () => {
+            revision++;
+            return { ...dest({ Enabled: false }), Revision: revision };
+        },
+        'PUT TgJelly/Templates/movie.added': request => {
+            const body = JSON.parse(request.data);
+            if (body.ExpectedRevision !== revision) {
+                return { status: 409, body: { Current: current() } };
+            }
+
+            revision++;
+            text = body.Text;
+            return current();
+        },
+    });
+    await show(view);
+    const reload = holdNextGet(api, 'Templates');
+    await flip(view, 'destEnabled', { 'data-tgj-id': 'd1', 'data-tgj-save': 'dest:d1:Enabled' });
+    assert.ok(reload.sent(), 'a GET Templates is on its way, read at Revision 6');
+    tplType(view, 'New {{ title }}');
+    await timers.advance(1000);
+    assert.deepEqual(tplPuts(api), [['Templates/movie.added', { ExpectedRevision: 6, Text: 'New {{ title }}' }]]);
+    assert.equal(revision, 7);
+
+    reload.release();
+    await flush();
+    assert.equal(hooks.state.templates.Revision, 7, 'the older reply is not taken');
+    assert.equal(hooks.state.forms['tpl:movie.added'].local.Text, 'New {{ title }}');
+    assert.ok(el('tgj-templates').innerHTML.includes('>New {{ title }}</textarea>'), 'the textarea shows the saved text');
+    assert.equal(text, 'New {{ title }}');
+});
