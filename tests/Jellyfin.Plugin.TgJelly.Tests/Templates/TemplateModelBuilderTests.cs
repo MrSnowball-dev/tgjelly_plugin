@@ -239,7 +239,7 @@ public sealed class TemplateModelBuilderTests : IDisposable
     {
         var movie = _library.Add(new MediaItem { Id = Guid.NewGuid(), Kind = MediaKind.Movie, Name = "Arrival", CommunityRating = 7.9f, Genres = ["Drama"] });
         Assert.Equal("7.9", V(Media("media.movie", movie))["rating_text"]);
-        Assert.Equal(SettingsUpdateStatus.Saved, _h.Settings.Update(null, c => c.Message.ShowRatingGenres = false).Status);
+        Assert.Equal(SettingsUpdateStatus.Saved, _h.Settings.Update(null, c => c.Message.Change("media.movie", s => s.ShowRatingGenres = false)).Status);
 
         var model = V(Media("media.movie", movie));
 
@@ -253,9 +253,40 @@ public sealed class TemplateModelBuilderTests : IDisposable
     {
         var movie = _library.Add(new MediaItem { Id = Guid.NewGuid(), Kind = MediaKind.Movie, Name = "Arrival", Overview = "Aliens." });
         Assert.Equal("Aliens.", V(Media("media.movie", movie))["overview"]);
-        Assert.Equal(SettingsUpdateStatus.Saved, _h.Settings.Update(null, c => c.Message.ShowOverview = false).Status);
+        Assert.Equal(SettingsUpdateStatus.Saved, _h.Settings.Update(null, c => c.Message.Change("media.movie", s => s.ShowOverview = false)).Status);
 
         Assert.Null(V(Media("media.movie", movie))["overview"]);
+    }
+
+    [Fact]
+    public void ModelBuilder_OverviewOffForMovie_EmptiesOverviewForMovieOnly()
+    {
+        var movie = _library.Add(new MediaItem { Id = Guid.NewGuid(), Kind = MediaKind.Movie, Name = "Arrival", Overview = "Aliens." });
+        var video = _library.Add(new MediaItem { Id = Guid.NewGuid(), Kind = MediaKind.MusicVideo, Name = "Get Lucky", Overview = "A song." });
+        var book = _library.Add(new MediaItem { Id = Guid.NewGuid(), Kind = MediaKind.Book, Name = "Dune", Overview = "Spice." });
+        Assert.Equal(SettingsUpdateStatus.Saved, _h.Settings.Update(null, c => c.Message.Change("media.movie", s => s.ShowOverview = false)).Status);
+
+        Assert.Null(V(Media("media.movie", movie))["overview"]);
+        Assert.Equal("A song.", V(Media("media.musicvideo", video))["overview"]);
+        Assert.Equal("Spice.", V(Media("media.book", book))["overview"]);
+        Assert.Null(_builder.Sample("media.movie").Values["overview"]);
+        Assert.NotNull(_builder.Sample("media.book").Values["overview"]);
+    }
+
+    [Fact]
+    public void Digest_IgnoresEverySwitch()
+    {
+        // Pins MessageSwitches.Applicable("media.digest") being empty: no switch changes the digest's model.
+        var on = _builder.Sample("media.digest").Values;
+        Assert.Equal(SettingsUpdateStatus.Saved, _h.Settings.Update(null, c => c.Message.Change("media.digest", s =>
+        {
+            foreach (var name in MessageSwitches.Names)
+            {
+                s.Set(name, false);
+            }
+        })).Status);
+
+        Assert.Equal(on, _builder.Sample("media.digest").Values);
     }
 
     [Fact]
@@ -329,8 +360,11 @@ public sealed class TemplateModelBuilderTests : IDisposable
         Assert.Equal("7.9", _builder.Sample("media.movie").Values["rating_text"]);
         Assert.Equal(SettingsUpdateStatus.Saved, _h.Settings.Update(null, c =>
         {
-            c.Message.ShowRatingGenres = false;
-            c.Message.ShowOverview = false;
+            c.Message.Change("media.movie", s =>
+            {
+                s.ShowRatingGenres = false;
+                s.ShowOverview = false;
+            });
         }).Status);
 
         var sample = _builder.Sample("media.movie").Values;

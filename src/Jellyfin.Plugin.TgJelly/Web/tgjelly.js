@@ -857,6 +857,39 @@ export function renderManual(dto, S, ui) {
 }
 
 const MESSAGE_TOGGLES = ['ShowPoster', 'ShowOverview', 'ShowRatingGenres', 'ShowOpenInJellyfin', 'ShowProviderLinks', 'AnnounceUpgrades'];
+
+/**
+ * Until the Messages section picks a message (plan 9, Task 8), its switches show the movie's values and a change goes
+ * to every media message, as v0.4's one set of switches did.
+ */
+const SHOWN_MESSAGE = 'media.movie';
+const MEDIA_MESSAGES = ['media.movie', 'media.episodes', 'media.album', 'media.musicvideo', 'media.book', 'media.digest'];
+
+/** The Messages form's switches from a SettingsDto's Message ({ PerMessage, AnnounceUpgrades }). */
+function messageFormData(message) {
+    const shown = (Array.isArray(message && message.PerMessage) ? message.PerMessage : []).find(e => e && e.EventKey === SHOWN_MESSAGE);
+    const switches = (shown && shown.Switches) || {};
+    const data = Object.fromEntries(MESSAGE_TOGGLES.filter(k => k !== 'AnnounceUpgrades').map(k => [k, Boolean(switches[k])]));
+    data.AnnounceUpgrades = Boolean(message && message.AnnounceUpgrades);
+    return data;
+}
+
+/**
+ * The Message part of a PUT Settings body: only the switches at the given paths, so the save stays partial (the
+ * server merges entries by event key, and keeps every switch not sent).
+ * @param {object} message the form's Message
+ * @param {string[]} paths
+ */
+function messageRequest(message, paths) {
+    const names = paths.filter(p => p.startsWith('Message.')).map(p => p.slice('Message.'.length));
+    const switches = Object.fromEntries(names.filter(n => n !== 'AnnounceUpgrades').map(n => [n, Boolean(message[n])]));
+    const body = { PerMessage: Object.keys(switches).length > 0 ? MEDIA_MESSAGES.map(EventKey => ({ EventKey, Switches: { ...switches } })) : [] };
+    if (names.includes('AnnounceUpgrades')) {
+        body.AnnounceUpgrades = Boolean(message.AnnounceUpgrades);
+    }
+
+    return body;
+}
 const UPDATE_MODES = ['SameMajor', 'AnyNewer'];
 
 /** The batching fields with their allowed ranges (spec §10.1) and the strings that label and describe them. */
@@ -877,7 +910,7 @@ export function settingsFormData(settings) {
     const mode = settings.UpdateCheck ? settings.UpdateCheck.Mode : undefined;
     return {
         PublicUrl: settings.PublicUrl ?? '',
-        Message: { ...(settings.Message ?? {}) },
+        Message: messageFormData(settings.Message),
         Batching: { ...(settings.Batching ?? {}) },
         UpdateCheck: {
             Enabled: Boolean(settings.UpdateCheck && settings.UpdateCheck.Enabled),
@@ -928,7 +961,7 @@ export function settingsRequest(form, paths, revision, S) {
             body: {
                 ExpectedRevision: revision,
                 PublicUrl: String(data.PublicUrl ?? '').trim(),
-                Message: data.Message,
+                Message: messageRequest(data.Message, paths),
                 Batching: data.Batching,
                 UpdateCheck: data.UpdateCheck,
             },

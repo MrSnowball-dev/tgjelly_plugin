@@ -24,19 +24,26 @@ public sealed class SettingsScreensTests : IDisposable, IAsyncLifetime
     public async Task MessageToggle_FlipsOnlyThatOption()
     {
         var before = _h.Settings.Current.Message;
-        Assert.True(before.ShowPoster);
+        Assert.True(before.For("media.movie").ShowPoster);
         Assert.False(before.AnnounceUpgrades);
 
         await Click("1|smt|ShowPoster");
         await Click("1|smt|AnnounceUpgrades");
 
-        var after = _h.Settings.Current.Message;
-        Assert.False(after.ShowPoster);
-        Assert.True(after.AnnounceUpgrades);
-        Assert.True(after.ShowOverview);
-        Assert.True(after.ShowRatingGenres);
-        Assert.True(after.ShowOpenInJellyfin);
-        Assert.True(after.ShowProviderLinks);
+        var message = _h.Settings.Current.Message;
+        Assert.True(message.AnnounceUpgrades);
+        Assert.False(message.For("security.lockout").ShowPoster);
+        foreach (var key in new[] { "media.movie", "media.episodes", "media.album", "media.musicvideo", "media.book", "media.digest" })
+        {
+            // Until the screen picks a message (Task 7), a change applies to every media message, as v0.4's one set did.
+            var after = message.For(key);
+            Assert.False(after.ShowPoster, key);
+            Assert.True(after.ShowOverview);
+            Assert.True(after.ShowRatingGenres);
+            Assert.True(after.ShowOpenInJellyfin);
+            Assert.True(after.ShowProviderLinks);
+        }
+
         Assert.Equal(7, Labels(LastEdit()).Length);
     }
 

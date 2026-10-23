@@ -21,6 +21,13 @@ public static class SettingsValidator
         var errors = new List<SettingsError>();
         RequireNotNull(errors, nameof(PluginConfiguration.Proxy), configuration.Proxy);
         RequireNotNull(errors, nameof(PluginConfiguration.Message), configuration.Message);
+        RequireNotNull(errors, "Message.PerMessage", configuration.Message?.PerMessage);
+        var perMessage = configuration.Message?.PerMessage ?? [];
+        for (var i = 0; i < perMessage.Length; i++)
+        {
+            RequireNotNull(errors, string.Create(CultureInfo.InvariantCulture, $"Message.PerMessage[{i}].Switches"), perMessage[i]?.Switches);
+        }
+
         RequireNotNull(errors, nameof(PluginConfiguration.Batching), configuration.Batching);
         RequireNotNull(errors, nameof(PluginConfiguration.UpdateCheck), configuration.UpdateCheck);
         RequireNotNull(errors, nameof(PluginConfiguration.Destinations), configuration.Destinations);

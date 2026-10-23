@@ -4,7 +4,7 @@ using Jellyfin.Plugin.TgJelly.Configuration;
 namespace Jellyfin.Plugin.TgJelly.Api;
 
 /// <summary>
-/// <c>PUT TgJelly/Settings</c>: replaces these sections; proxy fields aren't part of it (spec §11.2).
+/// <c>PUT TgJelly/Settings</c>: replaces these sections, except <c>Message</c>, which merges; proxy fields aren't part of it (spec §11.2).
 /// </summary>
 public sealed class SettingsUpdateRequest
 {
@@ -15,9 +15,9 @@ public sealed class SettingsUpdateRequest
     [Required(AllowEmptyStrings = true)]
     public string PublicUrl { get; set; } = string.Empty;
 
-    /// <summary>Gets or sets the message toggles.</summary>
+    /// <summary>Gets or sets the message switches to change: entries merge by event key, and switches not sent keep their value.</summary>
     [Required]
-    public MessageOptions Message { get; set; } = new();
+    public MessageSettingsUpdate Message { get; set; } = new();
 
     /// <summary>Gets or sets the batching values.</summary>
     [Required]

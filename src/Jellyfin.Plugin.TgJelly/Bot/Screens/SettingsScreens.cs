@@ -20,13 +20,13 @@ public sealed class SettingsScreens
 {
     private const string InputKey = "input";
     private const string PublicUrlInput = "publicUrl";
+    private const string ShownKey = "media.movie";
 
-    /// <summary>The <see cref="MessageOptions"/> switches, in the order shown.</summary>
-    private static readonly string[] Toggles =
-    [
-        nameof(MessageOptions.ShowPoster), nameof(MessageOptions.ShowOverview), nameof(MessageOptions.ShowRatingGenres),
-        nameof(MessageOptions.ShowOpenInJellyfin), nameof(MessageOptions.ShowProviderLinks), nameof(MessageOptions.AnnounceUpgrades),
-    ];
+    /// <summary>
+    /// The message switches, in the order shown. Until this screen picks a message first (plan 9, Task 7) it shows the
+    /// movie's switches, and a change applies to every media message, as v0.4's one set did.
+    /// </summary>
+    private static readonly string[] Toggles = [.. MessageSwitches.Names, nameof(MessageOptions.AnnounceUpgrades)];
 
     private readonly SettingsStore _settings;
     private readonly StateStore _state;
@@ -162,38 +162,24 @@ public sealed class SettingsScreens
 
     private static void FlipMessageOption(MessageOptions o, string name)
     {
-        switch (name)
+        if (name == nameof(MessageOptions.AnnounceUpgrades))
         {
-            case nameof(MessageOptions.ShowPoster):
-                o.ShowPoster = !o.ShowPoster;
-                break;
-            case nameof(MessageOptions.ShowOverview):
-                o.ShowOverview = !o.ShowOverview;
-                break;
-            case nameof(MessageOptions.ShowRatingGenres):
-                o.ShowRatingGenres = !o.ShowRatingGenres;
-                break;
-            case nameof(MessageOptions.ShowOpenInJellyfin):
-                o.ShowOpenInJellyfin = !o.ShowOpenInJellyfin;
-                break;
-            case nameof(MessageOptions.ShowProviderLinks):
-                o.ShowProviderLinks = !o.ShowProviderLinks;
-                break;
-            case nameof(MessageOptions.AnnounceUpgrades):
-                o.AnnounceUpgrades = !o.AnnounceUpgrades;
-                break;
+            o.AnnounceUpgrades = !o.AnnounceUpgrades;
+            return;
+        }
+
+        var value = !o.For(ShownKey).Get(name);
+        foreach (var key in MessageOptions.Keys)
+        {
+            if (EventCatalog.GroupOf(key) == "media")
+            {
+                o.Change(key, s => s.Set(name, value));
+            }
         }
     }
 
-    private static bool Get(MessageOptions o, string name) => name switch
-    {
-        nameof(MessageOptions.ShowPoster) => o.ShowPoster,
-        nameof(MessageOptions.ShowOverview) => o.ShowOverview,
-        nameof(MessageOptions.ShowRatingGenres) => o.ShowRatingGenres,
-        nameof(MessageOptions.ShowOpenInJellyfin) => o.ShowOpenInJellyfin,
-        nameof(MessageOptions.ShowProviderLinks) => o.ShowProviderLinks,
-        _ => o.AnnounceUpgrades,
-    };
+    private static bool Get(MessageOptions o, string name)
+        => name == nameof(MessageOptions.AnnounceUpgrades) ? o.AnnounceUpgrades : o.For(ShownKey).Get(name);
 
     private static string Mark(bool on) => on ? "✅ " : "⬜ ";
 

@@ -82,7 +82,7 @@ public sealed class TemplateModelBuilder
                 : field.Type.EndsWith("[]", StringComparison.Ordinal) ? new List<object?>() : null;
         }
 
-        ApplyToggles(result, _settings.Current.Message);
+        ApplyToggles(result, _settings.Current.Message.For(model.EventKey));
         if (entries is not null)
         {
             // v0.2 kept the first entries that fit, grouped again by library, and could keep none at all.
@@ -108,7 +108,7 @@ public sealed class TemplateModelBuilder
     }
 
     /// <summary>
-    /// Returns the sample model of an event key, as the current message toggles shape it.
+    /// Returns the sample model of an event key, as its message's switches shape it.
     /// </summary>
     /// <param name="eventKey">The event key.</param>
     /// <returns>The sample model.</returns>
@@ -116,12 +116,12 @@ public sealed class TemplateModelBuilder
     {
         ArgumentNullException.ThrowIfNull(eventKey);
         var values = new Dictionary<string, object?>(TemplateFieldCatalog.SampleFull(eventKey), StringComparer.Ordinal);
-        ApplyToggles(values, _settings.Current.Message);
+        ApplyToggles(values, _settings.Current.Message.For(eventKey));
         var (text, list, more) = TemplateFieldCatalog.Shrink(eventKey);
         return TemplateModel.Of(values, text, list, more, _formatter.Number);
     }
 
-    private static void ApplyToggles(Dictionary<string, object?> values, MessageOptions options)
+    private static void ApplyToggles(Dictionary<string, object?> values, MessageSwitches options)
     {
         if (!options.ShowRatingGenres)
         {

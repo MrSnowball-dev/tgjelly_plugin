@@ -26,7 +26,7 @@ public sealed class TemplateSample
     /// <param name="renderer">Fits and checks template text.</param>
     /// <param name="engine">The template engine, for the unfitted length.</param>
     /// <param name="models">Builds the sample models.</param>
-    /// <param name="settings">The settings: the toggles, the public URL and the language.</param>
+    /// <param name="settings">The settings: the message's switches, the public URL and the language.</param>
     /// <param name="strings">The string table, for the button labels.</param>
     public TemplateSample(TemplateRenderer renderer, TemplateEngine engine, TemplateModelBuilder models, SettingsStore settings, StringTable strings)
     {
@@ -49,7 +49,7 @@ public sealed class TemplateSample
         ArgumentNullException.ThrowIfNull(text);
         var config = _settings.Current;
         var values = _models.Sample(eventKey);
-        var poster = eventKey != TemplateKeys.Digest && TemplateFieldCatalog.IsMedia(eventKey) && config.Message.ShowPoster;
+        var poster = eventKey != TemplateKeys.Digest && TemplateFieldCatalog.IsMedia(eventKey) && config.Message.For(eventKey).ShowPoster;
         var limit = poster ? TemplateFitter.CaptionLimit : TemplateFitter.TextLimit;
         var buttons = Buttons(eventKey, config);
         var unfitted = _engine.Render(eventKey, text, values.Values, strict: false, config.Language).Output ?? string.Empty;
@@ -64,7 +64,7 @@ public sealed class TemplateSample
     private List<IReadOnlyList<OutboxButton>> Buttons(string eventKey, PluginConfiguration config)
     {
         var rows = new List<IReadOnlyList<OutboxButton>>();
-        var options = config.Message;
+        var options = config.Message.For(eventKey);
 
         // As sent: media messages carry the Open and provider rows; alerts and the digest have none of them.
         var media = TemplateFieldCatalog.IsMedia(eventKey) && eventKey != TemplateKeys.Digest;

@@ -55,7 +55,7 @@ public class SettingsController : ControllerBase
     public ActionResult<SettingsDto> GetSettings() => ToDto(_settings.Current);
 
     /// <summary>
-    /// Saves the public URL, message toggles, batching and update-check settings.
+    /// Saves the public URL, message switches, batching and update-check settings.
     /// </summary>
     /// <param name="request">The new values and the expected revision.</param>
     /// <returns>The saved settings, 400 with per-field errors, or 409 with the current data.</returns>
@@ -71,12 +71,18 @@ public class SettingsController : ControllerBase
             return blocked;
         }
 
+        var message = request.Message ?? new MessageSettingsUpdate();
+        if (message.Validate() is { Count: > 0 } messageErrors)
+        {
+            return BadRequest(new ErrorsDto { Errors = messageErrors });
+        }
+
         var publicUrl = (request.PublicUrl ?? string.Empty).Trim();
         var before = _settings.Current.PublicUrl;
         var result = _settings.Update(request.ExpectedRevision, c =>
         {
             c.PublicUrl = publicUrl;
-            c.Message = request.Message;
+            message.ApplyTo(c.Message);
             c.Batching = request.Batching;
             c.UpdateCheck = request.UpdateCheck;
         });
@@ -180,7 +186,7 @@ public class SettingsController : ControllerBase
             PublicUrl = c.PublicUrl,
             PublicUrlValid = PublicUrlRules.IsValid(c.PublicUrl),
             PublicUrlSuggestion = _links.Suggest(),
-            Message = c.Message,
+            Message = MessageSettingsDto.From(c.Message),
             Batching = c.Batching,
             UpdateCheck = c.UpdateCheck,
             ProxyMode = c.Proxy.Mode.ToString(),

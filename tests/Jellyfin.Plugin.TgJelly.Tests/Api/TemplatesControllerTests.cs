@@ -245,8 +245,11 @@ public sealed class TemplatesControllerTests : IAsyncLifetime
         // The length line describes the preview, which the message toggles shape.
         _h.Settings.Update(null, c =>
         {
-            c.Message.ShowOverview = false;
-            c.Message.ShowRatingGenres = false;
+            c.Message.Change("media.movie", s =>
+            {
+                s.ShowOverview = false;
+                s.ShowRatingGenres = false;
+            });
         });
         const string Text = "<b>{{ title }}</b> {{ overview }} {{ rating_text }} {{ genres | array.join \", \" }}";
         var toggled = new System.Collections.Generic.Dictionary<string, object?>(TemplateFieldCatalog.SampleFull("media.movie"))
@@ -272,7 +275,7 @@ public sealed class TemplatesControllerTests : IAsyncLifetime
     public void Validate_PosterWarning_UsesTheToggledLength()
     {
         // Untoggled the overview pushes the text over the caption limit; with Show overview off it fits.
-        _h.Settings.Update(null, c => c.Message.ShowOverview = false);
+        _h.Settings.Update(null, c => c.Message.Change("media.movie", s => s.ShowOverview = false));
 
         var dto = Validate("media.movie", "{{ title }} {{ overview }}" + new string('a', 990));
 
@@ -284,7 +287,7 @@ public sealed class TemplatesControllerTests : IAsyncLifetime
     [Fact]
     public void Validate_ShowPosterOff_TextLimit()
     {
-        _h.Settings.Update(null, c => c.Message.ShowPoster = false);
+        _h.Settings.Update(null, c => c.Message.Change("media.movie", s => s.ShowPoster = false));
 
         var dto = Validate("media.movie", new string('a', 1500));
 

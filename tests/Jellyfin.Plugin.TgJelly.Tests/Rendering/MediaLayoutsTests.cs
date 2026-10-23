@@ -82,14 +82,14 @@ public sealed class MediaLayoutsTests : IDisposable
     }
 
     [Theory]
-    [InlineData(nameof(MessageOptions.ShowPoster))]
-    [InlineData(nameof(MessageOptions.ShowOverview))]
-    [InlineData(nameof(MessageOptions.ShowRatingGenres))]
-    [InlineData(nameof(MessageOptions.ShowOpenInJellyfin))]
-    [InlineData(nameof(MessageOptions.ShowProviderLinks))]
+    [InlineData(nameof(MessageSwitches.ShowPoster))]
+    [InlineData(nameof(MessageSwitches.ShowOverview))]
+    [InlineData(nameof(MessageSwitches.ShowRatingGenres))]
+    [InlineData(nameof(MessageSwitches.ShowOpenInJellyfin))]
+    [InlineData(nameof(MessageSwitches.ShowProviderLinks))]
     public void Toggles_Off_RemoveTheirParts(string toggle)
     {
-        Assert.True(_h.Settings.Update(null, c => typeof(MessageOptions).GetProperty(toggle)!.SetValue(c.Message, false)).Status == SettingsUpdateStatus.Saved);
+        Assert.True(_h.Settings.Update(null, c => c.Message.Change("media.movie", s => s.Set(toggle, false))).Status == SettingsUpdateStatus.Saved);
         var movie = Add(Movie());
 
         var message = Render(Group("Movies", movie))!;
@@ -97,24 +97,39 @@ public sealed class MediaLayoutsTests : IDisposable
         var labels = message.Buttons.Select(r => r[0].Text).ToList();
         switch (toggle)
         {
-            case nameof(MessageOptions.ShowPoster):
+            case nameof(MessageSwitches.ShowPoster):
                 Assert.Null(message.PosterPath);
                 Assert.Null(message.PosterCacheKey);
                 break;
-            case nameof(MessageOptions.ShowOverview):
+            case nameof(MessageSwitches.ShowOverview):
                 Assert.DoesNotContain("linguist", message.Caption, StringComparison.Ordinal);
                 Assert.DoesNotContain("linguist", message.Text, StringComparison.Ordinal);
                 break;
-            case nameof(MessageOptions.ShowRatingGenres):
+            case nameof(MessageSwitches.ShowRatingGenres):
                 Assert.Equal("<b>Arrival</b> (2016)\n1h 56m", message.Caption.Split("\n\n")[0]);
                 break;
-            case nameof(MessageOptions.ShowOpenInJellyfin):
+            case nameof(MessageSwitches.ShowOpenInJellyfin):
                 Assert.Equal(["IMDb"], labels);
                 break;
             default:
                 Assert.Equal(["Open in Jellyfin"], labels);
                 break;
         }
+    }
+
+    [Fact]
+    public void MediaLayouts_PosterOffForEpisodesOnly_MovieStillHasPoster()
+    {
+        Assert.Equal(SettingsUpdateStatus.Saved, _h.Settings.Update(null, c => c.Message.Change("media.episodes", s => s.ShowPoster = false)).Status);
+        var movie = Add(Movie());
+        var series = Add(new MediaItem { Id = Guid.NewGuid(), Kind = MediaKind.Series, Name = "Severance", Primary = Poster() });
+        var season = Add(new MediaItem { Id = Guid.NewGuid(), Kind = MediaKind.Other, Name = "Season 2", Primary = Poster() });
+        var episode = Add(Episode(series, season, 1, "Hello, Ms. Cobel"));
+
+        Assert.Equal(movie.Primary!.Path, _layouts.Render(Group("Movies", movie))!.PosterPath);
+        var episodes = _layouts.Render(Group("Shows", episode))!;
+        Assert.Null(episodes.PosterPath);
+        Assert.Null(episodes.PosterCacheKey);
     }
 
     [Theory]

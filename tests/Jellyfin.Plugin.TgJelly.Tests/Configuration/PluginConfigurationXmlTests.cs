@@ -20,7 +20,8 @@ public class PluginConfigurationXmlTests
         Assert.Equal(0, c.Revision);
         Assert.Equal("en", c.Language);
         Assert.Equal(ProxyMode.System, c.Proxy.Mode);
-        Assert.True(c.Message.ShowPoster);
+        Assert.True(c.Message.For("media.movie").ShowPoster);
+        Assert.Empty(c.Message.PerMessage);
         Assert.False(c.Message.AnnounceUpgrades);
         Assert.Equal(120, c.Batching.QuietWindowSeconds);
         Assert.Equal(30, c.Batching.MaxHoldMinutes);

@@ -43,13 +43,36 @@ function status(overrides = {}) {
     };
 }
 
+const MEDIA_MESSAGES = ['media.movie', 'media.episodes', 'media.album', 'media.musicvideo', 'media.book', 'media.digest'];
+const FLAT_MESSAGE = { ShowPoster: true, ShowOverview: true, ShowRatingGenres: true, ShowOpenInJellyfin: true, ShowProviderLinks: false };
+
+/** A SettingsDto Message as the server sends it: every message's switches (media ones from flat; alerts off). */
+function messageDto(flat = FLAT_MESSAGE, announce = false) {
+    const off = { ShowPoster: false, ShowOverview: false, ShowRatingGenres: false, ShowOpenInJellyfin: false, ShowProviderLinks: false };
+    return {
+        PerMessage: [...MEDIA_MESSAGES.map(EventKey => ({ EventKey, Switches: { ...flat } })), ...['security.lockout', 'server.started'].map(EventKey => ({ EventKey, Switches: { ...off } }))],
+        AnnounceUpgrades: announce,
+    };
+}
+
+/** Merges a PUT body's Message into a SettingsDto Message, as the server does: by event key, switch by switch. */
+function mergeMessage(dto, change) {
+    return {
+        PerMessage: dto.PerMessage.map(e => {
+            const sent = (change.PerMessage ?? []).find(c => c.EventKey === e.EventKey);
+            return sent ? { EventKey: e.EventKey, Switches: { ...e.Switches, ...sent.Switches } } : e;
+        }),
+        AnnounceUpgrades: change.AnnounceUpgrades ?? dto.AnnounceUpgrades,
+    };
+}
+
 function settings(overrides = {}) {
     return {
         Revision: 5,
         PublicUrl: '',
         PublicUrlValid: true,
         PublicUrlSuggestion: '',
-        Message: { ShowPoster: true, ShowOverview: true, ShowRatingGenres: true, ShowOpenInJellyfin: true, ShowProviderLinks: false, AnnounceUpgrades: false },
+        Message: messageDto(),
         Batching: { QuietWindowSeconds: 120, MaxHoldMinutes: 30, ReleaseQuietSeconds: 20, DigestThreshold: 10, LateEditHours: 6, ReadyTimeoutMinutes: 15 },
         UpdateCheck: { Enabled: true, Mode: 'SameMajor' },
         ProxyMode: 'System',
@@ -1688,12 +1711,14 @@ const URL_ATTRS = { 'data-tgj-input': 'publicUrl', 'data-tgj-field': 'PublicUrl'
 const urlInput = (view, value) => dispatchOn(view, 'input', URL_ATTRS, { value });
 
 /** PUT Settings that saves what it is sent and moves the revision on, like the server. */
-function echoSettings(start = 5) {
+function echoSettings(start = 5, startMessage = messageDto()) {
     let revision = start;
+    let message = startMessage;
     return request => {
         const body = JSON.parse(request.data);
         revision++;
-        return settings({ Revision: revision, PublicUrl: body.PublicUrl, Message: body.Message, Batching: body.Batching, UpdateCheck: body.UpdateCheck });
+        message = mergeMessage(message, body.Message);
+        return settings({ Revision: revision, PublicUrl: body.PublicUrl, Message: message, Batching: body.Batching, UpdateCheck: body.UpdateCheck });
     };
 }
 
@@ -1722,7 +1747,7 @@ test('invalid url explains', async () => {
 });
 
 test('each message toggle is a switch with its own cue, and a save sends only its own field', async () => {
-    const { view, api, el } = mount({ 'PUT TgJelly/Settings': echoSettings() });
+    const { view, api, el, hooks } = mount({ 'PUT TgJelly/Settings': echoSettings() });
     await show(view);
     const html = el('tgj-messages').innerHTML;
     for (const key of ['ShowPoster', 'ShowOverview', 'ShowRatingGenres', 'ShowOpenInJellyfin', 'ShowProviderLinks', 'AnnounceUpgrades']) {
@@ -1731,14 +1756,18 @@ test('each message toggle is a switch with its own cue, and a save sends only it
     }
     toggle(view, 'ShowProviderLinks');
     toggle(view, 'ShowPoster');
+    toggle(view, 'AnnounceUpgrades');
     await flush();
-    const [first, second] = putSettings(api);
+    const [first, second, third] = putSettings(api);
+    // Until Messages picks a message (Task 8), a switch goes to every media message, and only that switch is sent.
     assert.equal(first.ExpectedRevision, 5);
-    assert.equal(first.Message.ShowProviderLinks, true);
-    assert.equal(first.Message.ShowPoster, true, 'the second toggle is its own save');
+    assert.deepEqual(first.Message, { PerMessage: MEDIA_MESSAGES.map(EventKey => ({ EventKey, Switches: { ShowProviderLinks: true } })) });
     assert.equal(second.ExpectedRevision, 6);
-    assert.equal(second.Message.ShowProviderLinks, true);
-    assert.equal(second.Message.ShowPoster, false);
+    assert.deepEqual(second.Message, { PerMessage: MEDIA_MESSAGES.map(EventKey => ({ EventKey, Switches: { ShowPoster: false } })) }, 'the second toggle is its own save');
+    assert.deepEqual(third.Message, { PerMessage: [], AnnounceUpgrades: true });
+    assert.ok(el('tgj-messages').innerHTML.includes('data-tgj-key="ShowProviderLinks"'));
+    assert.equal(hooks.state.forms.settings.base.Message.ShowProviderLinks, true, 'the saved value shows');
+    assert.equal(hooks.state.forms.settings.base.Message.ShowPoster, false);
     assert.equal(second.PublicUrl, '');
     assert.deepEqual(second.UpdateCheck, { Enabled: true, Mode: 'SameMajor' });
     assert.equal(second.Batching.QuietWindowSeconds, 120);
@@ -1778,7 +1807,7 @@ test('a second settings 409 says the value changed elsewhere and keeps the typed
 });
 
 test('a toggle save sends the saved batching values, and a batching edit still waiting stays dirty', async () => {
-    const saved = settings({ Revision: 6, Message: { ...settings().Message, ShowProviderLinks: true } });
+    const saved = settings({ Revision: 6, Message: messageDto({ ...FLAT_MESSAGE, ShowProviderLinks: true }) });
     const { view, api, hooks } = mount({ 'PUT TgJelly/Settings': saved });
     await show(view);
     batchInput(view, 'QuietWindowSeconds', '9999');
@@ -1786,7 +1815,7 @@ test('a toggle save sends the saved batching values, and a batching edit still w
     await flush();
     const [body] = putSettings(api);
     assert.equal(body.Batching.QuietWindowSeconds, 120);
-    assert.equal(body.Message.ShowProviderLinks, true);
+    assert.equal(body.Message.PerMessage[0].Switches.ShowProviderLinks, true);
     assert.equal(hooks.state.forms.settings.local.Batching.QuietWindowSeconds, 9999);
     assert.equal(hooks.state.forms.settings.dirty, true);
     assert.equal(hooks.state.forms.settings.base.Message.ShowProviderLinks, true);
@@ -2873,7 +2902,7 @@ test('sectionWrite_keepsFocusInAnyField', async () => {
     const writes = el('tgj-messages').writes;
 
     // Another tab changes a different setting; the Messages section renders again.
-    current = settings({ PublicUrl: 'https://a.example', Revision: 6, Message: { ...settings().Message, ShowPoster: false } });
+    current = settings({ PublicUrl: 'https://a.example', Revision: 6, Message: messageDto({ ...FLAT_MESSAGE, ShowPoster: false }) });
     await hooks.reloadSection('messages', { fresh: true });
 
     assert.ok(el('tgj-messages').writes > writes, 'the section was written again');
@@ -3166,8 +3195,7 @@ test('toggle_savesImmediately_showsSavedBesideRow', async () => {
     await flush();
     const [body] = putSettings(api);
     assert.equal(body.ExpectedRevision, 5);
-    assert.equal(body.Message.ShowProviderLinks, true);
-    assert.equal(body.Message.ShowPoster, true);
+    assert.deepEqual(body.Message.PerMessage.map(e => e.Switches), MEDIA_MESSAGES.map(() => ({ ShowProviderLinks: true })), 'only the switch that changed');
     assert.deepEqual(cue(view, 'Message.ShowProviderLinks'), SAVED_CUE, 'Saved, beside the switch that changed');
     for (const key of MESSAGE_KEYS.filter(k => k !== 'ShowProviderLinks')) {
         assert.deepEqual(cue(view, `Message.${key}`), IDLE_CUE, key);
@@ -3336,9 +3364,9 @@ test('noSaveButtons_inMessagesOrAdvanced', async () => {
 });
 
 test('settingsConflict_retriesWithServerData', async () => {
-    const theirs = settings({ Revision: 9, Message: { ...settings().Message, ShowOverview: false } });
+    const theirs = settings({ Revision: 9, Message: messageDto({ ...FLAT_MESSAGE, ShowOverview: false }) });
     const answers = [{ status: 409, body: { Current: theirs } }];
-    const echo = echoSettings(9);
+    const echo = echoSettings(9, theirs.Message);
     const { view, api, el, hooks } = mount({ 'PUT TgJelly/Settings': request => answers.shift() ?? echo(request) });
     await show(view);
     toggle(view, 'ShowProviderLinks');
@@ -3346,8 +3374,8 @@ test('settingsConflict_retriesWithServerData', async () => {
 
     const puts = putSettings(api);
     assert.deepEqual(puts.map(b => b.ExpectedRevision), [5, 9], 'retried once, with the server revision');
-    assert.equal(puts[1].Message.ShowProviderLinks, true, 'the admin change is re-applied');
-    assert.equal(puts[1].Message.ShowOverview, false, 'on top of the change made elsewhere');
+    assert.deepEqual(puts[1].Message.PerMessage.map(e => e.Switches), MEDIA_MESSAGES.map(() => ({ ShowProviderLinks: true })), 'the admin change is re-applied, alone');
+    assert.equal(hooks.state.settings.Message.PerMessage[0].Switches.ShowOverview, false, 'on top of the change made elsewhere');
     assert.deepEqual(cue(view, 'Message.ShowProviderLinks'), SAVED_CUE);
     assert.equal(hooks.state.settings.Revision, 10);
     assert.match(el('tgj-messages').innerHTML, /aria-checked="false"[^>]*data-tgj-key="ShowOverview"/, 'the other change shows');
@@ -3563,7 +3591,7 @@ test('a settings reload sent before a settings save and answered after it is ign
                 return { status: 409, body: { Current: server } };
             }
 
-            server = { ...server, Revision: server.Revision + 1, Message: body.Message, Batching: body.Batching };
+            server = { ...server, Revision: server.Revision + 1, Message: mergeMessage(server.Message, body.Message), Batching: body.Batching };
             return server;
         },
     });
@@ -3574,7 +3602,7 @@ test('a settings reload sent before a settings save and answered after it is ign
     assert.ok(reload.sent(), 'a GET Settings is on its way, read at Revision 6');
     toggle(view, 'ShowPoster');
     await flush();
-    assert.equal(server.Message.ShowPoster, false);
+    assert.equal(server.Message.PerMessage[0].Switches.ShowPoster, false);
     assert.equal(server.Revision, 7);
 
     reload.release();
@@ -3585,9 +3613,9 @@ test('a settings reload sent before a settings save and answered after it is ign
 
     toggle(view, 'ShowOverview');
     await flush();
-    assert.deepEqual(putSettings(api).map(p => [p.ExpectedRevision, p.Message.ShowPoster, p.Message.ShowOverview]), [[6, false, true], [7, false, false]]);
-    assert.equal(server.Message.ShowPoster, false, 'the first change is not reverted');
-    assert.equal(server.Message.ShowOverview, false);
+    assert.deepEqual(putSettings(api).map(p => [p.ExpectedRevision, p.Message.PerMessage[0].Switches]), [[6, { ShowPoster: false }], [7, { ShowOverview: false }]]);
+    assert.equal(server.Message.PerMessage[0].Switches.ShowPoster, false, 'the first change is not reverted');
+    assert.equal(server.Message.PerMessage[0].Switches.ShowOverview, false);
     assert.deepEqual(cue(view, 'Message.ShowOverview'), SAVED_CUE);
 });
 

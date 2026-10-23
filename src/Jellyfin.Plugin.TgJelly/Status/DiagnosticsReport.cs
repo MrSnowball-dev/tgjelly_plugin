@@ -114,8 +114,25 @@ public sealed class DiagnosticsReport
         Line(sb, "revision", settings.Revision.ToString(CultureInfo.InvariantCulture));
         Line(sb, "public URL set", YesNo(settings.PublicUrl.Length > 0));
         Line(sb, "public URL valid", YesNo(PublicUrlRules.IsValid(settings.PublicUrl)));
-        var m = settings.Message;
-        Line(sb, "message toggles", $"poster {YesNo(m.ShowPoster)}, overview {YesNo(m.ShowOverview)}, rating/genres {YesNo(m.ShowRatingGenres)}, open in Jellyfin {YesNo(m.ShowOpenInJellyfin)}, provider links {YesNo(m.ShowProviderLinks)}, announce upgrades {YesNo(m.AnnounceUpgrades)}");
+        Line(sb, "announce upgrades", YesNo(settings.Message.AnnounceUpgrades));
+        var changed = 0;
+        foreach (var key in MessageOptions.Keys)
+        {
+            // Only the messages whose switches differ from their defaults, so the report stays short.
+            var s = settings.Message.For(key);
+            var d = MessageSwitches.DefaultFor(key);
+            if (MessageSwitches.Names.Any(n => s.Get(n) != d.Get(n)))
+            {
+                Line(sb, "message " + key, $"poster {YesNo(s.ShowPoster)}, overview {YesNo(s.ShowOverview)}, rating/genres {YesNo(s.ShowRatingGenres)}, open in Jellyfin {YesNo(s.ShowOpenInJellyfin)}, provider links {YesNo(s.ShowProviderLinks)}");
+                changed++;
+            }
+        }
+
+        if (changed == 0)
+        {
+            Line(sb, "message switches", "defaults");
+        }
+
         var b = settings.Batching;
         Line(sb, "batching", $"quiet window {b.QuietWindowSeconds}s, max hold {b.MaxHoldMinutes}min, release quiet {b.ReleaseQuietSeconds}s, digest threshold {b.DigestThreshold}, late edit {b.LateEditHours}h, ready timeout {b.ReadyTimeoutMinutes}min");
         Line(sb, "update check", settings.UpdateCheck.Enabled ? settings.UpdateCheck.Mode.ToString() : "off");

@@ -17,7 +17,7 @@ using Xunit;
 namespace Jellyfin.Plugin.TgJelly.Tests.Rendering.Corpus;
 
 /// <summary>One frozen input of the message layouts.</summary>
-internal sealed record CorpusCase(string Name, RenderModel Model, IReadOnlyList<MediaItem> Items, MessageOptions Options, DateTimeOffset Now);
+internal sealed record CorpusCase(string Name, RenderModel Model, IReadOnlyList<MediaItem> Items, MessageSwitches? Options, DateTimeOffset Now);
 
 /// <summary>Renders corpus cases through the production renderer.</summary>
 internal static class CorpusRig
@@ -52,12 +52,16 @@ internal static class CorpusRig
         var saved = h.Settings.Update(null, s =>
         {
             s.PublicUrl = "https://jf.example.com";
-            s.Message.ShowPoster = c.Options.ShowPoster;
-            s.Message.ShowOverview = c.Options.ShowOverview;
-            s.Message.ShowRatingGenres = c.Options.ShowRatingGenres;
-            s.Message.ShowOpenInJellyfin = c.Options.ShowOpenInJellyfin;
-            s.Message.ShowProviderLinks = c.Options.ShowProviderLinks;
-            s.Message.AnnounceUpgrades = c.Options.AnnounceUpgrades;
+            if (c.Options is { } options)
+            {
+                s.Message.Change(c.Model.EventKey, m =>
+                {
+                    foreach (var name in MessageSwitches.Names)
+                    {
+                        m.Set(name, options.Get(name));
+                    }
+                });
+            }
         });
         Assert.Equal(SettingsUpdateStatus.Saved, saved.Status);
         return (library, new FakeTimeProvider(c.Now), new Formatter(h.Strings), new LinkBuilder(new FakeServerInfo()));
@@ -128,12 +132,12 @@ internal static class LayoutCorpus
 
     private static RenderModel DigestOf(List<RenderModel> groups) => new() { Kind = RenderKind.Digest, EventKey = "media.digest", At = At, Groups = groups };
 
-    private static CorpusCase Add(string name, RenderModel model, IEnumerable<MediaItem> items, MessageOptions? options = null, DateTimeOffset? now = null)
-        => new(name, model, items.ToList(), options ?? new MessageOptions(), now ?? SameDay);
+    private static CorpusCase Add(string name, RenderModel model, IEnumerable<MediaItem> items, MessageSwitches? options = null, DateTimeOffset? now = null)
+        => new(name, model, items.ToList(), options, now ?? SameDay);
 
     private static void AddMovies(List<CorpusCase> cases)
     {
-        void Movie1(string name, Func<Ids, MediaItem> make, MessageOptions? options = null, Action<RenderModel>? tweak = null, string library = "Movies")
+        void Movie1(string name, Func<Ids, MediaItem> make, MessageSwitches? options = null, Action<RenderModel>? tweak = null, string library = "Movies")
         {
             var ids = new Ids();
             var movie = make(ids);
@@ -147,9 +151,9 @@ internal static class LayoutCorpus
         Movie1("movie-no-rating", i => Movie(i, rating: null));
         Movie1("movie-no-genres", i => Movie(i, genres: []));
         Movie1("movie-no-runtime", i => Movie(i, minutes: null));
-        Movie1("movie-overview-off", i => Movie(i), new MessageOptions { ShowOverview = false });
-        Movie1("movie-rating-genres-off", i => Movie(i), new MessageOptions { ShowRatingGenres = false });
-        Movie1("movie-poster-off", i => Movie(i), new MessageOptions { ShowPoster = false });
+        Movie1("movie-overview-off", i => Movie(i), new MessageSwitches { ShowOverview = false });
+        Movie1("movie-rating-genres-off", i => Movie(i), new MessageSwitches { ShowRatingGenres = false });
+        Movie1("movie-poster-off", i => Movie(i), new MessageSwitches { ShowPoster = false });
         Movie1("movie-overview-3000", i => Movie(i, overview: Words(3000)));
         Movie1("movie-overview-5000", i => Movie(i, overview: Words(5000)));
         Movie1("movie-overview-20000", i => Movie(i, overview: Words(20000)));
