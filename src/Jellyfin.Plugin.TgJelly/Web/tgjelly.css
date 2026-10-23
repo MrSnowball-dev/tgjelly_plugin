@@ -107,6 +107,13 @@
     border-bottom: 1px solid var(--tgj-line);
 }
 
+#tgjelly-root .tgj-header-brand {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: var(--tgj-space-2);
+}
+
 #tgjelly-root .tgj-header-title {
     margin: 0;
     font-size: var(--tgj-step-2);
@@ -993,20 +1000,14 @@
     text-decoration: none;
 }
 
-#tgjelly-root .tgj-summary-count {
-    color: var(--tgj-fg);
-}
-
-#tgjelly-root .tgj-row-control .tgj-summary-count {
-    margin-right: var(--tgj-space-2);
-}
-
 #tgjelly-root .tgj-unreachable {
     margin-top: var(--tgj-space-4);
 }
 
-#tgjelly-root .tgj-version {
-    margin: var(--tgj-space-3) 0 0;
+#tgjelly-root .tgj-conn-message {
+    margin-inline-start: var(--tgj-space-2);
+    color: var(--tgj-fg-2);
+    overflow-wrap: anywhere;
 }
 
 /* ---- Messages and Advanced ---- */

@@ -331,9 +331,13 @@ export function renderStatus(status, S, lang = 'en') {
         const takeOver = status.ConnectionState === 'WebhookConflict'
             ? actionButton({ label: text(S, 'web.status.takeOver'), act: 'takeover', kind: 'primary' })
             : '';
+        // The label holds the state word; the server's message (long when something is wrong) is plain text beside it.
+        const word = status.ConnectionState === 'Connected' ? text(S, 'web.status.connected') : connectionLabel(status, S).text;
+        const message = status.ConnectionMessage && status.ConnectionMessage !== word
+            ? `<span class="tgj-conn-message">${esc(status.ConnectionMessage)}</span>` : '';
         parts.push(row({
             label: text(S, 'web.status.connection'),
-            control: label(status.ConnectionMessage, tone) + takeOver,
+            control: label(word, tone) + message + takeOver,
         }));
     }
 
@@ -342,6 +346,7 @@ export function renderStatus(status, S, lang = 'en') {
         return card({ title: text(S, 'web.status.title'), body: parts.join('') });
     }
 
+    parts.push(notice({ kind: 'info', html: text(S, 'web.bot.access') }));
     parts.push(row({
         label: text(S, 'web.status.activity'),
         extraClass: 'tgj-row--stack',
@@ -374,7 +379,6 @@ export function renderStatus(status, S, lang = 'en') {
         }));
     }
 
-    parts.push(`<p class="tgj-row-hint tgj-version">${t(S, 'web.status.version', { version: status.Version, target: status.BuildTarget })}</p>`);
     return card({ title: text(S, 'web.status.title'), body: parts.join('') });
 }
 
@@ -537,67 +541,8 @@ export function renderBot(status, links, S, ui) {
     return card({
         title: text(S, 'web.bot.title'),
         body: row({ label: text(S, 'web.bot.name'), control: `<b>@${esc(status.BotUsername)}</b>` })
-            + row({ label: text(S, 'web.bot.accessLabel'), hint: text(S, 'web.bot.access'), control: '' })
             + `<div class="tgj-actions">${telegramLink(links && links.OpenBot, t(S, 'web.bot.open'))}`
             + `${actionButton({ label: text(S, 'web.bot.change'), act: 'changeToken', disabled: busy })}${disconnect}</div>`,
-    });
-}
-
-/**
- * The Overview summary card (design §5.2): the destinations and how many need attention, the templates edited and
- * flagged, and the notices. Each row ends with a button that switches to its section (data-tgj-nav).
- * @param {object | null} status the StatusDto
- * @param {object | null} destinations the DestinationsDto, or null until it loads
- * @param {object | null} templates the TemplatesDto, or null until it loads
- * @param {Record<string, string>} S
- * @param {string} [lang]
- * @returns {string} HTML; '' until a bot is connected
- */
-export function renderOverviewSummary(status, destinations, templates, S, lang = 'en') {
-    if (!status || !status.HasToken) {
-        return '';
-    }
-
-    const go = section => actionButton({ label: text(S, 'web.summary.open'), act: 'goto', attrs: { 'data-tgj-nav': section } });
-    // Notices are shown on the Overview itself, so that row has no button.
-    const values = [];
-
-    const dests = destinations ? destinations.Items ?? [] : null;
-    if (dests) {
-        if (dests.length === 0) {
-            values.push(label(text(S, 'web.summary.noDestinations'), 'neutral'));
-        } else {
-            const failing = dests.filter(d => d.Health && (d.Health.Status !== 'Ok' || d.Health.PhotosBlocked)).length;
-            values.push(`<span class="tgj-summary-count">${esc(pluralText(S, 'web.summary.destinations', dests.length, {}, lang))}</span>`
-                + (failing > 0
-                    ? label(pluralText(S, 'web.summary.attention', failing, {}, lang), 'attention')
-                    : label(text(S, 'web.summary.healthy'), 'good')));
-        }
-    }
-
-    const items = templates ? templates.Items ?? [] : null;
-    let templateValue = '';
-    if (items) {
-        const edited = items.filter(i => i.Edited).length;
-        const flagged = items.filter(i => i.Flag).length;
-        templateValue = edited > 0
-            ? `<span class="tgj-summary-count">${esc(pluralText(S, 'web.nav.edited', edited, {}, lang))}</span>`
-            : label(text(S, 'web.summary.templatesDefault'), 'neutral');
-        if (flagged > 0) {
-            templateValue += label(pluralText(S, 'web.summary.flagged', flagged, {}, lang), 'attention');
-        }
-    }
-
-    const notices = (status.Notices ?? []).length;
-    const noticeValue = notices > 0
-        ? label(pluralText(S, 'web.summary.noticeCount', notices, {}, lang), 'attention')
-        : label(text(S, 'web.summary.noNotices'), 'neutral');
-
-    return card({
-        title: text(S, 'web.summary.title'),
-        body: row({ label: text(S, 'web.nav.destinations'), control: (values[0] ?? '') + go('destinations') })
-            + row({ label: text(S, 'web.nav.templates'), control: templateValue + go('templates') })
-            + row({ label: text(S, 'web.summary.notices'), control: noticeValue }),
     });
 }
 
@@ -1517,7 +1462,7 @@ const NAV_LABELS = {
 /** Today's section containers, by the dashboard section that holds them (design §5.2). */
 const SECTION_HOSTS = {
     // Connect precedes Status: with no bot it leads (design §5.2), and with a bot it is empty, so Status leads.
-    overview: ['tgj-connect', 'tgj-status', 'tgj-bot', 'tgj-summary'],
+    overview: ['tgj-connect', 'tgj-status', 'tgj-bot'],
     destinations: ['tgj-destinations'],
     messages: ['tgj-messages'],
     templates: ['tgj-templates'],
@@ -1529,6 +1474,9 @@ const STYLESHEET_WAIT_MS = 1000;
 
 /** The header's connection label: a label's HTML, a word in an outline and no symbol. */
 const connectionHtml = connection => label(connection.text, connection.tone);
+
+/** The header's version label, or '' before the version is known. */
+const versionHtml = version => (version ? label(`v${version}`, 'neutral') : '');
 
 /**
  * The header's connection label for a Status: "Connected · @bot", "Not connected", "Connecting", or a warning when the
@@ -1563,11 +1511,12 @@ export function connectionLabel(status, S, failed = false) {
  * and one section per name holding today's containers. Only the active section is visible. The page fills the
  * containers, the label (#tgj-conn) and the counts (#tgj-nav-count-<name>) afterwards; this is written once.
  * @param {Record<string, string> | null} S
- * @param {{ active: string, connection: { tone: string, text: string }, counts?: Record<string, string> }} options
+ * @param {{ active: string, connection: { tone: string, text: string }, counts?: Record<string, string>, version?: string }} options
+ *   version is the plugin's, painted beside the title; empty until the first status arrives
  *   counts are plain text by section name, e.g. { destinations: '3', templates: '1 edited' }
  * @returns {string}
  */
-export function renderShell(S, { active, connection, counts = {} }) {
+export function renderShell(S, { active, connection, counts = {}, version = '' }) {
     const current = SECTIONS.includes(active) ? active : 'overview';
     const nav = SECTIONS.map(name => `<button type="button" id="tgj-nav-${name}" data-tgj-nav="${name}"`
         + `${name === current ? ' aria-current="page"' : ''}>`
@@ -1576,7 +1525,7 @@ export function renderShell(S, { active, connection, counts = {} }) {
     const sections = SECTIONS.map(name => `<section id="tgj-sec-${name}" data-tgj-section="${name}" aria-labelledby="tgj-nav-${name}"`
         + `${name === current ? '' : ' hidden'}>${SECTION_HOSTS[name].map(id => `<div id="${id}"></div>`).join('')}</section>`);
     return '<div class="tgj-shell">'
-        + `<header class="tgj-header"><h1 class="tgj-header-title">TgJelly</h1><span id="tgj-conn">${connectionHtml(connection)}</span></header>`
+        + `<header class="tgj-header"><div class="tgj-header-brand"><h1 class="tgj-header-title">TgJelly</h1><span id="tgj-version">${versionHtml(version)}</span></div><span id="tgj-conn">${connectionHtml(connection)}</span></header>`
         + `<nav class="tgj-sidebar" aria-label="${t(S, 'web.nav.label')}">${nav.join('')}</nav>`
         + `<div class="tgj-content">${sections.join('')}</div>`
         + '</div>';
@@ -2156,13 +2105,6 @@ export default function TgJellyPage(view, params) {
             load: loadLinks,
             render: () => renderBot(state.status, state.links, state.strings, state.ui),
         },
-        // Reads the status, destinations and templates state, so it has nothing to load itself.
-        summary: {
-            id: 'tgj-summary',
-            dependsOnStatus: true,
-            load: async () => {},
-            render: () => renderOverviewSummary(state.status, state.destinations, state.templates, state.strings, lang()),
-        },
         proxy: {
             id: 'tgj-proxy',
             load: loadSettings,
@@ -2245,6 +2187,7 @@ export default function TgJellyPage(view, params) {
     };
 
     const connection = () => connectionLabel(state.status, state.strings, state.ui.statusFailed);
+    const pluginVersion = () => (state.status && state.status.Version) || '';
 
     /** Shows one section and marks its sidebar button; with { remember: true } also records it in the URL hash. */
     const selectSection = (name, { remember = false } = {}) => {
@@ -2289,7 +2232,7 @@ export default function TgJellyPage(view, params) {
 
         const connected = Boolean(state.status && state.status.HasToken);
         const first = connected ? sectionFromHash(window.location && window.location.hash) : 'overview';
-        root.innerHTML = renderShell(state.strings, { active: first, connection: connection(), counts: navCounts() });
+        root.innerHTML = renderShell(state.strings, { active: first, connection: connection(), counts: navCounts(), version: pluginVersion() });
         shellDrawn = true;
         selectSection(first);
     };
@@ -2301,6 +2244,7 @@ export default function TgJellyPage(view, params) {
         }
 
         setHtml('tgj-conn', connectionHtml(connection()));
+        setHtml('tgj-version', versionHtml(pluginVersion()));
         const counts = navCounts();
         for (const name of SECTIONS) {
             setHtml(`tgj-nav-count-${name}`, esc(counts[name] ?? ''));
@@ -2326,11 +2270,6 @@ export default function TgJellyPage(view, params) {
             // the templates section lists the destinations for its test send.
             renderSection('manual');
             renderSection('templates');
-        }
-
-        if (name === 'destinations' || name === 'templates') {
-            // The Overview summary counts these.
-            renderSection('summary');
         }
 
         if (name === 'proxy' || name === 'connect') {

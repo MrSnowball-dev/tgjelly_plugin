@@ -12,7 +12,7 @@ const EN = JSON.parse(readFileSync(new URL('../../src/Jellyfin.Plugin.TgJelly/St
 // The page has only #tgjelly-root; the shell the controller writes into it adds the rest (makeView registers them).
 // The section hosts are listed too, so a test can hold an element before the shell is written.
 const IDS = [
-    'tgjelly-root', 'tgj-status', 'tgj-connect', 'tgj-bot', 'tgj-summary', 'tgj-destinations', 'tgj-messages', 'tgj-demo',
+    'tgjelly-root', 'tgj-status', 'tgj-connect', 'tgj-bot', 'tgj-destinations', 'tgj-messages', 'tgj-demo',
     'tgj-proxy', 'tgj-batching', 'tgj-updates', 'tgj-templates', 'tgj-tpl-preview', 'tgj-manual', 'tgj-diagnostics',
 ];
 
@@ -659,9 +659,8 @@ test('Connected closes the connect card; the Bot section names the bot once', as
     assert.ok(!html.includes('123:secret'));
 });
 
-test('Bot section access line does not repeat the username', () => {
+test('Bot section does not repeat the username', () => {
     const html = m.renderBot(status(), { OpenBot: 'https://t.me/jf_bot?start=setup' }, EN, {});
-    assert.ok(html.includes('Anyone who can open this bot'));
     assert.equal(html.split('@jf_bot').length, 2);
 });
 
@@ -784,12 +783,11 @@ test('Unreachable opens the proxy panel', async () => {
     assert.ok(!html.includes('saveProxy'), 'the proxy auto-saves: no Save button');
 });
 
-test('the Bot section shows the username, the access reminder and the buttons', async () => {
+test('the Bot section shows the username and the buttons', async () => {
     const { view, el } = mount();
     await show(view);
     const html = el('tgj-bot').innerHTML;
     assert.ok(html.includes('@jf_bot'));
-    assert.ok(html.includes('Anyone who can open this bot can manage notifications. Keep it restricted in BotFather.'));
     assert.ok(html.includes('Change token') && html.includes('Disconnect bot'));
 });
 
@@ -2608,7 +2606,7 @@ function shownSection(el) {
 }
 
 const HOSTS = {
-    overview: ['tgj-connect', 'tgj-status', 'tgj-bot', 'tgj-summary'],
+    overview: ['tgj-connect', 'tgj-status', 'tgj-bot'],
     destinations: ['tgj-destinations'],
     messages: ['tgj-messages'],
     templates: ['tgj-templates'],
@@ -2917,7 +2915,7 @@ const STATUS_FIXTURES = {
     }),
 };
 
-const overviewHtml = el => ['tgj-status', 'tgj-connect', 'tgj-bot', 'tgj-summary'].map(id => el(id).innerHTML).join('\n');
+const overviewHtml = el => ['tgj-status', 'tgj-connect', 'tgj-bot'].map(id => el(id).innerHTML).join('\n');
 
 test('overview_cards_statusBotSummary', async () => {
     const { view, el } = mount({
@@ -2939,14 +2937,6 @@ test('overview_cards_statusBotSummary', async () => {
     }
     assert.match(botHtml, /<a [^>]*class="tgj-btn"[^>]*href="https:\/\/t\.me\/jf_bot\?start=setup"[^>]*>Open in Telegram<\/a>/);
     assert.equal(el('tgj-connect').innerHTML, '', 'no connect form while a bot is connected');
-
-    const summary = el('tgj-summary').innerHTML;
-    assert.ok(summary.includes('class="tgj-card"'));
-    assert.ok(summary.includes('2 destinations'));
-    assert.ok(summary.includes(ui.label('1 needs attention', 'attention')));
-    assert.ok(summary.includes('1 edited'));
-    assert.ok(summary.includes(ui.label('1 flagged', 'attention')));
-    assert.ok(summary.includes('No notices'));
 });
 
 test('overview_noBot_leadsWithConnectCard_noSave', async () => {
@@ -2957,33 +2947,11 @@ test('overview_noBot_leadsWithConnectCard_noSave', async () => {
     assert.ok(order('tgj-connect') > -1 && order('tgj-connect') < order('tgj-status'), 'Connect leads without a bot');
     assert.ok(!el('tgj-status').innerHTML.includes('Waiting for metadata'), 'Status is only the connection line');
     assert.equal(el('tgj-bot').innerHTML, '');
-    assert.equal(el('tgj-summary').innerHTML, '', 'no summary before a bot is connected');
     await click(view, 'connectExisting');
     const html = el('tgj-connect').innerHTML;
     assert.ok(html.includes('data-tgj-act="saveToken"') && html.includes('>Connect</button>'));
     assert.ok(!/>Save</.test(html), 'no Save button');
     assert.match(html, /<input[^>]*type="password"[^>]*data-tgj-input="token"/);
-});
-
-test('summary_linksToSections', async () => {
-    const { view, el, win } = mount({
-        'GET TgJelly/Destinations': destinations(),
-        'GET TgJelly/Templates': templates(),
-    });
-    await show(view);
-    const summary = el('tgj-summary').innerHTML;
-    const targets = [...summary.matchAll(/data-tgj-nav="(\w+)"/g)].map(match => match[1]);
-    assert.deepEqual(targets, ['destinations', 'templates']);
-    for (const target of targets) {
-        assert.match(summary, new RegExp(`<button type="button" class="tgj-btn"[^>]*data-tgj-nav="${target}"`));
-    }
-
-    clickOn(view, { 'data-tgj-act': 'goto', 'data-tgj-nav': 'templates' });
-    assert.equal(shownSection(el), 'templates');
-    assert.match(win.location.hash, /tgj=templates/);
-    clickOn(view, { 'data-tgj-act': 'goto', 'data-tgj-nav': 'destinations' });
-    assert.equal(shownSection(el), 'destinations');
-    assert.ok(!/Notices[\s\S]*?data-tgj-nav/.test(summary.slice(summary.indexOf('Notices'))), 'the Notices row has no button');
 });
 
 test('overview_connected_statusLeads', async () => {
@@ -2995,10 +2963,47 @@ test('overview_connected_statusLeads', async () => {
     assert.ok(el('tgj-status').innerHTML.includes('Waiting for metadata'));
 });
 
-test('summary_noDestinations_saysSo', () => {
-    const html = m.renderOverviewSummary(status(), destinations({ Items: [] }), templates({ Items: [] }), EN);
-    assert.ok(html.includes('No destinations yet'));
-    assert.ok(html.includes('data-tgj-nav="destinations"'));
+test('header_showsVersionLabelNextToTitle', async () => {
+    const html = m.renderShell(EN, { active: 'overview', connection: { tone: 'good', text: 'Connected' }, version: '0.5.0.0' });
+    assert.match(html, /<h1 class="tgj-header-title">TgJelly<\/h1>/);
+    assert.ok(html.indexOf('</h1>') < html.indexOf(ui.label('v0.5.0.0', 'neutral')), 'the version follows the title');
+    assert.ok(html.indexOf(ui.label('v0.5.0.0', 'neutral')) < html.indexOf(ui.label('Connected', 'good')), 'and precedes the connection');
+    assert.ok(!m.renderShell(EN, { active: 'overview', connection: { tone: 'neutral', text: 'x' } }).includes('>v'), 'no version, no label');
+
+    const { view, el } = mount({ 'GET TgJelly/Status': status({ Version: '0.5.0.0' }) });
+    await show(view);
+    assert.equal(el('tgj-version').innerHTML, ui.label('v0.5.0.0', 'neutral'), 'painted from the status');
+});
+
+test('status_hasNoVersionLine', () => {
+    const html = m.renderStatus(status(), EN);
+    assert.ok(!html.includes('built for Jellyfin') && !html.includes('tgj-version'));
+    assert.ok(!('web.status.version' in EN));
+});
+
+test('overview_hasNoAtAGlance', async () => {
+    assert.equal(m.renderOverviewSummary, undefined);
+    assert.ok(!Object.keys(EN).some(key => key.startsWith('web.summary.')));
+    const { view, el } = mount();
+    await show(view);
+    assert.ok(!el('tgjelly-root').innerHTML.includes('At a glance'));
+    assert.ok(!el('tgjelly-root').innerHTML.includes('tgj-summary'));
+});
+
+test('overview_accessIsInfoNotice', async () => {
+    const { view, el } = mount();
+    await show(view);
+    const overview = overviewHtml(el);
+    assert.ok(!el('tgj-bot').innerHTML.includes('Anyone who can open this bot'), 'not a card row any more');
+    assert.ok(!/<h2[^>]*>Access<\/h2>/.test(overview), 'no card titled Access');
+    assert.match(el('tgj-status').innerHTML, /<div class="tgj-notice tgj-notice--info[^"]*"[\s\S]*Anyone who can open this bot can manage notifications\. Keep it restricted in BotFather\./);
+});
+
+test('status_longConnectionMessage_staysOutsideTheLabel', () => {
+    const message = 'Telegram rejected the token; paste a fresh one from BotFather';
+    const html = m.renderStatus(status({ ConnectionState: 'TokenRejected', ConnectionMessage: message }), EN);
+    assert.ok(html.includes(ui.label(EN['web.header.attention'], 'bad')), 'the label holds the state word');
+    assert.ok(html.includes(message) && !html.includes(ui.label(message, 'bad')), 'the message is plain text');
 });
 
 test('overview_noSymbols', async () => {
