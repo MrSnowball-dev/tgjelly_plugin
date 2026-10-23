@@ -88,9 +88,14 @@ public sealed class TemplateRenderer
 
         // Design §5.1: Enabled is ignored; an override with text is the template in use.
         var edited = config.Templates.FirstOrDefault(t => string.Equals(t.EventKey, key, StringComparison.Ordinal) && !string.IsNullOrWhiteSpace(t.Text));
-        if (edited is not null && RenderEdited(key, edited.Text, values, language, hasPoster) is { } fromEdited)
+        string? editedError = null;
+        if (edited is not null)
         {
-            return fromEdited;
+            (var fromEdited, editedError) = RenderEdited(key, edited.Text, values, language, hasPoster);
+            if (fromEdited is not null)
+            {
+                return fromEdited;
+            }
         }
 
         var builtIn = BuiltInTemplates.Get(key, language)!;
@@ -100,7 +105,7 @@ public sealed class TemplateRenderer
             var (caption, text, problem) = FitBoth(key, builtIn, values, language);
             if (problem is null)
             {
-                return new RenderedText(caption!.Html!, text!.Html!, null);
+                return new RenderedText(caption!.Html!, text!.Html!, null, editedError);
             }
 
             failure = Describe(problem);
@@ -111,7 +116,7 @@ public sealed class TemplateRenderer
         }
 
         _logger.LogWarning("The built-in template for {EventKey} failed: {Error}", key, failure);
-        return LastResort(key, values);
+        return LastResort(key, values) with { FallbackError = editedError };
     }
 
     /// <summary>
@@ -135,7 +140,8 @@ public sealed class TemplateRenderer
             ? string.Create(CultureInfo.InvariantCulture, $"line {line}, column {column}: {error.Message}")
             : error.Message;
 
-    private RenderedText? RenderEdited(string key, string text, TemplateModel values, string language, bool hasPoster)
+    // Returns the text, or null and the error when the edited template failed.
+    private (RenderedText? Text, string? Error) RenderEdited(string key, string text, TemplateModel values, string language, bool hasPoster)
     {
         var hash = TemplateText.Hash(text);
         try
@@ -143,8 +149,9 @@ public sealed class TemplateRenderer
             var (caption, full, problem) = FitBoth(key, text, values, language);
             if (problem is not null)
             {
-                SafeFlag(key, "error", Describe(problem), hash);
-                return null;
+                var error = Describe(problem);
+                SafeFlag(key, "error", error, hash);
+                return (null, error);
             }
 
             if (hasPoster ? caption!.Truncated : full!.Truncated)
@@ -152,13 +159,13 @@ public sealed class TemplateRenderer
                 SafeFlag(key, "truncated", string.Empty, hash);
             }
 
-            return new RenderedText(caption!.Html!, full!.Html!, key);
+            return (new RenderedText(caption!.Html!, full!.Html!, key), null);
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Rendering must never fail the message: the built-in template takes over.
             SafeFlag(key, "error", ex.Message, hash);
-            return null;
+            return (null, ex.Message);
         }
     }
 

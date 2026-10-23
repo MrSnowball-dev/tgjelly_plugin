@@ -141,6 +141,20 @@ public sealed class MediaAggregator
     }
 
     /// <summary>
+    /// Finds the group a destination holds under <paramref name="key"/>, open or in its release buffer, for the Log.
+    /// </summary>
+    /// <param name="destinationId">The destination.</param>
+    /// <param name="key">The group key.</param>
+    /// <returns>When the group started and a copy of its items, or <c>null</c> when it isn't held.</returns>
+    public (DateTimeOffset FirstAt, IReadOnlyList<string> ItemIds)? FindHeld(string destinationId, string key) => _state.ReadQueue(q =>
+    {
+        EnsureIndex(q.OpenGroups);
+        var group = _openIndex.GetValueOrDefault(IndexKey(destinationId, key))
+            ?? (q.ReleaseBuffers.TryGetValue(destinationId, out var buffer) ? buffer.Groups.Find(g => g.Key == key) : null);
+        return group is null ? ((DateTimeOffset, IReadOnlyList<string>)?)null : (group.FirstAt, group.Model.ItemIds.ToList());
+    });
+
+    /// <summary>
     /// Closes quiet or long-held groups and releases the buffers that are due.
     /// </summary>
     /// <returns>The released groups and digests.</returns>

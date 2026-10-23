@@ -18,12 +18,12 @@ public sealed class PipelineRig
 {
     public static readonly CompatResult Compatible = new(true, "test", new Version(12, 0), null);
 
-    public PipelineRig(BotTestHarness h, FakeLibrary library, FakeScanState scan, StateStore? state = null)
+    public PipelineRig(BotTestHarness h, FakeLibrary library, FakeScanState scan, StateStore? state = null, Jellyfin.Plugin.TgJelly.Log.LogRecorder? recorder = null)
     {
         ArgumentNullException.ThrowIfNull(h);
         State = state ?? h.State;
         Queues = new IntakeQueues(Compatible, h.Time);
-        Readiness = new MediaReadiness(State, h.Settings, library, new PendingIdSet(), h.Time, NullLogger<MediaReadiness>.Instance);
+        Readiness = new MediaReadiness(State, h.Settings, library, new PendingIdSet(), h.Time, NullLogger<MediaReadiness>.Instance, recorder);
         Outbox = new Outbox(State, h.Strings, h.Time);
         Aggregator = new MediaAggregator(State, h.Settings, Outbox, scan, h.Time);
         Alerts = new AlertCoalescer(State, h.Strings, h.Time);
@@ -36,7 +36,7 @@ public sealed class PipelineRig
             new AlertLayouts(formatter, h.Settings, h.Logo),
             new Jellyfin.Plugin.TgJelly.Templates.TemplateRenderer(engine, models, flags, h.Settings, h.Strings, NullLogger<Jellyfin.Plugin.TgJelly.Templates.TemplateRenderer>.Instance));
         Logger = new ListLogger<NotificationPipeline>();
-        Pipeline = new NotificationPipeline(Queues, Readiness, Aggregator, Alerts, Renderer, Outbox, h.Settings, State, h.Time, Logger);
+        Pipeline = new NotificationPipeline(Queues, Readiness, Aggregator, Alerts, Renderer, Outbox, h.Settings, State, h.Time, Logger, recorder);
     }
 
     public StateStore State { get; }

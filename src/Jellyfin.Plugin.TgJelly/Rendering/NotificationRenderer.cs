@@ -57,6 +57,7 @@ public sealed class NotificationRenderer
             message.Caption = text.Caption;
             message.Text = text.Text;
             message.TemplateKey = text.TemplateKey;
+            message.TemplateFallback = text.FallbackError;
         }
 
         message.Silent = destination.SilentGroups.Contains(EventCatalog.GroupOf(model.EventKey), StringComparer.Ordinal);

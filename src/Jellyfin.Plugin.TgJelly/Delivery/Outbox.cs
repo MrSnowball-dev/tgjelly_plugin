@@ -102,12 +102,17 @@ public sealed class Outbox
     /// Security and server entries are written to <c>queue.json</c> within 1 s.
     /// </summary>
     /// <param name="entry">The entry.</param>
-    public void Enqueue(OutboxEntry entry)
+    /// <returns>
+    /// The Log row of the entry that now carries the message (an unsent message it was merged into, or the rolling
+    /// summary), and, for the summary, how many events it stands for.
+    /// </returns>
+    public (string LogId, int Summary) Enqueue(OutboxEntry entry)
     {
         ArgumentNullException.ThrowIfNull(entry);
         var now = _time.GetUtcNow();
         var group = EventCatalog.GroupOf(entry.EventKey);
         var dropped = 0;
+        (string LogId, int Summary) carrier = (entry.LogId, 0);
         _state.UpdateQueue(
             q =>
             {
@@ -122,8 +127,15 @@ public sealed class Outbox
                         message.ForceTextOnly |= unsent.Message.ForceTextOnly;
                         message.NoButtons |= unsent.Message.NoButtons;
                         message.PlainText |= unsent.Message.PlainText;
+                        message.NoPhoto ??= unsent.Message.NoPhoto;
                         unsent.Message = message;
                         unsent.Model = entry.Model ?? unsent.Model;
+                        if (unsent.LogId.Length == 0)
+                        {
+                            unsent.LogId = entry.LogId;
+                        }
+
+                        carrier = (unsent.LogId, 0);
                         return;
                     }
 
@@ -160,10 +172,12 @@ public sealed class Outbox
                             GroupKey = "summary",
                             QueuedAt = now,
                         };
+                        summary.LogId = summary.EntryId;
                         q.Outbox.Add(summary);
                     }
 
                     summary.Summary++;
+                    carrier = (summary.LogId.Length > 0 ? summary.LogId : summary.EntryId, summary.Summary);
                     var text = _strings.Plural("outbox.summary", summary.Summary);
                     summary.Message = new OutboxMessage { Text = text, Caption = text, Silent = entry.Message.Silent };
                     return;
@@ -175,7 +189,22 @@ public sealed class Outbox
 
         AddCounters(droppedOutbox: dropped);
         Changed?.Invoke(this, EventArgs.Empty);
+        return carrier;
     }
+
+    /// <summary>
+    /// Finds the Log row of the message under <paramref name="key"/>: a queued send's, else a queued edit's, else the
+    /// sent message's, so an edit updates the row of the message it edits.
+    /// </summary>
+    /// <param name="destinationId">The destination.</param>
+    /// <param name="key">The <c>sentMessages</c> key.</param>
+    /// <returns>The row ID, or <c>null</c> when none is known.</returns>
+    public string? LogIdOf(string destinationId, string key) => _state.ReadQueue(q =>
+    {
+        var queued = q.Outbox.Find(e => e.Op == OutboxOp.Send && e.DestinationId == destinationId && e.SentKey == key && e.LogId.Length > 0)
+            ?? q.Outbox.Find(e => e.Op == OutboxOp.Edit && e.DestinationId == destinationId && e.TargetKey == key && e.LogId.Length > 0);
+        return queued?.LogId ?? (q.SentMessages.TryGetValue(SentKey(destinationId, key), out var sent) ? sent.LogId : null);
+    });
 
     /// <summary>
     /// Picks the next entry to deliver: per destination, security and server entries before media, oldest first,

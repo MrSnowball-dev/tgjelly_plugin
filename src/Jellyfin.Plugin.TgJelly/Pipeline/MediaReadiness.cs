@@ -5,6 +5,7 @@ using System.Linq;
 using Jellyfin.Plugin.TgJelly.Configuration;
 using Jellyfin.Plugin.TgJelly.Intake;
 using Jellyfin.Plugin.TgJelly.Library;
+using Jellyfin.Plugin.TgJelly.Log;
 using Jellyfin.Plugin.TgJelly.State;
 using Microsoft.Extensions.Logging;
 
@@ -38,6 +39,7 @@ public sealed class MediaReadiness
     private readonly PendingIdSet _pending;
     private readonly TimeProvider _time;
     private readonly ILogger<MediaReadiness> _logger;
+    private readonly LogRecorder? _log;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="MediaReadiness"/> class.
@@ -48,8 +50,10 @@ public sealed class MediaReadiness
     /// <param name="pending">The pending-ID set the ItemUpdated callback reads.</param>
     /// <param name="time">The clock.</param>
     /// <param name="logger">The logger.</param>
-    public MediaReadiness(StateStore state, SettingsStore settings, ILibraryAccess library, PendingIdSet pending, TimeProvider time, ILogger<MediaReadiness> logger)
+    /// <param name="log">Where dropped items are recorded for the Log, if anywhere.</param>
+    public MediaReadiness(StateStore state, SettingsStore settings, ILibraryAccess library, PendingIdSet pending, TimeProvider time, ILogger<MediaReadiness> logger, LogRecorder? log = null)
     {
+        _log = log;
         _state = state;
         _settings = settings;
         _library = library;
@@ -223,6 +227,7 @@ public sealed class MediaReadiness
         _pending.Remove(id);
         if (_library.GetItem(id) is not { } item)
         {
+            _log?.ItemGone(id);
             return [];
         }
 
@@ -236,6 +241,7 @@ public sealed class MediaReadiness
                 if (!_settings.Current.Message.AnnounceUpgrades)
                 {
                     _logger.LogDebug("TgJelly skipped {Item}: an upgrade of something already announced", item.Name);
+                    _log?.UpgradeSkipped(item);
                     return [];
                 }
 

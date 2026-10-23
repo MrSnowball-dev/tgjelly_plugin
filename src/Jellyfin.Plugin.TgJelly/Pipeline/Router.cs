@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Jellyfin.Plugin.TgJelly.Configuration;
+using Jellyfin.Plugin.TgJelly.Log;
 
 namespace Jellyfin.Plugin.TgJelly.Pipeline;
 
@@ -22,9 +23,31 @@ public static class Router
     {
         ArgumentNullException.ThrowIfNull(eventKey);
         ArgumentNullException.ThrowIfNull(destinations);
+        return [.. destinations.Where(d => Explain(eventKey, libraryIds, d) is null)];
+    }
+
+    /// <summary>
+    /// Says why a destination doesn't get an event, for the Log (design §8.2).
+    /// </summary>
+    /// <param name="eventKey">The event key.</param>
+    /// <param name="libraryIds">For media, the item's libraries; <c>null</c> for other events.</param>
+    /// <param name="destination">The destination.</param>
+    /// <returns>The reason, or <c>null</c> when the destination gets it.</returns>
+    public static SkipReason? Explain(string eventKey, IReadOnlyCollection<Guid>? libraryIds, Destination destination)
+    {
+        ArgumentNullException.ThrowIfNull(eventKey);
+        ArgumentNullException.ThrowIfNull(destination);
+        if (!destination.Enabled)
+        {
+            return SkipReason.Paused;
+        }
+
+        if (!destination.Events.Contains(eventKey, StringComparer.Ordinal))
+        {
+            return SkipReason.EventOff;
+        }
+
         var media = EventCatalog.GroupOf(eventKey) == "media";
-        return [.. destinations.Where(d => d.Enabled
-            && d.Events.Contains(eventKey, StringComparer.Ordinal)
-            && (!media || libraryIds is null || LibraryFilter.Matches(d, libraryIds)))];
+        return media && libraryIds is not null && !LibraryFilter.Matches(destination, libraryIds) ? SkipReason.LibraryExcluded : null;
     }
 }

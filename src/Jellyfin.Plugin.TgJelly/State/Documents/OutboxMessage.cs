@@ -31,6 +31,15 @@ public sealed class OutboxMessage
     /// <summary>Gets or sets a value indicating whether to skip the poster (a fallback).</summary>
     public bool ForceTextOnly { get; set; }
 
+    /// <summary>
+    /// Gets or sets why the poster was left out by a fallback, for the Log: <c>blocked</c>, <c>rejected</c>,
+    /// <c>unreadable</c> or <c>upload</c>; <c>null</c> when it wasn't.
+    /// </summary>
+    public string? NoPhoto { get; set; }
+
+    /// <summary>Gets or sets the error of the edited template when the built-in one was used instead, for the Log.</summary>
+    public string? TemplateFallback { get; set; }
+
     /// <summary>Gets or sets a value indicating whether to leave out the buttons (a fallback).</summary>
     public bool NoButtons { get; set; }
 

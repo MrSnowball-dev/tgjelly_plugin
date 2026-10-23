@@ -2583,9 +2583,13 @@ test('every t(…) key used in tgjelly.js exists in en.json', () => {
 // Sent by TgJellyController as the Connected status message, not rendered by the page itself.
 const SERVER_SIDE_KEY = 'web.status.connected';
 
+// Filled in by the server's LogRecorder: the Log rows arrive with these texts already in them.
+const SERVER_SIDE_PREFIXES = ['web.log.why.', 'web.log.advice.', 'web.log.right.', 'web.log.duration.', 'web.log.title.'];
+
 test('every web.* key in en.json is used by tgjelly.js', () => {
     // web.event.* keys are built from the catalog's event keys (editor_eventLabels_haveNoGroupPrefix covers them).
-    for (const key of Object.keys(EN).filter(k => k.startsWith('web.') && !k.startsWith('web.event.') && k !== SERVER_SIDE_KEY)) {
+    const serverSide = k => k === SERVER_SIDE_KEY || SERVER_SIDE_PREFIXES.some(p => k.startsWith(p));
+    for (const key of Object.keys(EN).filter(k => k.startsWith('web.') && !k.startsWith('web.event.') && !serverSide(k))) {
         const base = key.replace(/\.(one|other)$/, '');
         assert.ok(SOURCE.includes(`'${base}'`), key);
     }
