@@ -240,3 +240,53 @@ test('outdatedResult_clearsItsOwnSavingCue', async () => {
     await q.flush('a');
     assert.deepEqual(states(cues, 'a'), ['saving', 'idle', 'saved']);
 });
+
+test('newerBlurChange_replacesAQueuedDueJob_invalidValueNeverSent', async () => {
+    const { clock, q, cues } = setup();
+    const busy = deferred();
+    // Like the controller's sends, this one reads the field when it runs, not when it was queued.
+    let value = 'https://media.example';
+    const sent = [];
+    const urlJob = () => ({
+        key: 'url',
+        mode: 'blur',
+        validate: () => (value.includes('.') ? null : 'enter the full address'),
+        send: async () => { sent.push(value); return { status: 'saved' }; },
+    });
+    q.change({ key: 'other', mode: 'now', send: () => busy.promise });
+    await clock.tick(0);
+    q.change(urlJob());
+    q.flush('url');   // due and checked, queued behind the save in flight
+    value = 'https://media';
+    q.change(urlJob());   // edited again while it waits: not checked until the next blur
+    busy.resolve({ status: 'saved' });
+    await clock.tick(5000);
+    assert.deepEqual(sent, [], 'nothing is sent for the key until the next blur');
+
+    await q.flush('url');
+    assert.deepEqual(sent, [], 'the invalid value is never sent');
+    assert.deepEqual(cues.at(-1), ['url', 'error', 'enter the full address']);
+    value = 'https://media.example.org';
+    q.change(urlJob());
+    await q.flush('url');
+    assert.deepEqual(sent, ['https://media.example.org']);
+});
+
+test('newerDebounceChange_replacesAQueuedDueJob', async () => {
+    const { clock, q } = setup();
+    const busy = deferred();
+    let value = 1;
+    const sent = [];
+    const job = () => ({ key: 'a', mode: 'debounce', delay: 800, send: async () => { sent.push(value); return { status: 'saved' }; } });
+    q.change({ key: 'other', mode: 'now', send: () => busy.promise });
+    await clock.tick(0);
+    q.change(job());
+    await clock.tick(800);   // due, queued behind the save in flight
+    value = 2;
+    q.change(job());
+    busy.resolve({ status: 'saved' });
+    await clock.tick(799);
+    assert.deepEqual(sent, [], 'the newer change waits out its own delay');
+    await clock.tick(1);
+    assert.deepEqual(sent, [2], 'and is sent once');
+});

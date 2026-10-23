@@ -86,6 +86,8 @@ export function createAutosave({ clock, onCue, onSettled }) {
         const { key } = job;
         changes.set(key, (changes.get(key) ?? 0) + 1);
         dropWaiting(key);
+        // A due job still queued would send the field as it is now, unchecked: the newer change replaces it ('now' in place).
+        if (job.mode !== 'now') dropQueued(key);
         if (cueState.get(key) === 'error') { clearIdle(key); cue(key, 'idle'); }
         if (job.mode === 'blur') {
             waiting.set(key, { seq: ++seq, job });
