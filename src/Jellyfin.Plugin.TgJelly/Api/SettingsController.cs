@@ -84,6 +84,14 @@ public class SettingsController : ControllerBase
             c.PublicUrl = publicUrl;
             message.ApplyTo(c.Message);
             c.Batching = request.Batching;
+            // v0.4's Mode, from a page loaded before the upgrade, is ignored: the three switches are what is saved.
+#pragma warning disable CS0618
+            if (request.UpdateCheck is { } update)
+            {
+                update.Mode = null;
+            }
+
+#pragma warning restore CS0618
             c.UpdateCheck = request.UpdateCheck;
         });
 

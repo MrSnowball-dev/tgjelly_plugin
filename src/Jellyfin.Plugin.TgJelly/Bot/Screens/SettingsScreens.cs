@@ -244,6 +244,7 @@ public sealed class SettingsScreens
         }
 
         rows.Add(Button("menu.back", "s"));
+        shown.Add(("menu.back", "settings.messages.back.sections"));
         return Titled("settings.messages.title", "settings.messages.hint", rows, ButtonGuide.Lines(_strings, _formatter, [.. shown]));
     }
 
@@ -257,14 +258,24 @@ public sealed class SettingsScreens
             rows.Add(Row(_strings.Get("settings.msg.of." + key), "smk", key));
         }
 
-        var guide = "\n\n" + _formatter.Escape(_strings.Get("settings.messages.pickMessage"));
+        var lines = new List<string>();
+        foreach (var key in MessageOptions.Keys.Where(k => EventCatalog.GroupOf(k) == group))
+        {
+            var about = key == MessageOptions.DigestKey
+                ? _strings.Get("settings.msg.of." + key + ".about")
+                : _strings.Get("settings.messages.open.about", ("message", _strings.Get("settings.msg.of." + key).ToLowerInvariant()));
+            lines.Add(ButtonGuide.Line(_formatter, _strings.Get("settings.msg.of." + key), about));
+        }
+
         if (group == "media")
         {
             rows.Add(Row(Mark(options.AnnounceUpgrades) + _strings.Get("settings.msg.AnnounceUpgrades"), "smu"));
-            guide += ButtonGuide.Lines(_strings, _formatter, ("settings.msg.AnnounceUpgrades", "settings.msg.AnnounceUpgrades.about"));
+            lines.Add(ButtonGuide.Line(_strings, _formatter, "settings.msg.AnnounceUpgrades", "settings.msg.AnnounceUpgrades.about"));
         }
 
         rows.Add(Button("menu.back", "sm"));
+        lines.Add(ButtonGuide.Line(_strings, _formatter, "menu.back", "settings.messages.back.list"));
+        var guide = ButtonGuide.Block([.. lines]);
         return Titled("settings.messages.title", "settings.messages.hint.list", rows, guide);
     }
 
@@ -281,10 +292,11 @@ public sealed class SettingsScreens
 
         rows.Add(Row(_strings.Get("menu.back"), "sms", EventCatalog.GroupOf(key)));
         var message = _strings.Get("settings.msg.of." + key);
+        var backLine = ButtonGuide.Line(_strings, _formatter, "menu.back", "settings.messages.back.switches");
         var guide = applicable.Count == 0
-            ? "\n\n" + _formatter.Escape(_strings.Get("settings.messages.none"))
+            ? "\n\n" + _formatter.Escape(_strings.Get("settings.messages.none")) + ButtonGuide.Block(backLine)
             : "\n\n" + _formatter.Escape(_strings.Get("settings.messages.pick"))
-                + ButtonGuide.Lines(_strings, _formatter, [.. applicable.Select(n => ("settings.msg." + n, "settings.msg." + n + ".about"))]);
+                + ButtonGuide.Block([.. applicable.Select(n => ButtonGuide.Line(_strings, _formatter, "settings.msg." + n, "settings.msg." + n + ".about")), backLine]);
         var html = "<b>" + Icons.Heading(_strings, _formatter, "settings.messages.title") + "</b>\n"
             + _formatter.Escape(_strings.Get("settings.messages.of", ("message", message)));
         return new Screen(html + guide, new InlineKeyboardMarkup(rows));

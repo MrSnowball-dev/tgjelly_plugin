@@ -312,7 +312,28 @@ public sealed class SettingsScreensTests : IDisposable, IAsyncLifetime
 
         var text = (string)LastEdit().Body["text"]!;
         Assert.Contains("Tap a switch to turn it on (✅) or off (⬜).", text, StringComparison.Ordinal);
-        Assert.DoesNotContain("<b>Back</b>", text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task MessageStyle_EveryButtonHasAnExplanationLine()
+    {
+        foreach (var (click, labels) in new[]
+        {
+            ("1|sm", new[] { "Media", "Security", "Server", "Back" }),
+            ("1|sms|media", new[] { "Movies", "Episodes", "Albums", "Music videos", "Books", "Digest", "Announce upgraded files", "Back" }),
+            ("1|sms|security", new[] { "Failed logins", "Lockouts", "Successful logins", "User created", "User deleted", "Password changed", "Back" }),
+            ("1|sms|server", new[] { "Started", "Update available", "Plugin installed", "Plugin updated", "Plugin uninstalled", "Plugin install failed", "Task failed", "Restart pending", "Back" }),
+            ("1|smk|media.movie", new[] { "Poster", "Overview", "Rating and genres", "Open in Jellyfin button", "IMDb and TMDb buttons", "Back" }),
+            ("1|smk|media.digest", new[] { "Back" }),
+        })
+        {
+            await Click(click);
+            var edit = LastEdit();
+            edit.Explains(labels);
+            var text = (string)edit.Body["text"]!;
+            Assert.Equal(labels.Length, text.Split('\n').Count(l => l.StartsWith("<b>", StringComparison.Ordinal) && l.Contains("</b> — ", StringComparison.Ordinal)));
+            Assert.Equal(Labels(edit).Length, labels.Length);
+        }
     }
 
     [Fact]

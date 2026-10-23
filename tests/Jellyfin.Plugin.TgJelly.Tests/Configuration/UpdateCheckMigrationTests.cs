@@ -10,8 +10,12 @@ namespace Jellyfin.Plugin.TgJelly.Tests.Configuration;
 /// <summary>
 /// Plan 9 (design §7): v0.4's update mode becomes three switches, and nothing a user sees changes.
 /// </summary>
-public sealed class UpdateCheckMigrationTests
+public sealed class UpdateCheckMigrationTests : System.IDisposable
 {
+    private readonly Fakes.BotTestHarness _h = new();
+
+    public void Dispose() => _h.Dispose();
+
     private static readonly XmlSerializer Serializer = new(typeof(PluginConfiguration));
 
     [Fact]
@@ -75,6 +79,31 @@ public sealed class UpdateCheckMigrationTests
 
         Assert.Equal((false, false, true), (copy.UpdateCheck.Fixes, copy.UpdateCheck.NewReleases, copy.UpdateCheck.NewMajor));
     }
+
+    [Fact]
+    public void UpdateMigration_ThroughStore_AnyNewerHasNewMajorOn()
+    {
+        _h.Host.SaveFromStore(Load(Xml("<Enabled>true</Enabled><Mode>AnyNewer</Mode>")));
+
+        var u = _h.Settings.Current.UpdateCheck;
+
+        Assert.Equal((true, true, true), (u.Fixes, u.NewReleases, u.NewMajor));
+    }
+
+    [Fact]
+    public void UpdateMigration_FirstToggleAfterUpgrade_Sticks()
+    {
+        _h.Host.SaveFromStore(Load(Xml("<Mode>AnyNewer</Mode>")));
+
+        Assert.Equal(SettingsUpdateStatus.Saved, _h.Settings.Update(null, c => c.UpdateCheck.Fixes = false).Status);
+
+        Assert.Equal((false, true, true), Kinds(_h.Settings.Current.UpdateCheck));
+        var reloaded = Load(Serialize(_h.Host.Configuration));
+        _h.Host.SaveFromStore(reloaded);
+        Assert.Equal((false, true, true), Kinds(_h.Settings.Current.UpdateCheck));
+    }
+
+    private static (bool, bool, bool) Kinds(UpdateCheckOptions u) => (u.Fixes, u.NewReleases, u.NewMajor);
 
     private static string Xml(string updateCheck)
         => "<?xml version=\"1.0\"?><PluginConfiguration><SchemaVersion>1</SchemaVersion><Revision>4</Revision>"

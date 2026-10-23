@@ -174,6 +174,7 @@ public sealed class SettingsStore : IDisposable
         // switches are each message's (plan 9, design §6.2).
         copy.MigrateTemplates();
         copy.MigrateMessageOptions();
+        copy.UpdateCheck?.MigrateMode();
         return copy;
     }
 
