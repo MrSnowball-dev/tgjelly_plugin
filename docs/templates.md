@@ -1,6 +1,6 @@
 # Message templates
 
-To change a message, open the event in the dashboard's Message templates section and change the built-in template.
+To change a message, open the event in the dashboard's Templates section and change the built-in template.
 This page lists the fields you can use in each template, and the built-in templates.
 The tables below are generated from the plugin's field list, so they always match the plugin.
 
@@ -12,7 +12,7 @@ You can use `if`, `for` and the other Scriban statements.
 ### Start from the built-in template
 
 Every message is a template. Even the default messages are built-in templates.
-To change a message, open the event in the dashboard's **Message templates** section.
+To change a message, open the event in the dashboard's **Templates** section.
 The editor shows the built-in template. Start there and change what you want.
 You see a live preview of the result as you type. Press **Send test** to send it to a destination.
 Press **Reset** to go back to the built-in template.
