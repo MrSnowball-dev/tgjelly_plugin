@@ -263,14 +263,17 @@ function renderRow(row, index, S, lang, now, expanded) {
  * @param {Record<string, string> | null} S
  * @param {string} [lang]
  * @param {{ now?: number, expanded?: Set<string>, destinations?: { Id: string, Title: string }[],
- *   catalog?: { EventKeys: string[], Groups: string[] } | null }} [view] the open rows by ID, and what the selects offer
+ *   catalog?: { EventKeys: string[], Groups: string[] } | null, failed?: boolean }} [view] the open rows by ID, what the
+ *   selects offer, and whether the last load failed (its error then shows instead of the loading line)
  * @returns {string} HTML
  */
 export function renderLog(page, filters, S, lang = 'en', view = {}) {
-    const { now = Date.now(), expanded = new Set(), destinations = [], catalog = null } = view;
+    const { now = Date.now(), expanded = new Set(), destinations = [], catalog = null, failed = false } = view;
     const controls = renderControls(filters, S, destinations, catalog, page);
     if (!page) {
-        return card({ title: text(S, 'web.log.heading'), description: text(S, 'web.log.lead'), body: controls + `<p class="tgj-row-hint">${t(S, 'web.log.loading')}</p>`, extraClass: 'tgj-log' });
+        // Not loaded yet: it is loading, unless the load failed, when the section's error (with its cause) says so.
+        const loading = failed ? '' : `<p class="tgj-row-hint">${t(S, 'web.log.loading')}</p>`;
+        return card({ title: text(S, 'web.log.heading'), description: text(S, 'web.log.lead'), body: controls + loading, extraClass: 'tgj-log' });
     }
 
     let body;
@@ -455,6 +458,7 @@ export function createLog(page) {
             expanded: state.ui.logExpanded,
             destinations: state.destinations ? state.destinations.Items : [],
             catalog: state.destinations ? state.destinations.Catalog : null,
+            failed: Boolean(state.ui.errors && state.ui.errors.log),
         }),
         write: keepPlace,
     };

@@ -399,7 +399,8 @@ test('log_escapesServerText', () => {
 });
 
 test('log_loadFailure_saysWhatHappened', async () => {
-    const { view, el } = mount({ 'GET TgJelly/Log': { status: 500, body: { Message: 'The log file is locked' } } });
+    let answer = { status: 500, body: { Message: 'The log file is locked' } };
+    const { view, el, timers } = mount({ 'GET TgJelly/Log': () => answer });
     const errors = [];
     const original = console.error;
     console.error = (...args) => errors.push(args);
@@ -411,5 +412,14 @@ test('log_loadFailure_saysWhatHappened', async () => {
 
     const html = el('tgj-log').innerHTML;
     assert.ok(html.includes('The log file is locked') && html.includes('500'), html);
+    assert.ok(!html.includes(EN['web.log.loading']), 'a failed load does not say the log is loading');
     assert.equal(errors.length, 1);
+
+    // The next poll loads it: the error goes and the table shows.
+    answer = dto();
+    timers.tick();
+    await flush();
+    const after = el('tgj-log').innerHTML;
+    assert.ok(!after.includes('The log file is locked'), after);
+    assert.ok(after.includes('<table class="tgj-log-table">') && after.includes('Dune: Part Two'));
 });
