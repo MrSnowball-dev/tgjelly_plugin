@@ -14,7 +14,7 @@ public class WebPagesTests
         using var dir = new TempDir();
         var pages = TestPlugin.Create(dir.Path).GetPages().ToList();
 
-        Assert.Equal(["tgjelly", "tgjelly.js", "tgjelly-ui.js", "tgjelly-autosave.js", "tgjelly-messages.js", "tgjelly-preview.js", "tgjelly.css"], pages.Select(p => p.Name));
+        Assert.Equal(["tgjelly", "tgjelly.js", "tgjelly-ui.js", "tgjelly-autosave.js", "tgjelly-messages.js", "tgjelly-preview.js", "tgjelly-log.js", "tgjelly.css"], pages.Select(p => p.Name));
         Assert.True(pages[0].EnableInMainMenu);
         Assert.Equal("Telegram", pages[0].DisplayName);
         Assert.All(pages.Skip(1), p => Assert.False(p.EnableInMainMenu));
@@ -23,9 +23,9 @@ public class WebPagesTests
     [Fact]
     public void NewModules_RegisteredAndChecked()
     {
-        // Plan 9: the Messages section and the Telegram preview are their own modules. Each is a page Jellyfin serves,
-        // CI syntax-checks it, and the smoke test checks it is served as JavaScript. (Task 13 adds tgjelly-log.js.)
-        string[] modules = ["tgjelly-messages.js", "tgjelly-preview.js"];
+        // Plan 9: the Messages section, the Telegram preview and the Log are their own modules. Each is a page Jellyfin
+        // serves, CI syntax-checks it, and the smoke test checks it is served as JavaScript.
+        string[] modules = ["tgjelly-messages.js", "tgjelly-preview.js", "tgjelly-log.js"];
         using var dir = new TempDir();
         var pages = TestPlugin.Create(dir.Path).GetPages().Select(p => p.Name).ToList();
         var smoke = File.ReadAllText(Path.Combine(RepoRoot(), "tests", "integration", "smoke.py"));

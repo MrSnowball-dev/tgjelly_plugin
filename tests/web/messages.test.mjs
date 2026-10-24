@@ -182,7 +182,7 @@ const leave = (view, attrs) => dispatchOn(view, 'focusout', attrs, {}, { related
 const messagesEl = el => el('tgj-messages').innerHTML;
 
 test('nav_hasNoTemplatesItem', () => {
-    assert.deepEqual(m.SECTIONS, ['overview', 'destinations', 'messages', 'advanced']);
+    assert.deepEqual(m.SECTIONS, ['overview', 'destinations', 'messages', 'advanced', 'log']);
     const html = m.renderShell(EN, { active: 'messages', connection: { tone: 'good', text: 'Connected' } });
     assert.ok(!html.includes('data-tgj-nav="templates"'), 'no Templates item in the sidebar');
     assert.ok(!html.includes('id="tgj-templates"'), 'no templates host');

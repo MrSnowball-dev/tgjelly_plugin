@@ -1286,7 +1286,9 @@
     #tgjelly-root .tgj-switch::after,
     #tgjelly-root .tgj-btn,
     #tgjelly-root .tgj-field,
-    #tgjelly-root .tgj-sidebar [data-tgj-nav] {
+    #tgjelly-root .tgj-sidebar [data-tgj-nav],
+    #tgjelly-root .tgj-seg-text,
+    #tgjelly-root .tgj-log-toggle::after {
         transition: none;
     }
 }
@@ -1421,5 +1423,348 @@
 
     #tgjelly-root .tgj-dest-row .tgj-row-control {
         justify-content: flex-start;
+    }
+}
+
+/* ---- Log (plan 9 design §8.1): filters, the top lines, and one row per message per destination ---- */
+
+#tgjelly-root .tgj-log-controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--tgj-space-2);
+}
+
+#tgjelly-root .tgj-log-controls .tgj-select {
+    width: auto;
+    max-width: 100%;
+}
+
+/* All / Problems only: two radios drawn as one segmented control. */
+#tgjelly-root .tgj-seg {
+    display: inline-flex;
+    flex: none;
+    border: 1px solid var(--tgj-line-strong);
+    border-radius: var(--tgj-radius-sm);
+    overflow: hidden;
+}
+
+#tgjelly-root .tgj-seg-option {
+    position: relative;
+    display: flex;
+}
+
+#tgjelly-root .tgj-seg-option + .tgj-seg-option {
+    border-left: 1px solid var(--tgj-line-strong);
+}
+
+#tgjelly-root .tgj-seg-input {
+    position: absolute;
+    inset: 0;
+    margin: 0;
+    opacity: 0;
+    cursor: pointer;
+}
+
+#tgjelly-root .tgj-seg-text {
+    display: flex;
+    align-items: center;
+    min-height: 2.25rem;
+    padding: 0 var(--tgj-space-3);
+    color: var(--tgj-fg-2);
+    font-size: var(--tgj-step--1);
+    white-space: nowrap;
+    transition: background-color var(--tgj-dur) ease, color var(--tgj-dur) ease;
+}
+
+#tgjelly-root .tgj-seg-option:hover .tgj-seg-text {
+    background: var(--tgj-hover);
+    color: var(--tgj-fg);
+}
+
+#tgjelly-root .tgj-seg-input:checked + .tgj-seg-text {
+    background: var(--tgj-accent-soft);
+    color: var(--tgj-accent-text);
+}
+
+#tgjelly-root .tgj-seg-input:focus-visible + .tgj-seg-text {
+    outline: 2px solid var(--tgj-accent);
+    outline-offset: -2px;
+}
+
+#tgjelly-root .tgj-log-lines {
+    margin: var(--tgj-space-3) 0;
+}
+
+#tgjelly-root .tgj-log-line {
+    margin: 0;
+    color: var(--tgj-fg-2);
+    font-size: var(--tgj-step--1);
+}
+
+#tgjelly-root .tgj-log-line time {
+    color: var(--tgj-fg);
+    font-weight: 600;
+}
+
+/* A safety net: a table that still can't fit scrolls inside the card, never the page. */
+#tgjelly-root .tgj-log-scroll {
+    overflow-x: auto;
+}
+
+#tgjelly-root .tgj-log-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--tgj-step--1);
+}
+
+#tgjelly-root .tgj-log-table th {
+    padding: var(--tgj-space-2) var(--tgj-space-3) var(--tgj-space-2) 0;
+    border-bottom: 1px solid var(--tgj-line);
+    color: var(--tgj-fg-2);
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-align: start;
+    text-transform: uppercase;
+}
+
+#tgjelly-root .tgj-log-table td {
+    padding: var(--tgj-space-2) var(--tgj-space-3) var(--tgj-space-2) 0;
+    border-bottom: 1px solid var(--tgj-line);
+    vertical-align: top;
+    overflow-wrap: break-word;
+}
+
+#tgjelly-root .tgj-log-table td.tgj-log-when,
+#tgjelly-root .tgj-log-table td.tgj-log-result {
+    overflow-wrap: normal;
+    white-space: nowrap;
+}
+
+/* The event and the destination keep room for a title; Why takes the rest. */
+#tgjelly-root .tgj-log-table td.tgj-log-event {
+    min-width: 9rem;
+}
+
+#tgjelly-root .tgj-log-table td.tgj-log-dest {
+    min-width: 7rem;
+}
+
+#tgjelly-root .tgj-log-table td.tgj-log-why {
+    min-width: 10rem;
+}
+
+#tgjelly-root .tgj-log-when {
+    color: var(--tgj-fg-2);
+    font-variant-numeric: tabular-nums;
+}
+
+#tgjelly-root .tgj-log-title {
+    display: block;
+    color: var(--tgj-fg);
+    font-size: var(--tgj-step-0);
+}
+
+#tgjelly-root .tgj-log-kind,
+#tgjelly-root .tgj-log-dest,
+#tgjelly-root .tgj-log-why {
+    color: var(--tgj-fg-2);
+}
+
+#tgjelly-root .tgj-log-kind {
+    display: block;
+}
+
+#tgjelly-root .tgj-log-row--opens {
+    cursor: pointer;
+}
+
+#tgjelly-root .tgj-log-row--opens:hover td,
+#tgjelly-root .tgj-log-row--open td,
+#tgjelly-root .tgj-log-detail td {
+    background: var(--tgj-hover);
+}
+
+#tgjelly-root .tgj-log-row--open td {
+    border-bottom-color: transparent;
+}
+
+/* A Failed or attention row's label is the button that opens it; the chevron is drawn with borders, not a character. */
+#tgjelly-root .tgj-log-toggle {
+    appearance: none;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--tgj-space-2);
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--tgj-fg-2);
+    font: inherit;
+    cursor: pointer;
+}
+
+#tgjelly-root .tgj-log-toggle::after {
+    content: "";
+    flex: none;
+    width: 0.4em;
+    height: 0.4em;
+    border-right: 2px solid currentColor;
+    border-bottom: 2px solid currentColor;
+    transform: rotate(45deg) translateY(-0.1em);
+    transition: transform var(--tgj-dur) ease;
+}
+
+#tgjelly-root .tgj-log-toggle[aria-expanded="true"]::after {
+    transform: rotate(-135deg) translateX(-0.1em);
+}
+
+#tgjelly-root .tgj-log-toggle:focus-visible {
+    border-radius: 999px;
+    outline: 2px solid var(--tgj-accent);
+    outline-offset: 2px;
+}
+
+#tgjelly-root .tgj-log-detail td {
+    padding-top: 0;
+}
+
+#tgjelly-root .tgj-log-box {
+    padding: var(--tgj-space-1) var(--tgj-space-3);
+    border-left: 2px solid var(--tgj-line-strong);
+    color: var(--tgj-fg-2);
+}
+
+#tgjelly-root .tgj-log-detail--bad .tgj-log-box {
+    border-left-color: var(--tgj-error-line);
+}
+
+#tgjelly-root .tgj-log-detail--attention .tgj-log-box {
+    border-left-color: var(--tgj-warning-ring);
+}
+
+#tgjelly-root .tgj-log-box p {
+    margin: 0 0 var(--tgj-space-1);
+}
+
+#tgjelly-root .tgj-log-detail-label {
+    color: var(--tgj-fg);
+    font-weight: 600;
+}
+
+#tgjelly-root .tgj-log-box code {
+    padding: 0.0625rem var(--tgj-space-1);
+    border: 1px solid var(--tgj-line);
+    border-radius: var(--tgj-radius-sm);
+    background: var(--tgj-field-bg);
+    color: var(--tgj-fg);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    overflow-wrap: anywhere;
+}
+
+#tgjelly-root .tgj-log-older {
+    justify-content: center;
+}
+
+/* On a phone the filter spans the width, its two halves alike. */
+@container tgjelly (max-width: 40rem) {
+    #tgjelly-root .tgj-log-controls .tgj-seg {
+        flex: 1 1 100%;
+    }
+
+    #tgjelly-root .tgj-log-controls .tgj-seg-option {
+        flex: 1 1 0;
+    }
+
+    #tgjelly-root .tgj-log-controls .tgj-seg-text {
+        flex: 1;
+        justify-content: center;
+    }
+}
+
+/* Too narrow for five columns beside the sidebar (the content column is then under about 47rem): each row becomes a
+   block, the time and the result on one line, then the event, the destination and why. */
+@container tgjelly (max-width: 66rem) {
+    #tgjelly-root .tgj-log-table thead {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip-path: inset(50%);
+    }
+
+    #tgjelly-root .tgj-log-table,
+    #tgjelly-root .tgj-log-table tbody {
+        display: block;
+    }
+
+    #tgjelly-root .tgj-log-table tr.tgj-log-row {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        grid-template-areas:
+            "when result"
+            "event event"
+            "dest dest"
+            "why why";
+        column-gap: var(--tgj-space-3);
+        padding: var(--tgj-space-2) var(--tgj-space-2);
+        border-bottom: 1px solid var(--tgj-line);
+    }
+
+    #tgjelly-root .tgj-log-table tr.tgj-log-row--open {
+        border-bottom-color: transparent;
+    }
+
+    #tgjelly-root .tgj-log-row--opens:hover,
+    #tgjelly-root .tgj-log-row--open {
+        background: var(--tgj-hover);
+    }
+
+    #tgjelly-root .tgj-log-table tr.tgj-log-row td {
+        min-width: 0;
+        padding: 0;
+        border: 0;
+        background: transparent;
+    }
+
+    #tgjelly-root .tgj-log-table td.tgj-log-when {
+        grid-area: when;
+        align-self: center;
+    }
+
+    #tgjelly-root .tgj-log-table td.tgj-log-result {
+        grid-area: result;
+    }
+
+    #tgjelly-root .tgj-log-table td.tgj-log-event {
+        grid-area: event;
+        padding-top: var(--tgj-space-1);
+    }
+
+    #tgjelly-root .tgj-log-table td.tgj-log-dest {
+        grid-area: dest;
+    }
+
+    #tgjelly-root .tgj-log-table td.tgj-log-dest::before {
+        content: attr(data-label) ": ";
+    }
+
+    #tgjelly-root .tgj-log-table td.tgj-log-why {
+        grid-area: why;
+        color: var(--tgj-fg);
+    }
+
+    #tgjelly-root .tgj-log-table td.tgj-log-why:empty {
+        display: none;
+    }
+
+    #tgjelly-root .tgj-log-table tr.tgj-log-detail,
+    #tgjelly-root .tgj-log-table tr.tgj-log-detail td {
+        display: block;
+    }
+
+    #tgjelly-root .tgj-log-table tr.tgj-log-detail td {
+        padding: 0 var(--tgj-space-2) var(--tgj-space-2);
     }
 }

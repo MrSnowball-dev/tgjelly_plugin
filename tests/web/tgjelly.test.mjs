@@ -7,8 +7,8 @@ import * as ui from '../../src/Jellyfin.Plugin.TgJelly/Web/tgjelly-ui.js';
 import * as msg from '../../src/Jellyfin.Plugin.TgJelly/Web/tgjelly-messages.js';
 import { makeView, makeApiClient, makeResponse, fakeTimers, flush, clickOn, dispatchOn, fakeTarget, liveFields } from './fake-view.mjs';
 
-// The page's own modules: the controller, and the Messages section and the preview it was split into (plan 9).
-const SOURCE = ['tgjelly.js', 'tgjelly-messages.js', 'tgjelly-preview.js']
+// The page's own modules: the controller, and the Messages section, the preview and the Log it was split into (plan 9).
+const SOURCE = ['tgjelly.js', 'tgjelly-messages.js', 'tgjelly-preview.js', 'tgjelly-log.js']
     .map(file => readFileSync(new URL(`../../src/Jellyfin.Plugin.TgJelly/Web/${file}`, import.meta.url), 'utf8')).join('\n');
 const EN = JSON.parse(readFileSync(new URL('../../src/Jellyfin.Plugin.TgJelly/Strings/en.json', import.meta.url), 'utf8'));
 
@@ -2754,10 +2754,11 @@ const HOSTS = {
     destinations: ['tgj-destinations'],
     messages: ['tgj-messages'],
     advanced: ['tgj-proxy', 'tgj-updates', 'tgj-batching', 'tgj-manual', 'tgj-diagnostics'],
+    log: ['tgj-log'],
 };
 
 test('shell_rendersAllSections_onlyActiveVisible', () => {
-    assert.deepEqual(m.SECTIONS, ['overview', 'destinations', 'messages', 'advanced']);
+    assert.deepEqual(m.SECTIONS, ['overview', 'destinations', 'messages', 'advanced', 'log']);
     const html = m.renderShell(EN, {
         active: 'messages',
         connection: { tone: 'good', text: 'Connected · @jf_bot' },
@@ -2770,7 +2771,7 @@ test('shell_rendersAllSections_onlyActiveVisible', () => {
 
     const nav = shellNav(html);
     assert.deepEqual([...nav.keys()], m.SECTIONS);
-    const labels = { overview: 'Overview', destinations: 'Destinations', messages: 'Messages', advanced: 'Advanced' };
+    const labels = { overview: 'Overview', destinations: 'Destinations', messages: 'Messages', advanced: 'Advanced', log: 'Log' };
     for (const [name, button] of nav) {
         assert.equal(EN[`web.nav.${name}`], labels[name]);
         assert.ok(button.includes(`<span class="tgj-nav-label">${labels[name]}</span>`), button);

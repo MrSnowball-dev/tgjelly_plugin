@@ -49,6 +49,7 @@ WEB_ASSETS = (
     ("tgjelly-autosave.js", "javascript"),
     ("tgjelly-messages.js", "javascript"),
     ("tgjelly-preview.js", "javascript"),
+    ("tgjelly-log.js", "javascript"),
     ("tgjelly.css", "css"),
 )
 

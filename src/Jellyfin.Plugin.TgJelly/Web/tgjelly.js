@@ -14,6 +14,7 @@ import {
 } from './configurationpage?name=tgjelly-ui.js';
 import { createAutosave, CONFLICT_KEY } from './configurationpage?name=tgjelly-autosave.js';
 import { createMessages, messageFormData, messageRequest } from './configurationpage?name=tgjelly-messages.js';
+import { createLog } from './configurationpage?name=tgjelly-log.js';
 
 // These live in the sibling modules; they stay named exports here for the page's callers and tests.
 export { esc, t, text, plural, pluralText, formatNumber, formatTime };
@@ -972,12 +973,13 @@ export function renderDiagnostics(S, ui) {
 // --- the shell (plan 8, design §5.1-5.2): header, sidebar, one section shown at a time ---
 
 /** The dashboard's sections, in sidebar order; each label is web.nav.<name>. */
-export const SECTIONS = ['overview', 'destinations', 'messages', 'advanced'];
+export const SECTIONS = ['overview', 'destinations', 'messages', 'advanced', 'log'];
 const NAV_LABELS = {
     overview: 'web.nav.overview',
     destinations: 'web.nav.destinations',
     messages: 'web.nav.messages',
     advanced: 'web.nav.advanced',
+    log: 'web.nav.log',
 };
 
 /** Today's section containers, by the dashboard section that holds them (design §5.2). */
@@ -988,6 +990,8 @@ const SECTION_HOSTS = {
     // Messages holds the templates too (plan 9, design §6.1), and Batching sits in Advanced after Update checks (§7).
     messages: ['tgj-messages'],
     advanced: ['tgj-proxy', 'tgj-updates', 'tgj-batching', 'tgj-manual', 'tgj-diagnostics'],
+    // The Log (plan 9, design §8.1) is last: after Advanced in the sidebar, the last tab on a phone.
+    log: ['tgj-log'],
 };
 
 /** How long the first show waits for tgjelly.css before showing the page unstyled. */
@@ -1495,6 +1499,16 @@ export default function TgJellyPage(view, params) {
         fieldSelector,
     });
 
+    // The Log section (design §8.1) lives in tgjelly-log.js. It loads only while it is shown (selectSection, the poll).
+    const logSection = createLog({
+        state,
+        api,
+        lang,
+        renderSection: name => renderSection(name),
+        reloadSection: (name, options) => reloadSection(name, options),
+        runAction: (name, fn) => runAction(name, fn),
+    });
+
     const sections = {
         status: {
             id: 'tgj-status',
@@ -1580,6 +1594,7 @@ export default function TgJellyPage(view, params) {
             load: async () => {},
             render: () => renderDiagnostics(state.strings, { text: state.ui.diagText, copied: state.ui.diagCopied }),
         },
+        log: logSection.section,
     };
 
     /** The sidebar counts, plain text by section: the destinations, and how many templates are edited (under Messages). */
@@ -1603,12 +1618,16 @@ export default function TgJellyPage(view, params) {
     const pluginVersion = () => (state.status && state.status.Version) || '';
     const pluginTarget = () => (state.status && state.status.BuildTarget) || '';
 
-    /** Shows one section and marks its sidebar button; with { remember: true } also records it in the URL hash. */
+    /**
+     * Shows one section and marks its sidebar button; with { remember: true } (the admin chose it) also records it in the
+     * URL hash, and brings the Log up to date when it is the one opened.
+     */
     const selectSection = (name, { remember = false } = {}) => {
         if (!SECTIONS.includes(name)) {
             return;
         }
 
+        const previous = activeSection;
         activeSection = name;
         for (const other of SECTIONS) {
             const section = byId(`tgj-sec-${other}`);
@@ -1631,6 +1650,12 @@ export default function TgJellyPage(view, params) {
         if (remember && location && history && typeof history.replaceState === 'function') {
             // replaceState: no history entry, and no hashchange, so Jellyfin's router doesn't navigate.
             history.replaceState(history.state, '', hashWithSection(location.hash, name));
+        }
+
+        // The Log loads only while it is shown: opening it brings it up to date at once, then the poll keeps it so. (On
+        // the first show, show() loads it.)
+        if (remember && name === 'log' && previous !== 'log') {
+            reloadSection('log');
         }
     };
 
@@ -1668,10 +1693,13 @@ export default function TgJellyPage(view, params) {
     const renderSection = name => {
         drawShell();
         const section = sections[name];
+        const host = byId(section.id);
+        const write = () => setHtml(section.id, section.render() + sectionError(name));
         // While the write runs, a focused field it replaces may fire focusout: that is not the admin leaving the field.
+        // A section with its own write (the Log) keeps its place around it.
         writing++;
         try {
-            keepFocus(byId(section.id), () => setHtml(section.id, section.render() + sectionError(name)), { pending: pendingFields });
+            keepFocus(host, section.write ? () => section.write(host, write) : write, { pending: pendingFields });
         } finally {
             writing--;
         }
@@ -1681,9 +1709,10 @@ export default function TgJellyPage(view, params) {
 
         if (name === 'destinations') {
             // The manual block shows the same data (detected chats, the gate), so it follows every Destinations render;
-            // the Messages section lists the destinations for its test send.
+            // the Messages section lists the destinations for its test send, and the Log's filter offers them.
             renderSection('manual');
             renderSection('messages');
+            renderSection('log');
         }
 
         if (name === 'proxy' || name === 'connect') {
@@ -2700,6 +2729,9 @@ export default function TgJellyPage(view, params) {
     // The Messages section's own clicks and inputs (tgjelly-messages.js).
     Object.assign(actions, messages.actions);
     Object.assign(inputs, messages.inputs);
+    // The Log section's (tgjelly-log.js).
+    Object.assign(actions, logSection.actions);
+    Object.assign(inputs, logSection.inputs);
 
     const stopPolling = () => {
         if (timer !== null) {
@@ -2716,6 +2748,11 @@ export default function TgJellyPage(view, params) {
 
         if (!document.hidden && !inFlight.has('status')) {
             reloadSection('status');
+        }
+
+        // The Log refreshes with the poll, only while it is shown.
+        if (!document.hidden && activeSection === 'log' && !inFlight.has('log')) {
+            reloadSection('log');
         }
     };
 
@@ -2767,7 +2804,8 @@ export default function TgJellyPage(view, params) {
 
         startPolling();
         await reloadSection('status');
-        await Promise.all(Object.keys(sections).filter(name => name !== 'status').map(name => reloadSection(name)));
+        // The Log loads only when it is the section shown (selectSection loads it when the admin opens it).
+        await Promise.all(Object.keys(sections).filter(name => name !== 'status' && (name !== 'log' || activeSection === 'log')).map(name => reloadSection(name)));
         syncedRevision = Math.max(syncedRevision, newestRevision());
     };
 
