@@ -67,7 +67,7 @@ public sealed class PersistenceServiceTests : IDisposable
     [Fact]
     public async Task Start_UpgradesPresets_Once()
     {
-        var stored = Jellyfin.Plugin.TgJelly.Tests.Pipeline.PresetUpgraderTests.Config(PresetKind.NewMedia, [.. EventCatalog.Expand(PresetKind.NewMedia).Where(k => k != "media.book")]);
+        var stored = Jellyfin.Plugin.TgJelly.Tests.Pipeline.PresetUpgraderTests.Config(PresetKind.Everything, [.. EventCatalog.Expand(PresetKind.Everything).Where(k => k != "media.book")]);
         stored.Revision = 4;
         _host.SaveFromStore(stored);
         using var service = new PersistenceService(_gate, _state, _settings, _secrets, _time, NullLogger<PersistenceService>.Instance);

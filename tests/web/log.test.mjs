@@ -66,7 +66,7 @@ const SETTINGS = {
 };
 const DESTINATIONS = {
     Revision: 5, Items: [], DetectedChats: [], ManualUnlocked: false,
-    Catalog: { ...CATALOG, Presets: { Everything: [], NewMedia: [], AdminAlerts: [] } },
+    Catalog: { ...CATALOG },
 };
 
 const saved = {};

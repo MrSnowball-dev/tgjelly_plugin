@@ -109,14 +109,14 @@ public sealed class DestinationsControllerTests : IAsyncLifetime
         _h.Api.AddChat(-1001234567890, "supergroup", "Movie night");
         _h.Api.SetMember(-1001234567890, Member);
 
-        var response = (await _controller.Add(new AddDestinationRequest { ExpectedRevision = 0, ChatId = -1001234567890, Preset = "AdminAlerts" }, Ct)).Value!;
+        var response = (await _controller.Add(new AddDestinationRequest { ExpectedRevision = 0, ChatId = -1001234567890 }, Ct)).Value!;
 
         Assert.Equal(("Added", true), (response.Outcome, response.TestSent));
         var saved = Assert.Single(_h.Settings.Current.Destinations);
-        Assert.Equal((-1001234567890L, "Movie night", ChatKind.Supergroup, PresetKind.AdminAlerts), (saved.ChatId, saved.Title, saved.Kind, saved.Preset));
-        Assert.Equal(EventCatalog.Expand(PresetKind.AdminAlerts), saved.Events);
+        Assert.Equal((-1001234567890L, "Movie night", ChatKind.Supergroup, PresetKind.Everything), (saved.ChatId, saved.Title, saved.Kind, saved.Preset));
+        Assert.Equal(EventCatalog.AllKeys, saved.Events);
         Assert.True(SettingsValidator.IsValidId(saved.Id));
-        Assert.Equal("✅ TgJelly test: this chat will receive <i>security alerts, server alerts</i>", (string)Assert.Single(_h.Api.CallsTo("sendMessage")).Body["text"]!);
+        Assert.StartsWith("✅ TgJelly test: this chat will receive", (string)Assert.Single(_h.Api.CallsTo("sendMessage")).Body["text"]!, System.StringComparison.Ordinal);
         Assert.Equal(saved.Id, response.Destination.Id);
     }
 
@@ -171,7 +171,6 @@ public sealed class DestinationsControllerTests : IAsyncLifetime
     {
         Assert.IsType<BadRequestObjectResult>((await _controller.Add(new AddDestinationRequest { ExpectedRevision = 0, TopicLink = "https://example.com/x" }, Ct)).Result);
         Assert.IsType<BadRequestObjectResult>((await _controller.Add(new AddDestinationRequest { ExpectedRevision = 0 }, Ct)).Result);
-        Assert.IsType<BadRequestObjectResult>((await _controller.Add(new AddDestinationRequest { ExpectedRevision = 0, ChatId = -1001, Preset = "Loud" }, Ct)).Result);
     }
 
     [Fact]
@@ -268,14 +267,13 @@ public sealed class DestinationsControllerTests : IAsyncLifetime
     }
 
     [Fact]
-    public void Put_PresetExpandsEvents()
+    public void Put_EveryEventOn_MeansNewEventsAreAddedLater()
     {
         var d = _h.AddDestination(-1001, preset: PresetKind.Custom);
 
-        var dto = _controller.Update(d.Id, new UpdateDestinationRequest { ExpectedRevision = _h.Settings.Current.Revision, Preset = "NewMedia" }).Value!;
+        _controller.Update(d.Id, new UpdateDestinationRequest { ExpectedRevision = _h.Settings.Current.Revision, Events = [.. EventCatalog.AllKeys] });
 
-        Assert.Equal("NewMedia", dto.Preset);
-        Assert.Equal(EventCatalog.Expand(PresetKind.NewMedia), _h.Settings.Current.Destinations.Single().Events);
+        Assert.Equal(PresetKind.Everything, _h.Settings.Current.Destinations.Single().Preset);
     }
 
     [Fact]
@@ -286,7 +284,7 @@ public sealed class DestinationsControllerTests : IAsyncLifetime
         var dto = _controller.Update(d.Id, new UpdateDestinationRequest { ExpectedRevision = _h.Settings.Current.Revision, Events = ["media.movie"], SilentGroups = ["media"], LibraryIds = ["F137A2DD-21BB-C1B9-9AA5-C0F6BF02A805"] }).Value!;
 
         var saved = _h.Settings.Current.Destinations.Single();
-        Assert.Equal(("Custom", PresetKind.Custom), (dto.Preset, saved.Preset));
+        Assert.Equal(PresetKind.Custom, saved.Preset);
         Assert.Equal(["media.movie"], saved.Events);
         Assert.Equal(["media"], saved.SilentGroups);
         Assert.Equal(["f137a2dd21bbc1b99aa5c0f6bf02a805"], saved.LibraryIds);
@@ -316,7 +314,6 @@ public sealed class DestinationsControllerTests : IAsyncLifetime
         Assert.Contains("Reload the page", Message(new UpdateDestinationRequest { ExpectedRevision = rev, Events = ["media.podcast"] }), System.StringComparison.Ordinal);
         Assert.Contains("Reload the page", Message(new UpdateDestinationRequest { ExpectedRevision = rev, SilentGroups = ["noise"] }), System.StringComparison.Ordinal);
         Assert.Contains("Reload the page", Message(new UpdateDestinationRequest { ExpectedRevision = rev, LibraryIds = ["not-a-guid"] }), System.StringComparison.Ordinal);
-        Assert.Contains("Reload the page", Message(new UpdateDestinationRequest { ExpectedRevision = rev, Preset = "Loud" }), System.StringComparison.Ordinal);
     }
 
     [Fact]
@@ -438,10 +435,6 @@ public sealed class DestinationsControllerTests : IAsyncLifetime
 
         Assert.Equal(EventCatalog.AllKeys, catalog.EventKeys);
         Assert.Equal(EventCatalog.Groups, catalog.Groups);
-        Assert.Equal(["Everything", "NewMedia", "AdminAlerts"], catalog.Presets.Keys);
-        Assert.Equal(EventCatalog.Expand(PresetKind.NewMedia), catalog.Presets["NewMedia"]);
-        Assert.Equal(EventCatalog.Expand(PresetKind.AdminAlerts), catalog.Presets["AdminAlerts"]);
-        Assert.Equal(EventCatalog.AllKeys, catalog.Presets["Everything"]);
     }
 
     [Fact]

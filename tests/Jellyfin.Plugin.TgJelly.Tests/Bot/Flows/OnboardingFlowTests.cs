@@ -22,7 +22,7 @@ public sealed class OnboardingFlowTests : IDisposable, IAsyncLifetime
     private const string NoPhotos = """{"can_send_messages":true,"can_send_photos":false}""";
     private const string ChannelAdd = "my_chat_member_channel_admin";
     private const string GroupAdd = "my_chat_member_group_member";
-    private static readonly string[] Presets = ["Everything", "New media", "Admin alerts", "Custom…"];
+    private static readonly string[] DoneButtons = ["Add another place", "Menu"];
     private readonly BotTestHarness _h = new();
     private BotRig _rig = null!;
 
@@ -120,7 +120,7 @@ public sealed class OnboardingFlowTests : IDisposable, IAsyncLifetime
     }
 
     [Fact]
-    public async Task ChannelAdded_ByThePromptsUser_ChecksAndShowsPresets_InTheSameMessage()
+    public async Task ChannelAdded_ByThePromptsUser_ChecksAndCreates_InTheSameMessage()
     {
         AddChannel();
         await Start();
@@ -131,20 +131,13 @@ public sealed class OnboardingFlowTests : IDisposable, IAsyncLifetime
         var edits = Edits(prompt);
         Assert.Equal("Checking <b>News</b>…", (string)edits[0].Body["text"]!);
         var presets = edits.Last();
-        Assert.Equal(Presets, Labels(presets));
-        Assert.StartsWith("<b>Family</b>\nWhat should I send there?", (string)presets.Body["text"]!, StringComparison.Ordinal);
+        Assert.Equal(DoneButtons, Labels(presets));
+        Assert.StartsWith("✅ Done: <b>Family</b>", (string)presets.Body["text"]!, StringComparison.Ordinal);
         Assert.Single(Sent());
         Assert.Empty(Deleted());
         Assert.False(_rig.Memory.IsDetected(Channel));
-
-        var flow = _rig.Memory.GetFlow(Manager)!;
-        Assert.Equal(prompt, flow.WizardMessageId);
-        Assert.Null(flow.PromptSentAt);
-        Assert.False(flow.Params.ContainsKey("await"));
-        Assert.Equal(Num(Channel), flow.Params["chatId"]);
-        Assert.Equal("Family", flow.Params["title"]);
-        Assert.Equal(nameof(ChatKind.Channel), flow.Params["kind"]);
-        Assert.Equal("0", flow.Params["threadId"]);
+        Assert.Single(_h.Settings.Current.Destinations);
+        Assert.Null(_rig.Memory.GetFlow(Manager));
         Assert.Empty(_rig.Delays);
     }
 
@@ -160,9 +153,9 @@ public sealed class OnboardingFlowTests : IDisposable, IAsyncLifetime
 
         var edits = Edits(prompt);
         Assert.Equal("Checking <b>Family</b>…", (string)edits[0].Body["text"]!);
-        Assert.Equal(Presets, Labels(edits.Last()));
+        Assert.Equal(DoneButtons, Labels(edits.Last()));
         Assert.Single(Sent());
-        Assert.Empty(Sent(Group));
+        Assert.Contains("TgJelly test", (string)Assert.Single(Sent(Group)).Body["text"]!, StringComparison.Ordinal); // only the test message
         Assert.False(_rig.Memory.IsDetected(Group));
     }
 
@@ -175,7 +168,7 @@ public sealed class OnboardingFlowTests : IDisposable, IAsyncLifetime
 
         await Added("my_chat_member_channel_rights", Channel);
 
-        Assert.Equal(Presets, Labels(Edits(prompt).Last()));
+        Assert.Equal(DoneButtons, Labels(Edits(prompt).Last()));
         Assert.False(_rig.Memory.IsDetected(Channel));
     }
 
@@ -190,8 +183,8 @@ public sealed class OnboardingFlowTests : IDisposable, IAsyncLifetime
         await GroupStart(Group, "/start@tgjelly_test_bot add");
 
         Assert.Equal("Checking <b>Family</b>…", (string)Edits(prompt)[0].Body["text"]!);
-        Assert.Equal(Presets, Labels(Edits(prompt).Last()));
-        Assert.Empty(Sent(Group));
+        Assert.Equal(DoneButtons, Labels(Edits(prompt).Last()));
+        Assert.Contains("TgJelly test", (string)Assert.Single(Sent(Group)).Body["text"]!, StringComparison.Ordinal); // only the test message
     }
 
     [Fact]
@@ -229,12 +222,9 @@ public sealed class OnboardingFlowTests : IDisposable, IAsyncLifetime
         await _rig.Deliver(update);
 
         Assert.Single(_h.Api.CallsTo("editMessageText"), c => ((string)c.Body["text"]!).StartsWith("Checking", StringComparison.Ordinal));
-        Assert.Single(_h.Api.CallsTo("getChat"), c => c.Body["chat_id"]!.ToString() == Num(Channel));
+        // One getChat for the check, one for the test message.
+        Assert.Equal(2, _h.Api.CallsTo("getChat").Count(c => c.Body["chat_id"]!.ToString() == Num(Channel)));
         Assert.False(_rig.Memory.IsDetected(Channel));
-
-        var wizard = WizardId();
-        await Click("1|op|Everything", wizard);
-        await Click("1|op|Everything", wizard);
 
         Assert.Single(_h.Settings.Current.Destinations);
         Assert.Single(Sent(Channel));
@@ -252,7 +242,7 @@ public sealed class OnboardingFlowTests : IDisposable, IAsyncLifetime
 
         await Added(GroupAdd, Group, userId: 43);
 
-        Assert.Equal(Presets, Labels(Edits(second).Last()));
+        Assert.Equal(DoneButtons, Labels(Edits(second).Last()));
         Assert.Equal("43", Edits(second).Last().Body["chat_id"]!.ToString());
         Assert.True(OnboardingFlow.AwaitsChat(_rig.Memory.GetFlow(Manager)!));
         Assert.Empty(Edits(first));
@@ -269,8 +259,8 @@ public sealed class OnboardingFlowTests : IDisposable, IAsyncLifetime
         await Added(ChannelAdd, Channel);
 
         Assert.Equal([TimeSpan.FromSeconds(1.5), TimeSpan.FromSeconds(1.5)], _rig.Delays);
-        Assert.Equal(3, _h.Api.CallsTo("getChatMember").Count());
-        Assert.Equal(Presets, Labels(_h.Api.CallsTo("editMessageText").Last()));
+        Assert.Equal(4, _h.Api.CallsTo("getChatMember").Count());
+        Assert.Equal(DoneButtons, Labels(_h.Api.CallsTo("editMessageText").Last()));
     }
 
     [Fact]
@@ -308,16 +298,14 @@ public sealed class OnboardingFlowTests : IDisposable, IAsyncLifetime
 
         var edits = Edits(prompt);
         Assert.Equal("Checking this chat…", (string)edits[0].Body["text"]!);
-        Assert.Equal(Presets, Labels(edits.Last()));
-        Assert.Single(Sent());
+        Assert.Equal(DoneButtons, Labels(edits.Last()));
+        Assert.Equal(2, Sent().Length);
         Assert.Empty(_h.Api.CallsTo("getChatMember"));
-
-        await Click("1|op|AdminAlerts", prompt);
 
         var destination = Assert.Single(_h.Settings.Current.Destinations);
         Assert.Equal(Manager, destination.ChatId);
         Assert.Equal(ChatKind.Private, destination.Kind);
-        Assert.Equal(PresetKind.AdminAlerts, destination.Preset);
+        Assert.Equal(PresetKind.Everything, destination.Preset);
         Assert.Contains(Sent(), c => ((string)c.Body["text"]!).Contains("TgJelly test", StringComparison.Ordinal));
         Assert.StartsWith("✅ Done: <b>Ann</b>", (string)Edits(prompt).Last().Body["text"]!, StringComparison.Ordinal);
     }
@@ -335,7 +323,7 @@ public sealed class OnboardingFlowTests : IDisposable, IAsyncLifetime
         await Click("1|oh", first);
 
         Assert.Contains(Sent(), c => (string)c.Body["text"]! == "That menu expired");
-        Assert.Contains("Add destination", Labels(Sent().Last()));
+        Assert.Contains("Destinations (0)", Labels(Sent().Last()));
         Assert.Empty(_h.Api.CallsTo("getChat"));
         var flow = _rig.Memory.GetFlow(Manager)!;
         Assert.Equal(second, flow.WizardMessageId);
@@ -379,7 +367,7 @@ public sealed class OnboardingFlowTests : IDisposable, IAsyncLifetime
         Assert.Equal(2, sent.Length);
         Assert.Equal("That menu expired", (string)sent[0].Body["text"]!);
         Assert.True((bool)sent[0].Body["reply_markup"]!["remove_keyboard"]!);
-        Assert.Contains("Add destination", Labels(sent[1]));
+        Assert.Contains("Destinations (0)", Labels(sent[1]));
         Assert.Single(_h.Api.Calls, c => c.Body["reply_markup"]?["remove_keyboard"] is not null);
         Assert.Empty(_h.Api.CallsTo("getChat"));
     }
@@ -422,11 +410,10 @@ public sealed class OnboardingFlowTests : IDisposable, IAsyncLifetime
 
         var edits = Edits(prompt);
         Assert.StartsWith("Checking <b>", (string)edits[^2].Body["text"]!, StringComparison.Ordinal);
-        Assert.Equal(Presets, Labels(edits[^1]));
+        Assert.Equal(DoneButtons, Labels(edits[^1]));
         Assert.Single(Sent());
-        Assert.Equal(checks + 1, _h.Api.CallsTo("getChatMember").Count());
+        Assert.Equal(checks + 2, _h.Api.CallsTo("getChatMember").Count());
         Assert.Equal(delays, _rig.Delays.Count);
-        Assert.Equal(Num(Channel), _rig.Memory.GetFlow(Manager)!.Params["chatId"]);
     }
 
     [Fact]
@@ -448,8 +435,8 @@ public sealed class OnboardingFlowTests : IDisposable, IAsyncLifetime
 
         var edits = Edits(prompt);
         Assert.Equal("Checking this chat…", (string)edits[^2].Body["text"]!);
-        Assert.Equal(Presets, Labels(edits[^1]));
-        Assert.Single(Sent());
+        Assert.Equal(DoneButtons, Labels(edits[^1]));
+        Assert.Equal(2, Sent().Length);
     }
 
     [Fact]
@@ -518,13 +505,9 @@ public sealed class OnboardingFlowTests : IDisposable, IAsyncLifetime
     }
 
     [Fact]
-    public async Task Preset_Creates_SendsTheTest_AndEditsTheWizardToDone()
+    public async Task Creates_SendsTheTest_AndEditsTheWizardToDone()
     {
-        await ChooseChannel();
-        var wizard = WizardId();
-        var checks = _h.Api.CallsTo("getChatMember").Count();
-
-        await Click("1|op|Everything", wizard);
+        var wizard = await ChooseChannel();
 
         var destination = Assert.Single(_h.Settings.Current.Destinations);
         Assert.Equal(Channel, destination.ChatId);
@@ -533,7 +516,6 @@ public sealed class OnboardingFlowTests : IDisposable, IAsyncLifetime
         Assert.Equal(ChatKind.Channel, destination.Kind);
         Assert.Equal(PresetKind.Everything, destination.Preset);
         Assert.Equal(EventCatalog.AllKeys, destination.Events);
-        Assert.True(_h.Api.CallsTo("getChatMember").Count() > checks + 1, "re-checked before creating, then before the test");
 
         var test = Assert.Single(Sent(Channel));
         Assert.Contains("TgJelly test", (string)test.Body["text"]!, StringComparison.Ordinal);
@@ -550,114 +532,17 @@ public sealed class OnboardingFlowTests : IDisposable, IAsyncLifetime
     }
 
     [Fact]
-    public async Task SecondPresetClick_AfterDone_SaysExpired()
-    {
-        await ChooseChannel();
-        var wizard = WizardId();
-        await Click("1|op|Everything", wizard);
-
-        await Click("1|op|Everything", wizard);
-
-        Assert.Single(_h.Settings.Current.Destinations);
-        Assert.Single(Sent(Channel));
-        Assert.Equal("That menu expired", (string)Sent().SkipLast(1).Last().Body["text"]!);
-    }
-
-    [Fact]
-    public async Task Preset_ReChecksFirst_AndReportsAChatThatChanged()
-    {
-        await ChooseChannel();
-        _h.Api.SetMember(Channel, FakeBotApi.Member("left"));
-
-        await Click("1|op|Everything", WizardId());
-
-        Assert.Empty(_h.Settings.Current.Destinations);
-        var failure = _h.Api.CallsTo("editMessageText").Last();
-        Assert.StartsWith(_h.Strings.Get("check.lost"), (string)failure.Body["text"]!, StringComparison.Ordinal);
-        Assert.Equal(["Try again", "Advanced options"], Labels(failure));
-        Assert.True(_rig.Memory.HasRecentFailure());
-        Assert.Equal(Num(Channel), _rig.Memory.GetFlow(Manager)!.Params["chatId"]);
-    }
-
-    [Fact]
     public async Task FailedTestSend_PutsItsErrorUnderTheDoneLine()
     {
-        await ChooseChannel();
         _h.Api.On("sendMessage", call => call.Body["chat_id"]!.ToString() == Num(Channel)
             ? FakeBotApi.Error(400, "Bad Request: not enough rights to send text messages to the chat")
             : FakeBotApi.Ok("""{"message_id":900,"date":1790000000,"chat":{"id":42,"type":"private"},"text":"x"}"""));
+        await ChooseChannel();
 
-        await Click("1|op|NewMedia", WizardId());
 
         var done = (string)_h.Api.CallsTo("editMessageText").Last().Body["text"]!;
-        Assert.StartsWith("✅ Done: <b>Family</b> will receive <i>new media</i>.\n", done, StringComparison.Ordinal);
+        Assert.StartsWith("✅ Done: <b>Family</b> will receive <i>new media, security alerts, server alerts</i>.\n", done, StringComparison.Ordinal);
         Assert.Contains("❌ Test failed: Bad Request: not enough rights", done, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public async Task Custom_OpensTheGroups_WithDone()
-    {
-        await ChooseChannel();
-        var wizard = WizardId();
-
-        await Click("1|op|Custom", wizard);
-
-        var groups = _h.Api.CallsTo("editMessageText").Last();
-        Assert.Equal(wizard, (int)groups.Body["message_id"]!);
-        Assert.Equal(["Media 0/5", "Security 0/6", "Server 0/8", "Done"], Labels(groups));
-        Assert.Equal(["1|ocg|media", "1|ocg|security", "1|ocg|server", "1|ocd"], Data(groups));
-        groups.Explains("Media", "Security", "Server", "Done");
-    }
-
-    [Fact]
-    public async Task PresetScreen_ExplainsEachPreset()
-    {
-        await ChooseChannel();
-
-        _h.Api.CallsTo("editMessageText").Last().Explains("Everything", "New media", "Admin alerts", "Custom…");
-    }
-
-    [Fact]
-    public async Task CustomGroup_SwitchesStayInTheGroup_AndBackReturns()
-    {
-        await ChooseChannel();
-        var wizard = WizardId();
-        await Click("1|op|Custom", wizard);
-
-        await Click("1|ocg|media", wizard);
-        var media = _h.Api.CallsTo("editMessageText").Last();
-        Assert.Equal(6, Labels(media).Length);
-        Assert.Equal(["Back"], Labels(media)[5..]);
-        Assert.Equal("1|ocg", Data(media)[5]);
-        Assert.EndsWith("\n\nTap an event to switch it on (✅) or off (▫️).", (string)media.Body["text"]!, StringComparison.Ordinal);
-
-        await Click("1|oc|media.movie", wizard);
-        var after = _h.Api.CallsTo("editMessageText").Last();
-        Assert.Equal(6, Labels(after).Length);
-        Assert.StartsWith("✅", Labels(after)[0], StringComparison.Ordinal);
-
-        await Click("1|ocg", wizard);
-        Assert.Equal("Media 1/5", Labels(_h.Api.CallsTo("editMessageText").Last())[0]);
-    }
-
-    [Fact]
-    public async Task CustomDone_CreatesWithTheChosenEvents()
-    {
-        await ChooseChannel();
-        var wizard = WizardId();
-        await Click("1|op|Custom", wizard);
-
-        await Click("1|oc|server.started", wizard);
-        await Click("1|oc|media.movie", wizard);
-        await Click("1|oc|security.lockout", wizard);
-        await Click("1|oc|security.lockout", wizard);
-        Assert.Empty(_h.Settings.Current.Destinations);
-        await Click("1|ocd", wizard);
-
-        var destination = Assert.Single(_h.Settings.Current.Destinations);
-        Assert.Equal(PresetKind.Custom, destination.Preset);
-        Assert.Equal(["media.movie", "server.started"], destination.Events);
-        Assert.StartsWith("✅ Done: <b>Family</b> will receive <i>new media, server alerts</i>.\n\n", (string)_h.Api.CallsTo("editMessageText").Last().Body["text"]!, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -687,14 +572,12 @@ public sealed class OnboardingFlowTests : IDisposable, IAsyncLifetime
         await Start();
 
         await Added(GroupAdd, Group);
-        Assert.Equal("1", _rig.Memory.GetFlow(Manager)!.Params["photosBlocked"]);
-        await Click("1|op|NewMedia", WizardId());
 
         var destination = Assert.Single(_h.Settings.Current.Destinations);
         Assert.Equal(ChatKind.Supergroup, destination.Kind);
         Assert.True(_rig.Health.Get(destination.Id).PhotosBlocked);
         var done = (string)_h.Api.CallsTo("editMessageText").Last().Body["text"]!;
-        Assert.StartsWith("✅ Done: <b>Family</b> will receive <i>new media</i>.", done, StringComparison.Ordinal);
+        Assert.StartsWith("✅ Done: <b>Family</b> will receive <i>new media, security alerts, server alerts</i>.", done, StringComparison.Ordinal);
         Assert.Contains(_h.Strings.Get("check.photosBlocked"), done, StringComparison.Ordinal);
     }
 
@@ -734,12 +617,14 @@ public sealed class OnboardingFlowTests : IDisposable, IAsyncLifetime
 
     private Task Start() => Text("/start add");
 
-    /// <summary>Sends the prompt and adds the bot to the channel, which leaves the wizard on the preset step.</summary>
-    private async Task ChooseChannel()
+    /// <summary>Sends the prompt and adds the bot to the channel, which creates the destination and leaves the wizard on Done; returns the wizard message id.</summary>
+    private async Task<int> ChooseChannel()
     {
         AddChannel();
         await Start();
+        var wizard = WizardId();
         await Added(ChannelAdd, Channel);
+        return wizard;
     }
 
     private int WizardId() => _rig.Memory.GetFlow(Manager)!.WizardMessageId!.Value;

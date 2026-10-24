@@ -93,7 +93,7 @@ const STATUS = {
 const LINKS = { OpenBot: 'https://t.me/jf_bot?start=setup', StartAdd: 'https://t.me/jf_bot?start=add', StartGroup: 'https://t.me/jf_bot?startgroup=add', StartChannel: 'https://t.me/jf_bot?startchannel' };
 const DESTINATIONS = {
     Revision: 5, Items: [], DetectedChats: [], ManualUnlocked: false,
-    Catalog: { EventKeys: KEYS.filter(k => k !== 'media.digest'), Groups: ['media', 'security', 'server'], Presets: { Everything: [], NewMedia: [], AdminAlerts: [] } },
+    Catalog: { EventKeys: KEYS.filter(k => k !== 'media.digest'), Groups: ['media', 'security', 'server'] },
 };
 const VALIDATION = { Errors: [], Warnings: [], Preview: '', Length: 10, Limit: 1024, Html: 'ok', Caption: true, Poster: false, Buttons: [] };
 

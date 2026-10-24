@@ -8,13 +8,27 @@ namespace Jellyfin.Plugin.TgJelly.Tests.Pipeline;
 public class PresetUpgraderTests
 {
     [Fact]
-    public void NewMedia_MissingAKey_GetsItAdded_InCatalogOrder()
+    public void Everything_MissingAKey_GetsItAdded_InCatalogOrder()
     {
-        var c = Config(PresetKind.NewMedia, [.. EventCatalog.Expand(PresetKind.NewMedia).Where(k => k != "media.album")]);
+        var c = Config(PresetKind.Everything, [.. EventCatalog.Expand(PresetKind.Everything).Where(k => k != "media.album")]);
 
         Assert.True(PresetUpgrader.Apply(c));
 
-        Assert.Equal(EventCatalog.Expand(PresetKind.NewMedia), c.Destinations[0].Events);
+        Assert.Equal(EventCatalog.Expand(PresetKind.Everything), c.Destinations[0].Events);
+    }
+
+    [Theory]
+    [InlineData(PresetKind.NewMedia)]
+    [InlineData(PresetKind.AdminAlerts)]
+    public void NewMediaAndAdminAlerts_BecomeCustom_KeepingTheirEvents(PresetKind preset)
+    {
+        var events = EventCatalog.Expand(preset).Where(k => k != "media.album").ToArray();
+        var c = Config(preset, events);
+
+        Assert.True(PresetUpgrader.Apply(c));
+
+        Assert.Equal(PresetKind.Custom, c.Destinations[0].Preset);
+        Assert.Equal(events, c.Destinations[0].Events);
     }
 
     [Fact]
