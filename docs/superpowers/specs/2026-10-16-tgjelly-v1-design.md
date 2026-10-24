@@ -292,7 +292,7 @@ The whole flow is **one inline wizard message** that gets edited. There are no r
 │                       │                  Pause/Resume · Remove (asks "Also make the bot leave the chat?")
 │                       └─ Chats added outside setup (n)   ← shown only when n > 0 (§6.5)
 ├─ ➕ Add destination ─► §6.2
-├─ ⚙️ Settings ─► Message style (§8.4) · Update checks (on/off, mode) ·
+├─ ⚙️ Settings ─► Message style (§8.4: section ─► message ─► its switches) · Update checks (on/off, three kinds, §7.6) ·
 │                Public URL (shows current/suggested; [Use suggested] [Type another] (inline prompt with [Cancel], validated §8.3) [Clear])
 └─ 🩺 Status ─► connection, compat, destination health, pending media, outbox sizes, last errors
    (Advanced options: reachable only from a failed setup step, §6.5)
@@ -486,7 +486,13 @@ Groups: `media.*` = **media**, `security.*` = **security**, `server.*` = **serve
 - First check 5 min after startup (or after a subscription appears), then every **12 h**.
 - It calls `GET https://api.github.com/repos/jellyfin/jellyfin/releases?per_page=20` with `User-Agent: TgJelly/<version>`, on its own `HttpClient` that uses the **same proxy settings as the bot** (§9.1), with a 30 s timeout.
 - Draft and prerelease entries are skipped. Tags are parsed leniently (`v12.2` → 12.2.0.0) and compared with `ApplicationVersion` after both are normalized to four parts.
-- `Mode`: **SameMajor** (default) or **AnyNewer**. Each version is announced once (`state.updateCheck.lastNotifiedVersion`).
+- **Which releases** (amended by Plan 9, [dashboard tweaks design](2026-10-23-tgjelly-dashboard-tweaks-design.md) §7): three switches.
+  - `Fixes`, e.g. 10.11.1 → 10.11.2 (same major and minor, higher build); default **on**.
+  - `NewReleases`, e.g. 10.11 → 10.12 (same major, higher minor); default **on**.
+  - `NewMajor`, e.g. 10.x → 12.0 (higher major); default **off**.
+  - All three off is allowed and means no update messages.
+  - v0.4's `Mode` is read once on upgrade: `SameMajor` becomes `Fixes` + `NewReleases`, `AnyNewer` all three.
+- Each version is announced once (`state.updateCheck.lastNotifiedVersion`).
 - On 403, 429 or a network error: retry at the next interval. After 3 failures in a row, Status shows "Update check failing: *reason*". No Telegram message is sent about it.
 - Message: "⬆️ Jellyfin **12.3** is available (running 12.2)" with a `[Release notes]` button (the GitHub release page).
 
@@ -547,7 +553,13 @@ Groups: `media.*` = **media**, `security.*` = **security**, `server.*` = **serve
 - **Release notes** for `server.update_available`.
 
 ### 8.4 Toggles
-- **Global** (bot Settings or dashboard Messages): `ShowPoster`, `ShowOverview`, `ShowRatingGenres`, `ShowOpenInJellyfin`, `ShowProviderLinks` (all default **on**), `AnnounceUpgrades` (default **off**).
+> **Amended (Plan 9).** The switches are per message, not global ([dashboard tweaks design](2026-10-23-tgjelly-dashboard-tweaks-design.md) §6.2).
+
+- **Per message** (bot Settings → Message style: section, then message; or the dashboard's Messages page): `ShowPoster`, `ShowOverview`, `ShowRatingGenres`, `ShowOpenInJellyfin`, `ShowProviderLinks`.
+  - Each message has only the switches its rendering honours (`MessageSwitches.Applicable`); the others are hidden for it. A movie has all five; episodes have Poster, Open in Jellyfin and IMDb/TMDb; an album has Poster and Open in Jellyfin; a music video or a book has all but IMDb/TMDb; the digest has none.
+  - Media messages default to all **on**. Security and Server messages have only `ShowPoster`, default **off**; when on, the TgJelly logo is sent as the photo with the text as its caption.
+  - On upgrade from v0.4, every media message starts with v0.4's global values.
+- **Global:** `AnnounceUpgrades` (default **off**), one value for every media message, because whether an upgrade is an event is decided before any message is picked. It is shown with the media messages.
 - **Per destination:** `SilentGroups` (media / security / server → `disable_notification=true`), default none.
 
 ### 8.5 Message templates (amended by Plan 7; see the [templates design](2026-10-21-tgjelly-templates-design.md))
@@ -712,8 +724,12 @@ Revision: long = 0
 Language: string = "en"                       (hidden in v1)
 PublicUrl: string = ""
 Proxy: ProxySettings { Mode: ProxyMode = System; Url: string = "" }
-Message: MessageOptions { ShowPoster=true; ShowOverview=true; ShowRatingGenres=true;
-                          ShowOpenInJellyfin=true; ShowProviderLinks=true; AnnounceUpgrades=false }
+Message: MessageOptions { PerMessage: MessageSwitchesEntry[] = []; AnnounceUpgrades = false }   (Plan 9)
+  MessageSwitchesEntry { EventKey: string (an event key or "media.digest");
+                         Switches: MessageSwitches { ShowPoster; ShowOverview; ShowRatingGenres;
+                                                     ShowOpenInJellyfin; ShowProviderLinks } }
+  A message without an entry uses its defaults (§8.4). v0.4's flat Show* elements under <Message> are
+  read once by the migration, copied to every media message, and never written back.
 Batching: BatchingOptions {
   QuietWindowSeconds = 120   (5–3600)
   MaxHoldMinutes     = 30    (1–240, and ≥ QuietWindowSeconds/60)
@@ -721,7 +737,8 @@ Batching: BatchingOptions {
   DigestThreshold    = 10    (2–100)
   LateEditHours      = 6     (0–24; 0 = never edit)
   ReadyTimeoutMinutes = 15   (1–120) }
-UpdateCheck: UpdateCheckOptions { Enabled = true; Mode: UpdateCheckMode = SameMajor }
+UpdateCheck: UpdateCheckOptions { Enabled = true; Fixes = true; NewReleases = true; NewMajor = false }   (Plan 9)
+  v0.4's Mode (SameMajor|AnyNewer) is read once by the migration (§7.6) and never written back.
 Destinations: Destination[] = []
   Destination { Id: string (8 chars, [a-z0-9]); ChatId: long; ThreadId: int = 0 (0 = none / General);
                 Title: string; Kind: ChatKind (Private|Group|Supergroup|Channel);
@@ -995,7 +1012,7 @@ README.md (setup with screenshots, BotFather restriction, GitHub contact for upd
   - detected-chat rules,
   - setup-failure gating.
 - **UpdateChecker:**
-  - `v12.2` / `v10.11.11` parsing, prereleases and drafts, SameMajor vs AnyNewer,
+  - `v12.2` / `v10.11.11` parsing, prereleases and drafts, the three kinds (fixes, new releases, new major), the v0.4 `Mode` migration,
   - runs only while subscribed, uses the proxy,
   - failure counter, announce once.
 

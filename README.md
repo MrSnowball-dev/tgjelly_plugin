@@ -93,7 +93,7 @@ Hover a piece of the template, such as one field, an `if` block or a run of text
 
 ### Log
 
-The **Log** has one row for each message and each destination, newest first. Each row shows when, the event, the destination, the result and, if it is not Sent, why. The results are Sent, Waiting, Skipped, Sent late, Sent with built-in, Sent without photo and Failed. Click a row that needs attention to see what Telegram said, how many tries there were, and what to do.
+The **Log** has one row for each message and each destination, newest first. Each row shows when, the event, the destination, the result and, if it is not Sent, why. A Sent row also says why when a later update of that message failed: the chat then still shows the earlier version. The results are Sent, Waiting, Skipped, Sent late, Sent with built-in, Sent without photo and Failed. Click a row that needs attention to see what Telegram said, how many tries there were, and what to do.
 
 Use **Problems only** to hide the rows that went well, and the Destination and Event selects to narrow the list. The top line shows when the last message reached Telegram, and tells you when Jellyfin has sent no events for a day, so you can tell silence from a failure.
 
@@ -111,6 +111,7 @@ Every message is a template, and you can change any of them. Open the message on
 - The update check contacts `api.github.com`, and only while at least one destination subscribes to the update event. Otherwise TgJelly makes no other network calls. It uses the same proxy as the bot.
 - The bot token and proxy password are never shown again after you save them, and they are removed from logs and reports.
 - TgJelly keeps its files in `plugins/configurations/TgJelly/` inside your Jellyfin data folder. Uninstalling the plugin leaves them there.
+- The Log keeps what its rows show for 7 days on the server's disk, in `event-log.jsonl` in that folder: media titles, user names for security events such as failed logins, and Telegram's error texts. It never holds the bot token or the messages' full text.
 
 ## Troubleshooting
 
