@@ -191,6 +191,15 @@ test('throwingSend_isFailed_andCancelDropsPending', async () => {
     assert.deepEqual(states(cues, 'b'), ['idle']);
 });
 
+test('throwingSend_cueUsesTheSuppliedDescription', async () => {
+    const cues = [];
+    const clock = fakeClock();
+    const q = createAutosave({ clock, onCue: (key, cue) => cues.push([key, cue.state, cue.text]), onSettled: () => {}, describeError: err => `cause: ${err.message}; next step` });
+    q.change({ key: 'a', mode: 'now', send: async () => { throw new Error('net down'); } });
+    await clock.tick(5000);
+    assert.deepEqual(cues.filter((c) => c[0] === 'a'), [['a', 'error', 'cause: net down; next step']]);
+});
+
 test('staleIdle_doesNotReplaceNewerCue', async () => {
     const { clock, q, cues } = setup();
     q.change({ key: 'a', mode: 'now', send: async () => ({ status: 'saved' }) });

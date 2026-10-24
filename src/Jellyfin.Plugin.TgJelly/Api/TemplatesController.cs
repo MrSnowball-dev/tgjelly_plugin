@@ -99,7 +99,7 @@ public class TemplatesController : ControllerBase
         var text = request.Text ?? string.Empty;
         if (text.Length > MaxText)
         {
-            return BadRequest(new ErrorsDto { Errors = [new SettingsError("Text", "Must be at most 16384 characters.")] });
+            return BadRequest(new ErrorsDto { Errors = [new SettingsError("Text", "The template is longer than 16384 characters. Shorten the template to 16384 characters or fewer.")] });
         }
 
         // Text that is the built-in one (or nothing) is no override: the built-in template stays in use.

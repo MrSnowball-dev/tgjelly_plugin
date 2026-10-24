@@ -123,7 +123,7 @@ public class SettingsController : ControllerBase
 
         if (!Enum.TryParse<ProxyMode>(request.Mode, ignoreCase: true, out var mode) || !Enum.IsDefined(mode))
         {
-            return BadRequest(new ErrorsDto { Errors = [new SettingsError("Proxy.Mode", "Must be System, None, Http or Socks5.")] });
+            return BadRequest(new ErrorsDto { Errors = [new SettingsError("Proxy.Mode", "Must be System, None, Http or Socks5. Reload the page and pick the mode again.")] });
         }
 
         var url = (request.Url ?? string.Empty).Trim();

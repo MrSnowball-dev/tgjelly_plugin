@@ -211,9 +211,35 @@ const errorReason = err => (err && err.message ? String(err.message) : 'the brow
  * @returns {string}
  */
 function failureReason(S, result) {
-    return result.body && result.body.Message
-        ? text(S, 'web.request.http', { message: result.body.Message, status: result.status })
+    if (result.body && result.body.Message) {
+        return text(S, 'web.request.http', { message: result.body.Message, status: result.status });
+    }
+
+    if (result.status === 404) {
+        return text(S, 'web.request.notFound');
+    }
+
+    return result.status === 401 || result.status === 403
+        ? text(S, 'web.request.denied', { status: result.status })
         : text(S, 'web.request.httpBare', { status: result.status });
+}
+
+/** Whether a thrown error is the browser's or network's failure to reach the server (fetch rejects with a TypeError). */
+const isNetworkError = err => err instanceof TypeError || (err && (err.name === 'NetworkError' || err.name === 'AbortError'));
+
+/**
+ * The plain-text cue for a thrown error: "could not reach Jellyfin" for a network failure, otherwise the error as an
+ * unexpected one, each with what to do next.
+ */
+export function thrownText(S, err) {
+    return isNetworkError(err)
+        ? text(S, 'web.requestFailed', { reason: errorReason(err) })
+        : text(S, 'web.unexpectedError', { reason: errorReason(err) });
+}
+
+/** The same as HTML, escaped. */
+export function thrownError(S, err) {
+    return esc(thrownText(S, err));
 }
 
 /** The short cause of a failed Status request for the header: "HTTP 503: message", or the network's own words. */
@@ -1408,7 +1434,7 @@ export default function TgJellyPage(view, params) {
     const loadSettings = () => {
         settingsLoad ??= api.get('Settings').then(result => {
             if (result.status !== 200 || !result.body) {
-                throw new Error('HTTP ' + result.status);
+                throw new Error('HTTP ' + result.status + (result.body && result.body.Message ? ': ' + result.body.Message : ''));
             }
 
             takeSettings(result.body);
@@ -1423,7 +1449,7 @@ export default function TgJellyPage(view, params) {
     const loadLinks = () => {
         linksLoad ??= api.get('Links').then(result => {
             if (result.status !== 200 || !result.body) {
-                throw new Error('HTTP ' + result.status);
+                throw new Error('HTTP ' + result.status + (result.body && result.body.Message ? ': ' + result.body.Message : ''));
             }
 
             state.links = result.body;
@@ -1518,6 +1544,8 @@ export default function TgJellyPage(view, params) {
         loadSettings: () => loadSettings(),
         saveSetting: (path, mode, el, options) => saveSetting(path, mode, el, options),
         requestError,
+        thrownError,
+        thrownText,
         healthText,
         fieldSelector,
     });
@@ -1879,7 +1907,7 @@ export default function TgJellyPage(view, params) {
             }
         } catch (err) {
             console.error('TgJelly: action failed', err);
-            state.ui.errors[name] = t(S, 'web.requestFailed', { reason: errorReason(err) });
+            state.ui.errors[name] = thrownError(S, err);
         }
 
         await syncRevisions();
@@ -2082,6 +2110,9 @@ export default function TgJellyPage(view, params) {
         clock: { now: () => Date.now(), setTimeout: (fn, ms) => setTimeout(fn, ms), clearTimeout: handle => clearTimeout(handle) },
         onCue,
         onSettled,
+        describeError: err => (isNetworkError(err)
+            ? text(state.strings, 'web.autosave.network', { reason: errorReason(err) })
+            : text(state.strings, 'web.unexpectedError', { reason: errorReason(err) })),
     });
 
     /**
@@ -2799,7 +2830,7 @@ export default function TgJellyPage(view, params) {
 
         stringsLoad ??= api.get('Strings?lang=' + encodeURIComponent(lang())).then(result => {
             if (result.status !== 200 || !result.body) {
-                throw new Error('HTTP ' + result.status);
+                throw new Error('HTTP ' + result.status + (result.body && result.body.Message ? ': ' + result.body.Message : ''));
             }
 
             return result.body;
@@ -2812,7 +2843,7 @@ export default function TgJellyPage(view, params) {
             console.error('TgJelly: could not load the page strings', err);
             const root = byId('tgjelly-root');
             if (root && !shellDrawn) {
-                root.textContent = 'Could not load TgJelly.';
+                root.textContent = `Could not load TgJelly: ${errorReason(err)}. Reload the page; if it keeps failing, check the Jellyfin log.`;
             }
 
             return false;

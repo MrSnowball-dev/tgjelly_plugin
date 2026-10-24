@@ -105,6 +105,7 @@ public sealed class TemplatesControllerTests : IAsyncLifetime
         var result = Assert.IsType<BadRequestObjectResult>(_controller.Put("media.movie", Req(0, new string('a', 16385))).Result);
 
         Assert.Equal("Text", Assert.IsType<ErrorsDto>(result.Value).Errors.Single().Field);
+        Assert.Contains("Shorten the template", Assert.IsType<ErrorsDto>(result.Value).Errors.Single().Message, System.StringComparison.Ordinal);
         Assert.Empty(_h.Settings.Current.Templates);
     }
 

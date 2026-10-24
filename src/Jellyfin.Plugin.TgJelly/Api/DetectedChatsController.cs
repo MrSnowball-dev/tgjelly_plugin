@@ -96,13 +96,13 @@ public class DetectedChatsController : ControllerBase
 
         if (!DestinationsController.TryPreset(request.Preset, out var preset))
         {
-            return Error("Preset", "Must be Everything, NewMedia, AdminAlerts or Custom.");
+            return Error("Preset", "Must be Everything, NewMedia, AdminAlerts or Custom. Reload the page and pick the preset again.");
         }
 
         var threadId = request.ThreadId ?? 0;
         if (threadId < 0)
         {
-            return Error("ThreadId", "Must be a topic ID, or omitted.");
+            return Error("ThreadId", "The topic ID must be a whole number, or left out for the General topic.");
         }
 
         ChatCheckResult check;

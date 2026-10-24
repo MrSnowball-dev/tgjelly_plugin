@@ -631,7 +631,7 @@ function pieceAtPoint(mirror, x, y) {
  *   changed in place), renderSection(name), reloadSection(name, options), runAction(name, fn), markDirty(form, path,
  *   value), syncForm(name, data), noteRevision(dto), isOlder(held, dto), pageRevision(), queueSave(job),
  *   saveResult(result, on), failureText(result), releaseFields(key), flush(key), cancelSave(key), loadSettings(),
- *   saveSetting(path, mode, el, options), requestError(S, result), healthText(status, S), fieldSelector(el)
+ *   saveSetting(path, mode, el, options), requestError(S, result), thrownError(S, err), thrownText(S, err), healthText(status, S), fieldSelector(el)
  * @returns {{ section: { id: string, load: () => Promise<void>, render: () => string }, actions: object,
  *   inputs: object, hover: (event: MouseEvent) => void, scroll: (event: Event) => void, hide: () => void }} hover and
  *   scroll take the page's pointer and (captured) scroll events for the hover link
@@ -910,8 +910,8 @@ export function createMessages(page) {
                 failure = page.failureText(result);
             }
         } catch (err) {
-            reply = { RequestError: t(S, 'web.requestFailed', { reason: err && err.message ? err.message : 'the browser gave no details' }) };
-            failure = text(S, 'web.requestFailed', { reason: err && err.message ? err.message : 'the browser gave no details' });
+            reply = { RequestError: page.thrownError(S, err) };
+            failure = texpage.thrownError(S, err);
         }
 
         if (seq === tplSeqs.get(key)) {

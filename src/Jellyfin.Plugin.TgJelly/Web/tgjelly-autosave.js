@@ -16,7 +16,8 @@ export const SAVING_AFTER_MS = 300;
 export const SAVED_FOR_MS = 2000;
 export const CONFLICT_KEY = 'web.autosave.conflict';
 
-export function createAutosave({ clock, onCue, onSettled }) {
+// describeError(error) -> string: the page words a thrown send(); without it the error's own message is shown.
+export function createAutosave({ clock, onCue, onSettled, describeError }) {
     let seq = 0;
     const waiting = new Map();   // key -> { seq, job, timer }: debounce and blur jobs not yet due
     let ready = [];              // { key, job }: due, in arrival order, not yet sent
@@ -126,7 +127,7 @@ export function createAutosave({ clock, onCue, onSettled }) {
     }
 
     async function attempt(send) {
-        try { return await send(); } catch (error) { return { status: 'failed', message: (error && error.message) || String(error) }; }
+        try { return await send(); } catch (error) { return { status: 'failed', message: describeError ? describeError(error) : (error && error.message) || String(error) }; }
     }
 
     async function run({ key, job }) {

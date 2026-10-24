@@ -428,7 +428,7 @@ test('an action error lands in its own section', async t => {
 
     clickOn(view, { 'data-tgj-act': 'crash' });
     await flush();
-    assert.ok(el('tgj-demo').innerHTML.includes(m.t(EN, 'web.requestFailed', { reason: 'kaput' })));
+    assert.ok(el('tgj-demo').innerHTML.includes(m.t(EN, 'web.unexpectedError', { reason: 'kaput' })));
     assert.ok(!el('tgj-demo').innerHTML.includes('bad'));
     assert.equal(logged.length, 1, 'the crash is logged once for diagnosis');
     assert.equal(logged[0][1].message, 'kaput');
@@ -548,7 +548,7 @@ test('strings failure shows the fallback line', async t => {
     const { view, el, timers } = mount({ 'GET TgJelly/Strings': { status: 500, body: { Message: 'boom' } } });
     await show(view);
 
-    assert.equal(el('tgjelly-root').textContent, 'Could not load TgJelly.');
+    assert.equal(el('tgjelly-root').textContent, 'Could not load TgJelly: HTTP 500: boom. Reload the page; if it keeps failing, check the Jellyfin log.');
     assert.equal(el('tgjelly-root').writes, 0, 'no shell without the strings');
     assert.equal(errors.length, 1);
     assert.equal(timers.active(), 0);
@@ -558,7 +558,7 @@ test('a network failure loading strings shows the fallback line', async t => {
     t.mock.method(console, 'error', () => {});
     const { view, el } = mount({ NETWORK: true });
     await show(view);
-    assert.equal(el('tgjelly-root').textContent, 'Could not load TgJelly.');
+    assert.equal(el('tgjelly-root').textContent, 'Could not load TgJelly: Failed to fetch. Reload the page; if it keeps failing, check the Jellyfin log.');
 });
 
 test('a failed status poll says so, escaped through the strings', async t => {
@@ -3842,4 +3842,47 @@ test('a save with nothing to save into says what happened and what to do', () =>
     for (const key of ['web.request.noDestination', 'web.request.noSettings', 'web.request.noTemplate']) {
         assert.ok(EN[key] && /reload/i.test(EN[key]) && /not saved/i.test(EN[key]), key);
     }
+});
+
+// --- Task 14 fix round 1 ---
+
+test('a throwing save cue says the cause and the next step', async t => {
+    t.mock.method(console, 'error', () => {});
+    const { view, hooks } = mount();
+    await show(view);
+    hooks.queueSave({ key: 'proxy', mode: 'now', send: async () => { throw new TypeError('Failed to fetch'); } });
+    await flush();
+    const cue = view.cues.get('proxy').innerHTML;
+    assert.ok(cue.includes('Failed to fetch') && /Jellyfin/.test(cue) && /reload/i.test(cue), cue);
+});
+
+test('only network errors are called "could not reach Jellyfin"', async t => {
+    t.mock.method(console, 'error', () => {});
+    const { view, hooks, el } = mount();
+    hooks.sections.demo = { id: 'tgj-demo', load: async () => {}, render: () => '<p>demo</p>' };
+    hooks.actions.net = () => hooks.runAction('demo', async () => { throw new TypeError('Failed to fetch'); });
+    hooks.actions.bug = () => hooks.runAction('demo', async () => { throw new Error('x is undefined'); });
+    await show(view);
+
+    clickOn(view, { 'data-tgj-act': 'net' });
+    await flush();
+    assert.ok(el('tgj-demo').innerHTML.includes('Could not reach Jellyfin: Failed to fetch'));
+
+    clickOn(view, { 'data-tgj-act': 'bug' });
+    await flush();
+    const html = el('tgj-demo').innerHTML;
+    assert.ok(html.includes('unexpected error: x is undefined') && /Reload the page/.test(html) && /Copy diagnostics/.test(html), html);
+    assert.ok(!html.includes('Could not reach'));
+});
+
+test('bodyless 404, 401 and 403 name their known causes', () => {
+    const notFound = m.requestError(EN, { status: 404, body: null });
+    assert.ok(/no longer exists/.test(notFound) && /Reload the page/.test(notFound) && notFound.includes('404'), notFound);
+    for (const status of [401, 403]) {
+        const denied = m.requestError(EN, { status, body: null });
+        assert.ok(/session/.test(denied) && /administrator/.test(denied) && denied.includes(String(status)), denied);
+    }
+
+    assert.equal(m.requestError(EN, { status: 404, body: { Message: 'gone' } }), 'gone (HTTP 404)', 'a server message wins');
+    assert.ok(m.requestError(EN, { status: 502, body: null }).includes('without saying why'));
 });
