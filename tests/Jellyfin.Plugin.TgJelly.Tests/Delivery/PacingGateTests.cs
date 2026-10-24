@@ -32,12 +32,11 @@ public class PacingGateTests
     }
 
     [Fact]
-    public void Overall_25PerSecond()
+    public void Overall_2PerSecond()
     {
-        for (var i = 0; i < 25; i++)
-        {
-            _gate.RecordSend(1000 + i, T0 + TimeSpan.FromMilliseconds(10 * i));
-        }
+        _gate.RecordSend(1000, T0);
+        Assert.Equal(T0 + TimeSpan.FromMilliseconds(100), _gate.NextAllowed(999, false, T0 + TimeSpan.FromMilliseconds(100)));
+        _gate.RecordSend(1001, T0 + TimeSpan.FromMilliseconds(100));
 
         Assert.Equal(T0 + TimeSpan.FromSeconds(1), _gate.NextAllowed(999, false, T0 + TimeSpan.FromMilliseconds(500)));
         Assert.Equal(T0 + TimeSpan.FromSeconds(1.5), _gate.NextAllowed(999, false, T0 + TimeSpan.FromSeconds(1.5)));

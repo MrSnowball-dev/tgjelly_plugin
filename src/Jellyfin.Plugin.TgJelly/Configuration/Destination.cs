@@ -39,7 +39,21 @@ public class Destination
     /// <summary>Gets or sets a value indicating whether the destination is enabled (the user's Pause/Resume).</summary>
     public bool Enabled { get; set; } = true;
 
-    /// <summary>Gets or sets the preset the event keys were expanded from.</summary>
+    /// <summary>
+    /// Gets or sets a value indicating whether the chat had topics turned on when it was added; such a supergroup is
+    /// shown as a Forum.
+    /// </summary>
+    public bool IsForum { get; set; }
+
+    /// <summary>Gets the strings key for the chat's kind: <c>dest.kind.Forum</c> for a supergroup with topics.</summary>
+    [XmlIgnore]
+    [JsonIgnore]
+    public string KindKey => Kind == ChatKind.Supergroup && (IsForum || ThreadId != 0) ? "dest.kind.Forum" : "dest.kind." + Kind;
+
+    /// <summary>
+    /// Gets or sets the internal preset: Everything while every event is on (so later versions' events are added),
+    /// Custom otherwise (spec §7.2). Not shown anywhere.
+    /// </summary>
     [XmlIgnore]
     public PresetKind Preset { get; set; } = PresetKind.Everything;
 

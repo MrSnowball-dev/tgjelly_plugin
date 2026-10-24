@@ -118,7 +118,7 @@ public sealed class DestinationScreens
     /// </summary>
     /// <param name="page">The zero-based page.</param>
     /// <returns>The screen.</returns>
-    public Screen List(int page) => Listing(page, "menu.destinations.title", "menu.destinations.pick", "d", "dl", "m");
+    public Screen List(int page) => Listing(page, "menu.destinations.title", "menu.destinations.pick", "d", "dl", "m", offerAdd: true);
 
     /// <summary>
     /// Builds one page of the <c>/test</c> picker.
@@ -143,7 +143,7 @@ public sealed class DestinationScreens
     private static InlineKeyboardButton[] Row(string text, string action, params string[] args)
         => [InlineKeyboardButton.WithCallbackData(text, CallbackData.Format(action, args))];
 
-    private Screen Listing(int page, string titleKey, string pickKey, string pick, string pageAction, string backAction)
+    private Screen Listing(int page, string titleKey, string pickKey, string pick, string pageAction, string backAction, bool offerAdd = false)
     {
         var destinations = _settings.Current.Destinations;
         var shown = Paging.Page(destinations, page);
@@ -164,10 +164,23 @@ public sealed class DestinationScreens
             rows.Add(nav);
         }
 
+        if (offerAdd)
+        {
+            // Adding lives with the destinations (owner, 2026-10-25), as the primary action of the screen.
+            var add = Buttons.Callback(_strings, "menu.add", CallbackData.Format("oa"));
+            add.Style = KeyboardButtonStyle.Primary;
+            rows.Add([add]);
+        }
+
         rows.Add([Button("menu.back", backAction)]);
         if (destinations.Length > 0)
         {
             html.Append("\n\n").Append(_formatter.Escape(_strings.Get(pickKey)));
+        }
+
+        if (offerAdd)
+        {
+            html.Append(ButtonGuide.Block([ButtonGuide.Line(_strings, _formatter, "menu.add", "menu.add.about")]));
         }
 
         return new Screen(html.ToString(), new InlineKeyboardMarkup(rows));
@@ -183,9 +196,8 @@ public sealed class DestinationScreens
         var health = _health.Get(d.Id);
         var sends = DestinationTester.GroupsText(_strings, d.Events);
         var html = new StringBuilder("<b>").Append(_formatter.Escape(d.Title)).Append("</b>\n");
-        html.Append(_formatter.Escape(_strings.Get("dest.line.kind", ("kind", _strings.Get("dest.kind." + d.Kind))))).Append('\n');
+        html.Append(_formatter.Escape(_strings.Get("dest.line.kind", ("kind", _strings.Get(d.KindKey))))).Append('\n');
         html.Append(_formatter.Escape(_strings.Get("dest.line.status", ("status", HealthText(health))))).Append('\n');
-        html.Append(_formatter.Escape(_strings.Get("dest.line.preset", ("preset", _strings.Get("dest.preset." + d.Preset))))).Append('\n');
         html.Append(_formatter.Escape(_strings.Get("dest.line.groups", ("groups", sends)))).Append('\n');
         html.Append(_formatter.Escape(_strings.Get("dest.line.enabled", ("state", _strings.Get(d.Enabled ? "dest.enabled.yes" : "dest.enabled.no")))));
         if (note is not null)
@@ -382,9 +394,7 @@ public sealed class DestinationScreens
         {
             var on = d.Events.Contains(key, StringComparer.Ordinal);
             d.Events = [.. EventCatalog.AllKeys.Where(k => k == key ? !on : d.Events.Contains(k, StringComparer.Ordinal))];
-            d.Preset = new[] { PresetKind.Everything, PresetKind.NewMedia, PresetKind.AdminAlerts }
-                .Cast<PresetKind?>()
-                .FirstOrDefault(p => EventCatalog.Expand(p!.Value).SequenceEqual(d.Events, StringComparer.Ordinal)) ?? PresetKind.Custom;
+            d.Preset = EventCatalog.PresetFor(d.Events);
         });
     }
 

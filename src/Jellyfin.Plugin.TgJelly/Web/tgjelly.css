@@ -163,9 +163,24 @@
     font-weight: 600;
 }
 
+#tgjelly-root .tgj-version-link {
+    color: inherit;
+    text-decoration: none;
+    border-radius: 999px;
+}
+
+#tgjelly-root .tgj-version-link:hover .tgj-label,
+#tgjelly-root .tgj-version-link:focus-visible .tgj-label {
+    border-color: var(--tgj-accent-ring);
+    color: var(--tgj-accent-text);
+}
+
+#tgjelly-root .tgj-version-link:focus-visible {
+    outline: 2px solid var(--tgj-accent-ring);
+    outline-offset: 2px;
+}
+
 #tgjelly-root .tgj-nav-count {
-    color: var(--tgj-fg-2);
-    font-size: var(--tgj-step--1);
     font-weight: 400;
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
@@ -695,12 +710,11 @@
     min-width: 0;
 }
 
-/* Jellyfin's header stays at the top of the window, so the preview stops below it. */
+/* The preview is moved down by a script as the page scrolls (previewOffset), not by sticky positioning. */
 #tgjelly-root .tgj-msg-side {
     grid-area: side;
-    position: sticky;
-    top: 5rem;
     min-width: 0;
+    will-change: transform;
 }
 
 #tgjelly-root .tgj-msg-pickers {
@@ -837,9 +851,23 @@
     display: none;
 }
 
+/* Fixed columns, so a long snippet wraps inside its cell instead of stretching the table. */
 #tgjelly-root .tgj-ref-table {
     width: 100%;
     border-collapse: collapse;
+    table-layout: fixed;
+}
+
+#tgjelly-root .tgj-ref-col-key {
+    width: 40%;
+}
+
+#tgjelly-root .tgj-ref-col-what {
+    width: 32%;
+}
+
+#tgjelly-root .tgj-ref-col-example {
+    width: 28%;
 }
 
 #tgjelly-root .tgj-ref-table th {
@@ -856,10 +884,7 @@
     overflow-wrap: anywhere;
 }
 
-#tgjelly-root .tgj-ref-table td:first-child {
-    overflow-wrap: normal;
-    white-space: nowrap;
-}
+
 
 /* The first cell of a row: a button that looks like a clickable chip. */
 #tgjelly-root .tgj-insert {
@@ -873,6 +898,7 @@
     font: inherit;
     text-align: start;
     cursor: pointer;
+    max-width: 100%;
 }
 
 #tgjelly-root .tgj-insert:hover {
@@ -882,6 +908,8 @@
 
 #tgjelly-root .tgj-insert code {
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
 }
 
 #tgjelly-root .tgj-muted {
@@ -896,6 +924,10 @@
         height: 1px;
         overflow: hidden;
         clip-path: inset(50%);
+    }
+
+    #tgjelly-root .tgj-ref-table colgroup {
+        display: none;
     }
 
     #tgjelly-root .tgj-ref-table,

@@ -22,11 +22,11 @@ public sealed class DestinationDto
     /// <summary>Gets the chat kind.</summary>
     public string Kind { get; init; } = string.Empty;
 
+    /// <summary>Gets a value indicating whether the chat is a forum (a supergroup with topics), shown as Forum.</summary>
+    public bool IsForum { get; init; }
+
     /// <summary>Gets a value indicating whether it's enabled (not paused).</summary>
     public bool Enabled { get; init; }
-
-    /// <summary>Gets the preset.</summary>
-    public string Preset { get; init; } = string.Empty;
 
     /// <summary>Gets the event keys.</summary>
     public IReadOnlyList<string> Events { get; init; } = [];

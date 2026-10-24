@@ -97,7 +97,6 @@ const KEYS = ['media.movie', 'media.episodes', 'security.login_failed', 'server.
 const CATALOG = {
     EventKeys: KEYS,
     Groups: ['media', 'security', 'server'],
-    Presets: { Everything: KEYS, NewMedia: ['media.movie', 'media.episodes'], AdminAlerts: ['security.login_failed', 'server.started'] },
 };
 const LIB_A = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 const LIB_B = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
@@ -111,7 +110,7 @@ function dest(overrides = {}) {
         Title: 'Family',
         Kind: 'Supergroup',
         Enabled: true,
-        Preset: 'Everything',
+        IsForum: false,
         Events: KEYS,
         LibraryIds: [],
         SilentGroups: [],
@@ -821,13 +820,16 @@ test('the Bot section shows the username and the buttons', async () => {
     assert.ok(html.includes('Change token') && html.includes('Disconnect bot'));
 });
 
-test('Change token reuses the token form', async () => {
+test('Change token opens the token form in the Bot card, where the button was', async () => {
     const { view, el } = mount();
     await show(view);
     await click(view, 'changeToken');
-    assert.ok(el('tgj-connect').innerHTML.includes('type="password"'));
+    assert.ok(el('tgj-bot').innerHTML.includes('type="password"'));
+    assert.ok(!el('tgj-bot').innerHTML.includes('data-tgj-act="changeToken"'), 'the form replaces the actions');
+    assert.equal(el('tgj-connect').innerHTML, '', 'nothing above the Status card');
     await click(view, 'cancelToken');
-    assert.equal(el('tgj-connect').innerHTML, '');
+    assert.ok(!el('tgj-bot').innerHTML.includes('type="password"'));
+    assert.ok(el('tgj-bot').innerHTML.includes('data-tgj-act="changeToken"'));
 });
 
 test('disconnect needs two clicks', async () => {
@@ -1138,15 +1140,21 @@ test('a poll with a new message leaves the typed token and the open disconnect c
     await show(view);
     await click(view, 'changeToken');
     input(view, 'token', '1:a');
-    await click(view, 'disconnect');
-    const connectWrites = el('tgj-connect').writes;
-    const botWrites = el('tgj-bot').writes;
+    let botWrites = el('tgj-bot').writes;
 
     message = 'second';
     timers.tick();
     await flush();
     assert.ok(el('tgj-status').innerHTML.includes('second'));
-    assert.equal(el('tgj-connect').writes, connectWrites);
+    assert.equal(el('tgj-bot').writes, botWrites, 'the token form in the Bot card is left alone');
+
+    await click(view, 'cancelToken');
+    await click(view, 'disconnect');
+    botWrites = el('tgj-bot').writes;
+    message = 'third';
+    timers.tick();
+    await flush();
+    assert.ok(el('tgj-status').innerHTML.includes('third'));
     assert.equal(el('tgj-bot').writes, botWrites);
     assert.ok(el('tgj-bot').innerHTML.includes('disconnectYes'));
 });
@@ -1193,7 +1201,7 @@ test('createApi throws on a network failure', async () => {
     await assert.rejects(api.get('Status'), TypeError);
 });
 
-// --- destinations (spec §6.6.3, §7.2, §7.3, §10.4; plan 8 Task 7: cards, auto-save, the preset confirmation) ---
+// --- destinations (spec §6.6.3, §7.2, §7.3, §10.4; plan 8 Task 7: cards, auto-save) ---
 
 const destEl = el => el('tgj-destinations').innerHTML;
 const destAct = (view, act, attributes = {}) => {
@@ -1210,7 +1218,6 @@ const flip = (view, name, attributes) => {
     dispatchOn(view, 'click', { 'data-tgj-input': name, role: 'switch', ...attributes });
     return flush();
 };
-const pickPreset = (view, value) => destInput(view, 'destPreset', { 'data-tgj-id': 'd1', 'data-tgj-save': 'dest:d1:Preset' }, { value });
 /** Whether the switch with this input and these attributes is on in the markup; null when there is none. */
 function switchIn(html, name, attributes = {}) {
     for (const [tag] of html.matchAll(/<button[^>]*role="switch"[^>]*>/g)) {
@@ -1221,7 +1228,6 @@ function switchIn(html, name, attributes = {}) {
 
     return null;
 }
-const selectedPreset = html => /<select[^>]*data-tgj-input="destPreset"[^>]*>[\s\S]*?<option value="(\w+)" selected>/.exec(html)?.[1];
 // The bot's strings keep their emoji (design §7), so the dashboard must not show them: these too.
 const DEST_SYMBOLS = /[●✓✅⚠❌⛔▫🔔🔕]|️/u;
 
@@ -1236,9 +1242,7 @@ function echoDest(start = 5, base = dest()) {
         const body = JSON.parse(request.data);
         const next = { ...item };
         if (body.Events) {
-            Object.assign(next, { Preset: 'Custom', Events: body.Events });
-        } else if (body.Preset) {
-            Object.assign(next, { Preset: body.Preset, Events: CATALOG.Presets[body.Preset] ?? next.Events });
+            next.Events = body.Events;
         }
 
         for (const key of ['LibraryIds', 'SilentGroups', 'Enabled']) {
@@ -1266,8 +1270,8 @@ test('destList_rowsWithStateLabels_noSymbols', async () => {
         'GET TgJelly/Destinations': destinations({
             Items: [
                 dest(),
-                dest({ Id: 'd2', Title: 'Admins', Kind: 'Group', Preset: 'AdminAlerts', Health: { Status: 'NeedsPermissions', PhotosBlocked: true } }),
-                dest({ Id: 'd3', Title: 'Topic', Preset: 'Custom', Health: { Status: 'TopicMissing', PhotosBlocked: false } }),
+                dest({ Id: 'd2', Title: 'Admins', Kind: 'Group', Health: { Status: 'NeedsPermissions', PhotosBlocked: true } }),
+                dest({ Id: 'd3', Title: 'Topic', IsForum: true, Health: { Status: 'TopicMissing', PhotosBlocked: false } }),
                 dest({ Id: 'd4', Title: 'Gone', Kind: 'Channel', Enabled: false, Health: { Status: 'Lost', PhotosBlocked: false } }),
             ],
         }),
@@ -1278,10 +1282,10 @@ test('destList_rowsWithStateLabels_noSymbols', async () => {
     assert.ok(!/emby-|inputContainer|selectContainer|sectionTitle|verticalSection|fieldDescription|tgj-badge/.test(html), 'only the dashboard components');
     assert.ok(!DEST_SYMBOLS.test(html), 'no symbols');
 
-    // Each destination is a row: its title, the kind and preset muted, and the health as a coloured word.
+    // Each destination is a row: its title, the kind muted (Forum for a supergroup with topics), and the health as a coloured word.
     assert.equal((html.match(/<div class="tgj-row tgj-dest-row">/g) ?? []).length, 4);
-    for (const [kind, preset] of [['Supergroup', 'Everything'], ['Group', 'AdminAlerts'], ['Channel', 'Everything']]) {
-        assert.ok(html.includes(`<span class="tgj-row-hint">${m.t(EN, 'web.dest.meta', { kind: EN[`dest.kind.${kind}`], preset: EN[`dest.preset.${preset}`] })}</span>`), kind);
+    for (const kind of ['Supergroup', 'Group', 'Forum', 'Channel']) {
+        assert.ok(html.includes(`<span class="tgj-row-hint">${EN[`dest.kind.${kind}`]}</span>`), kind);
     }
     assert.ok(html.includes('<span class="tgj-row-label">Admins</span>'));
     assert.ok(!html.includes(ui.label('OK', 'good')), 'a healthy destination shows no label');
@@ -1304,6 +1308,7 @@ test('destList_rowsWithStateLabels_noSymbols', async () => {
     assert.ok(html.includes(ui.actionButton({ label: EN['web.dest.edit'], act: 'edit', id: 'd2' })));
     // The add actions stay.
     assert.ok(html.includes(LINKS.StartAdd));
+    assert.match(html, /<a class="tgj-btn tgj-btn--primary" href="https:\/\/t\.me\/jf_bot\?start=add"/, 'Add destination is the primary action');
 
     const empty = mount({ 'GET TgJelly/Destinations': destinations({ Items: [], ManualUnlocked: true }) });
     await show(empty.view);
@@ -1323,9 +1328,7 @@ test('eventSwitch_savesImmediately', async () => {
     assert.deepEqual(cue(view, 'dest:d1:event:server.started'), SAVED_CUE, 'Saved, beside the switch that changed');
     assert.deepEqual(cue(view, 'dest:d1:event:media.movie'), IDLE_CUE);
     assert.equal(switchIn(destEl(el), 'destEvent', { 'data-tgj-key': 'server.started' }), false);
-    assert.equal(selectedPreset(destEl(el)), 'Custom', 'a hand-picked list is Custom');
     assert.equal(hooks.pageRevision(), 6, 'the reply carries the revision');
-    assert.equal(hooks.state.destinations.Items[0].Preset, 'Custom');
     assert.equal(hooks.pendingFields.size, 0);
 
     // Libraries, silent groups and the Sending switch save at once too, each with the revision the last save moved to.
@@ -1343,67 +1346,6 @@ test('eventSwitch_savesImmediately', async () => {
     assert.deepEqual(cue(view, 'dest:d1:Enabled'), SAVED_CUE);
     await timers.advance(2000);
     assert.deepEqual(cue(view, 'dest:d1:Enabled'), IDLE_CUE);
-});
-
-test('presetFromCustom_asksInline_cancelKeepsCustom_replaceSends', async () => {
-    const custom = dest({ Preset: 'Custom', Events: ['media.movie'] });
-    const { view, api, el, hooks } = mount({
-        'GET TgJelly/Destinations': destinations({ Items: [custom] }),
-        'PUT TgJelly/Destinations/d1': echoDest(5, custom),
-    });
-    await show(view);
-    await destAct(view, 'edit', { 'data-tgj-id': 'd1' });
-
-    await pickPreset(view, 'NewMedia');
-    assert.deepEqual(putBodies(api), [], 'nothing is sent before Replace');
-    let html = destEl(el);
-    assert.ok(html.includes(ui.inlineConfirm({
-        question: EN['web.dest.presetConfirm'], confirmLabel: EN['web.dest.presetReplace'], confirmAct: 'presetReplace',
-        cancelAct: 'presetCancel', cancelLabel: EN['dest.btn.cancel'], id: 'd1',
-    })), 'the inline confirmation, not a dialog');
-    assert.equal(EN['web.dest.presetConfirm'], 'Replace your custom events with this preset?');
-    assert.equal(selectedPreset(html), 'Custom', 'the select shows Custom until confirmed');
-    assert.deepEqual(hooks.state.forms['dest:d1'].local.Events, ['media.movie']);
-
-    await destAct(view, 'presetCancel', { 'data-tgj-id': 'd1' });
-    html = destEl(el);
-    assert.ok(!html.includes(EN['web.dest.presetConfirm']));
-    assert.equal(selectedPreset(html), 'Custom');
-    assert.deepEqual(putBodies(api), []);
-    assert.equal(hooks.state.forms['dest:d1'].local.Preset, 'Custom');
-
-    await pickPreset(view, 'NewMedia');
-    await destAct(view, 'presetReplace', { 'data-tgj-id': 'd1' });
-    assert.deepEqual(putBodies(api), [{ ExpectedRevision: 5, Preset: 'NewMedia' }]);
-    html = destEl(el);
-    assert.ok(!html.includes(EN['web.dest.presetConfirm']));
-    assert.equal(selectedPreset(html), 'NewMedia');
-    assert.equal(switchIn(html, 'destEvent', { 'data-tgj-key': 'media.episodes' }), true, 'the preset events show');
-    assert.deepEqual(cue(view, 'dest:d1:Preset'), SAVED_CUE);
-});
-
-test('presetToPreset_savesImmediately', async () => {
-    const { view, api, el } = mount({ 'PUT TgJelly/Destinations/d1': echoDest() });
-    await show(view);
-    await destAct(view, 'edit', { 'data-tgj-id': 'd1' });
-
-    await pickPreset(view, 'NewMedia');
-    assert.deepEqual(putBodies(api), [{ ExpectedRevision: 5, Preset: 'NewMedia' }], 'between presets: at once');
-    assert.ok(!destEl(el).includes(EN['web.dest.presetConfirm']));
-    assert.equal(switchIn(destEl(el), 'destEvent', { 'data-tgj-key': 'server.started' }), false);
-    assert.deepEqual(cue(view, 'dest:d1:Preset'), SAVED_CUE);
-
-    await pickPreset(view, 'Custom');
-    assert.deepEqual(putBodies(api)[1], { ExpectedRevision: 6, Preset: 'Custom' }, 'into Custom: at once, keeping the events');
-    assert.equal(switchIn(destEl(el), 'destEvent', { 'data-tgj-key': 'media.movie' }), true);
-
-    await pickPreset(view, 'AdminAlerts');
-    assert.equal(putBodies(api).length, 2, 'out of Custom asks first');
-    assert.ok(destEl(el).includes(EN['web.dest.presetConfirm']));
-
-    // An input event before the change is not a second choice.
-    await destInput(view, 'destPreset', { 'data-tgj-id': 'd1' }, { value: 'Everything' }, 'input');
-    assert.equal(putBodies(api).length, 2);
 });
 
 test('destConflict_retries', async () => {
@@ -1452,7 +1394,7 @@ test('noSaveButton_inEditor', async () => {
 
     // Every auto-saved control names its save, has a cue beside it, and can be found again after a render.
     const controls = html.match(/<select\b[^>]*>|<button[^>]*role="switch"[^>]*>/g);
-    assert.equal(controls.length, 1 + 1 + KEYS.length + LIBRARIES.length + CATALOG.Groups.length, 'Sending, preset, events, libraries, silent groups');
+    assert.equal(controls.length, 1 + KEYS.length + LIBRARIES.length + CATALOG.Groups.length, 'Sending, events, libraries, silent groups');
     const keys = new Set();
     for (const control of controls) {
         const save = /data-tgj-save="([^"]+)"/.exec(control)?.[1];
@@ -1480,7 +1422,6 @@ test('the editor lists events by group, libraries and silent groups', async () =
     const html = destEl(el);
     assert.ok(html.includes(m.t(EN, 'web.event.security.login_failed')));
     assert.ok(html.includes(m.t(EN, 'groups.security')));
-    assert.ok(html.includes(m.t(EN, 'dest.preset.AdminAlerts')));
     assert.ok(html.includes('Shows &lt;i&gt;'));
     assert.equal(switchIn(html, 'destLibrary', { 'data-tgj-lib': LIB_A }), true);
     assert.equal(switchIn(html, 'destLibrary', { 'data-tgj-lib': LIB_B }), false);
@@ -1672,7 +1613,6 @@ test('integer input sends ChatId, link sends TopicLink', async () => {
     const { view, api } = mount({ ...unlocked(), 'POST TgJelly/Destinations': () => added() });
     await show(view);
     await typeManual(view, ' -100123456 ');
-    await destInput(view, 'manualPreset', {}, { value: 'NewMedia' });
     await destAct(view, 'manualAdd');
     await typeManual(view, 'https://t.me/c/123456/7');
     await destAct(view, 'manualAdd');
@@ -1680,9 +1620,9 @@ test('integer input sends ChatId, link sends TopicLink', async () => {
     await destAct(view, 'manualAdd');
     const bodies = posts(api, 'Destinations').map(c => JSON.parse(c.data));
     assert.deepEqual(bodies, [
-        { ExpectedRevision: 5, ChatId: -100123456, Preset: 'NewMedia' },
-        { ExpectedRevision: 5, TopicLink: 'https://t.me/c/123456/7', Preset: 'NewMedia' },
-        { ExpectedRevision: 5, TopicLink: 'https://t.me/club/9', Preset: 'NewMedia' },
+        { ExpectedRevision: 5, ChatId: -100123456 },
+        { ExpectedRevision: 5, TopicLink: 'https://t.me/c/123456/7' },
+        { ExpectedRevision: 5, TopicLink: 'https://t.me/club/9' },
     ]);
 });
 
@@ -1705,14 +1645,13 @@ test('detected title escaped', async () => {
     assert.ok(manualEl(el).includes('Movie &lt;b&gt;club&lt;/b&gt;'));
 });
 
-test('set up sends preset', async () => {
+test('set up sends no preset', async () => {
     const { view, api } = mount({ ...unlocked(), 'POST TgJelly/DetectedChats/-100777': () => added() });
     await show(view);
-    await destInput(view, 'detectedPreset', { 'data-tgj-id': '-100777' }, { value: 'AdminAlerts' });
     await destAct(view, 'detectedSetUp', { 'data-tgj-id': '-100777' });
     const calls = posts(api, 'DetectedChats/-100777');
     assert.equal(calls.length, 1);
-    assert.deepEqual(JSON.parse(calls[0].data), { ExpectedRevision: 5, Preset: 'AdminAlerts' });
+    assert.deepEqual(JSON.parse(calls[0].data), { ExpectedRevision: 5 });
 });
 
 test('set up failure shows the error', async () => {
@@ -2783,8 +2722,8 @@ test('shell_rendersAllSections_onlyActiveVisible', () => {
         assert.equal(/aria-current="page"/.test(button), name === 'messages', `${name} aria-current`);
     }
 
-    assert.match(nav.get('destinations'), /<span id="tgj-nav-count-destinations" class="tgj-nav-count">3<\/span>/);
-    assert.match(nav.get('messages'), /<span id="tgj-nav-count-messages" class="tgj-nav-count">1 edited<\/span>/);
+    assert.ok(nav.get('destinations').includes(`<span id="tgj-nav-count-destinations" class="tgj-nav-count">${ui.label('3', 'neutral')}</span>`));
+    assert.ok(nav.get('messages').includes(`<span id="tgj-nav-count-messages" class="tgj-nav-count">${ui.label('1 edited', 'accent')}</span>`));
     assert.match(nav.get('overview'), /<span id="tgj-nav-count-overview" class="tgj-nav-count"><\/span>/);
 
     const sections = shellSections(html);
@@ -2804,7 +2743,7 @@ test('shell_rendersAllSections_onlyActiveVisible', () => {
 test('renderShell escapes the label and counts, and an unknown active section shows Overview', () => {
     const html = m.renderShell(EN, { active: 'nope', connection: { tone: 'attention', text: '<b>x</b>' }, counts: { destinations: '<i>' } });
     assert.ok(html.includes('&lt;b&gt;x&lt;/b&gt;') && !html.includes('<b>x</b>'));
-    assert.ok(html.includes('class="tgj-nav-count">&lt;i&gt;</span>'));
+    assert.ok(html.includes(`class="tgj-nav-count">${ui.label('<i>', 'neutral')}</span>`));
     const hidden = [...shellSections(html)].filter(([, s]) => !/\shidden(\s|$)/.test(s.attrs)).map(([name]) => name);
     assert.deepEqual(hidden, ['overview']);
 });
@@ -2833,8 +2772,8 @@ test('the header and the sidebar counts follow the data', async () => {
     const { view, el, timers } = mount({ 'GET TgJelly/Status': () => current, 'GET TgJelly/Templates': templates() });
     await show(view);
     assert.equal(el('tgj-conn').innerHTML, ui.label('Connected · @jf_bot', 'good'));
-    assert.equal(el('tgj-nav-count-destinations').innerHTML, '1');
-    assert.equal(el('tgj-nav-count-messages').innerHTML, '1 edited');
+    assert.equal(el('tgj-nav-count-destinations').innerHTML, ui.label('1', 'neutral'));
+    assert.equal(el('tgj-nav-count-messages').innerHTML, ui.label('1 edited', 'accent'));
 
     current = status({ ConnectionState: 'Unreachable' });
     timers.tick();
@@ -3112,7 +3051,9 @@ test('overview_connected_statusLeads', async () => {
 
 test('header_showsVersionLabelNextToTitle', async () => {
     const html = m.renderShell(EN, { active: 'overview', connection: { tone: 'good', text: 'Connected' }, version: '1.0.5.0', buildTarget: '10.11' });
-    const version = ui.label('v0.5', 'neutral', { title: 'TgJelly 1.0.5.0, built for Jellyfin 10.11' });
+    const version = '<a class="tgj-version-link" href="https://github.com/MrSnowball-dev/tgjelly_plugin/releases/tag/v0.5"'
+        + ' target="_blank" rel="noopener noreferrer" title="TgJelly 1.0.5.0, built for Jellyfin 10.11">'
+        + `${ui.label('v0.5', 'neutral')}</a>`;
     assert.match(html, /<h1 class="tgj-header-title">TgJelly<\/h1>/);
     assert.ok(html.indexOf('</h1>') < html.indexOf(version), 'the version follows the title');
     assert.ok(html.indexOf(version) < html.indexOf(ui.label('Connected', 'good')), 'and precedes the connection');
@@ -3128,6 +3069,9 @@ test('header_versionLabel_isReleaseName', async () => {
     assert.equal(m.releaseName('2.1.12.0'), 'v1.12');
     assert.equal(m.releaseName('1.0.4'), 'v1.0.4', 'a malformed version shows raw');
     assert.equal(m.releaseName('1.x.4.0'), 'v1.x.4.0');
+    assert.equal(m.releaseUrl('1.0.4.0'), 'https://github.com/MrSnowball-dev/tgjelly_plugin/releases/tag/v0.4');
+    assert.equal(m.releaseUrl('1.x.4.0'), 'https://github.com/MrSnowball-dev/tgjelly_plugin/releases', 'no release name: the list');
+    assert.equal(m.releaseUrl('1.0.0.0'), 'https://github.com/MrSnowball-dev/tgjelly_plugin/releases', 'a development build: the list');
     const { view, el } = mount({ 'GET TgJelly/Status': status({ Version: '2.1.12.0' }) });
     await show(view);
     assert.ok(el('tgj-version').innerHTML.includes('>v1.12<'));
@@ -3486,7 +3430,7 @@ test('the manual block and diagnostics are cards: their actions stay buttons', a
     const { view, el } = mount({ ...unlocked(), 'GET TgJelly/Diagnostics': { Text: 'diag' } });
     await show(view);
     assert.match(manualEl(el), /class="tgj-field" data-tgj-input="manualInput"/);
-    assert.match(manualEl(el), /<select class="tgj-field tgj-select" data-tgj-input="manualPreset"/);
+    assert.doesNotMatch(manualEl(el), /<select/, 'no preset select');
     assert.match(manualEl(el), /class="tgj-btn tgj-btn--primary" data-tgj-act="manualAdd"/);
     await click(view, 'copyDiagnostics');
     assert.match(el('tgj-diagnostics').innerHTML, /<textarea id="tgj-diagnostics-text" class="tgj-field tgj-diag-text" readonly rows="12">diag<\/textarea>/);

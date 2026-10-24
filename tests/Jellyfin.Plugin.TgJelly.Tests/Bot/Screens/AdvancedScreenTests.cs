@@ -90,8 +90,8 @@ public sealed class AdvancedScreenTests : IDisposable, IAsyncLifetime
 
         await Text("https://t.me/c/5550001/9");
 
-        Assert.Equal("9", _rig.Memory.GetFlow(Manager)!.Params["threadId"]);
-        Assert.Contains("What should I send there?", (string)_h.Api.CallsTo("editMessageText").Last().Body["text"]!, StringComparison.Ordinal);
+        Assert.Equal(9, Assert.Single(_h.Settings.Current.Destinations).ThreadId);
+        Assert.Contains("✅ Done:", (string)_h.Api.CallsTo("editMessageText").Last().Body["text"]!, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -109,10 +109,10 @@ public sealed class AdvancedScreenTests : IDisposable, IAsyncLifetime
 
         await Text("https://t.me/c/5550001/9");
 
-        Assert.Equal(9, (int)Assert.Single(_h.Api.CallsTo("sendChatAction")).Body["message_thread_id"]!);
-        var flow = _rig.Memory.GetFlow(Manager)!;
-        Assert.Equal(("9", Group.ToString(CultureInfo.InvariantCulture)), (flow.Params["threadId"], flow.Params["chatId"]));
-        Assert.Contains("What should I send there?", (string)_h.Api.CallsTo("editMessageText").Last().Body["text"]!, StringComparison.Ordinal);
+        Assert.Equal(9, (int)_h.Api.CallsTo("sendChatAction").First().Body["message_thread_id"]!);
+        var destination = Assert.Single(_h.Settings.Current.Destinations);
+        Assert.Equal((9, Group), (destination.ThreadId, destination.ChatId));
+        Assert.Contains("✅ Done:", (string)_h.Api.CallsTo("editMessageText").Last().Body["text"]!, StringComparison.Ordinal);
     }
 
     [Fact]

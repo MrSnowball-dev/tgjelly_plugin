@@ -5,7 +5,9 @@ using Jellyfin.Plugin.TgJelly.Configuration;
 namespace Jellyfin.Plugin.TgJelly.Pipeline;
 
 /// <summary>
-/// Adds the keys a later version added to a preset to every destination using that preset (spec §7.2).
+/// Switches on the events a later version added for every destination that has every event on (internally the
+/// Everything preset). Presets are no longer offered (2026-10-25): a destination that used New media or Admin alerts
+/// keeps its events and becomes Custom, so nothing new appears in a chat the admin trimmed.
 /// </summary>
 public static class PresetUpgrader
 {
@@ -20,8 +22,21 @@ public static class PresetUpgrader
         var changed = false;
         foreach (var d in configuration.Destinations)
         {
+            if (d.Preset is PresetKind.NewMedia or PresetKind.AdminAlerts)
+            {
+                d.Preset = PresetKind.Custom;
+                changed = true;
+            }
+
             if (d.Preset == PresetKind.Custom)
             {
+                // A Custom destination that has every event on counts as having every event, so it gets new ones too.
+                if (EventCatalog.PresetFor(d.Events) == PresetKind.Everything)
+                {
+                    d.Preset = PresetKind.Everything;
+                    changed = true;
+                }
+
                 continue;
             }
 

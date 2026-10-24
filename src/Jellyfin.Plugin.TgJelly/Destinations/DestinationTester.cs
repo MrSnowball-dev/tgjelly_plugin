@@ -5,6 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.TgJelly.Bot;
 using Jellyfin.Plugin.TgJelly.Configuration;
+using Jellyfin.Plugin.TgJelly.Log;
 using Jellyfin.Plugin.TgJelly.State.Documents;
 using Jellyfin.Plugin.TgJelly.Strings;
 using Jellyfin.Plugin.TgJelly.Templates;
@@ -29,6 +30,7 @@ public sealed class DestinationTester
     private readonly HealthService _health;
     private readonly StringTable _strings;
     private readonly ILogger<DestinationTester> _logger;
+    private readonly LogRecorder? _log;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="DestinationTester"/> class.
@@ -37,12 +39,14 @@ public sealed class DestinationTester
     /// <param name="health">The health service.</param>
     /// <param name="strings">The string table.</param>
     /// <param name="logger">The logger.</param>
-    public DestinationTester(BotConnection connection, HealthService health, StringTable strings, ILogger<DestinationTester> logger)
+    /// <param name="log">The Log, which records every test message.</param>
+    public DestinationTester(BotConnection connection, HealthService health, StringTable strings, ILogger<DestinationTester> logger, LogRecorder? log = null)
     {
         _connection = connection;
         _health = health;
         _strings = strings;
         _logger = logger;
+        _log = log;
     }
 
     /// <summary>
@@ -54,7 +58,7 @@ public sealed class DestinationTester
     public Task<TestSendResult> SendTestAsync(Destination destination, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(destination);
-        return CheckAndSendAsync(destination, (sender, token) => sender.SendTextAsync(new OutgoingText(destination.ChatId, destination.ThreadId, Message(destination), ParseMode.Html, null, null, false), token), ct);
+        return LoggedAsync(destination, "test", CheckAndSendAsync(destination, (sender, token) => sender.SendTextAsync(new OutgoingText(destination.ChatId, destination.ThreadId, Message(destination), ParseMode.Html, null, null, false), token), ct));
     }
 
     /// <summary>
@@ -103,7 +107,15 @@ public sealed class DestinationTester
             }
         }
 
-        return CheckAndSendAsync(destination, Send, ct);
+        return LoggedAsync(destination, sample.EventKey, CheckAndSendAsync(destination, Send, ct));
+    }
+
+    /// <summary>Records the test's outcome in the Log (never failing the test because of the Log).</summary>
+    private async Task<TestSendResult> LoggedAsync(Destination destination, string eventKey, Task<TestSendResult> send)
+    {
+        var result = await send.ConfigureAwait(false);
+        _log?.Test(destination, eventKey, result.Sent, result.Error);
+        return result;
     }
 
     private async Task<TestSendResult> CheckAndSendAsync(Destination destination, Func<ITelegramSender, CancellationToken, Task> send, CancellationToken ct)

@@ -244,8 +244,9 @@ def telegram_checks(base: str, token: str, stub) -> None:
     status, _, text = http("PUT", f"{base}/TgJelly/Settings", update, token=token)
     check(status == 200, f"PUT /TgJelly/Settings shortens the batching windows (got {status} {text[:300]})")
 
-    added = add_destination(base, token, SMOKE_CHAT, "NewMedia")
+    added = add_destination(base, token, SMOKE_CHAT)
     check(added["Destination"]["ChatId"] == SMOKE_CHAT, "the destination has the chat's ID")
+    keep_only_media(base, token, added["Destination"]["Id"])
     check(any("TgJelly test" in m.get("text", "") for m in stub.messages(SMOKE_CHAT)), "the chat received the automatic test message")
     wait_until(lambda: any(c["method"] == "setMyCommands" for c in stub.calls()), "the bot profile was set up", 30)
 
@@ -256,13 +257,24 @@ def get_settings(base: str, token: str) -> dict:
     return json.loads(text)
 
 
-def add_destination(base: str, token: str, chat_id: int, preset: str) -> dict:
-    request = {"ExpectedRevision": get_settings(base, token)["Revision"], "ChatId": chat_id, "Preset": preset}
+def add_destination(base: str, token: str, chat_id: int) -> dict:
+    """Adds a chat; a new destination starts with every event on."""
+    request = {"ExpectedRevision": get_settings(base, token)["Revision"], "ChatId": chat_id}
     status, _, text = http("POST", f"{base}/TgJelly/Destinations", request, token=token, timeout=60)
     added = json.loads(text) if status == 200 else {}
     check(added.get("Outcome") == "Added" and added.get("TestSent") is True,
-          f"POST /TgJelly/Destinations adds {chat_id} as {preset} (got {status} {text[:300]})")
+          f"POST /TgJelly/Destinations adds {chat_id} (got {status} {text[:300]})")
     return added
+
+
+def keep_only_media(base: str, token: str, destination_id: str) -> None:
+    """Turns a destination's security and server events off, so it gets media events only."""
+    status, _, text = http("GET", f"{base}/TgJelly/Destinations", token=token)
+    check(status == 200, "GET /TgJelly/Destinations")
+    media = [k for k in json.loads(text)["Catalog"]["EventKeys"] if k.startswith("media.")]
+    request = {"ExpectedRevision": get_settings(base, token)["Revision"], "Events": media}
+    status, _, text = http("PUT", f"{base}/TgJelly/Destinations/{destination_id}", request, token=token)
+    check(status == 200, f"PUT /TgJelly/Destinations/{{id}} keeps media events only (got {status} {text[:300]})")
 
 
 def add_sample_movie(container: str) -> None:
@@ -307,7 +319,7 @@ def media_and_restart_checks(base: str, token: str, stub, container: str) -> Non
     wait_until(lambda: announced_with_template(stub.messages(SMOKE_CHAT)),
                "the new movie was announced with the custom template (TGJ-TPL Smoke Movie)", 180)
 
-    add_destination(base, token, SMOKE_CHAT_2, "AdminAlerts")
+    add_destination(base, token, SMOKE_CHAT_2)
     status, _, text = http("POST", f"{base}/System/Restart", token=token, timeout=60)
     check(status in (200, 204), f"POST /System/Restart (got {status} {text[:200]})")
     restarted = time.monotonic()
@@ -322,11 +334,11 @@ def media_and_restart_checks(base: str, token: str, stub, container: str) -> Non
     def started_messages(chat_id):
         return [m for m in stub.messages(chat_id) if "Jellyfin is up" in m.get("text", "")]
 
-    wait_until(lambda: started_messages(SMOKE_CHAT_2), "server.started reached the AdminAlerts chat",
+    wait_until(lambda: started_messages(SMOKE_CHAT_2), "server.started reached the all-events chat",
                max(1.0, 120 - (time.monotonic() - restarted)))
     time.sleep(15)
     check(len(started_messages(SMOKE_CHAT_2)) == 1, f"exactly one server.started message (got {len(started_messages(SMOKE_CHAT_2))})")
-    check(not started_messages(SMOKE_CHAT), "the NewMedia chat got no server.started message")
+    check(not started_messages(SMOKE_CHAT), "the media-only chat got no server.started message")
     check(all(SMOKE_TOKEN not in line for line in docker_logs_lines()), "the bot token never appears in Jellyfin's log (both runs)")
 
 
@@ -335,20 +347,6 @@ def user_update(**fields) -> dict:
     user = {"id": SMOKE_ADMIN, "is_bot": False, "first_name": "Smoke"}
     return {"message": {"message_id": int(time.time() * 1000) % 1000000, "date": int(time.time()),
                         "chat": {"id": SMOKE_ADMIN, "type": "private", "first_name": "Smoke"}, "from": user, **fields}}
-
-
-def callback_update(data: str, message_id: int, text: str) -> dict:
-    """The admin pressing an inline button (callback_data) on a bot message in their private chat."""
-    user = {"id": SMOKE_ADMIN, "is_bot": False, "first_name": "Smoke"}
-    return {"callback_query": {"id": f"cb{message_id}", "from": user, "chat_instance": "1", "data": data,
-                               "message": {"message_id": message_id, "date": int(time.time()), "text": text,
-                                           "chat": {"id": SMOKE_ADMIN, "type": "private", "first_name": "Smoke"}}}}
-
-
-def button_with(markup, key: str, text_part: str = ""):
-    """The first button in an inline or reply keyboard that has `key` (and whose text contains text_part), or None."""
-    rows = (markup or {}).get("inline_keyboard") or (markup or {}).get("keyboard") or []
-    return next((b for row in rows for b in row if key in b and text_part in b.get("text", "")), None)
 
 
 def url_button(markup, url_part: str):
@@ -369,7 +367,7 @@ def chat_member_update(chat_id: int, chat_type: str, title: str, old_status: str
 
 
 def onboarding_checks(base: str, token: str, stub) -> None:
-    """The bot's inline onboarding: /start setup, add the bot to a channel (my_chat_member), pick a preset, and the destination exists."""
+    """The bot's inline onboarding: /start setup, add the bot to a channel (my_chat_member), and the destination exists with every event on."""
     def connected():
         code, _, body = http("GET", f"{base}/TgJelly/Status", token=token)
         return code == 200 and json.loads(body).get("ConnectionState") == "Connected"
@@ -393,23 +391,15 @@ def onboarding_checks(base: str, token: str, stub) -> None:
               "is_anonymous": False, "can_post_stories": False, "can_edit_stories": False, "can_delete_stories": False}
     stub.push_update(chat_member_update(SMOKE_CHAT_3, "channel", "Smoke channel", "left", "administrator", rights))
 
-    def wizard_button():
-        return button_with(stub.last_reply_markup("editMessageText", SMOKE_ADMIN), "callback_data", "New media")
-
-    wait_until(wizard_button, "adding the bot to a channel edits the prompt into the preset wizard", 30)
-    data = wizard_button()["callback_data"]
-
-    stub.push_update(callback_update(data, prompt_id, "What should I send there?"))
-
     def destination_added():
         code, _, body = http("GET", f"{base}/TgJelly/Destinations", token=token)
         if code != 200:
             return False
         items = json.loads(body)
         items = items.get("Items", []) if isinstance(items, dict) else items
-        return any(d.get("ChatId") == SMOKE_CHAT_3 and d.get("Preset") == "NewMedia" for d in items)
+        return any(d.get("ChatId") == SMOKE_CHAT_3 and any(e.startswith("server.") for e in d.get("Events", [])) for d in items)
 
-    wait_until(destination_added, "the picked channel is a NewMedia destination", 30)
+    wait_until(destination_added, "the picked channel is a destination with every event on", 30)
     wait_until(lambda: any("TgJelly test" in m.get("text", "") for m in stub.messages(SMOKE_CHAT_3)),
                "the channel received the test message", 30)
     wait_until(lambda: any(c["method"] == "editMessageText" and c["body"].get("chat_id") == SMOKE_ADMIN

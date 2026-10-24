@@ -5,7 +5,7 @@ using System.Linq;
 namespace Jellyfin.Plugin.TgJelly.Configuration;
 
 /// <summary>
-/// The event keys (spec §7.1, stable strings) and the presets that expand to them (§7.2).
+/// The event keys (spec §7.1, stable strings) and the internal presets (§7.2: Everything while every event is on).
 /// </summary>
 public static class EventCatalog
 {
@@ -48,6 +48,18 @@ public static class EventCatalog
     /// <param name="key">The key.</param>
     /// <returns><c>true</c> when known.</returns>
     public static bool IsKnown(string key) => KeySet.Contains(key);
+
+    /// <summary>
+    /// The internal preset for a set of events: <see cref="PresetKind.Everything"/> when it has every event, so an event a
+    /// later version adds is switched on too; <see cref="PresetKind.Custom"/> otherwise. Presets aren't shown anywhere.
+    /// </summary>
+    /// <param name="events">The destination's events.</param>
+    /// <returns>The preset.</returns>
+    public static PresetKind PresetFor(IReadOnlyCollection<string> events)
+    {
+        ArgumentNullException.ThrowIfNull(events);
+        return Keys.All(k => events.Contains(k, StringComparer.Ordinal)) ? PresetKind.Everything : PresetKind.Custom;
+    }
 
     /// <summary>
     /// Expands a preset to its concrete keys; <see cref="PresetKind.Custom"/> expands to none.

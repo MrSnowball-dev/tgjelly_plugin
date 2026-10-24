@@ -115,6 +115,8 @@ One set of reusable render helpers and CSS classes, used by every section:
 
 ### 6.1a Changing a destination's preset
 
+> Superseded 2026-10-25: presets were removed, so this confirmation no longer exists (see the v1 spec §7.2).
+
 - Picking a preset (Everything, New media, Admin alerts) replaces that destination's event list on the server.
 - Saving immediately would make one wrong pick permanently delete a hand-picked **Custom** list. So **leaving Custom** for a preset asks the inline confirmation first: "Replace your custom events with this preset?" with Replace or Cancel (*my call*).
 - Switching between presets, or into Custom, saves at once as usual.

@@ -77,14 +77,12 @@ public sealed class MenuScreens
         var lines = new List<string>
         {
             ButtonGuide.Line(_formatter, _strings.Get("menu.destinations", ("count", destinations)), _strings.Get("menu.destinations.about")),
-            ButtonGuide.Line(_strings, _formatter, "menu.add", "menu.add.about"),
             ButtonGuide.Line(_strings, _formatter, "menu.settings", "menu.settings.about"),
             ButtonGuide.Line(_strings, _formatter, "menu.status", "menu.status.about"),
         };
         var rows = new List<InlineKeyboardButton[]>
         {
             new[] { Buttons.Callback(_strings, "menu.destinations", CallbackData.Format("dl", "0"), ("count", destinations)) },
-            new[] { Buttons.Callback(_strings, "menu.add", CallbackData.Format("oa")) },
             new[] { Buttons.Callback(_strings, "menu.settings", CallbackData.Format("s")) },
             new[] { Buttons.Callback(_strings, "menu.status", CallbackData.Format("st")) },
         };

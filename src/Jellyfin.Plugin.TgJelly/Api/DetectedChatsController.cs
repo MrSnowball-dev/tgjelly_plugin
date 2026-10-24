@@ -68,7 +68,7 @@ public class DetectedChatsController : ControllerBase
     /// stops being a detected chat when it is added.
     /// </summary>
     /// <param name="chatId">The detected chat.</param>
-    /// <param name="request">The preset and topic.</param>
+    /// <param name="request">The topic.</param>
     /// <param name="cancellationToken">Cancels the request.</param>
     /// <returns>Added or AlreadyExists, 400 when the check fails, 404 when the chat isn't detected, or 409 with the current data.</returns>
     [HttpPost("DetectedChats/{chatId}")]
@@ -92,11 +92,6 @@ public class DetectedChatsController : ControllerBase
         if (_connection.Sender is null)
         {
             return Error("Bot", _strings.Get("destination.notConnected"));
-        }
-
-        if (!DestinationsController.TryPreset(request.Preset, out var preset))
-        {
-            return Error("Preset", "Must be Everything, NewMedia, AdminAlerts or Custom. Reload the page and pick the preset again.");
         }
 
         var threadId = request.ThreadId ?? 0;
@@ -126,7 +121,8 @@ public class DetectedChatsController : ControllerBase
             return Error("ThreadId", _strings.Get("destination.notForum"));
         }
 
-        var created = await _creator.CreateAsync(check, threadId, EventCatalog.Expand(preset), preset, request.ExpectedRevision, cancellationToken).ConfigureAwait(false);
+        // A new destination starts with every event on; the admin trims it afterwards.
+        var created = await _creator.CreateAsync(check, threadId, EventCatalog.Expand(PresetKind.Everything), PresetKind.Everything, request.ExpectedRevision, cancellationToken).ConfigureAwait(false);
         switch (created.Outcome)
         {
             case CreateOutcome.Conflict:

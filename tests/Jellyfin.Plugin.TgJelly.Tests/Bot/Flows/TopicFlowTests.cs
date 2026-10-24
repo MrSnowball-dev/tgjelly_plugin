@@ -58,10 +58,9 @@ public sealed class TopicFlowTests : IDisposable, IAsyncLifetime
 
         var edit = _h.Api.CallsTo("editMessageText").Last();
         Assert.Equal(wizard, (int)edit.Body["message_id"]!);
-        Assert.Contains("What should I send there?", (string)edit.Body["text"]!, StringComparison.Ordinal);
-        var flow = _rig.Memory.GetFlow(Manager)!;
-        Assert.Equal("0", flow.Params["threadId"]);
-        Assert.Equal(wizard, flow.WizardMessageId);
+        Assert.Contains("✅ Done:", (string)edit.Body["text"]!, StringComparison.Ordinal);
+        Assert.Equal(0, Assert.Single(_h.Settings.Current.Destinations, d => d.ThreadId == 0).ThreadId);
+        Assert.Null(_rig.Memory.GetFlow(Manager));
     }
 
     [Fact]
@@ -88,10 +87,9 @@ public sealed class TopicFlowTests : IDisposable, IAsyncLifetime
 
         var create = Assert.Single(_h.Api.CallsTo("createForumTopic")).Body;
         Assert.Equal(("Jellyfin", Group), ((string)create["name"]!, (long)create["chat_id"]!));
-        var flow = _rig.Memory.GetFlow(Manager)!;
-        Assert.Equal("101", flow.Params["threadId"]);
-        Assert.Equal(wizard, flow.WizardMessageId);
-        Assert.Contains("What should I send there?", (string)_h.Api.CallsTo("editMessageText").Last().Body["text"]!, StringComparison.Ordinal);
+        Assert.Equal(101, Assert.Single(_h.Settings.Current.Destinations).ThreadId);
+        Assert.Null(_rig.Memory.GetFlow(Manager));
+        Assert.Contains("✅ Done:", (string)_h.Api.CallsTo("editMessageText").Last().Body["text"]!, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -105,8 +103,7 @@ public sealed class TopicFlowTests : IDisposable, IAsyncLifetime
         await Click("1|tc", wizard); // the same button redelivered
 
         Assert.Single(_h.Api.CallsTo("createForumTopic"));
-        Assert.Equal("101", _rig.Memory.GetFlow(Manager)!.Params["threadId"]);
-        Assert.Empty(_h.Settings.Current.Destinations);
+        Assert.Equal(101, Assert.Single(_h.Settings.Current.Destinations).ThreadId);
     }
 
     [Fact]
@@ -144,10 +141,9 @@ public sealed class TopicFlowTests : IDisposable, IAsyncLifetime
         Assert.Contains(_h.Api.CallsTo("editMessageText"), c => (int)c.Body["message_id"]! == wizard && ((string)c.Body["text"]!).StartsWith("Checking <b>Family</b>", StringComparison.Ordinal));
         var edit = _h.Api.CallsTo("editMessageText").Last();
         Assert.Equal(wizard, (int)edit.Body["message_id"]!);
-        Assert.Contains("What should I send there?", (string)edit.Body["text"]!, StringComparison.Ordinal);
-        var after = _rig.Memory.GetFlow(Manager)!;
-        Assert.Equal("101", after.Params["threadId"]);
-        Assert.Equal(wizard, after.WizardMessageId);
+        Assert.Contains("✅ Done:", (string)edit.Body["text"]!, StringComparison.Ordinal);
+        Assert.Equal(101, Assert.Single(_h.Settings.Current.Destinations).ThreadId);
+        Assert.Null(_rig.Memory.GetFlow(Manager));
         Assert.Equal(sent, Sent().Length);
         Assert.False(_rig.Memory.IsDetected(Group));
     }
@@ -200,8 +196,8 @@ public sealed class TopicFlowTests : IDisposable, IAsyncLifetime
         await Click("1|tk", wizard);
 
         Assert.Equal("Jellyfin", (string)Assert.Single(_h.Api.CallsTo("createForumTopic")).Body["name"]!);
-        Assert.Equal("101", _rig.Memory.GetFlow(Manager)!.Params["threadId"]);
-        Assert.Contains("What should I send there?", (string)_h.Api.CallsTo("editMessageText").Last().Body["text"]!, StringComparison.Ordinal);
+        Assert.Equal(101, Assert.Single(_h.Settings.Current.Destinations).ThreadId);
+        Assert.Contains("✅ Done:", (string)_h.Api.CallsTo("editMessageText").Last().Body["text"]!, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -237,8 +233,8 @@ public sealed class TopicFlowTests : IDisposable, IAsyncLifetime
             ("text", "/start@tgjelly_test_bot topics")));
 
         Assert.Single(_h.Api.CallsTo("createForumTopic"));
-        Assert.Equal("101", _rig.Memory.GetFlow(Manager)!.Params["threadId"]);
-        Assert.DoesNotContain(_h.Api.CallsTo("sendMessage"), c => c.Body["chat_id"]!.ToString() == Group.ToString(CultureInfo.InvariantCulture));
+        Assert.Equal(101, Assert.Single(_h.Settings.Current.Destinations).ThreadId);
+        Assert.DoesNotContain(_h.Api.CallsTo("sendMessage"), c => c.Body["chat_id"]!.ToString() == Group.ToString(CultureInfo.InvariantCulture) && !((string)c.Body["text"]!).Contains("TgJelly test", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -261,7 +257,7 @@ public sealed class TopicFlowTests : IDisposable, IAsyncLifetime
         Assert.False(TopicFlow.AwaitsPromotion(_rig.Memory.GetFlow(Manager)!));
 
         await Click("1|tg", wizard);
-        Assert.Equal("0", _rig.Memory.GetFlow(Manager)!.Params["threadId"]);
+        Assert.Equal(0, Assert.Single(_h.Settings.Current.Destinations).ThreadId);
     }
 
     [Fact]
@@ -342,13 +338,11 @@ public sealed class TopicFlowTests : IDisposable, IAsyncLifetime
 
         await Text(link);
 
-        var probe = Assert.Single(_h.Api.CallsTo("sendChatAction")).Body;
+        var probe = _h.Api.CallsTo("sendChatAction").First().Body;
         Assert.Equal(9, (int)probe["message_thread_id"]!);
-        var flow = _rig.Memory.GetFlow(Manager)!;
-        Assert.Equal("9", flow.Params["threadId"]);
-        Assert.False(flow.Params.ContainsKey("input"));
-        Assert.Equal(wizard, flow.WizardMessageId);
-        Assert.Contains("What should I send there?", (string)_h.Api.CallsTo("editMessageText").Last().Body["text"]!, StringComparison.Ordinal);
+        Assert.Equal(9, Assert.Single(_h.Settings.Current.Destinations).ThreadId);
+        Assert.Null(_rig.Memory.GetFlow(Manager));
+        Assert.Contains("✅ Done:", (string)_h.Api.CallsTo("editMessageText").Last().Body["text"]!, StringComparison.Ordinal);
     }
 
     [Theory]
@@ -430,7 +424,7 @@ public sealed class TopicFlowTests : IDisposable, IAsyncLifetime
         await Text("https://t.me/c/5550001/9");
         var edit = _h.Api.CallsTo("editMessageText").Last();
         Assert.Equal(newId, (int)edit.Body["message_id"]!);
-        Assert.Contains("What should I send there?", (string)edit.Body["text"]!, StringComparison.Ordinal);
+        Assert.Contains("✅ Done:", (string)edit.Body["text"]!, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -526,16 +520,16 @@ public sealed class TopicFlowTests : IDisposable, IAsyncLifetime
 
         var edit = _h.Api.CallsTo("editMessageText").Last();
         Assert.Equal(77, (int)edit.Body["message_id"]!);
-        var after = _rig.Memory.GetFlow(Manager)!;
-        Assert.False(after.Params.ContainsKey("promotionRequest"));
         if (rights)
         {
             Assert.Single(_h.Api.CallsTo("createForumTopic"));
-            Assert.Contains("What should I send there?", (string)edit.Body["text"]!, StringComparison.Ordinal);
-            Assert.Equal("101", after.Params["threadId"]);
+            Assert.Contains("✅ Done:", (string)edit.Body["text"]!, StringComparison.Ordinal);
+            Assert.Equal(101, Assert.Single(_h.Settings.Current.Destinations).ThreadId);
         }
         else
         {
+            var after = _rig.Memory.GetFlow(Manager)!;
+            Assert.False(after.Params.ContainsKey("promotionRequest"));
             Assert.Empty(_h.Api.CallsTo("createForumTopic"));
             AssertPromotionScreen(edit);
             Assert.True(TopicFlow.AwaitsPromotion(after));
@@ -570,39 +564,6 @@ public sealed class TopicFlowTests : IDisposable, IAsyncLifetime
         await Joined(Other);
 
         Assert.True(_rig.Memory.IsDetected(Other));
-    }
-
-    [Fact]
-    public async Task TryAgain_AfterTheCreatedTopicsReCheckFails_KeepsThatTopic()
-    {
-        AddForum();
-        await AskWhere();
-        var wizard = WizardId();
-        await Click("1|tc", wizard);
-        Assert.Equal("101", _rig.Memory.GetFlow(Manager)!.Params["threadId"]);
-        _h.Api.SetMember(Group, FakeBotApi.Member("left"));
-
-        await Click("1|op|Everything", wizard);
-
-        var failure = _h.Api.CallsTo("editMessageText").Last();
-        Assert.Equal(["1|ot", "1|ox"], Data(failure));
-        Assert.Empty(_h.Settings.Current.Destinations);
-
-        await Click("1|op|Everything", wizard); // a redelivered preset press on the failure screen does nothing
-        Assert.Empty(_h.Settings.Current.Destinations);
-
-        _h.Api.SetMember(Group, TopicRights());
-        await Click("1|ot", WizardId());
-
-        var presets = _h.Api.CallsTo("editMessageText").Last();
-        Assert.Contains("What should I send there?", (string)presets.Body["text"]!, StringComparison.Ordinal);
-        Assert.Equal("101", _rig.Memory.GetFlow(Manager)!.Params["threadId"]);
-        Assert.Single(_h.Api.CallsTo("createForumTopic"));
-
-        await Click("1|op|Everything", WizardId());
-
-        Assert.Equal(101, Assert.Single(_h.Settings.Current.Destinations).ThreadId);
-        Assert.Single(_h.Api.CallsTo("createForumTopic"));
     }
 
     private static string TopicRights() => TelegramFixtures.Json("get_chat_member_admin_topics");

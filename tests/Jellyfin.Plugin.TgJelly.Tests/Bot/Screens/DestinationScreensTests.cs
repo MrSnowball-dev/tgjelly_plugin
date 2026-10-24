@@ -36,7 +36,7 @@ public sealed class DestinationScreensTests : IDisposable, IAsyncLifetime
         await Click("1|dl|0");
 
         var labels = Labels(LastEdit());
-        Assert.Equal(["✅ " + ok.Title, "⛔ " + lost.Title, "✅⏸ " + paused.Title, "⛔⏸ " + pausedLost.Title, "Back"], labels);
+        Assert.Equal(["✅ " + ok.Title, "⛔ " + lost.Title, "✅⏸ " + paused.Title, "⛔⏸ " + pausedLost.Title, "Add destination", "Back"], labels);
     }
 
     [Fact]
@@ -68,7 +68,7 @@ public sealed class DestinationScreensTests : IDisposable, IAsyncLifetime
         await Click("1|dl|3");
 
         var last = LastEdit();
-        Assert.Equal(6 + 1 + 1, Labels(last).Length);
+        Assert.Equal(6 + 1 + 1 + 1, Labels(last).Length);
         Assert.Equal(["‹ Prev"], NavLabels(last));
         Assert.DoesNotContain("Next ›", Labels(last));
     }
@@ -84,7 +84,7 @@ public sealed class DestinationScreensTests : IDisposable, IAsyncLifetime
         var text = (string)edit.Body["text"]!;
         Assert.Contains(d.Title, text, StringComparison.Ordinal);
         Assert.Contains("OK", text, StringComparison.Ordinal);
-        Assert.Contains("Everything", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("Preset", text, StringComparison.Ordinal);
         Assert.Equal(["Events", "Libraries", "Silent groups", "Send test", "Check again", "Pause", "Remove", "Back"], Labels(edit));
     }
 
@@ -224,15 +224,15 @@ public sealed class DestinationScreensTests : IDisposable, IAsyncLifetime
     }
 
     [Fact]
-    public async Task ToggleEvent_BackToAPreset_SetsThatPreset()
+    public async Task ToggleEvent_EveryEventOn_SetsEverything_OtherwiseCustom()
     {
-        var d = _h.AddDestination(-1001, preset: PresetKind.NewMedia);
+        var d = _h.AddDestination(-1001);
 
         await Click("1|det|" + d.Id + "|server.started");
         Assert.Equal(PresetKind.Custom, _h.Settings.Current.Destinations.Single().Preset);
         await Click("1|det|" + d.Id + "|server.started");
 
-        Assert.Equal(PresetKind.NewMedia, _h.Settings.Current.Destinations.Single().Preset);
+        Assert.Equal(PresetKind.Everything, _h.Settings.Current.Destinations.Single().Preset);
     }
 
     [Fact]

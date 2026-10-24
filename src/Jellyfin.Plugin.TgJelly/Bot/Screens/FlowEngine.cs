@@ -83,7 +83,7 @@ public sealed class FlowEngine : IBotFlows, IDisposable
     public static IReadOnlyList<string> Actions { get; } =
     [
         "m", "st", "dl", "noop", "d", "de", "deg", "det", "dlb", "dlt", "dsg", "dsgt", "dt", "dc", "dp", "dr", "drx", "tp",
-        "s", "sm", "smt", "su", "sut", "sum", "sp", "spu", "spt", "spc", "op", "oc", "ocg", "ocd", "oa", "ot", "oh", "on", "ox", "ol", "od",
+        "s", "sm", "smt", "su", "sut", "sum", "sp", "spu", "spt", "spc", "oa", "ot", "oh", "on", "ox", "ol", "od",
         "tg", "tc", "te", "tb", "tk", "xl", "xs", "xd",
     ];
 
@@ -197,24 +197,12 @@ public sealed class FlowEngine : IBotFlows, IDisposable
             case "ol":
                 await _onboarding.OnAdvancedTopicAsync(query, ct).ConfigureAwait(false);
                 break;
-            case "op":
-                await _onboarding.OnPresetAsync(query, args.Count > 0 ? args[0] : string.Empty, ct).ConfigureAwait(false);
-                break;
-            case "oc":
-                await _onboarding.OnCustomToggleAsync(query, args.Count > 0 ? args[0] : string.Empty, ct).ConfigureAwait(false);
-                break;
-            case "ocg":
-                await _onboarding.OnCustomGroupAsync(query, args.Count > 0 ? args[0] : null, ct).ConfigureAwait(false);
-                break;
             case "tg":
             case "tc":
             case "te":
             case "tb":
             case "tk":
                 await _onboarding.OnTopicAsync(query, action, ct).ConfigureAwait(false);
-                break;
-            case "ocd":
-                await _onboarding.OnCustomDoneAsync(query, ct).ConfigureAwait(false);
                 break;
             case "xl":
                 await ShowAsync(chatId, _detected.List(PageOf(args)), message.MessageId, ct).ConfigureAwait(false);

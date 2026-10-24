@@ -421,12 +421,24 @@ export function renderMessagesSection(state, S, ui) {
     });
     return '<div class="tgj-msg-layout">'
         + renderMessagePickers(dto.Items, item, S)
-        + '<div class="tgj-msg-cards">'
+        + '<div id="tgj-msg-cards" class="tgj-msg-cards">'
         + renderMessageSwitches(item, state.settings ?? null, forms.settings, S)
         + renderTemplateCard(item, S, { ...ui, forms })
         + '</div>'
-        + `<div class="tgj-msg-side">${preview}</div>`
+        + `<div id="tgj-msg-side" class="tgj-msg-side">${preview}</div>`
         + '</div>';
+}
+
+/**
+ * How far to move the preview down so it stays in view under Jellyfin's header while the cards scroll by, kept within
+ * the cards' height. CSS sticky can't do this: Jellyfin's page wrappers break it.
+ * @param {{ headerBottom: number, cardsTop: number, cardsHeight: number, sideHeight: number, gap: number }} m
+ *   viewport positions and heights in px
+ * @returns {number} px, 0 or more
+ */
+export function previewOffset({ headerBottom, cardsTop, cardsHeight, sideHeight, gap }) {
+    const max = Math.max(0, cardsHeight - sideHeight);
+    return Math.min(max, Math.max(0, headerBottom + gap - cardsTop));
 }
 
 // --- the Fields and Formatting tables (design §6.3) ---
@@ -504,7 +516,7 @@ export function renderFieldsTable(item, S) {
             + `<td data-label="${esc(text(S, 'web.tables.what'))}">${esc(f.Description)}${f.Optional ? ` ${label(text(S, 'web.templates.optional'), 'neutral')}` : ''}</td>`
             + `<td data-label="${esc(text(S, 'web.tables.example'))}">${example === null ? '<span class="tgj-muted">-</span>' : esc(example)}</td></tr>`;
     });
-    return `<table class="tgj-ref-table"><thead><tr><th scope="col">${t(S, 'web.tables.field')}</th><th scope="col">${t(S, 'web.tables.what')}</th>`
+    return `<table class="tgj-ref-table"><colgroup><col class="tgj-ref-col-key"><col class="tgj-ref-col-what"><col class="tgj-ref-col-example"></colgroup><thead><tr><th scope="col">${t(S, 'web.tables.field')}</th><th scope="col">${t(S, 'web.tables.what')}</th>`
         + `<th scope="col">${t(S, 'web.tables.example')}</th></tr></thead><tbody>${rows.join('')}</tbody></table>`;
 }
 
@@ -516,7 +528,7 @@ export function renderFieldsTable(item, S) {
 export function renderFormattingTable(S) {
     const rows = FORMATTING.map((f, index) => `<tr>${insertCell('format', String(index), f.write, S)}<td data-label="${esc(text(S, 'web.tables.does'))}">${esc(text(S, f.descriptionKey))}</td>`
         + `<td data-label="${esc(text(S, 'web.tables.looks'))}"><div class="tgj-tg-text tgj-tg-sample">${previewHtml(f.looksLikeHtml)}</div></td></tr>`);
-    return `<table class="tgj-ref-table"><thead><tr><th scope="col">${t(S, 'web.tables.write')}</th><th scope="col">${t(S, 'web.tables.does')}</th>`
+    return `<table class="tgj-ref-table"><colgroup><col class="tgj-ref-col-key"><col class="tgj-ref-col-what"><col class="tgj-ref-col-example"></colgroup><thead><tr><th scope="col">${t(S, 'web.tables.write')}</th><th scope="col">${t(S, 'web.tables.does')}</th>`
         + `<th scope="col">${t(S, 'web.tables.looks')}</th></tr></thead><tbody>${rows.join('')}</tbody></table>`;
 }
 
@@ -880,6 +892,30 @@ export function createMessages(page) {
         if (test) {
             test.disabled = templateTestBlocked(ui);
         }
+
+        placePreview();
+    };
+
+    /**
+     * Keeps the preview beside the cards in view on scroll (previewOffset), below Jellyfin's fixed header. On a narrow
+     * page the preview sits under the template and stays where it is.
+     */
+    const placePreview = () => {
+        const side = page.byId('tgj-msg-side');
+        const cards = page.byId('tgj-msg-cards');
+        if (!side || !cards || typeof cards.getBoundingClientRect !== 'function') {
+            return;
+        }
+
+        const cardsRect = cards.getBoundingClientRect();
+        const beside = side.getBoundingClientRect().left >= cardsRect.right - 1;
+        const doc = side.ownerDocument;
+        const header = doc && typeof doc.querySelector === 'function' ? doc.querySelector('.skinHeader') : null;
+        const headerBottom = header && typeof header.getBoundingClientRect === 'function' ? Math.max(0, header.getBoundingClientRect().bottom) : 0;
+        const offset = beside
+            ? previewOffset({ headerBottom, cardsTop: cardsRect.top, cardsHeight: cardsRect.height, sideHeight: side.offsetHeight ?? 0, gap: 16 })
+            : 0;
+        side.style.transform = offset > 0 ? `translateY(${Math.round(offset)}px)` : '';
     };
 
     /**
@@ -1237,5 +1273,5 @@ export function createMessages(page) {
         },
     };
 
-    return { section, actions, inputs, hover, scroll, hide: cancelTemplateTimer };
+    return { section, actions, inputs, hover, scroll, placePreview, hide: cancelTemplateTimer };
 }

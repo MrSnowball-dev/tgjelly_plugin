@@ -26,7 +26,7 @@ TgJelly is a Jellyfin server plugin with a built-in Telegram bot. Version 1 is a
 - Access model: **trust the BotFather restriction**. Anyone who can open the bot's private chat can manage it. The owner rejected an invisible "first /start claims the bot" lock.
 - The owner explicitly kept three behaviors that the review suggested changing:
   - late episodes are added to the earlier message by a silent edit,
-  - preset order `[Everything] [New media] [Admin alerts] [Custom…]` for every chat type,
+  - (superseded 2026-10-25: presets were removed; a new chat starts with every event on),
   - every new destination gets an automatic test message.
 - Roadmap after v1: **interactive bot features** (search or browse the library, stats, trigger tasks) and **playback notifications**.
 - **Not planned in any version:** per-user subscriptions and non-Telegram transports.
@@ -36,7 +36,7 @@ TgJelly is a Jellyfin server plugin with a built-in Telegram bot. Version 1 is a
 - Most installs sit behind NAT or in Docker without a public HTTPS endpoint. That is why the bot uses long polling and uploads posters instead of linking to them.
 
 ### 1.3 Success criteria
-1. **From a fresh install to the first notification takes only a token paste plus a few taps:** choose new or existing bot → paste the token → Open bot → pick a chat in Telegram's own chat chooser, opened from the bot's inline buttons → pick a preset. No chat IDs, templates or config files.
+1. **From a fresh install to the first notification takes only a token paste plus a few taps:** choose new or existing bot → paste the token → Open bot → pick a chat in Telegram's own chat chooser, opened from the bot's inline buttons (it starts with every event on). No chat IDs, templates or config files.
 2. The **same zip format and the same code** run on Jellyfin 10.11.x and 12.x. Each server automatically gets the build that matches it.
 3. **The plugin never harms Jellyfin and never modifies the library.** No unhandled exception, slow handler or Telegram outage may break, block or stop the server.
 4. **A scan that produces more than `DigestThreshold` (default 10) media groups for a destination results in one digest for that destination** (scans running longer than 2 h: one digest per 2 h). Smaller scans produce one message per group (a movie, a season batch, an album).
@@ -237,11 +237,11 @@ A single card: **"Connect a Telegram bot"** with `[Create a new bot]` `[I alread
      - `setMyDefaultAdministratorRights`: for channels post + edit messages.
 
      The choice and any calls still pending are stored in `state.telegram.profile` and retried when the supervisor next starts, until each one succeeds. Failures are shown in Status and never fail the save.
-- Result: the connect card closes. The Bot section (§6.6) shows @MyJellyBot with **[Open in Telegram]** (`https://t.me/<username>?start=setup`).
+- Result: the connect card closes. The Bot section (§6.6) shows @MyJellyBot with **[Open in Telegram]** (`https://t.me/<username>`: it just opens the chat with the bot, amended 2026-10-25).
 - If `getMe` fails with a network error, a **"Can't reach Telegram?"** panel opens with the proxy settings (§9.1). Otherwise proxy settings stay under Advanced.
 
 ### 6.2 Bot onboarding: the main flow, inline buttons only
-Triggered by `/start setup`, `/start add`, a plain `/start` when there are no destinations yet, or **Add destination** in `/menu`.
+Triggered by `/start setup`, `/start add`, a plain `/start` when there are no destinations yet, or **Add destination** on the Destinations screen of `/menu`.
 
 1. **Prompt.** The prompt is one inline wizard message: "Where should notifications go?" plus the hint. Its buttons:
    - `Add to a channel` (URL, `BotLinks.StartChannel`: `https://t.me/<bot>?startchannel&admin=post_messages+edit_messages`),
@@ -275,7 +275,7 @@ Triggered by `/start setup`, `/start add`, a plain `/start` when there are no de
      **Promotion detected:** a `my_chat_member` → administrator in that forum from the same user, a group `/start@bot` there, or `[Check again]` finding `can_manage_topics`. The bot then creates the topic. **Promotion in another group:** said on the wizard, and the bot keeps waiting. **Rights still missing on Check again:** said on the wizard, and the bot keeps waiting. This screen has no expiry. If the creation fails, the bot falls back to `[General topic]` plus `[Advanced options]`.
    - **Use an existing topic…**: Telegram has no topic picker (F35), so this is the one place where the main flow hands over to the manual path. The bot records a setup failure of kind `topic_not_pickable` (§6.5) and asks for the topic's link (§6.5, "Use an existing topic").
    - **General** is stored as `ThreadId = 0` (no `message_thread_id`). This is provisional until §15 Q4 is answered.
-4. **Preset.** "What should I send there?" `[Everything] [New media] [Admin alerts] [Custom…]` (§7.2). *Custom…* opens the event switches with nothing selected.
+4. **Added (amended 2026-10-25: presets removed).** No "What should I send there?" step: once the check passes, the destination is added with every event on (§7.2). The admin trims it from its screen afterwards.
 5. **Done.** The bot sends a test message to the new destination ("✅ TgJelly test: this chat will receive *groups*"). It then edits the wizard message to "✅ Done: *Title* will receive *groups*. `[Add another place] [Menu]`".
 
 The whole flow is **one inline wizard message** that gets edited. There are no reply keyboards and no throwaway prompts.
@@ -290,8 +290,8 @@ The whole flow is **one inline wizard message** that gets edited. There are no r
 🏠 Menu
 ├─ 📬 Destinations (n) ─► <destination> ─► Events (Media · Security · Server, each its own screen) · Libraries · Silent groups · Send test · Check again ·
 │                       │                  Pause/Resume · Remove (asks "Also make the bot leave the chat?")
+│                       ├─ ➕ Add destination (primary button, amended 2026-10-25) ─► §6.2
 │                       └─ Chats added outside setup (n)   ← shown only when n > 0 (§6.5)
-├─ ➕ Add destination ─► §6.2
 ├─ ⚙️ Settings ─► Message style (§8.4: section ─► message ─► its switches) · Update checks (on/off, three kinds, §7.6) ·
 │                Public URL (shows current/suggested; [Use suggested] [Type another] (inline prompt with [Cancel], validated §8.3) [Clear])
 └─ 🩺 Status ─► connection, compat, destination health, pending media, outbox sizes, last errors
@@ -329,7 +329,7 @@ At that point the dashboard's Destinations section shows "Telegram setup didn't 
 - `Use an existing topic`: asks with an inline prompt with `[Cancel]`, in the private chat, for the topic's link (long-press the topic → Copy link). It checks that the link's chat is the picked chat, then makes a test send to that `message_thread_id`,
 - `Open dashboard`: the dashboard path, for add by ID.
 
-**Dashboard manual block:** "Add chat by ID": a chat ID, or a topic link, plus a preset. It is checked with `getChat`/`getChatMember` before saving, and the same duplicate rule as §6.2 applies.
+**Dashboard manual block:** "Add chat by ID": a chat ID, or a topic link (the destination starts with every event on). It is checked with `getChat`/`getChatMember` before saving, and the same duplicate rule as §6.2 applies.
 
 **Detected chats.**
 - **When one is recorded:** a `my_chat_member` update (left/kicked → member/administrator) for a **group, supergroup or channel** that isn't a destination, except when:
@@ -344,7 +344,7 @@ Amended by the [dashboard redesign](2026-10-22-tgjelly-dashboard-redesign-design
 
 Sections, in sidebar order:
 1. **Overview:** the connection state with its last errors, counts (pending media, outbox, dropped) and notices (backup restored, template flagged, public URL flagged, update check failing, removed libraries in a filter), each with `[Dismiss]`; `[Take over]` on a webhook conflict. With no bot, it leads with Connect. After that it shows the bot: @username (shown only here), `[Open in Telegram]`, `[Change token]`, `[Disconnect bot]`. The access reminder (§6.4) is an info notice. Disconnecting asks inline and has a switch, "Also remove all destinations", off by default: off keeps the destinations (§10.4), on deletes them and their state too.
-2. **Destinations:** a card per destination with a health label only when something is wrong (Photos blocked / Needs permissions / Topic missing / Lost) and a **Pause/Resume** switch (`Enabled`). The editor covers the preset, the event switches grouped into Media, Security and Server (without the group name repeated in each option), a library multi-select and silent groups, plus `[Send test]` `[Check again]` `[Remove]` (inline confirmation, with a "Bot leaves the chat" choice → `leaveChat`). Leaving a Custom event list for a preset asks first. `[Add destination]` opens `https://t.me/<bot>?start=add`. The "Set up manually" link appears per §6.5.
+2. **Destinations:** a card per destination with a health label only when something is wrong (Photos blocked / Needs permissions / Topic missing / Lost) and a **Pause/Resume** switch (`Enabled`). The editor covers the event switches grouped into Media, Security and Server (without the group name repeated in each option), a library multi-select and silent groups, plus `[Send test]` `[Check again]` `[Remove]` (inline confirmation, with a "Bot leaves the chat" choice → `leaveChat`). Under its name the card shows the kind of chat (Forum for a supergroup with topics). `[Add destination]` (primary) opens `https://t.me/<bot>?start=add`. The "Set up manually" link appears per §6.5.
 3. **Messages:** one page per message, chosen with a Section picker (Media, Security, Server) and a Message picker (the section's events, and the Digest under Media); the choice is kept in the URL hash. The page holds: the Built-in or Edited label; **What it shows**, the switches in §8.4 kept per message, with only the ones that fit the message (Security and Server have only Poster, off by default, which sends the plugin logo as the photo), and the public URL (pre-filled with a suggestion marked "verify", §8.3) inside the Open in Jellyfin switch; the template, with `[Send test]`, `[Reset]` and the guide link (§8.5); a preview that copies Telegram's own rendering (bubble, photo, caption, inline keys under the bubble); and the collapsible **Available fields** and **Formatting** tables, whose first cell inserts at the caret or wraps the selection. Hovering a piece of the template (an output expression, an `if` block or a run of literal text) highlights what it produced in the preview, and the other way round.
 4. **Advanced:** proxy (§9.1; the credentials appear only for SOCKS5 and HTTP, which are the only types a bot can use), batching values (§7.4, with the ranges in §10.1), update checks (on/off, and three kinds of Jellyfin release: fixes for the installed version, new releases, new major versions; all three off means no update messages), the manual block (§6.5, only when it is unlocked), `[Copy diagnostics]` with a notice that lists what the report contains and never contains.
 5. **Log:** every event received and what happened to it (§6.7).
@@ -400,18 +400,11 @@ A read-only record of what became of each event, for the last 7 days and at most
 
 Groups: `media.*` = **media**, `security.*` = **security**, `server.*` = **server**.
 
-### 7.2 Presets
-| Preset | Keys |
-|---|---|
-| Everything | all keys |
-| New media | all `media.*` keys |
-| Admin alerts | all `security.*` keys except `security.login_succeeded`, plus all `server.*` keys |
-| Custom | individual switches |
-
-- `Destination.Preset` stores the choice, and `Destination.Events` stores the expanded concrete keys. The Router matches by exact string equality.
-- When `Preset ≠ Custom`, keys that a later version adds to that preset are added to `Events` when the config loads.
-- Switching any event on or off makes the destination `Custom`.
-- Destinations created from Advanced use the preset picked in that form (default `Everything`).
+### 7.2 Events (presets removed 2026-10-25)
+- Presets are no longer offered anywhere (owner, 2026-10-25). Every new destination, from the bot, the dashboard or Advanced, starts with **every event on**; the admin switches off what they don't want.
+- `Destination.Events` stores the concrete keys; the Router matches by exact string equality.
+- `Destination.Preset` stays only as an internal flag: `Everything` while the destination has every event, `Custom` otherwise. It is set from the events on every change and is never shown. When the config loads, keys a later version adds are switched on for `Everything` destinations only, so nothing new appears in a chat the admin trimmed.
+- Upgrade: a destination saved with the old New media or Admin alerts preset keeps its events and becomes `Custom`.
 
 ### 7.3 Library filter
 - Each destination has `LibraryIds` (Guid strings, `N` format; empty means all).
@@ -666,7 +659,7 @@ Groups: `media.*` = **media**, `security.*` = **security**, `server.*` = **serve
 - **Pacing:**
   - at least 1 s between sends to the same chat,
   - at most 20 per minute per group or channel,
-  - at most 25 per second overall,
+  - at most 2 per second overall (owner, 2026-10-25: avoids flood waits),
   - a 429's `retry_after` pauses that chat's queue.
 - **Limits:**
   - **media** entries: 500 per destination; when full, the oldest media entry is dropped;
@@ -742,7 +735,7 @@ UpdateCheck: UpdateCheckOptions { Enabled = true; Fixes = true; NewReleases = tr
 Destinations: Destination[] = []
   Destination { Id: string (8 chars, [a-z0-9]); ChatId: long; ThreadId: int = 0 (0 = none / General);
                 Title: string; Kind: ChatKind (Private|Group|Supergroup|Channel);
-                Enabled: bool = true; Preset: PresetKind (Everything|NewMedia|AdminAlerts|Custom) = Everything;
+                Enabled: bool = true; IsForum: bool; Preset: PresetKind (internal: Everything while every event is on, else Custom; §7.2) = Everything;
                 Events: string[]; LibraryIds: string[] (empty = all); SilentGroups: string[] }
   (ChatId, ThreadId) is unique across Destinations.
 Templates: TemplateOverride[] = []
@@ -848,12 +841,12 @@ Every eviction increments `status.counters.evictions`.
 | `GET Settings` / `PUT Settings` | public URL (with suggestion), message toggles, batching, update check; GET also returns proxy mode and URL for display, PUT ignores proxy fields |
 | `PUT Proxy` `{mode, url, username?, password?}` | proxy settings; an omitted username or password keeps the stored value, an empty string clears it |
 | `GET Destinations` | destinations + health + detected chats (if any) + whether the manual block is unlocked |
-| `POST Destinations` `{chatId \| topicLink, preset}` | Advanced add by ID or link (§6.5); checked first. The §6.5 gate only changes what the page shows; admins can always call this |
-| `PUT Destinations/{id}` | preset, events, libraries, silent groups, enabled |
+| `POST Destinations` `{chatId \| topicLink}` | Advanced add by ID or link (§6.5); checked first. The §6.5 gate only changes what the page shows; admins can always call this |
+| `PUT Destinations/{id}` | events, libraries, silent groups, enabled |
 | `DELETE Destinations/{id}?leave=bool&expectedRevision=n` | remove, optionally `leaveChat` |
 | `POST Destinations/{id}/Test` | test send (also a re-check) |
 | `POST Destinations/{id}/Check` | re-check now |
-| `POST DetectedChats/{chatId}` `{preset, threadId?}` / `DELETE DetectedChats/{chatId}` | set up (checked first, as in §6.2 step 2) / dismiss a detected chat |
+| `POST DetectedChats/{chatId}` `{threadId?}` / `DELETE DetectedChats/{chatId}` | set up (checked first, as in §6.2 step 2) / dismiss a detected chat |
 | `GET Libraries` | `GetVirtualFolders()` → `{id, name, collectionType}` |
 | `GET Templates` | `{Revision, Items}`, one item per template key (digest included): `EventKey`, `Label`, `Media`, `Text` (in use), `BuiltIn`, `Edited`, `Fields`, `SampleFull`, `SampleSparse`, `Flag` |
 | `PUT Templates/{eventKey}` `{expectedRevision, text}` | save; empty text or text equal to the built-in removes the override (no `Enabled`) |
@@ -940,7 +933,7 @@ README.md (setup with screenshots, BotFather restriction, GitHub contact for upd
 ## 14. Testing
 
 ### 14.1 Unit tests (xUnit, run on both TFMs, `Microsoft.Extensions.TimeProvider.Testing` for time)
-- **Router:** exact key matching, presets and preset upgrades on load, library filter (Guid parsing, removed libraries), `Enabled`.
+- **Router:** exact key matching, new events switched on for all-events destinations on load, library filter (Guid parsing, removed libraries), `Enabled`.
 - **Aggregator:**
   - group quiet window and max hold, `ScanFinished` closing groups,
   - release buffer: exactly `DigestThreshold` vs threshold + 1 groups, held while `IsScanRunning`, its own max hold,
@@ -1046,11 +1039,11 @@ They are parsed with Telegram.Bot and passed to `UpdateRouter`, FlowEngine and t
 - **End to end:**
   1. `PUT Settings` with `Batching {QuietWindowSeconds:5, ReleaseQuietSeconds:5, MaxHoldMinutes:1, ReadyTimeoutMinutes:1}`.
   2. `POST Token` with a well-formed fake token.
-  3. `POST Destinations {chatId, preset:"NewMedia"}`.
+  3. `POST Destinations {chatId}`, then `PUT Destinations/{id}` with the media events only.
   4. Copy a sample movie into the library and call `POST /Library/Refresh`.
   5. Assert that a `sendPhoto` or `sendMessage` for that movie reaches the stub **within 180 s**.
-  6. `POST Destinations {chatId: <second>, preset:"AdminAlerts"}`, then `POST /System/Restart`. Assert that **exactly one** `server.started` message for the second chat reaches the stub within 120 s of the restart. This also exercises the in-process restart path (F4).
-  7. `/start setup` → find the `startchannel` URL button → push `my_chat_member` (channel, left → administrator, from the admin) → press New media → the destination exists, its test message arrived, and the wizard was edited to Done.
+  6. `POST Destinations {chatId: <second>}` (every event), then `POST /System/Restart`. Assert that **exactly one** `server.started` message for the second chat reaches the stub within 120 s of the restart. This also exercises the in-process restart path (F4).
+  7. `/start setup` → find the `startchannel` URL button → push `my_chat_member` (channel, left → administrator, from the admin) → the destination exists with every event on, its test message arrived, and the wizard was edited to Done.
 
 ### 14.4 Manual pre-release checklist (real Telegram)
 - **BotFather:** create a new bot and restrict it in BotFather. Record the exact menu path for the README. Verify that:

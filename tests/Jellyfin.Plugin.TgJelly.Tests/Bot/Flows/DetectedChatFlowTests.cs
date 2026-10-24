@@ -128,7 +128,7 @@ public sealed class DetectedChatFlowTests : IDisposable, IAsyncLifetime
     }
 
     [Fact]
-    public async Task SetUp_ChecksOnce_ThenAsksForThePreset()
+    public async Task SetUp_ChecksOnce_ThenCreatesAndShowsDone()
     {
         await Added(NewGroup);
         _h.Api.AddChat(NewGroup, "supergroup", "Family");
@@ -137,14 +137,13 @@ public sealed class DetectedChatFlowTests : IDisposable, IAsyncLifetime
 
         await Click("1|xs|-1005550002", 55);
 
-        Assert.Single(_h.Api.CallsTo("getChatMember"));
+        // One check for the chat, one before the test message; no re-check in between.
+        Assert.Equal(2, _h.Api.CallsTo("getChatMember").Count());
         Assert.Empty(_rig.Delays);
         var wizard = Assert.Single(_h.Api.CallsTo("editMessageText"));
         Assert.Equal(55, (int)wizard.Body["message_id"]!);
-        Assert.Contains("What should I send there?", (string)wizard.Body["text"]!, StringComparison.Ordinal);
-        Assert.Equal(["Everything", "New media", "Admin alerts", "Custom…"], Labels(wizard));
-
-        await Click("1|op|Everything", 55);
+        Assert.Contains("✅ Done:", (string)wizard.Body["text"]!, StringComparison.Ordinal);
+        Assert.Equal(["Add another place", "Menu"], Labels(wizard));
 
         var destination = Assert.Single(_h.Settings.Current.Destinations);
         Assert.Equal((NewGroup, "Family"), (destination.ChatId, destination.Title));

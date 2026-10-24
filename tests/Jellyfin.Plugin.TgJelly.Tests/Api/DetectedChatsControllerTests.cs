@@ -66,11 +66,11 @@ public sealed class DetectedChatsControllerTests : IAsyncLifetime
         _h.Api.AddChat(Chat, "supergroup", "Family");
         _h.Api.SetMember(Chat, BotTestHarness.AdminCanPost);
 
-        var response = (await Controller().SetUp(Chat, new SetUpDetectedChatRequest { ExpectedRevision = _h.Settings.Current.Revision, Preset = "AdminAlerts" }, Ct)).Value!;
+        var response = (await Controller().SetUp(Chat, new SetUpDetectedChatRequest { ExpectedRevision = _h.Settings.Current.Revision }, Ct)).Value!;
 
         Assert.Equal(("Added", true), (response.Outcome, response.TestSent));
         var saved = Assert.Single(_h.Settings.Current.Destinations);
-        Assert.Equal((Chat, 0, PresetKind.AdminAlerts, response.Destination.Id), (saved.ChatId, saved.ThreadId, saved.Preset, saved.Id));
+        Assert.Equal((Chat, 0, PresetKind.Everything, response.Destination.Id), (saved.ChatId, saved.ThreadId, saved.Preset, saved.Id));
         _h.Time.Advance(TimeSpan.FromMinutes(1));
         Assert.Equal([-1009L], _memory.VisibleDetected([]).Select(d => d.ChatId));
     }
@@ -82,7 +82,7 @@ public sealed class DetectedChatsControllerTests : IAsyncLifetime
         _h.Api.AddChat(Chat, "supergroup", "Family", isForum: true);
         _h.Api.SetMember(Chat, BotTestHarness.AdminCanPost);
 
-        var response = (await Controller().SetUp(Chat, new SetUpDetectedChatRequest { ExpectedRevision = _h.Settings.Current.Revision, Preset = "Everything", ThreadId = 7 }, Ct)).Value!;
+        var response = (await Controller().SetUp(Chat, new SetUpDetectedChatRequest { ExpectedRevision = _h.Settings.Current.Revision, ThreadId = 7 }, Ct)).Value!;
 
         Assert.Equal("Added", response.Outcome);
         Assert.Equal(7, Assert.Single(_h.Settings.Current.Destinations).ThreadId);
@@ -95,7 +95,7 @@ public sealed class DetectedChatsControllerTests : IAsyncLifetime
         _h.Api.AddChat(Chat, "supergroup", "Family");
         _h.Api.SetMember(Chat, FakeBotApi.Member("left"));
 
-        var result = (await Controller().SetUp(Chat, new SetUpDetectedChatRequest { ExpectedRevision = _h.Settings.Current.Revision, Preset = "Everything" }, Ct)).Result;
+        var result = (await Controller().SetUp(Chat, new SetUpDetectedChatRequest { ExpectedRevision = _h.Settings.Current.Revision }, Ct)).Result;
 
         var errors = Assert.IsType<ErrorsDto>(Assert.IsType<BadRequestObjectResult>(result).Value);
         Assert.Equal("ChatId", Assert.Single(errors.Errors).Field);
@@ -107,20 +107,9 @@ public sealed class DetectedChatsControllerTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task PostDetected_BadPreset_Is400()
-    {
-        Detect();
-
-        var result = (await Controller().SetUp(Chat, new SetUpDetectedChatRequest { Preset = "Nope" }, Ct)).Result;
-
-        Assert.Equal("Preset", Assert.Single(Assert.IsType<ErrorsDto>(Assert.IsType<BadRequestObjectResult>(result).Value).Errors).Field);
-        Assert.Empty(_h.Api.Calls);
-    }
-
-    [Fact]
     public async Task PostDetected_UnknownChat_Is404()
     {
-        var result = (await Controller().SetUp(Chat, new SetUpDetectedChatRequest { Preset = "Everything" }, Ct)).Result;
+        var result = (await Controller().SetUp(Chat, new SetUpDetectedChatRequest(), Ct)).Result;
 
         Assert.IsType<NotFoundResult>(result);
         Assert.Empty(_h.Api.Calls);
@@ -133,7 +122,7 @@ public sealed class DetectedChatsControllerTests : IAsyncLifetime
         _h.Api.AddChat(Chat, "supergroup", "Family");
         _h.Api.SetMember(Chat, BotTestHarness.AdminCanPost);
 
-        var result = (await Controller().SetUp(Chat, new SetUpDetectedChatRequest { ExpectedRevision = _h.Settings.Current.Revision - 1, Preset = "Everything" }, Ct)).Result;
+        var result = (await Controller().SetUp(Chat, new SetUpDetectedChatRequest { ExpectedRevision = _h.Settings.Current.Revision - 1 }, Ct)).Result;
 
         var conflict = Assert.IsType<ConflictObjectResult>(result);
         Assert.IsType<ConflictDto<DestinationsDto>>(conflict.Value);
@@ -160,7 +149,7 @@ public sealed class DetectedChatsControllerTests : IAsyncLifetime
         _h.Track(waiting);
         var controller = Controller(waiting);
 
-        Assert.Equal(503, Assert.IsType<ObjectResult>((await controller.SetUp(Chat, new SetUpDetectedChatRequest { Preset = "Everything" }, Ct)).Result).StatusCode);
+        Assert.Equal(503, Assert.IsType<ObjectResult>((await controller.SetUp(Chat, new SetUpDetectedChatRequest(), Ct)).Result).StatusCode);
         Assert.Equal(503, Assert.IsType<ObjectResult>(controller.Dismiss(Chat)).StatusCode);
         _h.Time.Advance(TimeSpan.FromMinutes(1));
         Assert.Equal(2, _memory.VisibleDetected([]).Count);

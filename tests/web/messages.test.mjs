@@ -93,7 +93,7 @@ const STATUS = {
 const LINKS = { OpenBot: 'https://t.me/jf_bot?start=setup', StartAdd: 'https://t.me/jf_bot?start=add', StartGroup: 'https://t.me/jf_bot?startgroup=add', StartChannel: 'https://t.me/jf_bot?startchannel' };
 const DESTINATIONS = {
     Revision: 5, Items: [], DetectedChats: [], ManualUnlocked: false,
-    Catalog: { EventKeys: KEYS.filter(k => k !== 'media.digest'), Groups: ['media', 'security', 'server'], Presets: { Everything: [], NewMedia: [], AdminAlerts: [] } },
+    Catalog: { EventKeys: KEYS.filter(k => k !== 'media.digest'), Groups: ['media', 'security', 'server'] },
 };
 const VALIDATION = { Errors: [], Warnings: [], Preview: '', Length: 10, Limit: 1024, Html: 'ok', Caption: true, Poster: false, Buttons: [] };
 
@@ -404,12 +404,20 @@ test('advanced_hasBatchingCard', async () => {
 
 test('the Messages layout keeps the preview beside the cards on wide screens and under them on narrow ones', () => {
     const css = readFileSync(new URL('../../src/Jellyfin.Plugin.TgJelly/Web/tgjelly.css', import.meta.url), 'utf8');
-    assert.match(css, /#tgjelly-root \.tgj-msg-side \{[^}]*position: sticky;/);
+    assert.doesNotMatch(css, /#tgjelly-root \.tgj-msg-side \{[^}]*position: sticky;/, 'Jellyfin breaks sticky; a script places it');
     assert.match(css, /@container tgjelly \(max-width: [\d.]+rem\) \{[^@]*#tgjelly-root \.tgj-msg-layout \{[^}]*grid-template-columns: minmax\(0, 1fr\);/);
     const html = render('media.movie');
     assert.ok(html.startsWith('<div class="tgj-msg-layout">'), html.slice(0, 80));
-    assert.ok(html.indexOf('<div class="tgj-msg-cards">') < html.indexOf('<div class="tgj-msg-side">'));
+    assert.ok(html.indexOf('<div id="tgj-msg-cards" class="tgj-msg-cards">') < html.indexOf('<div id="tgj-msg-side" class="tgj-msg-side">'));
     assert.ok(!/[●✓✔✅⚠❌✗🟢🔴]/u.test(html));
+});
+
+test('previewOffset keeps the preview under the header and within the cards', () => {
+    const base = { headerBottom: 60, cardsHeight: 2000, sideHeight: 500, gap: 16 };
+    assert.equal(msg.previewOffset({ ...base, cardsTop: 300 }), 0, 'not scrolled past yet');
+    assert.equal(msg.previewOffset({ ...base, cardsTop: -400 }), 476, 'follows the scroll: 60 + 16 + 400');
+    assert.equal(msg.previewOffset({ ...base, cardsTop: -5000 }), 1500, 'stops at the end of the cards');
+    assert.equal(msg.previewOffset({ ...base, cardsTop: -400, sideHeight: 3000 }), 0, 'a preview taller than the cards stays');
 });
 
 // --- the template's errors and length sit under the textarea (Task 8 fix round 1, design §6.1) ---

@@ -19,6 +19,6 @@ public sealed class DestinationsDto
     /// <summary>Gets a value indicating whether the dashboard's manual block is unlocked (spec §6.5).</summary>
     public bool ManualUnlocked { get; init; }
 
-    /// <summary>Gets the event catalog and presets, for the destination editor.</summary>
+    /// <summary>Gets the event catalog, for the destination editor.</summary>
     public CatalogDto Catalog { get; init; } = new();
 }

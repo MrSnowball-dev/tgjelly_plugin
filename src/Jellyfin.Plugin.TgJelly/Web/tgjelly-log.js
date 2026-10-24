@@ -24,6 +24,9 @@ const RESULTS = {
     SentWithBuiltIn: ['web.log.result.SentWithBuiltIn', 'attention'],
     SentWithoutPhoto: ['web.log.result.SentWithoutPhoto', 'attention'],
     Failed: ['web.log.result.Failed', 'bad'],
+    // Test messages have their own colour, so they stand apart from real notifications.
+    TestSent: ['web.log.result.TestSent', 'accent'],
+    TestFailed: ['web.log.result.TestFailed', 'bad'],
 };
 
 /** The table's columns: each cell's class suffix and its heading. Destination, not Chat (the owner's correction). */
@@ -36,10 +39,10 @@ const COLUMNS = [
 ];
 
 /** The results a row opens on (Failed and the attention states), whatever else it carries. */
-const PROBLEMS = new Set(['Failed', 'SentLate', 'SentWithBuiltIn', 'SentWithoutPhoto']);
+const PROBLEMS = new Set(['Failed', 'SentLate', 'SentWithBuiltIn', 'SentWithoutPhoto', 'TestFailed']);
 
-/** Event keys the Log has besides the message keys (LogRecorder): the rolling summary of alerts. */
-const LOG_ONLY_EVENTS = { 'server.summary': 'web.log.event.summary' };
+/** Event keys the Log has besides the message keys (LogRecorder): the rolling summary of alerts, and the plain test. */
+const LOG_ONLY_EVENTS = { 'server.summary': 'web.log.event.summary', test: 'web.log.event.test' };
 
 const has = (S, key) => Boolean(S) && Object.hasOwn(S, key);
 
