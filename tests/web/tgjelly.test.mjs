@@ -4,16 +4,19 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import page, * as m from '../../src/Jellyfin.Plugin.TgJelly/Web/tgjelly.js';
 import * as ui from '../../src/Jellyfin.Plugin.TgJelly/Web/tgjelly-ui.js';
+import * as msg from '../../src/Jellyfin.Plugin.TgJelly/Web/tgjelly-messages.js';
 import { makeView, makeApiClient, makeResponse, fakeTimers, flush, clickOn, dispatchOn, fakeTarget, liveFields } from './fake-view.mjs';
 
-const SOURCE = readFileSync(new URL('../../src/Jellyfin.Plugin.TgJelly/Web/tgjelly.js', import.meta.url), 'utf8');
+// The page's own modules: the controller, and the Messages section, the preview and the Log it was split into (plan 9).
+const SOURCE = ['tgjelly.js', 'tgjelly-messages.js', 'tgjelly-preview.js', 'tgjelly-log.js']
+    .map(file => readFileSync(new URL(`../../src/Jellyfin.Plugin.TgJelly/Web/${file}`, import.meta.url), 'utf8')).join('\n');
 const EN = JSON.parse(readFileSync(new URL('../../src/Jellyfin.Plugin.TgJelly/Strings/en.json', import.meta.url), 'utf8'));
 
 // The page has only #tgjelly-root; the shell the controller writes into it adds the rest (makeView registers them).
 // The section hosts are listed too, so a test can hold an element before the shell is written.
 const IDS = [
-    'tgjelly-root', 'tgj-status', 'tgj-connect', 'tgj-bot', 'tgj-summary', 'tgj-destinations', 'tgj-messages', 'tgj-demo',
-    'tgj-proxy', 'tgj-batching', 'tgj-updates', 'tgj-templates', 'tgj-tpl-preview', 'tgj-manual', 'tgj-diagnostics',
+    'tgjelly-root', 'tgj-status', 'tgj-connect', 'tgj-bot', 'tgj-destinations', 'tgj-messages', 'tgj-demo',
+    'tgj-proxy', 'tgj-batching', 'tgj-updates', 'tgj-tpl-preview', 'tgj-tpl-check', 'tgj-manual', 'tgj-diagnostics',
 ];
 
 function status(overrides = {}) {
@@ -43,15 +46,38 @@ function status(overrides = {}) {
     };
 }
 
+const MEDIA_MESSAGES = ['media.movie', 'media.episodes', 'media.album', 'media.musicvideo', 'media.book', 'media.digest'];
+const FLAT_MESSAGE = { ShowPoster: true, ShowOverview: true, ShowRatingGenres: true, ShowOpenInJellyfin: true, ShowProviderLinks: false };
+
+/** A SettingsDto Message as the server sends it: every message's switches (media ones from flat; alerts off). */
+function messageDto(flat = FLAT_MESSAGE, announce = false) {
+    const off = { ShowPoster: false, ShowOverview: false, ShowRatingGenres: false, ShowOpenInJellyfin: false, ShowProviderLinks: false };
+    return {
+        PerMessage: [...MEDIA_MESSAGES.map(EventKey => ({ EventKey, Switches: { ...flat } })), ...['security.lockout', 'server.started'].map(EventKey => ({ EventKey, Switches: { ...off } }))],
+        AnnounceUpgrades: announce,
+    };
+}
+
+/** Merges a PUT body's Message into a SettingsDto Message, as the server does: by event key, switch by switch. */
+function mergeMessage(dto, change) {
+    return {
+        PerMessage: dto.PerMessage.map(e => {
+            const sent = (change.PerMessage ?? []).find(c => c.EventKey === e.EventKey);
+            return sent ? { EventKey: e.EventKey, Switches: { ...e.Switches, ...sent.Switches } } : e;
+        }),
+        AnnounceUpgrades: change.AnnounceUpgrades ?? dto.AnnounceUpgrades,
+    };
+}
+
 function settings(overrides = {}) {
     return {
         Revision: 5,
         PublicUrl: '',
         PublicUrlValid: true,
         PublicUrlSuggestion: '',
-        Message: { ShowPoster: true, ShowOverview: true, ShowRatingGenres: true, ShowOpenInJellyfin: true, ShowProviderLinks: false, AnnounceUpgrades: false },
+        Message: messageDto(),
         Batching: { QuietWindowSeconds: 120, MaxHoldMinutes: 30, ReleaseQuietSeconds: 20, DigestThreshold: 10, LateEditHours: 6, ReadyTimeoutMinutes: 15 },
-        UpdateCheck: { Enabled: true, Mode: 'SameMajor' },
+        UpdateCheck: { Enabled: true, Fixes: true, NewReleases: true, NewMajor: false },
         ProxyMode: 'System',
         ProxyUrl: '',
         HasProxyUsername: false,
@@ -385,7 +411,9 @@ test('change and input events reach the inputs map', async () => {
     assert.deepEqual(seen, [['change', 'a'], ['input', 'ab']]);
 });
 
-test('an action error lands in its own section', async () => {
+test('an action error lands in its own section', async t => {
+    const logged = [];
+    t.mock.method(console, 'error', (...args) => logged.push(args));
     const { view, hooks, el } = mount({ 'POST TgJelly/Boom': { status: 400, body: { Message: 'bad <x>' } } });
     hooks.sections.demo = { id: 'tgj-demo', load: async () => {}, render: () => '<p>demo</p>' };
     hooks.actions.boom = () => hooks.runAction('demo', () => hooks.api.post('Boom'));
@@ -394,14 +422,16 @@ test('an action error lands in its own section', async () => {
 
     clickOn(view, { 'data-tgj-act': 'boom' });
     await flush();
-    assert.ok(el('tgj-demo').innerHTML.includes('<p class="tgj-error">bad &lt;x&gt;</p>'));
+    assert.ok(el('tgj-demo').innerHTML.includes('<p class="tgj-error">bad &lt;x&gt; (HTTP 400)</p>'));
     assert.ok(el('tgj-demo').innerHTML.includes('<p>demo</p>'));
     assert.ok(!el('tgj-status').innerHTML.includes('bad'));
 
     clickOn(view, { 'data-tgj-act': 'crash' });
     await flush();
-    assert.ok(el('tgj-demo').innerHTML.includes(m.t(EN, 'web.requestFailed', { reason: 'kaput' })));
+    assert.ok(el('tgj-demo').innerHTML.includes(m.t(EN, 'web.unexpectedError', { reason: 'kaput' })));
     assert.ok(!el('tgj-demo').innerHTML.includes('bad'));
+    assert.equal(logged.length, 1, 'the crash is logged once for diagnosis');
+    assert.equal(logged[0][1].message, 'kaput');
 });
 
 test('a dirty form survives a re-show and a poll, merged onto fresh data', async () => {
@@ -518,7 +548,7 @@ test('strings failure shows the fallback line', async t => {
     const { view, el, timers } = mount({ 'GET TgJelly/Strings': { status: 500, body: { Message: 'boom' } } });
     await show(view);
 
-    assert.equal(el('tgjelly-root').textContent, 'Could not load TgJelly.');
+    assert.equal(el('tgjelly-root').textContent, 'Could not load TgJelly: HTTP 500: boom. Reload the page; if it keeps failing, check the Jellyfin log.');
     assert.equal(el('tgjelly-root').writes, 0, 'no shell without the strings');
     assert.equal(errors.length, 1);
     assert.equal(timers.active(), 0);
@@ -528,14 +558,14 @@ test('a network failure loading strings shows the fallback line', async t => {
     t.mock.method(console, 'error', () => {});
     const { view, el } = mount({ NETWORK: true });
     await show(view);
-    assert.equal(el('tgjelly-root').textContent, 'Could not load TgJelly.');
+    assert.equal(el('tgjelly-root').textContent, 'Could not load TgJelly: Failed to fetch. Reload the page; if it keeps failing, check the Jellyfin log.');
 });
 
 test('a failed status poll says so, escaped through the strings', async t => {
     t.mock.method(console, 'error', () => {});
     const { view, el } = mount({ 'GET TgJelly/Status': { status: 500, body: { Message: 'x' } } });
     await show(view);
-    assert.ok(el('tgj-status').innerHTML.includes(m.t(EN, 'web.status.failed')));
+    assert.ok(el('tgj-status').innerHTML.includes(m.t(EN, 'web.status.failed', { reason: 'HTTP 500: x', seconds: 3 })));
 });
 
 // --- core fixes from the Task 7 review ---
@@ -659,9 +689,8 @@ test('Connected closes the connect card; the Bot section names the bot once', as
     assert.ok(!html.includes('123:secret'));
 });
 
-test('Bot section access line does not repeat the username', () => {
+test('Bot section does not repeat the username', () => {
     const html = m.renderBot(status(), { OpenBot: 'https://t.me/jf_bot?start=setup' }, EN, {});
-    assert.ok(html.includes('Anyone who can open this bot'));
     assert.equal(html.split('@jf_bot').length, 2);
 });
 
@@ -784,12 +813,11 @@ test('Unreachable opens the proxy panel', async () => {
     assert.ok(!html.includes('saveProxy'), 'the proxy auto-saves: no Save button');
 });
 
-test('the Bot section shows the username, the access reminder and the buttons', async () => {
+test('the Bot section shows the username and the buttons', async () => {
     const { view, el } = mount();
     await show(view);
     const html = el('tgj-bot').innerHTML;
     assert.ok(html.includes('@jf_bot'));
-    assert.ok(html.includes('Anyone who can open this bot can manage notifications. Keep it restricted in BotFather.'));
     assert.ok(html.includes('Change token') && html.includes('Disconnect bot'));
 });
 
@@ -838,12 +866,16 @@ test('bot username is escaped', async () => {
 
 // --- auto-save helpers (plan 8, task 6) ---
 
-/** The newest cue spot for a key, as { className, textContent } (an empty one when the key has none). */
-const cue = (view, key) => ({ className: 'tgj-cue', textContent: '', ...view.cues.get(key) });
-const SAVED_CUE = { className: 'tgj-cue tgj-cue--saved', textContent: EN['web.autosave.saved'] };
-const SAVING_CUE = { className: 'tgj-cue tgj-cue--saving', textContent: EN['web.autosave.saving'] };
-const IDLE_CUE = { className: 'tgj-cue', textContent: '' };
-const errorCue = reason => ({ className: 'tgj-cue tgj-cue--error', textContent: m.text(EN, 'web.autosave.notSaved', { reason }) });
+/** The newest cue spot for a key, as { className, innerHTML } (an empty one when the key has none). */
+const cue = (view, key) => ({ className: 'tgj-cue', innerHTML: '', ...view.cues.get(key) });
+const SAVED_CUE = { className: 'tgj-cue tgj-cue--saved', innerHTML: ui.label(EN['web.autosave.saved'], 'good') };
+const SAVING_CUE = { className: 'tgj-cue tgj-cue--saving', innerHTML: ui.label(EN['web.autosave.saving'], 'progress') };
+const IDLE_CUE = { className: 'tgj-cue', innerHTML: '' };
+/** A Not saved cue: the bad label, then the reason as plain text (escaped: nothing in it is markup). */
+const errorCue = reason => ({
+    className: 'tgj-cue tgj-cue--error',
+    innerHTML: `${ui.label(EN['web.autosave.notSaved'], 'bad')} <span class="tgj-cue-reason">${ui.esc(reason)}</span>`,
+});
 /** A focus change: focus leaves the field with these attributes, for the one with to's attributes (null: outside). */
 const leave = (view, attrs, to = null) => dispatchOn(view, 'focusout', attrs, {}, { relatedTarget: to ? fakeTarget(to) : null });
 const proxyAttrs = name => ({ 'data-tgj-input': name, 'data-tgj-save': 'proxy' });
@@ -873,13 +905,50 @@ function holdPuts(api) {
 const proxyEl = el => el('tgj-proxy').innerHTML;
 
 test('the proxy form shows the stored mode, and hides the address for System', async () => {
-    const { view, el } = mount({ 'GET TgJelly/Settings': settings({ HasProxyPassword: true }) });
+    const { view, el } = mount({ 'GET TgJelly/Settings': settings({ ProxyMode: 'Http', HasProxyPassword: true }) });
     await show(view);
     const html = proxyEl(el);
-    assert.match(html, /<option value="System" selected>/);
-    assert.ok(!html.includes('data-tgj-input="proxyUrl"'));
+    assert.match(html, /<option value="Http" selected>/);
     assert.match(html, /data-tgj-input="proxyPassword"[^>]*placeholder="\(saved\)"/);
     assert.ok(!/data-tgj-input="proxyUsername"[^>]*placeholder=/.test(html));
+    const system = mount();
+    await show(system.view);
+    assert.match(proxyEl(system.el), /<option value="System" selected>/);
+    assert.ok(!proxyEl(system.el).includes('data-tgj-input="proxyUrl"'));
+});
+
+test('proxy_noProxy_hidesCredentials', async () => {
+    for (const ProxyMode of ['System', 'None']) {
+        const { view, el } = mount({ 'GET TgJelly/Settings': settings({ ProxyMode, HasProxyUsername: true }) });
+        await show(view);
+        assert.ok(!proxyEl(el).includes('proxyUsername'), ProxyMode);
+        assert.ok(!proxyEl(el).includes('proxyPassword'), ProxyMode);
+    }
+});
+
+test('proxy_socks5_showsCredentials, and hiding them again sends nothing but the mode', async () => {
+    const { view, el, api } = mount({ 'PUT TgJelly/Proxy': request => settings({ Revision: 6, ProxyMode: JSON.parse(request.data).Mode }) });
+    await show(view);
+    proxyMode(view, 'Socks5');
+    await flush();
+    assert.ok(proxyEl(el).includes('data-tgj-input="proxyUsername"'));
+    assert.ok(proxyEl(el).includes('data-tgj-input="proxyPassword"'));
+    assert.equal(putProxy(api).length, 0, 'showing sends nothing');
+    proxyMode(view, 'None');
+    await flush();
+    assert.ok(!proxyEl(el).includes('proxyUsername'));
+    leave(view, proxyAttrs('proxyMode'));
+    await flush();
+    assert.deepEqual(putProxy(api).map(b => Object.keys(b).sort()), [['ExpectedRevision', 'Mode', 'Url']], 'no credentials in the save');
+});
+
+test('proxy_hint_mentionsMtproto', async () => {
+    const { view, el } = mount();
+    await show(view);
+    assert.ok(proxyEl(el).includes(EN['web.proxy.typesHint']));
+    assert.match(EN['web.proxy.typesHint'], /SOCKS5/);
+    assert.match(EN['web.proxy.typesHint'], /HTTP/);
+    assert.match(EN['web.proxy.typesHint'], /MTProto/);
 });
 
 test('choosing Socks5 shows the address field', async () => {
@@ -944,6 +1013,61 @@ test('proxy 400 shows the field errors, escaped', async () => {
     assert.deepEqual(cue(view, 'proxy'), errorCue('Must be <host:port>'), 'the cue is text: nothing in it is markup');
     await hooks.reloadSection('proxy', { fresh: true });
     assert.ok(proxyEl(el).includes('value="nonsense"'), 'a refresh keeps what was typed');
+});
+
+// --- labels (plan 9, task 1; design §3): every state word is an outlined label ---
+
+test('cue_saved_isGoodLabel', async () => {
+    const { view, api, timers } = mount({
+        'GET TgJelly/Settings': settings({ ProxyMode: 'Http', ProxyUrl: 'p:8080' }),
+        'PUT TgJelly/Proxy': () => settings({ Revision: 6, ProxyMode: 'Http', ProxyUrl: 'p:9090' }),
+    });
+    await show(view);
+    const hold = holdPuts(api);
+    proxyType(view, 'proxyUrl', 'p:9090');
+    leave(view, proxyAttrs('proxyUrl'));
+    await flush();
+    await timers.advance(300);
+    assert.equal(view.cues.get('proxy').innerHTML, ui.label(EN['web.autosave.saving'], 'progress'), 'Saving… is a progress label');
+
+    hold.release();
+    await flush();
+    const spot = view.cues.get('proxy');
+    assert.equal(spot.className, 'tgj-cue tgj-cue--saved', 'the spot keeps its fade');
+    assert.equal(spot.innerHTML, ui.label(EN['web.autosave.saved'], 'good'));
+    assert.equal(EN['web.autosave.saved'], 'Saved');
+});
+
+test('cue_notSaved_labelPlusReason', async () => {
+    const { view } = mount({
+        'PUT TgJelly/Proxy': { status: 400, body: { Errors: [{ Field: 'Proxy.Url', Message: 'Must be <host:port>' }] } },
+    });
+    await show(view);
+    proxyMode(view, 'Http');
+    proxyType(view, 'proxyUrl', 'nonsense');
+    leave(view, proxyAttrs('proxyUrl'));
+    await flush();
+    const spot = view.cues.get('proxy');
+    assert.equal(EN['web.autosave.notSaved'], 'Not saved');
+    assert.equal(spot.className, 'tgj-cue tgj-cue--error');
+    assert.equal(spot.innerHTML, `${ui.label('Not saved', 'bad')} <span class="tgj-cue-reason">Must be &lt;host:port&gt;</span>`,
+        'the state word is a bad label, and the reason follows as plain text');
+});
+
+test('header_connected_isGoodLabel', async () => {
+    assert.deepEqual(m.connectionLabel(status(), EN), { tone: 'good', text: 'Connected · @jf_bot' });
+    assert.deepEqual(m.connectionLabel(status({ ConnectionState: 'Connecting' }), EN), { tone: 'progress', text: EN['web.header.connecting'] });
+    const { view, el } = mount();
+    await show(view);
+    assert.equal(el('tgj-conn').innerHTML, ui.label('Connected · @jf_bot', 'good'));
+});
+
+test('templateBadge_edited_isAccentLabel', () => {
+    const edited = renderTemplates(templates(), EN, tplUi({ key: 'media.digest' }));
+    assert.ok(edited.includes(ui.label(EN['web.templates.edited'], 'accent')), edited);
+    const builtIn = renderTemplates(templates(), EN, tplUi());
+    assert.ok(builtIn.includes(ui.label(EN['web.templates.builtIn'], 'neutral')), builtIn);
+    assert.ok(!/tgj-badge/.test(edited + builtIn), 'one label style, not a parallel badge');
 });
 
 // --- fix round 1: secrets stay out of the page and state ---
@@ -1160,11 +1284,11 @@ test('destList_rowsWithStateLabels_noSymbols', async () => {
         assert.ok(html.includes(`<span class="tgj-row-hint">${m.t(EN, 'web.dest.meta', { kind: EN[`dest.kind.${kind}`], preset: EN[`dest.preset.${preset}`] })}</span>`), kind);
     }
     assert.ok(html.includes('<span class="tgj-row-label">Admins</span>'));
-    assert.ok(html.includes(ui.stateLabel({ kind: 'ok', text: 'OK' })));
-    assert.ok(html.includes(ui.stateLabel({ kind: 'warning', text: 'Needs permissions' })));
-    assert.ok(html.includes(ui.stateLabel({ kind: 'warning', text: 'Photos blocked' })));
-    assert.ok(html.includes(ui.stateLabel({ kind: 'error', text: 'Topic missing' })));
-    assert.ok(html.includes(ui.stateLabel({ kind: 'error', text: 'Lost' })));
+    assert.ok(!html.includes(ui.label('OK', 'good')), 'a healthy destination shows no label');
+    assert.ok(html.includes(ui.label('Needs permissions', 'bad')));
+    assert.ok(html.includes(ui.label('Photos blocked', 'attention')));
+    assert.ok(html.includes(ui.label('Topic missing', 'bad')));
+    assert.ok(html.includes(ui.label('Lost', 'bad')));
     // The dashboard has its own words; the bot's labels keep their emoji.
     assert.equal(EN['dest.health.Ok'], '✅ OK');
     assert.equal(EN['dest.health.Lost'], '⛔ Lost');
@@ -1354,7 +1478,7 @@ test('the editor lists events by group, libraries and silent groups', async () =
     await show(view);
     await destAct(view, 'edit', { 'data-tgj-id': 'd1' });
     const html = destEl(el);
-    assert.ok(html.includes(m.t(EN, 'dest.event.security.login_failed')));
+    assert.ok(html.includes(m.t(EN, 'web.event.security.login_failed')));
     assert.ok(html.includes(m.t(EN, 'groups.security')));
     assert.ok(html.includes(m.t(EN, 'dest.preset.AdminAlerts')));
     assert.ok(html.includes('Shows &lt;i&gt;'));
@@ -1363,6 +1487,50 @@ test('the editor lists events by group, libraries and silent groups', async () =
     assert.equal(switchIn(html, 'destSilent', { 'data-tgj-group': 'media' }), true);
     assert.ok(html.includes(m.t(EN, 'dest.libraries.hint')));
     assert.ok(!html.includes(m.t(EN, 'dest.libraries.all')));
+});
+
+test('health_ok_rendersNothing', () => {
+    const row = m.renderDestinations(destinations(), LIBRARIES, LINKS, EN, { editing: null });
+    assert.ok(!row.includes('tgj-label'), 'no label in the row');
+    assert.ok(!row.includes('OK'));
+    const editor = m.renderDestinations(destinations(), LIBRARIES, LINKS, EN, { editing: 'd1' });
+    assert.ok(!editor.includes('tgj-label'), 'no label in the editor');
+    assert.ok(!editor.includes('>OK<'));
+});
+
+test('health_lost_isBadLabel', () => {
+    const lost = dest({ Health: { Status: 'Lost', PhotosBlocked: false, LastError: null, At: null } });
+    const html = m.renderDestinations(destinations({ Items: [lost] }), LIBRARIES, LINKS, EN, { editing: null });
+    assert.ok(html.includes(ui.label('Lost', 'bad')));
+});
+
+test('editor_eventsGroupedInThreeCards', () => {
+    const html = m.renderDestinations(destinations(), LIBRARIES, LINKS, EN, { editing: 'd1' });
+    const cards = html.split('<div class="tgj-subcard"').slice(1);
+    assert.equal(cards.length, 3);
+    const titles = cards.map(c => c.match(/<h3 class="tgj-subcard-title">([^<]*)<\/h3>/)[1]);
+    assert.deepEqual(titles, ['Media', 'Security', 'Server']);
+    assert.ok(cards[0].includes('data-tgj-key="media.movie"') && cards[0].includes('data-tgj-key="media.episodes"'));
+    assert.ok(cards[1].includes('data-tgj-key="security.login_failed"'));
+    assert.ok(cards[2].includes('data-tgj-key="server.started"'));
+    assert.ok(!cards[0].includes('security.login_failed'));
+});
+
+test('editor_eventLabels_haveNoGroupPrefix', () => {
+    const html = m.renderDestinations(destinations(), LIBRARIES, LINKS, EN, { editing: 'd1' });
+    const labels = [...html.matchAll(/<span class="tgj-row-label">([^<]*)<\/span>/g)].map(x => x[1]);
+    for (const k of KEYS) {
+        assert.ok(labels.includes(EN[`web.event.${k}`]), k);
+    }
+    assert.ok(labels.length > 0 && !labels.some(l => /^(Media|Security|Server):/.test(l)));
+    for (const k of Object.keys(EN).filter(k => k.startsWith('dest.event.'))) {
+        assert.ok(EN[`web.event.${k.slice('dest.event.'.length)}`], k);
+    }
+});
+
+test('botEventStrings_unchanged', () => {
+    assert.equal(EN['dest.event.media.movie'], 'Media: Movies');
+    assert.equal(EN['dest.event.server.started'], 'Server: Started');
 });
 
 test('the all-libraries line follows the library switches', async () => {
@@ -1456,7 +1624,7 @@ test('a destination save, then a settings save at once: the settings PUT sends t
     assert.equal(server.conflicts, 0, 'no 409');
     assert.equal(hooks.pageRevision(), 7);
     assert.deepEqual(cue(view, 'dest:d1:Enabled'), SAVED_CUE);
-    assert.deepEqual(cue(view, 'Message.ShowPoster'), SAVED_CUE);
+    assert.deepEqual(cue(view, toggleCue('ShowPoster')), SAVED_CUE);
 });
 
 test('the set up manually link only shows when ManualUnlocked', async () => {
@@ -1578,7 +1746,12 @@ test('add errors are shown escaped', async () => {
 // --- messages, batching, updates, diagnostics ---
 
 const putSettings = api => api.calls.filter(c => c.type === 'PUT' && c.url === '/jf/TgJelly/Settings').map(c => JSON.parse(c.data));
-const toggleAttrs = key => ({ 'data-tgj-input': 'msgToggle', 'data-tgj-key': key, 'data-tgj-field': `Message.${key}`, 'data-tgj-save': `Message.${key}`, role: 'switch' });
+/** A movie message switch, or Announce upgrades (one setting for every media message), as the Messages section renders it. */
+const toggleAttrs = key => (key === 'AnnounceUpgrades'
+    ? { 'data-tgj-input': 'msgAnnounce', 'data-tgj-field': 'Message.AnnounceUpgrades', 'data-tgj-save': 'Message.AnnounceUpgrades', role: 'switch' }
+    : { 'data-tgj-input': 'msgSwitch', 'data-tgj-id': 'media.movie', 'data-tgj-key': key, 'data-tgj-field': `Message.Switches.media.movie.${key}`, 'data-tgj-save': `msg:media.movie:${key}`, role: 'switch' });
+/** The cue key of toggleAttrs's switch. */
+const toggleCue = key => (key === 'AnnounceUpgrades' ? 'Message.AnnounceUpgrades' : `msg:media.movie:${key}`);
 /** A click on a message switch (a button with role=switch). */
 const toggle = (view, key) => dispatchOn(view, 'click', toggleAttrs(key));
 const batchAttrs = key => ({ 'data-tgj-input': 'batching', 'data-tgj-key': key, 'data-tgj-field': `Batching.${key}`, 'data-tgj-save': `Batching.${key}` });
@@ -1587,12 +1760,14 @@ const URL_ATTRS = { 'data-tgj-input': 'publicUrl', 'data-tgj-field': 'PublicUrl'
 const urlInput = (view, value) => dispatchOn(view, 'input', URL_ATTRS, { value });
 
 /** PUT Settings that saves what it is sent and moves the revision on, like the server. */
-function echoSettings(start = 5) {
+function echoSettings(start = 5, startMessage = messageDto()) {
     let revision = start;
+    let message = startMessage;
     return request => {
         const body = JSON.parse(request.data);
         revision++;
-        return settings({ Revision: revision, PublicUrl: body.PublicUrl, Message: body.Message, Batching: body.Batching, UpdateCheck: body.UpdateCheck });
+        message = mergeMessage(message, body.Message);
+        return settings({ Revision: revision, PublicUrl: body.PublicUrl, Message: message, Batching: body.Batching, UpdateCheck: body.UpdateCheck });
     };
 }
 
@@ -1621,25 +1796,29 @@ test('invalid url explains', async () => {
 });
 
 test('each message toggle is a switch with its own cue, and a save sends only its own field', async () => {
-    const { view, api, el } = mount({ 'PUT TgJelly/Settings': echoSettings() });
+    const { view, api, el, hooks } = mount({ 'PUT TgJelly/Settings': echoSettings() });
     await show(view);
     const html = el('tgj-messages').innerHTML;
     for (const key of ['ShowPoster', 'ShowOverview', 'ShowRatingGenres', 'ShowOpenInJellyfin', 'ShowProviderLinks', 'AnnounceUpgrades']) {
-        assert.ok(html.includes(`data-tgj-key="${key}"`), key);
-        assert.ok(html.includes(`data-tgj-cue="Message.${key}"`), key);
+        assert.ok(html.includes(`data-tgj-save="${toggleCue(key)}"`), key);
+        assert.ok(html.includes(`data-tgj-cue="${toggleCue(key)}"`), key);
     }
     toggle(view, 'ShowProviderLinks');
     toggle(view, 'ShowPoster');
+    toggle(view, 'AnnounceUpgrades');
     await flush();
-    const [first, second] = putSettings(api);
+    const [first, second, third] = putSettings(api);
+    // A switch belongs to the message shown (the movie, the first media message), and only that switch is sent.
     assert.equal(first.ExpectedRevision, 5);
-    assert.equal(first.Message.ShowProviderLinks, true);
-    assert.equal(first.Message.ShowPoster, true, 'the second toggle is its own save');
+    assert.deepEqual(first.Message, { PerMessage: [{ EventKey: 'media.movie', Switches: { ShowProviderLinks: true } }] });
     assert.equal(second.ExpectedRevision, 6);
-    assert.equal(second.Message.ShowProviderLinks, true);
-    assert.equal(second.Message.ShowPoster, false);
+    assert.deepEqual(second.Message, { PerMessage: [{ EventKey: 'media.movie', Switches: { ShowPoster: false } }] }, 'the second toggle is its own save');
+    assert.deepEqual(third.Message, { PerMessage: [], AnnounceUpgrades: true });
+    assert.ok(el('tgj-messages').innerHTML.includes('data-tgj-key="ShowProviderLinks"'));
+    assert.equal(hooks.state.forms.settings.base.Message.Switches.media.movie.ShowProviderLinks, true, 'the saved value shows');
+    assert.equal(hooks.state.forms.settings.base.Message.Switches.media.movie.ShowPoster, false);
     assert.equal(second.PublicUrl, '');
-    assert.deepEqual(second.UpdateCheck, { Enabled: true, Mode: 'SameMajor' });
+    assert.deepEqual(second.UpdateCheck, { Enabled: true, Fixes: true, NewReleases: true, NewMajor: false });
     assert.equal(second.Batching.QuietWindowSeconds, 120);
 });
 
@@ -1677,7 +1856,7 @@ test('a second settings 409 says the value changed elsewhere and keeps the typed
 });
 
 test('a toggle save sends the saved batching values, and a batching edit still waiting stays dirty', async () => {
-    const saved = settings({ Revision: 6, Message: { ...settings().Message, ShowProviderLinks: true } });
+    const saved = settings({ Revision: 6, Message: messageDto({ ...FLAT_MESSAGE, ShowProviderLinks: true }) });
     const { view, api, hooks } = mount({ 'PUT TgJelly/Settings': saved });
     await show(view);
     batchInput(view, 'QuietWindowSeconds', '9999');
@@ -1685,10 +1864,10 @@ test('a toggle save sends the saved batching values, and a batching edit still w
     await flush();
     const [body] = putSettings(api);
     assert.equal(body.Batching.QuietWindowSeconds, 120);
-    assert.equal(body.Message.ShowProviderLinks, true);
+    assert.equal(body.Message.PerMessage[0].Switches.ShowProviderLinks, true);
     assert.equal(hooks.state.forms.settings.local.Batching.QuietWindowSeconds, 9999);
     assert.equal(hooks.state.forms.settings.dirty, true);
-    assert.equal(hooks.state.forms.settings.base.Message.ShowProviderLinks, true);
+    assert.equal(hooks.state.forms.settings.base.Message.Switches.media.movie.ShowProviderLinks, true);
 });
 
 test('a server error on another field shows in the cue of the field that was saved', async () => {
@@ -1734,20 +1913,29 @@ test('a proxy save keeps unsaved settings edits, and a settings save keeps the p
     assert.ok(el('tgj-batching').innerHTML.includes('value="20"'));
 });
 
-test('the update switch and the mode select each save at once', async () => {
+test('updates_threeSwitches_saveAtOnce', async () => {
     const { view, api, el } = mount({ 'PUT TgJelly/Settings': echoSettings() });
     await show(view);
-    assert.match(el('tgj-updates').innerHTML, /<option value="SameMajor" selected>/);
+    for (const key of ['Fixes', 'NewReleases', 'NewMajor']) {
+        assert.ok(el('tgj-updates').innerHTML.includes(`data-tgj-cue="UpdateCheck.${key}"`), key);
+    }
+
+    assert.match(el('tgj-updates').innerHTML, /role="switch"[^>]*aria-checked="false"[^>]*data-tgj-input="updNewMajor"/);
     assert.match(el('tgj-updates').innerHTML, /role="switch"[^>]*aria-checked="true"[^>]*data-tgj-input="updEnabled"/);
     dispatchOn(view, 'click', { 'data-tgj-input': 'updEnabled', 'data-tgj-field': 'UpdateCheck.Enabled', role: 'switch' });
     await flush();
-    // A select fires input, then change: one save.
-    dispatchOn(view, 'input', { 'data-tgj-input': 'updMode', 'data-tgj-field': 'UpdateCheck.Mode' }, { value: 'AnyNewer' });
-    dispatchOn(view, 'change', { 'data-tgj-input': 'updMode', 'data-tgj-field': 'UpdateCheck.Mode' }, { value: 'AnyNewer' });
+    dispatchOn(view, 'click', { 'data-tgj-input': 'updNewMajor', 'data-tgj-field': 'UpdateCheck.NewMajor', role: 'switch' });
     await flush();
-    assert.deepEqual(putSettings(api).map(b => b.UpdateCheck), [{ Enabled: false, Mode: 'SameMajor' }, { Enabled: false, Mode: 'AnyNewer' }]);
+    dispatchOn(view, 'click', { 'data-tgj-input': 'updFixes', 'data-tgj-field': 'UpdateCheck.Fixes', role: 'switch' });
+    await flush();
+    assert.deepEqual(putSettings(api).map(b => b.UpdateCheck), [
+        { Enabled: false, Fixes: true, NewReleases: true, NewMajor: false },
+        { Enabled: false, Fixes: true, NewReleases: true, NewMajor: true },
+        { Enabled: false, Fixes: false, NewReleases: true, NewMajor: true },
+    ], 'one partial save per switch');
     assert.deepEqual(cue(view, 'UpdateCheck.Enabled'), SAVED_CUE);
-    assert.deepEqual(cue(view, 'UpdateCheck.Mode'), SAVED_CUE);
+    assert.deepEqual(cue(view, 'UpdateCheck.NewMajor'), SAVED_CUE);
+    assert.deepEqual(cue(view, 'UpdateCheck.Fixes'), SAVED_CUE);
 });
 
 test('a non-number batching value is not sent', async () => {
@@ -1757,6 +1945,21 @@ test('a non-number batching value is not sent', async () => {
     await timers.advance(800);
     assert.equal(putSettings(api).length, 0);
     assert.deepEqual(cue(view, 'Batching.MaxHoldMinutes'), errorCue(EN['web.settings.notNumber']));
+});
+
+test('diagnostics_hasInfoNoticeListingContents', async () => {
+    const { view, el } = mount();
+    await show(view);
+    const html = el('tgj-diagnostics').innerHTML;
+    assert.match(html, /tgj-notice[^"]*info|info[^>]*tgj-notice/);
+    for (const key of ['web.diag.contains', 'web.diag.never', 'web.diag.why']) {
+        assert.ok(html.includes(m.t(EN, key)) || html.includes(EN[key]), key);
+    }
+
+    assert.match(EN['web.diag.never'], /token is never included/);
+    assert.match(EN['web.diag.never'], /Log is not part of the report/);
+    assert.match(EN['web.diag.contains'], /update checks/);
+    assert.match(EN['web.diag.why'], /bug report/);
 });
 
 test('copy diagnostics writes to the clipboard', async () => {
@@ -1789,13 +1992,13 @@ function templates(overrides = {}) {
         Revision: 5,
         Items: [
             {
-                EventKey: 'movie.added', Label: 'Movie added', Media: true, Text: '<b>{{ title }}</b>', BuiltIn: '<b>{{ title }}</b>', Edited: false,
-                SampleFull: {}, SampleSparse: {}, Flag: null,
+                EventKey: 'media.movie', Label: 'Movie added', Media: true, Text: '<b>{{ title }}</b>', BuiltIn: '<b>{{ title }}</b>', Edited: false,
+                SampleFull: {}, SampleSparse: {}, Flag: null, ApplicableSwitches: ['ShowPoster', 'ShowOverview', 'ShowRatingGenres', 'ShowOpenInJellyfin', 'ShowProviderLinks'],
                 Fields: [{ Name: 'title', Type: 'string', Description: 'The <title>.', Optional: false }, { Name: 'year', Type: 'number', Description: 'The year.', Optional: true }],
             },
             {
                 EventKey: 'media.digest', Label: 'Digest', Media: false, Text: 'Hi {{ title }}', BuiltIn: 'Digest {{ count }}', Edited: true,
-                SampleFull: {}, SampleSparse: {},
+                SampleFull: {}, SampleSparse: {}, ApplicableSwitches: [],
                 Flag: { Kind: 'error', Error: 'bad <tag>', At: '2026-10-20T10:00:00Z' },
                 Fields: [{ Name: 'title', Type: 'string', Description: 'T', Optional: false }],
             },
@@ -1810,9 +2013,11 @@ function validation(overrides = {}) {
 }
 
 const tplInput = (view, name, extra, type = 'input') => dispatchOn(view, type, { 'data-tgj-input': name }, extra);
-const tplUi = (overrides = {}) => ({ key: 'movie.added', forms: {}, result: null, good: null, destinations: [{ Id: 'd1', Title: 'Family' }], ...overrides });
+const tplUi = (overrides = {}) => ({ key: 'media.movie', forms: {}, result: null, good: null, destinations: [{ Id: 'd1', Title: 'Family' }], ...overrides });
+/** The Messages section with only the templates loaded: the pickers, the template card and the preview (plan 9 Task 8). */
+const renderTemplates = (dto, S, ui) => msg.renderMessagesSection({ templates: dto, settings: null, forms: ui.forms ?? {} }, S, ui);
 /** The template textarea's attributes, as renderTemplates writes them for an event key. */
-const tplAttrs = (key = 'movie.added') => ({ 'data-tgj-input': 'tplText', 'data-tgj-key': key, 'data-tgj-save': `template:${key}` });
+const tplAttrs = (key = 'media.movie') => ({ 'data-tgj-input': 'tplText', 'data-tgj-key': key, 'data-tgj-save': `template:${key}` });
 /** Typing in the template textarea. */
 const tplType = (view, value, key) => dispatchOn(view, 'input', tplAttrs(key), { value });
 
@@ -1870,29 +2075,29 @@ test('previewHtml_tgTime_showsFallbackText', () => {
 });
 
 test('renderTemplates_builtInBadge_noResetButton', () => {
-    const html = m.renderTemplates(templates(), EN, tplUi());
-    assert.ok(html.includes(`<span class="tgj-badge">${m.t(EN, 'web.templates.builtIn')}</span>`), html);
-    assert.ok(!html.includes('tgj-badge--edited'));
+    const html = renderTemplates(templates(), EN, tplUi());
+    assert.ok(html.includes(ui.label(EN['web.templates.builtIn'], 'neutral')), html);
+    assert.ok(!html.includes(ui.label(EN['web.templates.edited'], 'accent')));
     assert.ok(!html.includes('data-tgj-act="tplReset"'));
     assert.ok(html.includes(`<h2 class="tgj-card-title">${m.t(EN, 'web.templates.title')}</h2>`));
-    // The select lists every event (templateSelect_marksEditedWithWord checks the edited mark).
-    assert.ok(html.includes('<option value="movie.added" selected>Movie added</option>'), html);
+    // The Message picker lists the section's messages (messages_pickerOptions_haveNoEditedSuffix checks the options).
+    assert.ok(html.includes(`<option value="media.movie" selected>${EN['web.event.media.movie']}</option>`), html);
 });
 
 test('renderTemplates_editedBadge_resetAsksInline', () => {
-    const html = m.renderTemplates(templates(), EN, tplUi({ key: 'media.digest' }));
-    assert.ok(html.includes(`<span class="tgj-badge tgj-badge--edited">${m.t(EN, 'web.templates.edited')}</span>`), html);
+    const html = renderTemplates(templates(), EN, tplUi({ key: 'media.digest' }));
+    assert.ok(html.includes(ui.label(EN['web.templates.edited'], 'accent')), html);
     assert.ok(html.includes('data-tgj-act="tplReset"'));
     assert.ok(!html.includes('data-tgj-act="tplResetConfirm"'));
 
-    const asking = m.renderTemplates(templates(), EN, tplUi({ key: 'media.digest', resetAsk: true }));
+    const asking = renderTemplates(templates(), EN, tplUi({ key: 'media.digest', resetAsk: true }));
     assert.ok(asking.includes(m.t(EN, 'web.templates.resetAsk')));
     assert.ok(asking.includes('data-tgj-act="tplResetConfirm"') && asking.includes('data-tgj-act="tplResetCancel"'));
     assert.ok(!asking.includes('data-tgj-act="tplReset"'));
 });
 
 test('renderTemplates_noEnabledCheckbox', () => {
-    const html = m.renderTemplates(templates(), EN, tplUi());
+    const html = renderTemplates(templates(), EN, tplUi());
     assert.ok(!html.includes('type="checkbox"'));
     assert.ok(!html.includes('tplEnabled') && !html.includes('tplSample') && !html.includes('tplValidate'));
     assert.ok(!('web.templates.enabled' in EN) && !('web.templates.digestNote' in EN));
@@ -1900,10 +2105,10 @@ test('renderTemplates_noEnabledCheckbox', () => {
 
 test('renderTemplates_gridHasPreviewPane', () => {
     const good = validation({ Html: '<b>Dune</b>' });
-    const html = m.renderTemplates(templates(), EN, tplUi({ result: good, good }));
-    const grid = html.indexOf('<div class="tgj-tpl-grid">');
+    const html = renderTemplates(templates(), EN, tplUi({ result: good, good }));
+    const grid = html.indexOf('<div class="tgj-msg-layout">');
     const textarea = html.indexOf('<textarea');
-    const fields = html.indexOf(`<summary>${m.t(EN, 'web.templates.fields')}</summary>`);
+    const fields = html.indexOf('class="tgj-tpl-tables"');
     const pane = html.indexOf('<div id="tgj-tpl-preview"');
     assert.ok(grid >= 0 && grid < textarea && textarea < fields && fields < pane, html);
     assert.ok(html.includes('>&lt;b&gt;{{ title }}&lt;/b&gt;</textarea>'));
@@ -1914,43 +2119,48 @@ test('renderTemplates_gridHasPreviewPane', () => {
 });
 
 test('renderTemplatePreview_posterPlaceholderAndButtons', () => {
-    const html = m.renderTemplatePreview(validation({
+    const result = validation({
         Html: 'Dune <i>2021</i>', Length: 9, Limit: 1024,
         Buttons: [[{ Text: 'Open <x>', Url: 'https://jf.example/web/' }], [{ Text: 'IMDb', Url: 'javascript:alert(1)' }, { Text: 'TMDB', Url: 'https://tmdb.example' }]],
-    }), EN, 'en');
+    });
+    const html = m.renderTemplatePreview(result, EN);
     assert.ok(html.includes('class="tgj-tg-poster"'), html);
     assert.ok(html.includes('Dune <i>2021</i>'));
     assert.equal((html.match(/class="tgj-tg-row"/g) ?? []).length, 2);
     assert.ok(html.includes('href="https://jf.example/web/"') && html.includes('Open &lt;x&gt;'));
     assert.ok(!html.includes('javascript:'));
     assert.ok(html.includes('IMDb'));
-    assert.ok(html.includes('9 / 1,024'));
+    // The length sits under the template (Task 8 fix round 1), not in the preview.
+    assert.ok(!html.includes('9 / 1,024'));
+    assert.ok(m.renderTemplateCheck(result, EN, 'en').includes('9 / 1,024'));
 
-    const plain = m.renderTemplatePreview(validation({ Poster: false, Html: 'x' }), EN, 'en');
+    const plain = m.renderTemplatePreview(validation({ Poster: false, Html: 'x' }), EN);
     assert.ok(!plain.includes('tgj-tg-poster'));
-    assert.equal(m.renderTemplatePreview(null, EN, 'en'), '');
+    assert.equal(m.renderTemplatePreview(null, EN), '');
+    assert.equal(m.renderTemplateCheck(null, EN, 'en'), '');
 });
 
 test('renderTemplatePreview_errorsDimLastGood', () => {
     const good = validation({ Html: '<b>last good</b>' });
     const bad = validation({ Errors: [{ Message: 'Unexpected <end>', Line: 2, Column: 7 }, { Message: 'No position' }], Warnings: ['careful & slow'], Html: '', Length: 0 });
-    const html = m.renderTemplatePreview(bad, EN, 'en', good);
-    assert.ok(html.includes('line 2, column 7: Unexpected &lt;end&gt;'), html);
-    assert.ok(html.includes('No position') && html.includes('careful &amp; slow'));
+    const html = m.renderTemplatePreview(bad, EN, good);
+    const check = m.renderTemplateCheck(bad, EN, 'en');
+    assert.ok(check.includes('line 2, column 7: Unexpected &lt;end&gt;'), check);
+    assert.ok(check.includes('No position') && check.includes('careful &amp; slow'));
     assert.ok(/class="tgj-tg-bubble[^"]*tgj-tg-stale/.test(html), html);
     assert.ok(html.includes('<b>last good</b>'));
 
-    const fresh = m.renderTemplatePreview(good, EN, 'en', good);
+    const fresh = m.renderTemplatePreview(good, EN, good);
     assert.ok(!fresh.includes('tgj-tg-stale'));
 });
 
 test('sendTest_disabledWithErrors', () => {
     const testButton = html => /<button[^>]*data-tgj-act="tplTest"[^>]*>/.exec(html)[0];
     const bad = validation({ Errors: [{ Message: 'x' }] });
-    assert.ok(testButton(m.renderTemplates(templates(), EN, tplUi({ result: bad }))).includes(' disabled'));
-    assert.ok(!testButton(m.renderTemplates(templates(), EN, tplUi({ result: validation() }))).includes(' disabled'));
-    assert.ok(testButton(m.renderTemplates(templates(), EN, tplUi({ result: validation(), testing: true }))).includes(' disabled'));
-    const none = m.renderTemplates(templates(), EN, tplUi({ result: validation(), destinations: [] }));
+    assert.ok(testButton(renderTemplates(templates(), EN, tplUi({ result: bad }))).includes(' disabled'));
+    assert.ok(!testButton(renderTemplates(templates(), EN, tplUi({ result: validation() }))).includes(' disabled'));
+    assert.ok(testButton(renderTemplates(templates(), EN, tplUi({ result: validation(), testing: true }))).includes(' disabled'));
+    const none = renderTemplates(templates(), EN, tplUi({ result: validation(), destinations: [] }));
     assert.ok(testButton(none).includes(' disabled'));
 });
 
@@ -1967,8 +2177,8 @@ function holdValidate(api) {
 test('opening the section validates the selected template at once', async () => {
     const { view, api, el } = mount({ 'GET TgJelly/Templates': templates(), 'POST TgJelly/Templates/Validate': validation({ Html: '<b>Dune</b>' }) });
     await show(view);
-    assert.deepEqual(posted(api, 'Templates/Validate'), [{ EventKey: 'movie.added', Text: '<b>{{ title }}</b>' }]);
-    assert.ok(el('tgj-templates').innerHTML.includes('<b>Dune</b>'));
+    assert.deepEqual(posted(api, 'Templates/Validate'), [{ EventKey: 'media.movie', Text: '<b>{{ title }}</b>' }]);
+    assert.ok(el('tgj-tpl-preview').innerHTML.includes('<b>Dune</b>'));
 });
 
 test('preview_ignoresStaleResponse', async () => {
@@ -1982,7 +2192,7 @@ test('preview_ignoresStaleResponse', async () => {
     assert.deepEqual(timers.timeouts(), [500, 1000], 'the preview, then the save');
     await timers.advance(500);
     assert.equal(held.length, 2);
-    assert.deepEqual(held[1].body, { EventKey: 'movie.added', Text: 'newer {{ title }}' });
+    assert.deepEqual(held[1].body, { EventKey: 'media.movie', Text: 'newer {{ title }}' });
 
     held[1].reply(validation({ Html: 'NEWER' }));
     await flush();
@@ -1996,14 +2206,14 @@ test('preview_ignoresStaleResponse', async () => {
 test('typing_doesNotRerenderTextarea', async () => {
     const { view, el, timers } = mount({ 'GET TgJelly/Templates': templates(), 'POST TgJelly/Templates/Validate': validation({ Html: 'typed' }) });
     await show(view);
-    const before = el('tgj-templates').writes;
+    const before = el('tgj-messages').writes;
     const previewBefore = el('tgj-tpl-preview').writes;
     tplType(view, 'abc');
     tplType(view, 'abcd');
     await flush();
     assert.deepEqual(timers.timeouts(), [500, 1000], 'one preview debounce and one save debounce, each restarted');
     await timers.advance(500);
-    assert.equal(el('tgj-templates').writes, before, 'the section, and so the textarea, is not written again');
+    assert.equal(el('tgj-messages').writes, before, 'the section, and so the textarea, is not written again');
     assert.equal(el('tgj-tpl-preview').writes, previewBefore + 1, 'only the preview pane is replaced');
     assert.ok(el('tgj-tpl-preview').innerHTML.includes('typed'));
 });
@@ -2016,7 +2226,7 @@ test('a validate failure shows in the preview and keeps the last good preview, d
     tplType(view, '{{');
     await timers.advance(500);
     const pane = el('tgj-tpl-preview').innerHTML;
-    assert.ok(pane.includes('line 1, column 3: Unexpected end'), pane);
+    assert.ok(el('tgj-tpl-check').innerHTML.includes('line 1, column 3: Unexpected end'), 'the error, under the template');
     assert.ok(pane.includes('tgj-tg-stale') && pane.includes('good one'));
 });
 
@@ -2024,14 +2234,14 @@ test('switching events keeps unsaved text, validates at once and drops the pendi
     const { view, el, api, timers } = mount({ 'GET TgJelly/Templates': templates(), 'POST TgJelly/Templates/Validate': validation() });
     await show(view);
     tplType(view, 'draft one');
-    tplInput(view, 'tplEvent', { value: 'media.digest' }, 'change');
+    tplInput(view, 'msgKey', { value: 'media.digest' }, 'change');
     await flush();
     assert.deepEqual(timers.timeouts(), [1000], 'the preview debounce is dropped; the save of the draft still waits');
-    assert.ok(el('tgj-templates').innerHTML.includes('>Hi {{ title }}</textarea>'));
+    assert.ok(el('tgj-messages').innerHTML.includes('>Hi {{ title }}</textarea>'));
     assert.deepEqual(posted(api, 'Templates/Validate').at(-1), { EventKey: 'media.digest', Text: 'Hi {{ title }}' });
-    tplInput(view, 'tplEvent', { value: 'movie.added' }, 'change');
+    tplInput(view, 'msgKey', { value: 'media.movie' }, 'change');
     await flush();
-    assert.ok(el('tgj-templates').innerHTML.includes('>draft one</textarea>'));
+    assert.ok(el('tgj-messages').innerHTML.includes('>draft one</textarea>'));
 });
 
 test('reset asks inline, cancel keeps the template, confirm sends DELETE with the revision', async () => {
@@ -2043,21 +2253,21 @@ test('reset asks inline, cancel keeps the template, confirm sends DELETE with th
         'DELETE TgJelly/Templates/media.digest': after,
     });
     await show(view);
-    tplInput(view, 'tplEvent', { value: 'media.digest' }, 'change');
+    tplInput(view, 'msgKey', { value: 'media.digest' }, 'change');
     await flush();
     await click(view, 'tplReset');
-    assert.ok(el('tgj-templates').innerHTML.includes(m.t(EN, 'web.templates.resetAsk')));
+    assert.ok(el('tgj-messages').innerHTML.includes(m.t(EN, 'web.templates.resetAsk')));
     await click(view, 'tplResetCancel');
-    assert.ok(!el('tgj-templates').innerHTML.includes(m.t(EN, 'web.templates.resetAsk')));
+    assert.ok(!el('tgj-messages').innerHTML.includes(m.t(EN, 'web.templates.resetAsk')));
     assert.ok(!api.calls.some(c => c.type === 'DELETE'));
 
     await click(view, 'tplReset');
     await click(view, 'tplResetConfirm');
     const del = api.calls.find(c => c.type === 'DELETE');
     assert.equal(del.url, '/jf/TgJelly/Templates/media.digest?expectedRevision=5');
-    const html = el('tgj-templates').innerHTML;
+    const html = el('tgj-messages').innerHTML;
     assert.ok(html.includes('>Digest {{ count }}</textarea>'), html);
-    assert.ok(html.includes(`<span class="tgj-badge">${m.t(EN, 'web.templates.builtIn')}</span>`));
+    assert.ok(html.includes(ui.label(EN['web.templates.builtIn'], 'neutral')));
     assert.ok(!html.includes(m.t(EN, 'web.templates.resetAsk')));
     assert.deepEqual(posted(api, 'Templates/Validate').at(-1), { EventKey: 'media.digest', Text: 'Digest {{ count }}' });
 });
@@ -2071,16 +2281,16 @@ test('send test posts the typed text to the chosen destination and shows the out
         'POST TgJelly/Templates/Test': () => reply,
     });
     await show(view);
-    assert.ok(el('tgj-templates').innerHTML.includes('<option value="d2">Admins &lt;x&gt;</option>'));
+    assert.ok(el('tgj-messages').innerHTML.includes('<option value="d2">Admins &lt;x&gt;</option>'));
     tplType(view, 'Test {{ title }}');
     tplInput(view, 'tplTestTo', { value: 'd2' }, 'change');
     await click(view, 'tplTest');
-    assert.deepEqual(posted(api, 'Templates/Test'), [{ EventKey: 'movie.added', Text: 'Test {{ title }}', DestinationId: 'd2' }]);
-    assert.ok(el('tgj-templates').innerHTML.includes(m.t(EN, 'web.templates.sent')));
+    assert.deepEqual(posted(api, 'Templates/Test'), [{ EventKey: 'media.movie', Text: 'Test {{ title }}', DestinationId: 'd2' }]);
+    assert.ok(el('tgj-messages').innerHTML.includes(m.t(EN, 'web.templates.sent')));
 
     reply = { Sent: false, Error: 'Bot was <kicked>', Health: { Status: 'Lost' } };
     await click(view, 'tplTest');
-    const html = el('tgj-templates').innerHTML;
+    const html = el('tgj-messages').innerHTML;
     assert.ok(html.includes('Bot was &lt;kicked&gt;'), html);
     assert.ok(!html.includes(`>${m.t(EN, 'web.templates.sent')}<`));
 });
@@ -2095,25 +2305,25 @@ test('the send test button is disabled while a send is in flight', async () => {
         : original(request));
     clickOn(view, { 'data-tgj-act': 'tplTest' });
     await flush();
-    assert.ok(/<button[^>]*data-tgj-act="tplTest"[^>]*disabled/.test(el('tgj-templates').innerHTML));
+    assert.ok(/<button[^>]*data-tgj-act="tplTest"[^>]*disabled/.test(el('tgj-messages').innerHTML));
     finish();
     await flush();
-    assert.ok(!/<button[^>]*data-tgj-act="tplTest"[^>]*disabled/.test(el('tgj-templates').innerHTML));
+    assert.ok(!/<button[^>]*data-tgj-act="tplTest"[^>]*disabled/.test(el('tgj-messages').innerHTML));
 });
 
 test('flag shown for flagged key', async () => {
     const { view, el } = mount({ 'GET TgJelly/Templates': templates() });
     await show(view);
-    tplInput(view, 'tplEvent', { value: 'media.digest' }, 'change');
+    tplInput(view, 'msgKey', { value: 'media.digest' }, 'change');
     await flush();
-    const html = el('tgj-templates').innerHTML;
+    const html = el('tgj-messages').innerHTML;
     assert.ok(html.includes(m.t(EN, 'web.templates.flagError')));
     assert.ok(m.t(EN, 'web.templates.flagError').includes('so the built-in template was used instead:'));
     assert.ok(!html.includes(m.t(EN, 'web.templates.flagTruncated')));
     assert.ok(html.includes('bad &lt;tag&gt;'));
-    tplInput(view, 'tplEvent', { value: 'movie.added' }, 'change');
+    tplInput(view, 'msgKey', { value: 'media.movie' }, 'change');
     await flush();
-    assert.ok(!el('tgj-templates').innerHTML.includes('bad &lt;tag&gt;'));
+    assert.ok(!el('tgj-messages').innerHTML.includes('bad &lt;tag&gt;'));
 });
 
 test('a truncated flag says the message was shortened, not that the template failed', async () => {
@@ -2121,9 +2331,9 @@ test('a truncated flag says the message was shortened, not that the template fai
     dto.Items[1].Flag = { Kind: 'truncated', Error: '', At: '2026-10-20T10:00:00Z' };
     const { view, el } = mount({ 'GET TgJelly/Templates': dto });
     await show(view);
-    tplInput(view, 'tplEvent', { value: 'media.digest' }, 'change');
+    tplInput(view, 'msgKey', { value: 'media.digest' }, 'change');
     await flush();
-    const html = el('tgj-templates').innerHTML;
+    const html = el('tgj-messages').innerHTML;
     assert.ok(html.includes(m.t(EN, 'web.templates.flagTruncated')));
     assert.ok(!html.includes(m.t(EN, 'web.templates.flagError')));
 });
@@ -2131,18 +2341,18 @@ test('a truncated flag says the message was shortened, not that the template fai
 test('template section shows events, fields and the docs link', async () => {
     const { view, el } = mount({ 'GET TgJelly/Templates': templates() });
     await show(view);
-    const html = el('tgj-templates').innerHTML;
+    const html = el('tgj-messages').innerHTML;
     // Spec §6.1: the guide link sits under the template, after the fields list, inside the left column.
     const link = html.indexOf('href="https://github.com/MrSnowball-dev/tgjelly_plugin/blob/main/docs/templates.md"');
-    const left = html.indexOf('<div class="tgj-tpl-edit">');
+    const left = html.indexOf('<div class="tgj-tpl-edit"');
     const textarea = html.indexOf('<textarea');
-    const fieldsEnd = html.indexOf('</details>', html.indexOf(`<summary>${m.t(EN, 'web.templates.fields')}</summary>`));
+    const fieldsEnd = html.indexOf('data-tgj-id="formatting"');
     const pane = html.indexOf('<div id="tgj-tpl-preview"');
     assert.ok(left >= 0 && left < textarea && textarea < fieldsEnd && fieldsEnd < link && link < pane, html);
     assert.equal(html.split('docs/templates.md').length, 2, 'one guide link');
     const intro = html.indexOf(m.t(EN, 'web.templates.intro'));
     assert.ok(intro >= 0 && intro < left, 'the intro stays at the top');
-    assert.ok(html.includes('Movie added') && html.includes('Digest'));
+    assert.ok(html.includes(EN['web.event.media.movie']) && html.includes('Digest'));
     assert.ok(html.includes('The &lt;title&gt;.'));
     assert.ok(/<textarea class="[^"]*\btgj-template-text\b/.test(html));
 });
@@ -2162,7 +2372,7 @@ test('a spoiler in the preview is revealed on click', async () => {
 /** The template PUTs, as [path, body]. */
 const tplPuts = api => api.calls.filter(c => c.type === 'PUT' && c.url.startsWith('/jf/TgJelly/Templates/'))
     .map(c => [c.url.replace('/jf/TgJelly/', ''), JSON.parse(c.data)]);
-const TPL_CUE = 'template:movie.added';
+const TPL_CUE = 'template:media.movie';
 /** A Validate route: errors for any text holding "oops", none otherwise. */
 const validateOops = request => (JSON.parse(request.data).Text.includes('oops')
     ? validation({ Errors: [{ Message: 'Unexpected end', Line: 1, Column: 3 }], Html: '', Length: 0 })
@@ -2174,7 +2384,7 @@ test('template_autosavesAfter1s', async () => {
     const { view, api, el, hooks, timers } = mount({
         'GET TgJelly/Templates': templates(),
         'POST TgJelly/Templates/Validate': validation(),
-        'PUT TgJelly/Templates/movie.added': after,
+        'PUT TgJelly/Templates/media.movie': after,
     });
     await show(view);
     tplType(view, 'New');
@@ -2182,16 +2392,16 @@ test('template_autosavesAfter1s', async () => {
     tplType(view, 'New {{ title }}');
     await timers.advance(999);
     assert.deepEqual(tplPuts(api), [], 'nothing is sent until 1 s after the last keystroke');
-    assert.deepEqual(posted(api, 'Templates/Validate').at(-1), { EventKey: 'movie.added', Text: 'New {{ title }}' }, 'the preview keeps its 500 ms debounce');
+    assert.deepEqual(posted(api, 'Templates/Validate').at(-1), { EventKey: 'media.movie', Text: 'New {{ title }}' }, 'the preview keeps its 500 ms debounce');
 
     await timers.advance(1);
-    assert.deepEqual(tplPuts(api), [['Templates/movie.added', { ExpectedRevision: 5, Text: 'New {{ title }}' }]]);
+    assert.deepEqual(tplPuts(api), [['Templates/media.movie', { ExpectedRevision: 5, Text: 'New {{ title }}' }]]);
     assert.deepEqual(cue(view, TPL_CUE), SAVED_CUE);
-    const html = el('tgj-templates').innerHTML;
+    const html = el('tgj-messages').innerHTML;
     assert.ok(html.includes(`>${EN['web.templates.edited']}</span>`), 'the badge follows the save');
     assert.ok(html.includes('>New {{ title }}</textarea>'));
     assert.equal(hooks.pageRevision(), 6, 'the reply moves the page revision');
-    assert.equal(hooks.state.forms['tpl:movie.added'].dirty, false);
+    assert.equal(hooks.state.forms['tpl:media.movie'].dirty, false);
     assert.equal(hooks.pendingFields.size, 0, 'the textarea follows the server again');
 
     await timers.advance(2000);
@@ -2203,7 +2413,7 @@ test('template_withErrors_notSaved', async () => {
     const { view, api, hooks, timers } = mount({
         'GET TgJelly/Templates': templates(),
         'POST TgJelly/Templates/Validate': validateOops,
-        'PUT TgJelly/Templates/movie.added': templates({ Revision: 6 }),
+        'PUT TgJelly/Templates/media.movie': templates({ Revision: 6 }),
     });
     await show(view);
     tplType(view, 'Hi {{ oops');
@@ -2217,18 +2427,18 @@ test('template_withErrors_notSaved', async () => {
     await timers.advance(5000);
     assert.deepEqual(tplPuts(api), []);
     assert.deepEqual(cue(view, TPL_CUE), errorCue(EN['web.templates.notSavedErrors']));
-    assert.equal(hooks.state.forms['tpl:movie.added'].local.Text, 'Hi {{ oops', 'the typed text is kept');
+    assert.equal(hooks.state.forms['tpl:media.movie'].local.Text, 'Hi {{ oops', 'the typed text is kept');
 });
 
 test('a template with errors is not saved while its preview check is still on its way: the save checks that text first', async () => {
-    const { view, api, timers } = mount({ 'GET TgJelly/Templates': templates(), 'PUT TgJelly/Templates/movie.added': templates({ Revision: 6 }) });
+    const { view, api, timers } = mount({ 'GET TgJelly/Templates': templates(), 'PUT TgJelly/Templates/media.movie': templates({ Revision: 6 }) });
     const held = holdValidate(api);
     await show(view);
     held[0].reply(validation());
     tplType(view, 'Hi {{ oops');
     await timers.advance(1000);
     assert.equal(held.length, 3, 'the preview check, then the save asks for its own');
-    assert.deepEqual(held[2].body, { EventKey: 'movie.added', Text: 'Hi {{ oops' });
+    assert.deepEqual(held[2].body, { EventKey: 'media.movie', Text: 'Hi {{ oops' });
     assert.deepEqual(tplPuts(api), [], 'nothing is sent before the check comes back');
 
     for (const request of held.slice(1)) {
@@ -2244,7 +2454,7 @@ test('template_empty_notSaved', async () => {
     const { view, api, hooks, timers } = mount({
         'GET TgJelly/Templates': templates(),
         'POST TgJelly/Templates/Validate': validation(),
-        'PUT TgJelly/Templates/movie.added': templates({ Revision: 6 }),
+        'PUT TgJelly/Templates/media.movie': templates({ Revision: 6 }),
     });
     await show(view);
     for (const value of ['', '   \n\t ']) {
@@ -2256,14 +2466,14 @@ test('template_empty_notSaved', async () => {
         assert.deepEqual(cue(view, TPL_CUE), errorCue(EN['web.templates.notSavedEmpty']), JSON.stringify(value));
     }
 
-    assert.equal(hooks.state.forms['tpl:movie.added'].local.Text, '   \n\t ');
+    assert.equal(hooks.state.forms['tpl:media.movie'].local.Text, '   \n\t ');
 });
 
 test('template_fixedAfterError_saves', async () => {
     const { view, api, timers } = mount({
         'GET TgJelly/Templates': templates(),
         'POST TgJelly/Templates/Validate': validateOops,
-        'PUT TgJelly/Templates/movie.added': templates({ Revision: 6 }),
+        'PUT TgJelly/Templates/media.movie': templates({ Revision: 6 }),
     });
     await show(view);
     tplType(view, 'Hi {{ oops');
@@ -2272,7 +2482,7 @@ test('template_fixedAfterError_saves', async () => {
 
     tplType(view, 'Hi {{ title }}');
     await timers.advance(1000);
-    assert.deepEqual(tplPuts(api), [['Templates/movie.added', { ExpectedRevision: 5, Text: 'Hi {{ title }}' }]]);
+    assert.deepEqual(tplPuts(api), [['Templates/media.movie', { ExpectedRevision: 5, Text: 'Hi {{ title }}' }]]);
     assert.deepEqual(cue(view, TPL_CUE), SAVED_CUE);
 });
 
@@ -2283,7 +2493,7 @@ test('a template save conflict takes the server data and retries once; a second 
     const first = mount({
         'GET TgJelly/Templates': templates(),
         'POST TgJelly/Templates/Validate': validation(),
-        'PUT TgJelly/Templates/movie.added': () => answers.shift(),
+        'PUT TgJelly/Templates/media.movie': () => answers.shift(),
     });
     await show(first.view);
     tplType(first.view, 'mine');
@@ -2294,16 +2504,16 @@ test('a template save conflict takes the server data and retries once; a second 
     const again = mount({
         'GET TgJelly/Templates': templates(),
         'POST TgJelly/Templates/Validate': validation(),
-        'PUT TgJelly/Templates/movie.added': { status: 409, body: { Current: fresh } },
+        'PUT TgJelly/Templates/media.movie': { status: 409, body: { Current: fresh } },
     });
     await show(again.view);
     tplType(again.view, 'mine');
     await again.timers.advance(1000);
     assert.equal(tplPuts(again.api).length, 2, 'retried once only');
     assert.deepEqual(cue(again.view, TPL_CUE), errorCue(EN['web.autosave.conflict']));
-    assert.ok(again.el('tgj-templates').innerHTML.includes('>mine</textarea>'), 'the typed text is kept');
+    assert.ok(again.el('tgj-messages').innerHTML.includes('>mine</textarea>'), 'the typed text is kept');
     assert.equal(again.hooks.state.templates.Revision, 9);
-    assert.equal(again.hooks.state.forms['tpl:movie.added'].dirty, true);
+    assert.equal(again.hooks.state.forms['tpl:media.movie'].dirty, true);
 });
 
 test('reset drops a template save still waiting, so the typed text does not come back', async () => {
@@ -2316,23 +2526,23 @@ test('reset drops a template save still waiting, so the typed text does not come
         'PUT TgJelly/Templates/media.digest': templates({ Revision: 6 }),
     });
     await show(view);
-    tplInput(view, 'tplEvent', { value: 'media.digest' }, 'change');
+    tplInput(view, 'msgKey', { value: 'media.digest' }, 'change');
     await flush();
     tplType(view, 'typed', 'media.digest');
     await click(view, 'tplReset');
     await click(view, 'tplResetConfirm');
     await timers.advance(3000);
     assert.deepEqual(tplPuts(api), []);
-    assert.ok(el('tgj-templates').innerHTML.includes('>Digest {{ count }}</textarea>'));
+    assert.ok(el('tgj-messages').innerHTML.includes('>Digest {{ count }}</textarea>'));
     assert.deepEqual(cue(view, 'template:media.digest'), IDLE_CUE);
 });
 
 test('noSaveButton_inTemplates', () => {
-    for (const key of ['movie.added', 'media.digest']) {
-        const html = m.renderTemplates(templates(), EN, tplUi({ key, result: validation(), good: validation() }));
+    for (const key of ['media.movie', 'media.digest']) {
+        const html = renderTemplates(templates(), EN, tplUi({ key, result: validation(), good: validation() }));
         assert.ok(!html.includes('tplSave'), key);
         assert.ok(!/emby-|selectContainer|sectionTitle|verticalSection|fieldDescription|tgj-changed/.test(html), `${key}: only the dashboard components`);
-        assert.ok(html.startsWith('<section class="tgj-card'), 'a card');
+        assert.ok(html.includes('<section class="tgj-card tgj-tpl"'), 'a card');
         // The text saves itself: the textarea names its save key, and the cue sits beside the textarea's label.
         const textarea = /<textarea[^>]*>/.exec(html)[0];
         assert.ok(textarea.includes(`data-tgj-save="template:${key}"`) && textarea.includes(`data-tgj-key="${key}"`), textarea);
@@ -2347,16 +2557,6 @@ test('noSaveButton_inTemplates', () => {
     assert.ok(!SOURCE.includes('tplSave'));
 });
 
-test('templateSelect_marksEditedWithWord', () => {
-    const html = m.renderTemplates(templates(), EN, tplUi());
-    const select = /<select[^>]*data-tgj-input="tplEvent"[^>]*>[\s\S]*?<\/select>/.exec(html)[0];
-    assert.ok(select.includes('<option value="movie.added" selected>Movie added</option>'), select);
-    const edited = m.t(EN, 'web.templates.eventEdited', { label: 'Digest' });
-    assert.ok(edited.includes(EN['web.templates.edited']), edited);
-    assert.ok(select.includes(`<option value="media.digest">${edited}</option>`), select);
-    assert.ok(!html.includes('●'));
-});
-
 test('the page is a thin shell: the stylesheet and the root, no inline styles', () => {
     const page = readFileSync(new URL('../../src/Jellyfin.Plugin.TgJelly/Web/tgjelly.html', import.meta.url), 'utf8');
     assert.match(page, /^<div data-role="page" id="tgjConfigPage" [^>]*data-controller="__plugin\/tgjelly.js">/);
@@ -2365,7 +2565,7 @@ test('the page is a thin shell: the stylesheet and the root, no inline styles', 
     assert.ok(!page.includes('<style'), 'the old rules live in tgjelly.css');
     assert.ok(!page.includes('${'));
     const css = readFileSync(new URL('../../src/Jellyfin.Plugin.TgJelly/Web/tgjelly.css', import.meta.url), 'utf8');
-    assert.ok(css.includes('#tgjelly-root .tgj-tpl-grid'), 'the template editor rules moved');
+    assert.ok(css.includes('#tgjelly-root .tgj-msg-layout'), 'the Messages layout rules');
     assert.ok(css.includes('#tgjelly-root .tgj-tg-bubble'), 'the preview bubble rules moved, tgj-tg- prefixed');
 });
 
@@ -2387,8 +2587,13 @@ test('every t(…) key used in tgjelly.js exists in en.json', () => {
 // Sent by TgJellyController as the Connected status message, not rendered by the page itself.
 const SERVER_SIDE_KEY = 'web.status.connected';
 
+// Filled in by the server's LogRecorder: the Log rows arrive with these texts already in them.
+const SERVER_SIDE_PREFIXES = ['web.log.why.', 'web.log.advice.', 'web.log.right.', 'web.log.duration.', 'web.log.title.', 'web.log.noDetails'];
+
 test('every web.* key in en.json is used by tgjelly.js', () => {
-    for (const key of Object.keys(EN).filter(k => k.startsWith('web.') && k !== SERVER_SIDE_KEY)) {
+    // web.event.* keys are built from the catalog's event keys (editor_eventLabels_haveNoGroupPrefix covers them).
+    const serverSide = k => k === SERVER_SIDE_KEY || SERVER_SIDE_PREFIXES.some(p => k.startsWith(p));
+    for (const key of Object.keys(EN).filter(k => k.startsWith('web.') && !k.startsWith('web.event.') && !serverSide(k))) {
         const base = key.replace(/\.(one|other)$/, '');
         assert.ok(SOURCE.includes(`'${base}'`), key);
     }
@@ -2418,7 +2623,7 @@ function oneRevisionServer() {
         'PUT TgJelly/Settings': r => conflictOr(r, () => settings({ Revision: server.revision }), () => settings({ Revision: server.revision })),
         // Like the server, the reply carries the Revision the change moved to.
         'PUT TgJelly/Destinations/d1': r => conflictOr(r, () => ({ ...dest({ Enabled: false }), Revision: server.revision }), () => destinations({ Revision: server.revision, Items: server.items })),
-        'PUT TgJelly/Templates/movie.added': r => conflictOr(r, tpl, tpl),
+        'PUT TgJelly/Templates/media.movie': r => conflictOr(r, tpl, tpl),
     };
     return server;
 }
@@ -2445,15 +2650,15 @@ test('a destination change, then a template save and a settings save: each sends
     await flip(view, 'destEnabled', { 'data-tgj-id': 'd1', 'data-tgj-save': 'dest:d1:Enabled' });
     tplType(view, 'New {{ title }}');
     await timers.advance(1000);
-    assert.deepEqual(cue(view, 'template:movie.added'), SAVED_CUE);
+    assert.deepEqual(cue(view, 'template:media.movie'), SAVED_CUE);
     toggle(view, 'ShowPoster');
     await flush();
 
     const revisions = api.calls.filter(c => c.type === 'PUT').map(c => JSON.parse(c.data).ExpectedRevision);
     assert.deepEqual(revisions, [5, 6, 7]);
     assert.equal(server.revision, 8);
-    assert.ok(!el('tgj-templates').innerHTML.includes(m.t(EN, 'web.templates.conflict')));
-    assert.deepEqual(cue(view, 'Message.ShowPoster'), SAVED_CUE);
+    assert.ok(!el('tgj-messages').innerHTML.includes(m.t(EN, 'web.templates.conflict')));
+    assert.deepEqual(cue(view, toggleCue('ShowPoster')), SAVED_CUE);
 });
 
 test('a status poll with a higher revision reloads the sections, keeping unsaved edits', async () => {
@@ -2486,7 +2691,7 @@ test('a status poll with a higher revision reloads the sections, keeping unsaved
 // --- the template textarea keeps its caret across section renders (final review M11) ---
 
 /** The template textarea as a live field: every write of the templates section replaces it (see liveFields). */
-const liveTextarea = (view, doc) => liveFields(view, doc, 'tgj-templates', [{ tag: 'textarea', attributes: { 'data-tgj-input': 'tplText', 'data-tgj-key': 'movie.added' } }]);
+const liveTextarea = (view, doc) => liveFields(view, doc, 'tgj-messages', [{ tag: 'textarea', attributes: { 'data-tgj-input': 'tplText', 'data-tgj-key': 'media.movie' } }]);
 
 test('a Destinations render while typing keeps the textarea focus, selection and scroll', async () => {
     const server = oneRevisionServer();
@@ -2497,13 +2702,13 @@ test('a Destinations render while typing keeps the textarea focus, selection and
     typing.focus();
     Object.assign(typing, { selectionStart: 3, selectionEnd: 5, selectionDirection: 'forward', scrollTop: 40, scrollLeft: 2 });
     tplType(view, 'abcdef {{ title }}');
-    const writes = el('tgj-templates').writes;
+    const writes = el('tgj-messages').writes;
 
     // Toggling a destination renders Destinations, which renders the templates section with the typed text.
     await flip(view, 'destEnabled', { 'data-tgj-id': 'd1', 'data-tgj-save': 'dest:d1:Enabled' });
 
-    assert.ok(el('tgj-templates').writes > writes, 'the section was written again');
-    assert.ok(el('tgj-templates').innerHTML.includes('abcdef {{ title }}</textarea>'), 'the unsaved text is kept');
+    assert.ok(el('tgj-messages').writes > writes, 'the section was written again');
+    assert.ok(el('tgj-messages').innerHTML.includes('abcdef {{ title }}</textarea>'), 'the unsaved text is kept');
     const now = textarea();
     assert.notEqual(now, typing, 'the textarea was replaced');
     assert.equal(doc.activeElement, now);
@@ -2519,11 +2724,11 @@ test('a render without the textarea focused does not take the focus', async () =
     const textarea = liveTextarea(view, doc);
     doc.activeElement = null;
     tplType(view, 'typed elsewhere');
-    const writes = el('tgj-templates').writes;
+    const writes = el('tgj-messages').writes;
 
     await flip(view, 'destEnabled', { 'data-tgj-id': 'd1', 'data-tgj-save': 'dest:d1:Enabled' });
 
-    assert.ok(el('tgj-templates').writes > writes);
+    assert.ok(el('tgj-messages').writes > writes);
     assert.equal(textarea().focusCalls, 0);
     assert.equal(doc.activeElement, null);
 });
@@ -2549,28 +2754,28 @@ function shownSection(el) {
 }
 
 const HOSTS = {
-    overview: ['tgj-connect', 'tgj-status', 'tgj-bot', 'tgj-summary'],
+    overview: ['tgj-connect', 'tgj-status', 'tgj-bot'],
     destinations: ['tgj-destinations'],
     messages: ['tgj-messages'],
-    templates: ['tgj-templates'],
-    advanced: ['tgj-proxy', 'tgj-batching', 'tgj-updates', 'tgj-manual', 'tgj-diagnostics'],
+    advanced: ['tgj-proxy', 'tgj-updates', 'tgj-batching', 'tgj-manual', 'tgj-diagnostics'],
+    log: ['tgj-log'],
 };
 
 test('shell_rendersAllSections_onlyActiveVisible', () => {
-    assert.deepEqual(m.SECTIONS, ['overview', 'destinations', 'messages', 'templates', 'advanced']);
+    assert.deepEqual(m.SECTIONS, ['overview', 'destinations', 'messages', 'advanced', 'log']);
     const html = m.renderShell(EN, {
         active: 'messages',
-        connection: { kind: 'ok', text: 'Connected · @jf_bot' },
-        counts: { destinations: '3', templates: '1 edited' },
+        connection: { tone: 'good', text: 'Connected · @jf_bot' },
+        counts: { destinations: '3', messages: '1 edited' },
     });
 
     assert.match(html, /<h1 class="tgj-header-title">TgJelly<\/h1>/);
-    assert.ok(html.includes(ui.stateLabel({ kind: 'ok', text: 'Connected · @jf_bot' })), 'the connection is a state label');
+    assert.ok(html.includes(ui.label('Connected · @jf_bot', 'good')), 'the connection is a state label');
     assert.match(html, /<nav class="tgj-sidebar" aria-label="[^"]+">/);
 
     const nav = shellNav(html);
     assert.deepEqual([...nav.keys()], m.SECTIONS);
-    const labels = { overview: 'Overview', destinations: 'Destinations', messages: 'Messages', templates: 'Templates', advanced: 'Advanced' };
+    const labels = { overview: 'Overview', destinations: 'Destinations', messages: 'Messages', advanced: 'Advanced', log: 'Log' };
     for (const [name, button] of nav) {
         assert.equal(EN[`web.nav.${name}`], labels[name]);
         assert.ok(button.includes(`<span class="tgj-nav-label">${labels[name]}</span>`), button);
@@ -2579,7 +2784,7 @@ test('shell_rendersAllSections_onlyActiveVisible', () => {
     }
 
     assert.match(nav.get('destinations'), /<span id="tgj-nav-count-destinations" class="tgj-nav-count">3<\/span>/);
-    assert.match(nav.get('templates'), /<span id="tgj-nav-count-templates" class="tgj-nav-count">1 edited<\/span>/);
+    assert.match(nav.get('messages'), /<span id="tgj-nav-count-messages" class="tgj-nav-count">1 edited<\/span>/);
     assert.match(nav.get('overview'), /<span id="tgj-nav-count-overview" class="tgj-nav-count"><\/span>/);
 
     const sections = shellSections(html);
@@ -2591,14 +2796,13 @@ test('shell_rendersAllSections_onlyActiveVisible', () => {
         assert.deepEqual(ids, HOSTS[name], `${name} holds today's containers, in order`);
     }
 
-    // Templates sit between Messages and Advanced, outside Advanced (as in v0.3).
-    assert.ok(html.indexOf('id="tgj-messages"') < html.indexOf('id="tgj-templates"'));
-    assert.ok(html.indexOf('id="tgj-templates"') < html.indexOf('data-tgj-section="advanced"'));
+    // The templates live in Messages now (plan 9): there is no Templates section or host.
+    assert.ok(!html.includes('id="tgj-templates"'));
     assert.doesNotMatch(html, /[●✓✔✅⚠❌✗🟢🔴]/u);
 });
 
 test('renderShell escapes the label and counts, and an unknown active section shows Overview', () => {
-    const html = m.renderShell(EN, { active: 'nope', connection: { kind: 'warning', text: '<b>x</b>' }, counts: { destinations: '<i>' } });
+    const html = m.renderShell(EN, { active: 'nope', connection: { tone: 'attention', text: '<b>x</b>' }, counts: { destinations: '<i>' } });
     assert.ok(html.includes('&lt;b&gt;x&lt;/b&gt;') && !html.includes('<b>x</b>'));
     assert.ok(html.includes('class="tgj-nav-count">&lt;i&gt;</span>'));
     const hidden = [...shellSections(html)].filter(([, s]) => !/\shidden(\s|$)/.test(s.attrs)).map(([name]) => name);
@@ -2613,12 +2817,12 @@ test('text is the plain-text lookup: no escaping, same fallbacks as t', () => {
     assert.equal(m.pluralText({ 'x.one': "{count} chat's", 'x.other': '{count} chats' }, 'x', 1000), '1,000 chats');
 });
 
-test('connectionLabel: connected names the bot, no token is muted, problems are a warning', () => {
-    assert.deepEqual(m.connectionLabel(status(), EN), { kind: 'ok', text: 'Connected · @jf_bot' });
-    assert.deepEqual(m.connectionLabel(status({ HasToken: false, BotUsername: null, ConnectionState: 'NoToken' }), EN), { kind: 'muted', text: EN['web.header.notConnected'] });
-    assert.deepEqual(m.connectionLabel(status({ ConnectionState: 'TokenRejected' }), EN), { kind: 'warning', text: EN['web.header.attention'] });
-    assert.deepEqual(m.connectionLabel(status({ ConnectionState: 'Connecting' }), EN), { kind: 'muted', text: EN['web.header.connecting'] });
-    assert.deepEqual(m.connectionLabel(null, EN, true), { kind: 'warning', text: EN['web.header.unknown'] });
+test('connectionLabel: connected names the bot, no token is neutral, problems need attention', () => {
+    assert.deepEqual(m.connectionLabel(status(), EN), { tone: 'good', text: 'Connected · @jf_bot' });
+    assert.deepEqual(m.connectionLabel(status({ HasToken: false, BotUsername: null, ConnectionState: 'NoToken' }), EN), { tone: 'neutral', text: EN['web.header.notConnected'] });
+    assert.deepEqual(m.connectionLabel(status({ ConnectionState: 'TokenRejected' }), EN), { tone: 'attention', text: EN['web.header.attention'] });
+    assert.deepEqual(m.connectionLabel(status({ ConnectionState: 'Connecting' }), EN), { tone: 'progress', text: EN['web.header.connecting'] });
+    assert.deepEqual(m.connectionLabel(null, EN, 'HTTP 500'), { tone: 'attention', text: m.text(EN, 'web.header.unknown', { reason: 'HTTP 500', seconds: 3 }) });
     for (const key of ['web.header.connected', 'web.header.notConnected', 'web.header.attention', 'web.header.connecting', 'web.header.unknown']) {
         assert.doesNotMatch(EN[key], /[●✓✔✅⚠❌✗🟢🔴]/u, key);
     }
@@ -2628,14 +2832,14 @@ test('the header and the sidebar counts follow the data', async () => {
     let current = status();
     const { view, el, timers } = mount({ 'GET TgJelly/Status': () => current, 'GET TgJelly/Templates': templates() });
     await show(view);
-    assert.equal(el('tgj-conn').innerHTML, ui.stateLabel({ kind: 'ok', text: 'Connected · @jf_bot' }));
+    assert.equal(el('tgj-conn').innerHTML, ui.label('Connected · @jf_bot', 'good'));
     assert.equal(el('tgj-nav-count-destinations').innerHTML, '1');
-    assert.equal(el('tgj-nav-count-templates').innerHTML, '1 edited');
+    assert.equal(el('tgj-nav-count-messages').innerHTML, '1 edited');
 
     current = status({ ConnectionState: 'Unreachable' });
     timers.tick();
     await flush();
-    assert.equal(el('tgj-conn').innerHTML, ui.stateLabel({ kind: 'warning', text: EN['web.header.attention'] }));
+    assert.equal(el('tgj-conn').innerHTML, ui.label(EN['web.header.attention'], 'attention'));
     assert.equal(el('tgjelly-root').writes, 1, 'the shell is not written again');
 });
 
@@ -2667,7 +2871,7 @@ test('nav_click_switchesSection_updatesHash', async () => {
 });
 
 test('hash_restoresSection_unknownFallsBack', async () => {
-    assert.equal(m.sectionFromHash('#/configurationpage?name=TgJelly&tgj=templates'), 'templates');
+    assert.equal(m.sectionFromHash('#/configurationpage?name=TgJelly&tgj=templates'), 'messages', 'an old Templates link opens Messages');
     assert.equal(m.sectionFromHash('#tgj=messages'), 'messages');
     assert.equal(m.sectionFromHash('#tgj=bogus'), 'overview');
     assert.equal(m.sectionFromHash('#tgj=%E0%A4%A'), 'overview', 'a malformed escape');
@@ -2688,16 +2892,16 @@ test('hash_restoresSection_unknownFallsBack', async () => {
     await show(unknown.view);
     assert.equal(shownSection(unknown.el), 'overview');
 
-    const bare = mount({}, { hash: '#tgj=templates' });
+    const bare = mount({}, { hash: '#tgj=destinations' });
     await show(bare.view);
-    assert.equal(shownSection(bare.el), 'templates');
+    assert.equal(shownSection(bare.el), 'destinations');
 });
 
 test('notConnected_opensOverview', async () => {
     const { view, el, timers } = mount({ 'GET TgJelly/Status': noToken() }, { hash: '#/configurationpage?name=TgJelly&tgj=messages' });
     await show(view);
     assert.equal(shownSection(el), 'overview', 'Overview leads with Connect');
-    assert.equal(el('tgj-conn').innerHTML, ui.stateLabel({ kind: 'muted', text: EN['web.header.notConnected'] }));
+    assert.equal(el('tgj-conn').innerHTML, ui.label(EN['web.header.notConnected'], 'neutral'));
 
     // The other sections stay reachable.
     clickOn(view, { 'data-tgj-nav': 'messages' });
@@ -2771,7 +2975,7 @@ test('sectionWrite_keepsFocusInAnyField', async () => {
     const writes = el('tgj-messages').writes;
 
     // Another tab changes a different setting; the Messages section renders again.
-    current = settings({ PublicUrl: 'https://a.example', Revision: 6, Message: { ...settings().Message, ShowPoster: false } });
+    current = settings({ PublicUrl: 'https://a.example', Revision: 6, Message: messageDto({ ...FLAT_MESSAGE, ShowPoster: false }) });
     await hooks.reloadSection('messages', { fresh: true });
 
     assert.ok(el('tgj-messages').writes > writes, 'the section was written again');
@@ -2801,18 +3005,18 @@ test('a focused select keeps the focus; a field outside the section is left alon
     let current = settings();
     const { view, doc, hooks } = mount({ 'GET TgJelly/Settings': () => current });
     await show(view);
-    const mode = liveFields(view, doc, 'tgj-updates', [{ tag: 'select', attributes: { 'data-tgj-input': 'updMode' } }]);
+    const mode = liveFields(view, doc, 'tgj-proxy', [{ tag: 'select', attributes: { 'data-tgj-input': 'proxyMode' } }]);
     const url = liveFields(view, doc, 'tgj-messages', URL_FIELD);
     mode().focus();
     const focused = mode();
 
-    current = settings({ Revision: 6, UpdateCheck: { Enabled: true, Mode: 'AnyNewer' } });
+    current = settings({ Revision: 6, ProxyMode: 'Http', ProxyUrl: 'p:1' });
     await hooks.reloadSection('messages', { fresh: true });
-    assert.equal(doc.activeElement, focused, 'a write of Messages does not touch the Updates select');
-    await hooks.reloadSection('updates', { fresh: true });
+    assert.equal(doc.activeElement, focused, 'a write of Messages does not touch the proxy select');
+    await hooks.reloadSection('proxy', { fresh: true });
     assert.equal(doc.activeElement, mode());
     assert.notEqual(mode(), focused);
-    assert.equal(mode().value, 'AnyNewer', 'a select shows the new value: its choice was already made');
+    assert.equal(mode().value, 'Http', 'a select shows the new value: its choice was already made');
     assert.equal(url().focusCalls, 0);
 });
 
@@ -2858,7 +3062,7 @@ const STATUS_FIXTURES = {
     }),
 };
 
-const overviewHtml = el => ['tgj-status', 'tgj-connect', 'tgj-bot', 'tgj-summary'].map(id => el(id).innerHTML).join('\n');
+const overviewHtml = el => ['tgj-status', 'tgj-connect', 'tgj-bot'].map(id => el(id).innerHTML).join('\n');
 
 test('overview_cards_statusBotSummary', async () => {
     const { view, el } = mount({
@@ -2869,7 +3073,7 @@ test('overview_cards_statusBotSummary', async () => {
 
     const statusHtml = el('tgj-status').innerHTML;
     assert.ok(statusHtml.includes('class="tgj-card"') && statusHtml.includes('>Status</h2>'));
-    assert.ok(statusHtml.includes(ui.stateLabel({ kind: 'ok', text: 'Connected to Telegram' })), 'health is a state label');
+    assert.ok(statusHtml.includes(ui.label('Connected to Telegram', 'good')), 'health is a state label');
     assert.ok(statusHtml.includes('class="tgj-row'));
 
     const botHtml = el('tgj-bot').innerHTML;
@@ -2880,14 +3084,6 @@ test('overview_cards_statusBotSummary', async () => {
     }
     assert.match(botHtml, /<a [^>]*class="tgj-btn"[^>]*href="https:\/\/t\.me\/jf_bot\?start=setup"[^>]*>Open in Telegram<\/a>/);
     assert.equal(el('tgj-connect').innerHTML, '', 'no connect form while a bot is connected');
-
-    const summary = el('tgj-summary').innerHTML;
-    assert.ok(summary.includes('class="tgj-card"'));
-    assert.ok(summary.includes('2 destinations'));
-    assert.ok(summary.includes(ui.stateLabel({ kind: 'warning', text: '1 needs attention' })));
-    assert.ok(summary.includes('1 edited'));
-    assert.ok(summary.includes(ui.stateLabel({ kind: 'warning', text: '1 flagged' })));
-    assert.ok(summary.includes('No notices'));
 });
 
 test('overview_noBot_leadsWithConnectCard_noSave', async () => {
@@ -2898,33 +3094,11 @@ test('overview_noBot_leadsWithConnectCard_noSave', async () => {
     assert.ok(order('tgj-connect') > -1 && order('tgj-connect') < order('tgj-status'), 'Connect leads without a bot');
     assert.ok(!el('tgj-status').innerHTML.includes('Waiting for metadata'), 'Status is only the connection line');
     assert.equal(el('tgj-bot').innerHTML, '');
-    assert.equal(el('tgj-summary').innerHTML, '', 'no summary before a bot is connected');
     await click(view, 'connectExisting');
     const html = el('tgj-connect').innerHTML;
     assert.ok(html.includes('data-tgj-act="saveToken"') && html.includes('>Connect</button>'));
     assert.ok(!/>Save</.test(html), 'no Save button');
     assert.match(html, /<input[^>]*type="password"[^>]*data-tgj-input="token"/);
-});
-
-test('summary_linksToSections', async () => {
-    const { view, el, win } = mount({
-        'GET TgJelly/Destinations': destinations(),
-        'GET TgJelly/Templates': templates(),
-    });
-    await show(view);
-    const summary = el('tgj-summary').innerHTML;
-    const targets = [...summary.matchAll(/data-tgj-nav="(\w+)"/g)].map(match => match[1]);
-    assert.deepEqual(targets, ['destinations', 'templates']);
-    for (const target of targets) {
-        assert.match(summary, new RegExp(`<button type="button" class="tgj-btn"[^>]*data-tgj-nav="${target}"`));
-    }
-
-    clickOn(view, { 'data-tgj-act': 'goto', 'data-tgj-nav': 'templates' });
-    assert.equal(shownSection(el), 'templates');
-    assert.match(win.location.hash, /tgj=templates/);
-    clickOn(view, { 'data-tgj-act': 'goto', 'data-tgj-nav': 'destinations' });
-    assert.equal(shownSection(el), 'destinations');
-    assert.ok(!/Notices[\s\S]*?data-tgj-nav/.test(summary.slice(summary.indexOf('Notices'))), 'the Notices row has no button');
 });
 
 test('overview_connected_statusLeads', async () => {
@@ -2936,10 +3110,64 @@ test('overview_connected_statusLeads', async () => {
     assert.ok(el('tgj-status').innerHTML.includes('Waiting for metadata'));
 });
 
-test('summary_noDestinations_saysSo', () => {
-    const html = m.renderOverviewSummary(status(), destinations({ Items: [] }), templates({ Items: [] }), EN);
-    assert.ok(html.includes('No destinations yet'));
-    assert.ok(html.includes('data-tgj-nav="destinations"'));
+test('header_showsVersionLabelNextToTitle', async () => {
+    const html = m.renderShell(EN, { active: 'overview', connection: { tone: 'good', text: 'Connected' }, version: '1.0.5.0', buildTarget: '10.11' });
+    const version = ui.label('v0.5', 'neutral', { title: 'TgJelly 1.0.5.0, built for Jellyfin 10.11' });
+    assert.match(html, /<h1 class="tgj-header-title">TgJelly<\/h1>/);
+    assert.ok(html.indexOf('</h1>') < html.indexOf(version), 'the version follows the title');
+    assert.ok(html.indexOf(version) < html.indexOf(ui.label('Connected', 'good')), 'and precedes the connection');
+    assert.ok(!m.renderShell(EN, { active: 'overview', connection: { tone: 'neutral', text: 'x' } }).includes('>v'), 'no version, no label');
+
+    const { view, el } = mount({ 'GET TgJelly/Status': status({ Version: '1.0.5.0' }) });
+    await show(view);
+    assert.equal(el('tgj-version').innerHTML, version, 'painted from the status');
+});
+
+test('header_versionLabel_isReleaseName', async () => {
+    assert.equal(m.releaseName('1.0.4.0'), 'v0.4');
+    assert.equal(m.releaseName('2.1.12.0'), 'v1.12');
+    assert.equal(m.releaseName('1.0.4'), 'v1.0.4', 'a malformed version shows raw');
+    assert.equal(m.releaseName('1.x.4.0'), 'v1.x.4.0');
+    const { view, el } = mount({ 'GET TgJelly/Status': status({ Version: '2.1.12.0' }) });
+    await show(view);
+    assert.ok(el('tgj-version').innerHTML.includes('>v1.12<'));
+});
+
+test('header_versionTitle_hasFullVersionAndBuildTarget', async () => {
+    const { view, el } = mount({ 'GET TgJelly/Status': status({ Version: '1.0.4.0', BuildTarget: '10.11' }) });
+    await show(view);
+    assert.ok(el('tgj-version').innerHTML.includes('title="TgJelly 1.0.4.0, built for Jellyfin 10.11"'), el('tgj-version').innerHTML);
+});
+
+test('status_hasNoVersionLine', () => {
+    const html = m.renderStatus(status(), EN);
+    assert.ok(!html.includes('built for Jellyfin') && !html.includes('tgj-version'));
+    assert.ok(!('web.status.version' in EN));
+});
+
+test('overview_hasNoAtAGlance', async () => {
+    assert.equal(m.renderOverviewSummary, undefined);
+    assert.ok(!Object.keys(EN).some(key => key.startsWith('web.summary.')));
+    const { view, el } = mount();
+    await show(view);
+    assert.ok(!el('tgjelly-root').innerHTML.includes('At a glance'));
+    assert.ok(!el('tgjelly-root').innerHTML.includes('tgj-summary'));
+});
+
+test('overview_accessIsInfoNotice', async () => {
+    const { view, el } = mount();
+    await show(view);
+    const overview = overviewHtml(el);
+    assert.ok(!el('tgj-bot').innerHTML.includes('Anyone who can open this bot'), 'not a card row any more');
+    assert.ok(!/<h2[^>]*>Access<\/h2>/.test(overview), 'no card titled Access');
+    assert.match(el('tgj-status').innerHTML, /<div class="tgj-notice tgj-notice--info[^"]*"[\s\S]*Anyone who can open this bot can manage notifications\. Keep it restricted in BotFather\./);
+});
+
+test('status_longConnectionMessage_staysOutsideTheLabel', () => {
+    const message = 'Telegram rejected the token; paste a fresh one from BotFather';
+    const html = m.renderStatus(status({ ConnectionState: 'TokenRejected', ConnectionMessage: message }), EN);
+    assert.ok(html.includes(ui.label(EN['web.header.attention'], 'bad')), 'the label holds the state word');
+    assert.ok(html.includes(message) && !html.includes(ui.label(message, 'bad')), 'the message is plain text');
 });
 
 test('overview_noSymbols', async () => {
@@ -2974,53 +3202,82 @@ test('disconnect_asksInline', async () => {
     assert.ok(!/\b(confirm|alert|prompt)\(/.test(SOURCE.replace(/inlineConfirm\(/g, '')), 'no browser dialog in the page');
 });
 
+test('disconnectConfirm_hasRemoveSwitch_offByDefault', async () => {
+    const { view, api, el } = mount();
+    await show(view);
+    await click(view, 'disconnect');
+    const html = el('tgj-bot').innerHTML;
+    assert.equal(switchIn(html, 'disconnectRemoveDestinations'), false);
+    assert.ok(html.includes('Also remove all destinations'));
+    assert.ok(html.includes(m.t(EN, 'web.bot.disconnect.removeHint')), 'one line says what each choice keeps');
+    await flip(view, 'disconnectRemoveDestinations');
+    assert.equal(switchIn(el('tgj-bot').innerHTML, 'disconnectRemoveDestinations'), true);
+    assert.equal(putBodies(api).length, 0, 'the switch is part of the question, not an auto-saved setting');
+    await click(view, 'disconnectNo');
+    await click(view, 'disconnect');
+    assert.equal(switchIn(el('tgj-bot').innerHTML, 'disconnectRemoveDestinations'), false, 'cancelling resets it');
+});
+
+test('disconnectConfirm_switchOn_sendsFlag', async () => {
+    const { view, api } = mount({ 'DELETE TgJelly/Token': { status: 204 } });
+    await show(view);
+    await click(view, 'disconnect');
+    await click(view, 'disconnectYes');
+    assert.equal(api.calls.filter(c => c.type === 'DELETE')[0].url, '/jf/TgJelly/Token?removeDestinations=false');
+
+    await show(view);
+    await click(view, 'disconnect');
+    await flip(view, 'disconnectRemoveDestinations');
+    await click(view, 'disconnectYes');
+    assert.equal(api.calls.filter(c => c.type === 'DELETE')[1].url, '/jf/TgJelly/Token?removeDestinations=true');
+});
+
 // --- Messages and Advanced, with auto-save (plan 8, task 6) ---
 
 const MESSAGE_KEYS = ['ShowPoster', 'ShowOverview', 'ShowRatingGenres', 'ShowOpenInJellyfin', 'ShowProviderLinks', 'AnnounceUpgrades'];
 const BATCHING_KEYS = ['QuietWindowSeconds', 'MaxHoldMinutes', 'ReleaseQuietSeconds', 'DigestThreshold', 'LateEditHours', 'ReadyTimeoutMinutes'];
-const ADVANCED_IDS = ['tgj-proxy', 'tgj-batching', 'tgj-updates', 'tgj-manual', 'tgj-diagnostics'];
+const ADVANCED_IDS = ['tgj-proxy', 'tgj-updates', 'tgj-batching', 'tgj-manual', 'tgj-diagnostics'];
 
 test('validatePublicUrl ports PublicUrlRules: absolute http(s), a host with a dot, no IPv6; empty is valid', () => {
     for (const ok of ['', '  ', 'https://jf.example.com', 'http://192.168.1.5:8096', 'HTTPS://JF.Example.com/jellyfin', ' https://jf.example.com ', 'https://jelly.']) {
-        assert.equal(m.validatePublicUrl(ok), true, ok);
+        assert.equal(msg.validatePublicUrl(ok), true, ok);
     }
     for (const bad of ['http://localhost:8096', 'http://jellyfin:8096', 'jf.example.com', 'ftp://jf.example.com', 'https://[2001:db8::1]:8096',
         'https://[::ffff:10.0.0.1]', 'https://', 'not a url', null, undefined]) {
-        assert.equal(m.validatePublicUrl(bad), bad === null || bad === undefined, String(bad));
+        assert.equal(msg.validatePublicUrl(bad), bad === null || bad === undefined, String(bad));
     }
 });
 
 test('toggle_savesImmediately_showsSavedBesideRow', async () => {
     const { view, api, el, timers, hooks } = mount({ 'PUT TgJelly/Settings': echoSettings() });
     await show(view);
-    assert.match(el('tgj-messages').innerHTML, /role="switch"[^>]*aria-checked="false"[^>]*data-tgj-input="msgToggle" data-tgj-key="ShowProviderLinks"/);
+    assert.match(el('tgj-messages').innerHTML, /role="switch"[^>]*aria-checked="false"[^>]*data-tgj-input="msgSwitch" data-tgj-id="media.movie" data-tgj-key="ShowProviderLinks"/);
     const hold = holdPuts(api);
 
     toggle(view, 'ShowProviderLinks');
     await flush();
     assert.equal(putSettings(api).length, 1, 'sent at once, with no Save to press');
-    assert.match(el('tgj-messages').innerHTML, /aria-checked="true"[^>]*data-tgj-input="msgToggle" data-tgj-key="ShowProviderLinks"/, 'the switch shows the choice');
+    assert.match(el('tgj-messages').innerHTML, /aria-checked="true"[^>]*data-tgj-input="msgSwitch" data-tgj-id="media.movie" data-tgj-key="ShowProviderLinks"/, 'the switch shows the choice');
     assert.equal(hooks.pendingFields.size, 1, 'the switch is pending while its save is in flight');
     await timers.advance(299);
-    assert.deepEqual(cue(view, 'Message.ShowProviderLinks'), IDLE_CUE, 'a fast save shows no Saving…');
+    assert.deepEqual(cue(view, toggleCue('ShowProviderLinks')), IDLE_CUE, 'a fast save shows no Saving…');
     await timers.advance(1);
-    assert.deepEqual(cue(view, 'Message.ShowProviderLinks'), SAVING_CUE);
+    assert.deepEqual(cue(view, toggleCue('ShowProviderLinks')), SAVING_CUE);
 
     hold.release();
     await flush();
     const [body] = putSettings(api);
     assert.equal(body.ExpectedRevision, 5);
-    assert.equal(body.Message.ShowProviderLinks, true);
-    assert.equal(body.Message.ShowPoster, true);
-    assert.deepEqual(cue(view, 'Message.ShowProviderLinks'), SAVED_CUE, 'Saved, beside the switch that changed');
+    assert.deepEqual(body.Message.PerMessage, [{ EventKey: 'media.movie', Switches: { ShowProviderLinks: true } }], 'only the switch that changed');
+    assert.deepEqual(cue(view, toggleCue('ShowProviderLinks')), SAVED_CUE, 'Saved, beside the switch that changed');
     for (const key of MESSAGE_KEYS.filter(k => k !== 'ShowProviderLinks')) {
-        assert.deepEqual(cue(view, `Message.${key}`), IDLE_CUE, key);
+        assert.deepEqual(cue(view, toggleCue(key)), IDLE_CUE, key);
     }
     assert.equal(hooks.pendingFields.size, 0, 'settled: nothing pending');
     assert.equal(hooks.state.settings.Revision, 6);
 
     await timers.advance(2000);
-    assert.deepEqual(cue(view, 'Message.ShowProviderLinks'), IDLE_CUE, 'gone after 2 s, class and text, so reduced motion hides it too');
+    assert.deepEqual(cue(view, toggleCue('ShowProviderLinks')), IDLE_CUE, 'gone after 2 s, class and text, so reduced motion hides it too');
 });
 
 test('batching_savesAfter800ms_orOnBlur', async () => {
@@ -3098,12 +3355,13 @@ test('proxy_savesOnceWhenLeavingCard_notPerKeystroke', async () => {
         },
     });
     await show(view);
+    proxyMode(view, 'Socks5');
+    await flush();
     for (const name of ['proxyMode', 'proxyUsername', 'proxyPassword']) {
         assert.match(proxyEl(el), new RegExp(`data-tgj-input="${name}"[^>]*data-tgj-save="proxy"`), name);
     }
     assert.equal((proxyEl(el).match(/data-tgj-cue=/g) ?? []).length, 1, 'one cue for the card: it saves as one');
 
-    proxyMode(view, 'Socks5');
     leave(view, proxyAttrs('proxyMode'), proxyAttrs('proxyUrl'));
     for (const typed of ['p', 'pr', 'proxy:1080']) {
         proxyType(view, 'proxyUrl', typed);
@@ -3149,9 +3407,11 @@ test('noSaveButtons_inMessagesOrAdvanced', async () => {
     await show(view);
     const ids = ['tgj-messages', ...ADVANCED_IDS];
     const html = ids.map(id => el(id).innerHTML).join('\n');
-    for (const id of ids) {
+    for (const id of ADVANCED_IDS) {
         assert.match(el(id).innerHTML, /^<section class="tgj-card[ "]/, `${id} is a card`);
     }
+    // Messages is a layout of cards: the pickers, What it shows, the template and the preview.
+    assert.match(el('tgj-messages').innerHTML, /^<div class="tgj-msg-layout"><section class="tgj-card[ "]/);
     assert.ok(!/saveSettings|saveProxy|\bSave\b/.test(html), 'no Save buttons');
     for (const key of ['web.messages.save', 'web.batching.save', 'web.updates.save', 'web.proxy.save', 'web.settings.conflict', 'web.proxy.conflict']) {
         assert.ok(!(key in EN), `${key} is gone`);
@@ -3160,15 +3420,17 @@ test('noSaveButtons_inMessagesOrAdvanced', async () => {
     assert.ok(!SYMBOLS.test(html));
 
     // Every setting has its cue spot beside it.
-    const cueKeys = ['PublicUrl', ...MESSAGE_KEYS.map(k => `Message.${k}`), ...BATCHING_KEYS.map(k => `Batching.${k}`), 'UpdateCheck.Enabled', 'UpdateCheck.Mode', 'proxy'];
+    const cueKeys = ['PublicUrl', ...MESSAGE_KEYS.map(toggleCue), ...BATCHING_KEYS.map(k => `Batching.${k}`), 'UpdateCheck.Enabled', 'UpdateCheck.Fixes', 'UpdateCheck.NewReleases', 'UpdateCheck.NewMajor', 'proxy'];
     for (const key of cueKeys) {
         assert.ok(html.includes(`data-tgj-cue="${key}"`), key);
     }
 
-    // Every auto-saved control names its save, and can be found again after a render (data-tgj-input).
+    // Every auto-saved control names its save, and can be found again after a render (data-tgj-input). The message
+    // pickers and the test send's destination choose what to show or where to send: they save nothing.
     const settingsHtml = ['tgj-messages', 'tgj-proxy', 'tgj-batching', 'tgj-updates'].map(id => el(id).innerHTML).join('');
-    const controls = settingsHtml.match(/<(?:input|select)\b[^>]*>|<button[^>]*role="switch"[^>]*>/g);
-    assert.equal(controls.length, 1 + 6 + 4 + 6 + 2);
+    const controls = settingsHtml.match(/<(?:input|select)\b[^>]*>|<button[^>]*role="switch"[^>]*>/g)
+        .filter(control => !/data-tgj-input="(?:msgSection|msgKey|tplTestTo)"/.test(control));
+    assert.equal(controls.length, 1 + 6 + 4 + 6 + 4);
     for (const control of controls) {
         assert.match(control, /data-tgj-input="[^"]+"[\s\S]*data-tgj-save="[^"]+"/, control);
     }
@@ -3180,9 +3442,9 @@ test('noSaveButtons_inMessagesOrAdvanced', async () => {
 });
 
 test('settingsConflict_retriesWithServerData', async () => {
-    const theirs = settings({ Revision: 9, Message: { ...settings().Message, ShowOverview: false } });
+    const theirs = settings({ Revision: 9, Message: messageDto({ ...FLAT_MESSAGE, ShowOverview: false }) });
     const answers = [{ status: 409, body: { Current: theirs } }];
-    const echo = echoSettings(9);
+    const echo = echoSettings(9, theirs.Message);
     const { view, api, el, hooks } = mount({ 'PUT TgJelly/Settings': request => answers.shift() ?? echo(request) });
     await show(view);
     toggle(view, 'ShowProviderLinks');
@@ -3190,9 +3452,9 @@ test('settingsConflict_retriesWithServerData', async () => {
 
     const puts = putSettings(api);
     assert.deepEqual(puts.map(b => b.ExpectedRevision), [5, 9], 'retried once, with the server revision');
-    assert.equal(puts[1].Message.ShowProviderLinks, true, 'the admin change is re-applied');
-    assert.equal(puts[1].Message.ShowOverview, false, 'on top of the change made elsewhere');
-    assert.deepEqual(cue(view, 'Message.ShowProviderLinks'), SAVED_CUE);
+    assert.deepEqual(puts[1].Message.PerMessage, [{ EventKey: 'media.movie', Switches: { ShowProviderLinks: true } }], 'the admin change is re-applied, alone');
+    assert.equal(hooks.state.settings.Message.PerMessage[0].Switches.ShowOverview, false, 'on top of the change made elsewhere');
+    assert.deepEqual(cue(view, toggleCue('ShowProviderLinks')), SAVED_CUE);
     assert.equal(hooks.state.settings.Revision, 10);
     assert.match(el('tgj-messages').innerHTML, /aria-checked="false"[^>]*data-tgj-key="ShowOverview"/, 'the other change shows');
 
@@ -3202,9 +3464,9 @@ test('settingsConflict_retriesWithServerData', async () => {
     toggle(always.view, 'ShowProviderLinks');
     await flush();
     assert.equal(putSettings(always.api).length, 2);
-    assert.deepEqual(cue(always.view, 'Message.ShowProviderLinks'), errorCue('changed elsewhere, check the value'));
+    assert.deepEqual(cue(always.view, toggleCue('ShowProviderLinks')), errorCue('changed elsewhere, check the value'));
     assert.match(always.el('tgj-messages').innerHTML, /aria-checked="true"[^>]*data-tgj-key="ShowProviderLinks"/, 'the switch keeps the admin choice');
-    assert.equal(always.hooks.state.forms.settings.local.Message.ShowProviderLinks, true);
+    assert.equal(always.hooks.state.forms.settings.local.Message.Switches.media.movie.ShowProviderLinks, true);
 });
 
 test('leaving the page saves what is still waiting', async () => {
@@ -3310,10 +3572,10 @@ test('a save queued behind a settings save sends the revision that save moved to
 
 test('validatePublicUrl matches System.Uri on hosts URL alone would accept', () => {
     for (const bad of ['http://.', 'http://..', 'http://.a', 'http://a..b', 'http://.example.com', 'http://*.b', 'http://a%2eb']) {
-        assert.equal(m.validatePublicUrl(bad), false, bad);
+        assert.equal(msg.validatePublicUrl(bad), false, bad);
     }
     for (const ok of ['http://a.b.', 'http://a_b.c', 'http://-a.b', 'http://user:pw@jf.example.com', 'http://1.2']) {
-        assert.equal(m.validatePublicUrl(ok), true, ok);
+        assert.equal(msg.validatePublicUrl(ok), true, ok);
     }
 });
 
@@ -3407,7 +3669,7 @@ test('a settings reload sent before a settings save and answered after it is ign
                 return { status: 409, body: { Current: server } };
             }
 
-            server = { ...server, Revision: server.Revision + 1, Message: body.Message, Batching: body.Batching };
+            server = { ...server, Revision: server.Revision + 1, Message: mergeMessage(server.Message, body.Message), Batching: body.Batching };
             return server;
         },
     });
@@ -3418,21 +3680,21 @@ test('a settings reload sent before a settings save and answered after it is ign
     assert.ok(reload.sent(), 'a GET Settings is on its way, read at Revision 6');
     toggle(view, 'ShowPoster');
     await flush();
-    assert.equal(server.Message.ShowPoster, false);
+    assert.equal(server.Message.PerMessage[0].Switches.ShowPoster, false);
     assert.equal(server.Revision, 7);
 
     reload.release();
     await flush();
     assert.equal(hooks.state.settings.Revision, 7, 'the older reply is not taken');
-    assert.equal(hooks.state.forms.settings.local.Message.ShowPoster, false);
-    assert.equal(switchIn(el('tgj-messages').innerHTML, 'msgToggle', { 'data-tgj-key': 'ShowPoster' }), false);
+    assert.equal(hooks.state.forms.settings.local.Message.Switches.media.movie.ShowPoster, false);
+    assert.equal(switchIn(el('tgj-messages').innerHTML, 'msgSwitch', { 'data-tgj-id': 'media.movie', 'data-tgj-key': 'ShowPoster' }), false);
 
     toggle(view, 'ShowOverview');
     await flush();
-    assert.deepEqual(putSettings(api).map(p => [p.ExpectedRevision, p.Message.ShowPoster, p.Message.ShowOverview]), [[6, false, true], [7, false, false]]);
-    assert.equal(server.Message.ShowPoster, false, 'the first change is not reverted');
-    assert.equal(server.Message.ShowOverview, false);
-    assert.deepEqual(cue(view, 'Message.ShowOverview'), SAVED_CUE);
+    assert.deepEqual(putSettings(api).map(p => [p.ExpectedRevision, p.Message.PerMessage[0].Switches]), [[6, { ShowPoster: false }], [7, { ShowOverview: false }]]);
+    assert.equal(server.Message.PerMessage[0].Switches.ShowPoster, false, 'the first change is not reverted');
+    assert.equal(server.Message.PerMessage[0].Switches.ShowOverview, false);
+    assert.deepEqual(cue(view, toggleCue('ShowOverview')), SAVED_CUE);
 });
 
 test('a templates reload sent before a template save and answered after it is ignored: the textarea keeps the saved text', async () => {
@@ -3449,7 +3711,7 @@ test('a templates reload sent before a template save and answered after it is ig
             revision++;
             return { ...dest({ Enabled: false }), Revision: revision };
         },
-        'PUT TgJelly/Templates/movie.added': request => {
+        'PUT TgJelly/Templates/media.movie': request => {
             const body = JSON.parse(request.data);
             if (body.ExpectedRevision !== revision) {
                 return { status: 409, body: { Current: current() } };
@@ -3466,14 +3728,14 @@ test('a templates reload sent before a template save and answered after it is ig
     assert.ok(reload.sent(), 'a GET Templates is on its way, read at Revision 6');
     tplType(view, 'New {{ title }}');
     await timers.advance(1000);
-    assert.deepEqual(tplPuts(api), [['Templates/movie.added', { ExpectedRevision: 6, Text: 'New {{ title }}' }]]);
+    assert.deepEqual(tplPuts(api), [['Templates/media.movie', { ExpectedRevision: 6, Text: 'New {{ title }}' }]]);
     assert.equal(revision, 7);
 
     reload.release();
     await flush();
     assert.equal(hooks.state.templates.Revision, 7, 'the older reply is not taken');
-    assert.equal(hooks.state.forms['tpl:movie.added'].local.Text, 'New {{ title }}');
-    assert.ok(el('tgj-templates').innerHTML.includes('>New {{ title }}</textarea>'), 'the textarea shows the saved text');
+    assert.equal(hooks.state.forms['tpl:media.movie'].local.Text, 'New {{ title }}');
+    assert.ok(el('tgj-messages').innerHTML.includes('>New {{ title }}</textarea>'), 'the textarea shows the saved text');
     assert.equal(text, 'New {{ title }}');
 });
 
@@ -3525,4 +3787,151 @@ test('remove, add and set up started while a settings save is in flight send the
         assert.equal(revision, 7, `${act}: the server took it`);
         assert.ok(!section(el).includes(conflict), `${act}: no changed-elsewhere message`);
     }
+});
+
+// --- Task 14: no vague errors ---
+
+test('requestError_includesStatusAndServerText', () => {
+    const withText = m.requestError(EN, { status: 409, body: { Message: 'Changed <elsewhere>' } });
+    assert.ok(withText.includes('Changed &lt;elsewhere&gt;') && withText.includes('409'), withText);
+
+    const bare = m.requestError(EN, { status: 500, body: null });
+    assert.ok(bare.includes('500') && /Copy diagnostics/.test(bare) && !/try again/i.test(bare), bare);
+});
+
+test('requestError_networkFailure_namesTheCause', async t => {
+    t.mock.method(console, 'error', () => {});
+    const { view, hooks, el } = mount();
+    hooks.sections.demo = { id: 'tgj-demo', load: async () => {}, render: () => '<p>demo</p>' };
+    hooks.actions.crash = () => hooks.runAction('demo', async () => { throw new TypeError('Failed to fetch'); });
+    await show(view);
+    clickOn(view, { 'data-tgj-act': 'crash' });
+    await flush();
+
+    const html = el('tgj-demo').innerHTML;
+    assert.ok(html.includes('Failed to fetch'), html);
+    assert.ok(/connection/i.test(html) && /repeat|retr/i.test(html), 'says what to do next');
+});
+
+test('headerUnknown_includesReason', async t => {
+    t.mock.method(console, 'error', () => {});
+    const { view, el } = mount({ 'GET TgJelly/Status': { status: 503, body: { Message: 'Starting up' } } });
+    await show(view);
+    const header = el('tgjelly-root').innerHTML;
+    assert.ok(header.includes('HTTP 503') && header.includes('Starting up') && /retries every 3 s/.test(header), header);
+});
+
+test('loadFailed_carriesTheServerMessage_andSuggestsCopyDiagnostics', async t => {
+    t.mock.method(console, 'error', () => {});
+
+    // The Libraries half of the Destinations load.
+    const dests = mount({ 'GET TgJelly/Libraries': { status: 500, body: { Message: 'The library manager is not ready' } } }, { hash: '#/configurationpage?name=TgJelly&tgj=destinations' });
+    await show(dests.view);
+    const html = dests.el('tgj-destinations').innerHTML;
+    assert.ok(html.includes('HTTP 500') && html.includes('The library manager is not ready'), html);
+    assert.ok(/Copy diagnostics/.test(html), 'says what to do if it keeps failing');
+});
+
+test('a section load that keeps failing logs once per distinct failure', async t => {
+    const logged = [];
+    t.mock.method(console, 'error', (...args) => logged.push(args));
+    let n = 0;
+    const { view, hooks } = mount();
+    hooks.sections.demo = { id: 'tgj-demo', load: async () => { throw new Error(n++ < 3 ? 'down' : 'still down'); }, render: () => '<p>demo</p>' };
+    await show(view);
+    const before = logged.length;
+    for (let i = 0; i < 3; i++) {
+        await hooks.reloadSection('demo');
+    }
+
+    assert.equal(logged.filter(a => String(a[0]).includes('demo')).length, 2, 'one for "down", one for "still down"');
+    assert.ok(logged.length >= before);
+});
+
+test('a save with nothing to save into says what happened and what to do', () => {
+    assert.ok(!/reason: '(no destination|no settings|no template)'/.test(SOURCE), 'no placeholder reasons are left');
+    for (const key of ['web.request.noDestination', 'web.request.noSettings', 'web.request.noTemplate']) {
+        assert.ok(EN[key] && /reload/i.test(EN[key]) && /not saved/i.test(EN[key]), key);
+    }
+});
+
+// --- Task 14 fix round 1 ---
+
+test('a throwing save cue says the cause and the next step', async t => {
+    t.mock.method(console, 'error', () => {});
+    const { view, hooks } = mount();
+    await show(view);
+    hooks.queueSave({ key: 'proxy', mode: 'now', send: async () => { throw new TypeError('Failed to fetch'); } });
+    await flush();
+    const cue = view.cues.get('proxy').innerHTML;
+    assert.ok(cue.includes('Failed to fetch') && /Jellyfin/.test(cue) && /reload/i.test(cue), cue);
+});
+
+test('only network errors are called "could not reach Jellyfin"', async t => {
+    t.mock.method(console, 'error', () => {});
+    const { view, hooks, el } = mount();
+    hooks.sections.demo = { id: 'tgj-demo', load: async () => {}, render: () => '<p>demo</p>' };
+    hooks.actions.net = () => hooks.runAction('demo', async () => { throw new TypeError('Failed to fetch'); });
+    hooks.actions.bug = () => hooks.runAction('demo', async () => { throw new Error('x is undefined'); });
+    await show(view);
+
+    clickOn(view, { 'data-tgj-act': 'net' });
+    await flush();
+    assert.ok(el('tgj-demo').innerHTML.includes('Could not reach Jellyfin: Failed to fetch'));
+
+    clickOn(view, { 'data-tgj-act': 'bug' });
+    await flush();
+    const html = el('tgj-demo').innerHTML;
+    assert.ok(html.includes('unexpected error: x is undefined') && /Reload the page/.test(html) && /Copy diagnostics/.test(html), html);
+    assert.ok(!html.includes('Could not reach'));
+});
+
+test('bodyless 404, 401 and 403 name their known causes', () => {
+    const notFound = m.requestError(EN, { status: 404, body: null });
+    assert.ok(/no longer exists/.test(notFound) && /Reload the page/.test(notFound) && notFound.includes('404'), notFound);
+    for (const status of [401, 403]) {
+        const denied = m.requestError(EN, { status, body: null });
+        assert.ok(/session/.test(denied) && /administrator/.test(denied) && denied.includes(String(status)), denied);
+    }
+
+    assert.equal(m.requestError(EN, { status: 404, body: { Message: 'gone' } }), 'gone (HTTP 404)', 'a server message wins');
+    assert.ok(m.requestError(EN, { status: 502, body: null }).includes('without saying why'));
+});
+
+// --- Task 14 fix round 2 ---
+
+test('a throwing template check shows the cause and the next step, and clears', async t => {
+    t.mock.method(console, 'error', () => {});
+    for (const [error, expected] of [[new TypeError('Failed to fetch'), 'Could not reach Jellyfin: Failed to fetch'], [new Error('boom'), 'unexpected error: boom']]) {
+        const { view, api, el } = mount({ 'GET TgJelly/Templates': templates() });
+        const original = api.fetch;
+        api.fetch = request => (request.url.endsWith('/Templates/Validate') ? Promise.reject(error) : original(request));
+        await show(view);
+        await flush();
+        const html = el('tgj-tpl-check').innerHTML;
+        assert.ok(html.includes(expected), html);
+        assert.ok(/Reload the page|repeat the action/.test(html), 'says what to do next');
+        assert.ok(!/Checking/i.test(html), 'the checking state cleared');
+    }
+});
+
+test('only fetch-style failures count as network errors, through runAction and auto-save', async t => {
+    t.mock.method(console, 'error', () => {});
+    const { view, hooks, el } = mount();
+    hooks.sections.demo = { id: 'tgj-demo', load: async () => {}, render: () => '<p>demo</p>' };
+    hooks.actions.bug = () => hooks.runAction('demo', async () => { throw new TypeError("Cannot read properties of null (reading 'x')"); });
+    hooks.actions.net = () => hooks.runAction('demo', async () => { throw new TypeError('NetworkError when attempting to fetch resource.'); });
+    await show(view);
+
+    clickOn(view, { 'data-tgj-act': 'bug' });
+    await flush();
+    assert.ok(el('tgj-demo').innerHTML.includes('unexpected error') && !el('tgj-demo').innerHTML.includes('Could not reach'));
+    clickOn(view, { 'data-tgj-act': 'net' });
+    await flush();
+    assert.ok(el('tgj-demo').innerHTML.includes('Could not reach Jellyfin'));
+
+    hooks.queueSave({ key: 'proxy', mode: 'now', send: async () => { throw new TypeError('x is not a function'); } });
+    await flush();
+    const cue = view.cues.get('proxy').innerHTML;
+    assert.ok(cue.includes('unexpected error') && !cue.includes("Couldn&#39;t reach") && !cue.includes('reach Jellyfin'), cue);
 });

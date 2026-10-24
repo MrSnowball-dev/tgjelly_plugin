@@ -5,6 +5,7 @@ using System.Text.Json;
 using Jellyfin.Plugin.TgJelly.Configuration;
 using Jellyfin.Plugin.TgJelly.Delivery;
 using Jellyfin.Plugin.TgJelly.Intake;
+using Jellyfin.Plugin.TgJelly.Log;
 using Jellyfin.Plugin.TgJelly.Rendering;
 using Jellyfin.Plugin.TgJelly.State;
 using Jellyfin.Plugin.TgJelly.State.Documents;
@@ -32,6 +33,7 @@ public sealed class NotificationPipeline
     private readonly StateStore _state;
     private readonly TimeProvider _time;
     private readonly ILogger<NotificationPipeline> _logger;
+    private readonly LogRecorder? _log;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="NotificationPipeline"/> class.
@@ -46,6 +48,7 @@ public sealed class NotificationPipeline
     /// <param name="state">The state store (counters and errors).</param>
     /// <param name="time">The clock.</param>
     /// <param name="logger">The logger.</param>
+    /// <param name="log">Where each message's outcome is recorded for the Log, if anywhere.</param>
     public NotificationPipeline(
         IntakeQueues queues,
         MediaReadiness readiness,
@@ -56,8 +59,10 @@ public sealed class NotificationPipeline
         SettingsStore settings,
         StateStore state,
         TimeProvider time,
-        ILogger<NotificationPipeline> logger)
+        ILogger<NotificationPipeline> logger,
+        LogRecorder? log = null)
     {
+        _log = log;
         _queues = queues;
         _readiness = readiness;
         _media = media;
@@ -107,6 +112,7 @@ public sealed class NotificationPipeline
         Guard(() => AddReady(_readiness.Tick(), destinations));
         Guard(() => EnqueueMedia(_media.Tick(), destinations));
         Guard(() => EnqueueAlerts(_alerts.Tick(), destinations));
+        _log?.Sweep();
         var dropped = _queues.TakeDropped();
         if (dropped > 0)
         {
@@ -135,8 +141,6 @@ public sealed class NotificationPipeline
     private static T Copy<T>(T value)
         => JsonSerializer.Deserialize<T>(JsonSerializer.Serialize(value, JsonDefaults.Options), JsonDefaults.Options)!;
 
-    private static bool Wants(Destination destination, string eventKey) => Router.Route(eventKey, null, [destination]).Count > 0;
-
     private void AddReady(IReadOnlyList<MediaReady> ready, IReadOnlyList<Destination> destinations)
     {
         foreach (var item in ready)
@@ -148,8 +152,22 @@ public sealed class NotificationPipeline
                     return;
                 }
 
-                var routed = Router.Route(GroupKeys.For(item.Item).EventKey, item.Libraries.Select(l => l.Id).ToList(), destinations);
+                var (key, eventKey, _) = GroupKeys.For(item.Item);
+                var routed = Router.Route(eventKey, item.Libraries.Select(l => l.Id).ToList(), destinations);
                 EnqueueMedia(_media.Add(item, routed), destinations);
+
+                // Only after the message is on its way: recording must never keep it from the Outbox.
+                Record(log =>
+                {
+                    log.MediaRouted(item, destinations);
+                    foreach (var destination in routed)
+                    {
+                        if (_media.FindHeld(destination.Id, key) is { } held)
+                        {
+                            log.Held(destination, key, eventKey, held.FirstAt, held.ItemIds);
+                        }
+                    }
+                });
             });
         }
     }
@@ -162,12 +180,30 @@ public sealed class NotificationPipeline
             {
                 if (destinations.FirstOrDefault(d => d.Id == output.DestinationId) is not { } destination)
                 {
+                    // Removed while its groups were held: their rows say so, and no row is made for it.
+                    foreach (var gone in output.Groups)
+                    {
+                        _log?.DestinationRemoved(LogRecorder.MediaId(gone.Key, output.DestinationId, gone.FirstAt));
+                    }
+
                     return;
                 }
 
                 // Groups wait up to hours in a release buffer; a destination disabled or unsubscribed meanwhile gets
                 // nothing from them.
-                var wanted = output.Groups.Where(g => Wants(destination, g.Model.EventKey)).ToList();
+                var wanted = new List<MediaGroupState>();
+                foreach (var group in output.Groups)
+                {
+                    if (Router.Explain(group.Model.EventKey, null, destination) is { } reason)
+                    {
+                        _log?.NotWanted(LogRecorder.MediaId(group.Key, destination.Id, group.FirstAt), destination, group.Model, reason);
+                    }
+                    else
+                    {
+                        wanted.Add(group);
+                    }
+                }
+
                 if (wanted.Count == 0)
                 {
                     return;
@@ -182,13 +218,28 @@ public sealed class NotificationPipeline
                         At = _time.GetUtcNow(),
                         Groups = wanted.Select(g => g.Model).ToList(),
                     };
-                    Enqueue(destination, digest, OutboxOp.Send, "digest", sentKey: null, targetKey: null, replyToKey: null);
+                    var groupRows = wanted.Select(g => (Id: LogRecorder.MediaId(g.Key, destination.Id, g.FirstAt), g.Model)).ToList();
+                    if (Enqueue(destination, digest, OutboxOp.Send, "digest", sentKey: null, targetKey: null, replyToKey: null, logId: null) is not null)
+                    {
+                        _log?.Merged([.. groupRows.Select(r => r.Id)]);
+                    }
+                    else
+                    {
+                        foreach (var (id, model) in groupRows)
+                        {
+                            _log?.NothingToSend(id, destination, model);
+                        }
+                    }
+
                     return;
                 }
 
-                var group = output.Groups[0];
+                var first = output.Groups[0];
                 var edit = output.Kind == MediaOutputKind.LateEdit;
-                Enqueue(destination, group.Model, edit ? OutboxOp.Edit : OutboxOp.Send, group.Key, group.Key, edit ? group.Key : null, replyToKey: null);
+
+                // A late arrival updates the row of the message it edits; a released group moves its Waiting row on.
+                var logId = edit ? LogIdOf(destination.Id, first.Key) : LogRecorder.MediaId(first.Key, destination.Id, first.FirstAt);
+                Enqueue(destination, first.Model, edit ? OutboxOp.Edit : OutboxOp.Send, first.Key, first.Key, edit ? first.Key : null, replyToKey: null, logId);
             });
         }
     }
@@ -197,24 +248,40 @@ public sealed class NotificationPipeline
     {
         foreach (var output in outputs)
         {
+            _log?.AlertRouted(output, destinations);
             foreach (var destination in Router.Route(output.Model.EventKey, null, destinations))
             {
-                // Each entry owns its model: the Outbox keeps entries by reference and merges edits into them.
-                Guard(() => Enqueue(destination, Copy(output.Model), output.Op, output.Model.EventKey, output.SentKey, output.TargetKey, output.ReplyToKey));
+                // Each entry owns its model: the Outbox keeps entries by reference and merges edits into them. An edit
+                // of an earlier alert updates that alert's row.
+                Guard(() =>
+                {
+                    var logId = output.Op == OutboxOp.Edit && output.TargetKey is { } target ? LogIdOf(destination.Id, target) : null;
+                    Enqueue(destination, Copy(output.Model), output.Op, output.Model.EventKey, output.SentKey, output.TargetKey, output.ReplyToKey, logId);
+                });
             }
         }
     }
 
-    private void Enqueue(Destination destination, RenderModel model, OutboxOp op, string groupKey, string? sentKey, string? targetKey, string? replyToKey)
+    // Returns the Log row that carries the message, or null when there was nothing to send.
+    private string? Enqueue(Destination destination, RenderModel model, OutboxOp op, string groupKey, string? sentKey, string? targetKey, string? replyToKey, string? logId)
     {
+        var entryId = Guid.NewGuid().ToString("N");
+        logId ??= entryId;
         if (_renderer.Render(model, destination) is not { } message)
         {
-            return;
+            // A digest's caller settles the rows of the groups it held.
+            if (model.Kind != RenderKind.Digest)
+            {
+                _log?.NothingToSend(logId, destination, model);
+            }
+
+            return null;
         }
 
-        _outbox.Enqueue(new OutboxEntry
+        var (carrier, summary) = _outbox.Enqueue(new OutboxEntry
         {
-            EntryId = Guid.NewGuid().ToString("N"),
+            EntryId = entryId,
+            LogId = logId,
             DestinationId = destination.Id,
             EventKey = model.EventKey,
             GroupKey = groupKey,
@@ -226,6 +293,45 @@ public sealed class NotificationPipeline
             Model = model,
             QueuedAt = _time.GetUtcNow(),
         });
+        _log?.Queued(carrier, destination, model, summary);
+        return carrier;
+    }
+
+    // Log-only reads and writes: a failure is logged and the message goes on as if there were no Log.
+    private void Record(Action<LogRecorder> record)
+    {
+        if (_log is null)
+        {
+            return;
+        }
+
+        try
+        {
+            record(_log);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            _logger.LogWarning(ex, "TgJelly could not record a Log row; sending is not affected");
+        }
+    }
+
+    // The Log row of the message an edit changes; null (a row of its own) when it can't be found.
+    private string? LogIdOf(string destinationId, string key)
+    {
+        if (_log is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            return _outbox.LogIdOf(destinationId, key);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            _logger.LogWarning(ex, "TgJelly could not find the Log row of an edited message; sending is not affected");
+            return null;
+        }
     }
 
     private void Guard(Action step)

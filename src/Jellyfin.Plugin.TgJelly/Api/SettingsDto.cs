@@ -19,8 +19,8 @@ public sealed class SettingsDto
     /// <summary>Gets the suggested public URL, normalized and valid, or <c>null</c>; the page labels it "verify" (spec §8.3).</summary>
     public string? PublicUrlSuggestion { get; init; }
 
-    /// <summary>Gets the message toggles.</summary>
-    public MessageOptions Message { get; init; } = new();
+    /// <summary>Gets every message's switches and whether upgrades are announced.</summary>
+    public MessageSettingsDto Message { get; init; } = new();
 
     /// <summary>Gets the batching values.</summary>
     public BatchingOptions Batching { get; init; } = new();

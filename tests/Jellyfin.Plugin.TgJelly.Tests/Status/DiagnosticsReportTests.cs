@@ -143,6 +143,29 @@ public class DiagnosticsReportTests
         Assert.DoesNotContain("SECRET-TEMPLATE-TEXT", text, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async System.Threading.Tasks.Task MessageSwitches_OneLinePerMessageThatDiffersFromItsDefaults()
+    {
+        using var h = new BotTestHarness();
+        var report = await NewReportAsync(h);
+        Assert.Contains("message switches: defaults\n", report.Build(), StringComparison.Ordinal);
+        h.Settings.Update(null, c =>
+        {
+            c.Message.Change("media.episodes", s => s.ShowPoster = false);
+            c.Message.Change("security.lockout", s => s.ShowPoster = true);
+            c.Message.Change("media.movie", _ => { }); // an entry equal to its defaults is not listed
+            c.Message.AnnounceUpgrades = true;
+        });
+
+        var text = report.Build();
+
+        Assert.Contains("announce upgrades: yes\n", text, StringComparison.Ordinal);
+        Assert.Contains("message media.episodes: poster no, overview yes, rating/genres yes, open in Jellyfin yes, provider links yes\n", text, StringComparison.Ordinal);
+        Assert.Contains("message security.lockout: poster yes, overview no, rating/genres no, open in Jellyfin no, provider links no\n", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("message media.movie", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("message switches: defaults", text, StringComparison.Ordinal);
+    }
+
     internal static async System.Threading.Tasks.Task<DiagnosticsReport> NewReportAsync(BotTestHarness h, string? baseUrl = null)
         => (await NewReportWithHealthAsync(h, baseUrl)).Report;
 

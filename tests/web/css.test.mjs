@@ -284,20 +284,61 @@ test('statusText_mixedTowardFg', () => {
 
     const parsed = parseCss(CSS);
     const colorOf = selector => parsed.rules.find(r => r.selectors.includes(selector))?.decls.find(d => d.prop === 'color')?.value;
-    assert.equal(colorOf('#tgjelly-root .tgj-state--ok'), 'var(--tgj-success-text)');
-    assert.equal(colorOf('#tgjelly-root .tgj-state--warning'), 'var(--tgj-warning-text)');
-    assert.equal(colorOf('#tgjelly-root .tgj-state--error'), 'var(--tgj-error-text)');
-    assert.equal(colorOf('#tgjelly-root .tgj-cue--saved'), 'var(--tgj-success-text)');
-    assert.equal(colorOf('#tgjelly-root .tgj-cue--saving'), 'var(--tgj-fg-2)');
-    assert.equal(colorOf('#tgjelly-root .tgj-cue--error'), 'var(--tgj-error-text)');
+    assert.equal(colorOf('#tgjelly-root .tgj-label--good'), 'var(--tgj-success-text)');
+    assert.equal(colorOf('#tgjelly-root .tgj-label--attention'), 'var(--tgj-warning-text)');
+    assert.equal(colorOf('#tgjelly-root .tgj-label--bad'), 'var(--tgj-error-text)');
+    assert.equal(colorOf('#tgjelly-root .tgj-label--accent'), 'var(--tgj-accent-text)');
+    assert.equal(colorOf('#tgjelly-root .tgj-cue-reason'), 'var(--tgj-error-text)');
+});
+
+test('css_labelTonesUsePaletteTokens', () => {
+    const tokens = rootTokens();
+    const parsed = parseCss(CSS);
+    const rule = selector => parsed.rules.find(r => r.selectors.includes(selector) && r.context.length === 0);
+    const decl = (selector, prop) => rule(selector)?.decls.find(d => d.prop === prop)?.value;
+
+    // Like the v0.3 template badge: a 1px outline, a pill, no fill.
+    assert.equal(decl('#tgjelly-root .tgj-label', 'border'), '1px solid var(--tgj-line-strong)');
+    assert.equal(decl('#tgjelly-root .tgj-label', 'border-radius'), '999px');
+    assert.equal(decl('#tgjelly-root .tgj-label', 'white-space'), 'nowrap');
+
+    const tones = {
+        good: ['var(--tgj-success-text)', '--tgj-success-ring', '--tgj-success'],
+        progress: ['var(--tgj-accent-text)', '--tgj-accent-ring', '--tgj-accent'],
+        neutral: ['var(--tgj-fg-2)', '--tgj-line-strong', '--tgj-fg'],
+        attention: ['var(--tgj-warning-text)', '--tgj-warning-ring', '--tgj-warning'],
+        bad: ['var(--tgj-error-text)', '--tgj-error-ring', '--tgj-error'],
+        accent: ['var(--tgj-accent-text)', '--tgj-accent-ring', '--tgj-accent'],
+    };
+    for (const [tone, [color, ring, base]] of Object.entries(tones)) {
+        const selector = `#tgjelly-root .tgj-label--${tone}`;
+        assert.ok(rule(selector), `${tone} has a rule`);
+        assert.equal(decl(selector, 'color'), color, `${tone} text`);
+        assert.equal(decl(selector, 'border-color'), `var(${ring})`, `${tone} outline`);
+        // The ring is a soft tint of the tone's colour, which reads Jellyfin's palette.
+        assert.match(tokens.get(ring) ?? '', new RegExp(`^color-mix\\(in srgb, var\\(${base}\\) \\d+%, transparent\\)$`), ring);
+        assert.match(tokens.get(base) ?? '', /^var\(--jf-palette-/, `${base} reads the palette`);
+    }
+
+    // No fill on any label, base or tone.
+    for (const r of parsed.rules.filter(r => r.selectors.some(s => /\.tgj-label(--\w+)?$/.test(s)))) {
+        for (const d of r.decls.filter(d => /^background/.test(d.prop))) {
+            assert.match(d.value, /^(none|transparent)$/, `${r.selectors.join(', ')} has no fill`);
+        }
+    }
+
+    // The cue's reason is plain error text; no parallel badge style is left.
+    assert.equal(decl('#tgjelly-root .tgj-cue-reason', 'color'), 'var(--tgj-error-text)');
+    assert.ok(!parsed.rules.some(r => r.selectors.some(s => /\.tgj-(badge|state)\b/.test(s))), 'labels replace .tgj-badge and .tgj-state');
 });
 
 test('every component class is styled', () => {
     const classes = [
         'tgj-shell', 'tgj-header', 'tgj-sidebar', 'tgj-content', 'tgj-card', 'tgj-row', 'tgj-switch', 'tgj-field', 'tgj-btn',
         'tgj-btn--primary', 'tgj-btn--danger', 'tgj-confirm', 'tgj-notice', 'tgj-notice--info', 'tgj-notice--warning',
-        'tgj-notice--error', 'tgj-state', 'tgj-state--ok', 'tgj-state--warning', 'tgj-state--error', 'tgj-state--muted',
-        'tgj-cue', 'tgj-cue--saved', 'tgj-cue--saving', 'tgj-cue--error', 'tgj-empty',
+        'tgj-notice--error', 'tgj-label', 'tgj-label--good', 'tgj-label--progress', 'tgj-label--neutral', 'tgj-label--attention',
+        'tgj-label--bad', 'tgj-label--accent', 'tgj-cue', 'tgj-cue--saved', 'tgj-cue--saving', 'tgj-cue--error', 'tgj-cue-reason',
+        'tgj-empty',
     ];
     const selectors = parseCss(CSS).rules.flatMap(r => r.selectors).join('\n');
     for (const name of classes) {

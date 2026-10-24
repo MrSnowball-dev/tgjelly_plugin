@@ -130,7 +130,7 @@ public class DestinationsController : ControllerBase
 
         if (!TryPreset(request.Preset, out var preset))
         {
-            return Error("Preset", "Must be Everything, NewMedia, AdminAlerts or Custom.");
+            return Error("Preset", "Must be Everything, NewMedia, AdminAlerts or Custom. Reload the page and pick the preset again.");
         }
 
         ChatCheckResult check;
@@ -193,7 +193,7 @@ public class DestinationsController : ControllerBase
         {
             if (!TryPreset(request.Preset, out var parsed))
             {
-                return Error("Preset", "Must be Everything, NewMedia, AdminAlerts or Custom.");
+                return Error("Preset", "Must be Everything, NewMedia, AdminAlerts or Custom. Reload the page and pick the preset again.");
             }
 
             preset = parsed;
@@ -201,12 +201,12 @@ public class DestinationsController : ControllerBase
 
         if (request.Events?.FirstOrDefault(e => !EventCatalog.IsKnown(e)) is { } unknown)
         {
-            return Error("Events", "Unknown event: " + unknown);
+            return Error("Events", $"Unknown event: {unknown}. Reload the page and pick the events again; it may have been loaded from another version.");
         }
 
         if (request.SilentGroups?.FirstOrDefault(g => !EventCatalog.Groups.Contains(g)) is { } unknownGroup)
         {
-            return Error("SilentGroups", "Unknown group: " + unknownGroup);
+            return Error("SilentGroups", $"Unknown group: {unknownGroup}. Reload the page and pick the groups again.");
         }
 
         string[]? libraries = null;
@@ -217,7 +217,7 @@ public class DestinationsController : ControllerBase
             {
                 if (!Guid.TryParse(library, out var guid))
                 {
-                    return Error("LibraryIds", "Not a library ID: " + library);
+                    return Error("LibraryIds", $"Not a library ID: {library}. Reload the page and pick the libraries again.");
                 }
 
                 parsed.Add(guid.ToString("N"));

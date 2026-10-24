@@ -9,120 +9,22 @@
 // Sibling modules are imported by the URL Jellyfin serves them under (plan 8); tests/web/jellyfin-resolve.mjs maps it
 // to the file for Node.
 import {
-    esc, stateLabel, card, row, actionButton, inlineConfirm, notice, emptyState, textField, switchControl, selectField, numberField,
+    esc, t, text, plural, pluralText, formatNumber, formatTime,
+    label, card, row, actionButton, inlineConfirm, notice, emptyState, textField, switchControl, selectField, numberField,
+    httpFailure,
 } from './configurationpage?name=tgjelly-ui.js';
 import { createAutosave, CONFLICT_KEY } from './configurationpage?name=tgjelly-autosave.js';
+import { createMessages, messageFormData, messageRequest } from './configurationpage?name=tgjelly-messages.js';
+import { createLog } from './configurationpage?name=tgjelly-log.js';
 
-// esc lives in tgjelly-ui.js; it stays a named export here for the page's callers and tests.
-export { esc };
+// These live in the sibling modules; they stay named exports here for the page's callers and tests.
+export { esc, t, text, plural, pluralText, formatNumber, formatTime };
+export { previewHtml, renderTemplateCheck, renderTemplatePreview } from './configurationpage?name=tgjelly-preview.js';
 
 const POLL_MS = 3000;
-// The template preview validates this long after the last keystroke.
-const PREVIEW_DEBOUNCE_MS = 500;
-// The template text saves this long after the last keystroke (design §6.1).
-const TEMPLATE_SAVE_MS = 1000;
 
 /** Connection states shown in the error color (the ConnectionState names from GET Status). */
 const PROBLEM_STATES = new Set(['TokenRejected', 'WebhookConflict', 'ConflictingInstance', 'Unreachable', 'InvalidBaseUrl', 'Incompatible']);
-
-/**
- * Looks up a string and fills its {name} placeholders. The result is HTML: the text and the args are both escaped.
- * A missing key gives the key itself; a placeholder without an arg stays as it is.
- * @param {Record<string, string> | null} S the string table from GET Strings
- * @param {string} key
- * @param {Record<string, unknown>} [args]
- * @returns {string}
- */
-export function t(S, key, args = {}) {
-    return fill(S, key, args, esc);
-}
-
-/**
- * The plain-text twin of t(): the same lookup and fallbacks, nothing escaped. For the labels passed to the
- * tgjelly-ui.js helpers, which escape their text themselves; t() stays for HTML written here.
- * @param {Record<string, string> | null} S
- * @param {string} key
- * @param {Record<string, unknown>} [args]
- * @returns {string}
- */
-export function text(S, key, args = {}) {
-    return fill(S, key, args, String);
-}
-
-function fill(S, key, args, encode) {
-    const source = S && Object.hasOwn(S, key) ? String(S[key]) : key;
-    let out = '';
-    let last = 0;
-    for (const match of source.matchAll(/\{(\w+)\}/g)) {
-        out += encode(source.slice(last, match.index)) + encode(Object.hasOwn(args, match[1]) ? args[match[1]] ?? '' : match[0]);
-        last = match.index + match[0].length;
-    }
-
-    return out + encode(source.slice(last));
-}
-
-/** The key plural() and pluralText() look up: key.<category>, or key.other when the table lacks that category. */
-function pluralKey(S, key, count, lang) {
-    let category;
-    try {
-        category = new Intl.PluralRules(lang).select(count);
-    } catch {
-        category = new Intl.PluralRules('en').select(count);
-    }
-
-    return S && Object.hasOwn(S, `${key}.${category}`) ? `${key}.${category}` : `${key}.other`;
-}
-
-/**
- * Picks key.one or key.other (any other plural category falls back to .other) and passes the formatted count as {count}.
- * @param {Record<string, string> | null} S
- * @param {string} key the key without its .one/.other suffix
- * @param {number} count
- * @param {Record<string, unknown>} [args]
- * @param {string} [lang]
- * @returns {string} HTML, as t() returns
- */
-export function plural(S, key, count, args = {}, lang = 'en') {
-    return t(S, pluralKey(S, key, count, lang), { ...args, count: formatNumber(count, lang) });
-}
-
-/** plural() as plain text, as text() is to t(). */
-export function pluralText(S, key, count, args = {}, lang = 'en') {
-    return text(S, pluralKey(S, key, count, lang), { ...args, count: formatNumber(count, lang) });
-}
-
-/**
- * Formats a number for the page's language, e.g. 1,000.
- * @param {number} value
- * @param {string} [lang]
- * @returns {string}
- */
-export function formatNumber(value, lang = 'en') {
-    try {
-        return new Intl.NumberFormat(lang).format(value);
-    } catch {
-        return String(value);
-    }
-}
-
-/**
- * Formats an ISO timestamp from the API as local date and time.
- * @param {string} iso
- * @param {string} [lang]
- * @returns {string}
- */
-export function formatTime(iso, lang = 'en') {
-    const date = new Date(iso);
-    if (Number.isNaN(date.getTime())) {
-        return String(iso ?? '');
-    }
-
-    try {
-        return date.toLocaleString(lang);
-    } catch {
-        return date.toISOString();
-    }
-}
 
 function isPlainObject(value) {
     return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -297,16 +199,65 @@ export function createApi(ApiClient) {
     };
 }
 
+const POLL_SECONDS = POLL_MS / 1000;
+
+/** The plain-text cause of a thrown error: the browser's or network's own words, or a note that it gave none. */
+const errorReason = err => (err && err.message ? String(err.message) : 'the browser gave no details');
+
 /**
- * The error text for a failed API result: the server's Message when it sent one, otherwise the status code.
+ * The plain-text reason a failed API result gives: the server's Message with the HTTP status, or, when the server sent
+ * no message, the status and where to look next.
+ * @param {Record<string, string>} S
+ * @param {{ status: number, body: any }} result
+ * @returns {string}
+ */
+function failureReason(S, result) {
+    if (result.body && result.body.Message) {
+        return text(S, 'web.request.http', { message: result.body.Message, status: result.status });
+    }
+
+    if (result.status === 404) {
+        return text(S, 'web.request.notFound');
+    }
+
+    return result.status === 401 || result.status === 403
+        ? text(S, 'web.request.denied', { status: result.status })
+        : text(S, 'web.request.httpBare', { status: result.status });
+}
+
+/** Whether a thrown error is the browser's or network's failure to reach the server (fetch rejects with a TypeError such as "Failed to fetch"; other TypeErrors are code bugs). */
+const isNetworkError = err => Boolean(err) && (err.name === 'NetworkError' || err.name === 'AbortError'
+    || (err instanceof TypeError && /failed to fetch|networkerror|load failed|network error/i.test(err.message)));
+
+/**
+ * The plain-text cue for a thrown error: "could not reach Jellyfin" for a network failure, otherwise the error as an
+ * unexpected one, each with what to do next.
+ */
+export function thrownText(S, err) {
+    return isNetworkError(err)
+        ? text(S, 'web.requestFailed', { reason: errorReason(err) })
+        : text(S, 'web.unexpectedError', { reason: errorReason(err) });
+}
+
+/** The same as HTML, escaped. */
+export function thrownError(S, err) {
+    return esc(thrownText(S, err));
+}
+
+/** The short cause of a failed Status request for the header: "HTTP 503: message", or the network's own words. */
+const statusReason = (S, result) => (result.body && result.body.Message
+    ? text(S, 'web.header.reasonHttp', { status: result.status, message: result.body.Message })
+    : text(S, 'web.header.reasonHttpBare', { status: result.status }));
+
+/**
+ * The error text for a failed API result: the server's Message and the HTTP status; without a message, the status and
+ * what to check.
  * @param {Record<string, string>} S
  * @param {{ status: number, body: any }} result
  * @returns {string} HTML
  */
 export function requestError(S, result) {
-    return result.body && result.body.Message
-        ? esc(result.body.Message)
-        : t(S, 'web.requestFailed', { reason: result.status });
+    return esc(failureReason(S, result));
 }
 
 /**
@@ -324,13 +275,20 @@ export function renderStatus(status, S, lang = 'en') {
     if (!status.Compatible) {
         parts.push(notice({ kind: 'error', extraClass: 'tgj-compat', html: esc(status.CompatMessage) }));
     } else {
-        const kind = PROBLEM_STATES.has(status.ConnectionState) ? 'error' : status.ConnectionState === 'Connected' ? 'ok' : 'muted';
+        // Connecting and the two waits are in progress; no token is neutral.
+        const tone = PROBLEM_STATES.has(status.ConnectionState) ? 'bad'
+            : status.ConnectionState === 'Connected' ? 'good'
+                : status.ConnectionState === 'NoToken' ? 'neutral' : 'progress';
         const takeOver = status.ConnectionState === 'WebhookConflict'
             ? actionButton({ label: text(S, 'web.status.takeOver'), act: 'takeover', kind: 'primary' })
             : '';
+        // The label holds the state word; the server's message (long when something is wrong) is plain text beside it.
+        const word = status.ConnectionState === 'Connected' ? text(S, 'web.status.connected') : connectionLabel(status, S).text;
+        const message = status.ConnectionMessage && status.ConnectionMessage !== word
+            ? `<span class="tgj-conn-message">${esc(status.ConnectionMessage)}</span>` : '';
         parts.push(row({
             label: text(S, 'web.status.connection'),
-            control: stateLabel({ kind, text: status.ConnectionMessage }) + takeOver,
+            control: label(word, tone) + message + takeOver,
         }));
     }
 
@@ -339,6 +297,7 @@ export function renderStatus(status, S, lang = 'en') {
         return card({ title: text(S, 'web.status.title'), body: parts.join('') });
     }
 
+    parts.push(notice({ kind: 'info', html: text(S, 'web.bot.access') }));
     parts.push(row({
         label: text(S, 'web.status.activity'),
         extraClass: 'tgj-row--stack',
@@ -371,7 +330,6 @@ export function renderStatus(status, S, lang = 'en') {
         }));
     }
 
-    parts.push(`<p class="tgj-row-hint tgj-version">${t(S, 'web.status.version', { version: status.Version, target: status.BuildTarget })}</p>`);
     return card({ title: text(S, 'web.status.title'), body: parts.join('') });
 }
 
@@ -416,8 +374,13 @@ export function renderProxyForm(settings, S, ui, { nested = false } = {}) {
         rows.push(field('proxyUrl', 'web.proxy.url', 'text', local.Url ?? ''));
     }
 
-    rows.push(field('proxyUsername', 'web.proxy.username', 'text', '', settings.HasProxyUsername ? text(S, 'web.proxy.saved') : ''));
-    rows.push(field('proxyPassword', 'web.proxy.password', 'password', '', settings.HasProxyPassword ? text(S, 'web.proxy.saved') : ''));
+    // Hiding the credentials changes nothing: what was typed or saved stays (design §7).
+    if (local.Mode === 'Http' || local.Mode === 'Socks5') {
+        rows.push(field('proxyUsername', 'web.proxy.username', 'text', '', settings.HasProxyUsername ? text(S, 'web.proxy.saved') : ''));
+        rows.push(field('proxyPassword', 'web.proxy.password', 'password', '', settings.HasProxyPassword ? text(S, 'web.proxy.saved') : ''));
+    }
+
+    rows.push(`<p class="tgj-row-hint">${t(S, 'web.proxy.typesHint')}</p>`);
     return nested
         ? `<div class="tgj-proxy-form"><h3 class="tgj-subtitle">${t(S, 'web.proxy.title')}</h3>${rows.join('')}</div>`
         : card({ title: text(S, 'web.proxy.title'), body: rows.join(''), extraClass: 'tgj-proxy-form' });
@@ -513,7 +476,7 @@ export function renderConnect(ui, S, links, settings = null) {
  * @param {object} status the StatusDto
  * @param {{ OpenBot?: string } | null} links
  * @param {Record<string, string>} S
- * @param {{ confirmDisconnect?: boolean, saving?: boolean }} ui
+ * @param {{ confirmDisconnect?: boolean, removeDestinations?: boolean, saving?: boolean }} ui
  * @returns {string} HTML
  */
 export function renderBot(status, links, S, ui) {
@@ -522,8 +485,12 @@ export function renderBot(status, links, S, ui) {
     }
 
     const busy = Boolean(ui.saving);
+    // The switch is part of the question, not a setting: it saves nothing (like "Bot leaves the chat" on a destination).
     const disconnect = ui.confirmDisconnect
-        ? inlineConfirm({
+        ? row({
+            label: text(S, 'web.bot.disconnect.removeDestinations'),
+            control: switchControl({ input: 'disconnectRemoveDestinations', checked: Boolean(ui.removeDestinations), label: text(S, 'web.bot.disconnect.removeDestinations') }),
+        }) + `<p class="tgj-row-hint">${t(S, 'web.bot.disconnect.removeHint')}</p>` + inlineConfirm({
             question: text(S, 'web.bot.confirmDisconnect'),
             confirmLabel: text(S, 'web.bot.confirmYes'),
             confirmAct: 'disconnectYes',
@@ -534,67 +501,8 @@ export function renderBot(status, links, S, ui) {
     return card({
         title: text(S, 'web.bot.title'),
         body: row({ label: text(S, 'web.bot.name'), control: `<b>@${esc(status.BotUsername)}</b>` })
-            + row({ label: text(S, 'web.bot.accessLabel'), hint: text(S, 'web.bot.access'), control: '' })
             + `<div class="tgj-actions">${telegramLink(links && links.OpenBot, t(S, 'web.bot.open'))}`
             + `${actionButton({ label: text(S, 'web.bot.change'), act: 'changeToken', disabled: busy })}${disconnect}</div>`,
-    });
-}
-
-/**
- * The Overview summary card (design §5.2): the destinations and how many need attention, the templates edited and
- * flagged, and the notices. Each row ends with a button that switches to its section (data-tgj-nav).
- * @param {object | null} status the StatusDto
- * @param {object | null} destinations the DestinationsDto, or null until it loads
- * @param {object | null} templates the TemplatesDto, or null until it loads
- * @param {Record<string, string>} S
- * @param {string} [lang]
- * @returns {string} HTML; '' until a bot is connected
- */
-export function renderOverviewSummary(status, destinations, templates, S, lang = 'en') {
-    if (!status || !status.HasToken) {
-        return '';
-    }
-
-    const go = section => actionButton({ label: text(S, 'web.summary.open'), act: 'goto', attrs: { 'data-tgj-nav': section } });
-    // Notices are shown on the Overview itself, so that row has no button.
-    const values = [];
-
-    const dests = destinations ? destinations.Items ?? [] : null;
-    if (dests) {
-        if (dests.length === 0) {
-            values.push(stateLabel({ kind: 'muted', text: text(S, 'web.summary.noDestinations') }));
-        } else {
-            const failing = dests.filter(d => d.Health && (d.Health.Status !== 'Ok' || d.Health.PhotosBlocked)).length;
-            values.push(`<span class="tgj-summary-count">${esc(pluralText(S, 'web.summary.destinations', dests.length, {}, lang))}</span>`
-                + (failing > 0
-                    ? stateLabel({ kind: 'warning', text: pluralText(S, 'web.summary.attention', failing, {}, lang) })
-                    : stateLabel({ kind: 'ok', text: text(S, 'web.summary.healthy') })));
-        }
-    }
-
-    const items = templates ? templates.Items ?? [] : null;
-    let templateValue = '';
-    if (items) {
-        const edited = items.filter(i => i.Edited).length;
-        const flagged = items.filter(i => i.Flag).length;
-        templateValue = edited > 0
-            ? `<span class="tgj-summary-count">${esc(pluralText(S, 'web.nav.edited', edited, {}, lang))}</span>`
-            : stateLabel({ kind: 'muted', text: text(S, 'web.summary.templatesDefault') });
-        if (flagged > 0) {
-            templateValue += stateLabel({ kind: 'warning', text: pluralText(S, 'web.summary.flagged', flagged, {}, lang) });
-        }
-    }
-
-    const notices = (status.Notices ?? []).length;
-    const noticeValue = notices > 0
-        ? stateLabel({ kind: 'warning', text: pluralText(S, 'web.summary.noticeCount', notices, {}, lang) })
-        : stateLabel({ kind: 'muted', text: text(S, 'web.summary.noNotices') });
-
-    return card({
-        title: text(S, 'web.summary.title'),
-        body: row({ label: text(S, 'web.nav.destinations'), control: (values[0] ?? '') + go('destinations') })
-            + row({ label: text(S, 'web.nav.templates'), control: templateValue + go('templates') })
-            + row({ label: text(S, 'web.summary.notices'), control: noticeValue }),
     });
 }
 
@@ -650,27 +558,28 @@ const sameLibrary = (a, b) => libraryKey(a) === libraryKey(b);
  * dashboard has its own web.dest.health.* copies and leaves the bot's strings alone.
  */
 const HEALTH = {
-    Ok: { key: 'web.dest.health.Ok', kind: 'ok' },
-    PhotosBlocked: { key: 'web.dest.health.PhotosBlocked', kind: 'warning' },
-    NeedsPermissions: { key: 'web.dest.health.NeedsPermissions', kind: 'warning' },
-    TopicMissing: { key: 'web.dest.health.TopicMissing', kind: 'error' },
-    Lost: { key: 'web.dest.health.Lost', kind: 'error' },
+    Ok: { key: 'web.dest.health.Ok', tone: 'good' },
+    PhotosBlocked: { key: 'web.dest.health.PhotosBlocked', tone: 'attention' },
+    NeedsPermissions: { key: 'web.dest.health.NeedsPermissions', tone: 'bad' },
+    TopicMissing: { key: 'web.dest.health.TopicMissing', tone: 'bad' },
+    Lost: { key: 'web.dest.health.Lost', tone: 'bad' },
 };
 
-/** A health status as a stateLabel's { kind, text }; a status this page doesn't know shows as its name, muted. */
+/** A health status as a label's { tone, text }; a status this page doesn't know shows as its name, neutral. */
 const healthState = (status, S) => {
     const known = HEALTH[status || 'Ok'];
-    return known ? { kind: known.kind, text: text(S, known.key) } : { kind: 'muted', text: String(status) };
+    return known ? { tone: known.tone, text: text(S, known.key) } : { tone: 'neutral', text: String(status) };
 };
 
 /** A health status as escaped HTML text, for an outcome line ("Check again", a test send). */
 export const healthText = (status, S) => esc(healthState(status, S).text);
 
-/** The health as coloured words: the status, plus "Photos blocked" when photos are blocked too. */
+/** The health as labels, only when something is wrong (a healthy destination shows none): the status, plus "Photos blocked" when photos are blocked too. */
 function healthLabels(health, S) {
     const status = health && health.Status ? health.Status : 'Ok';
-    return stateLabel(healthState(status, S))
-        + (health && health.PhotosBlocked && status !== 'PhotosBlocked' ? stateLabel(healthState('PhotosBlocked', S)) : '');
+    const asLabel = ({ tone, text: words }) => label(words, tone);
+    return (status === 'Ok' ? '' : asLabel(healthState(status, S)))
+        + (health && health.PhotosBlocked && status !== 'PhotosBlocked' ? asLabel(healthState('PhotosBlocked', S)) : '');
 }
 
 /** The save key (and cue key) of one control in a destination's editor: 'dest:<id>:<what>'. */
@@ -724,8 +633,9 @@ export function renderEditor(dest, catalog, libraries, S, ui) {
     parts.push(`<h3 class="tgj-subtitle">${t(S, 'dest.events.title')}</h3>`);
     for (const group of catalog.Groups) {
         const keys = catalog.EventKeys.filter(k => k.startsWith(group + '.'));
-        parts.push(`<h4 class="tgj-group-title">${t(S, `groups.${group}`)}</h4>`
-            + keys.map(k => toggle('destEvent', `event:${k}`, events.has(k), text(S, `dest.event.${k}`), { 'data-tgj-key': k })).join(''));
+        parts.push(`<div class="tgj-subcard" data-tgj-group-card="${esc(group)}"><h3 class="tgj-subcard-title">${t(S, `web.event.group.${group}`)}</h3>`
+            + keys.map(k => toggle('destEvent', `event:${k}`, events.has(k), text(S, `web.event.${k}`), { 'data-tgj-key': k })).join('')
+            + '</div>');
     }
 
     // Removing a leftover library has no switch of its own to show the cue beside, so the Libraries title carries it.
@@ -902,8 +812,12 @@ export function renderManual(dto, S, ui) {
     return card({ title: text(S, 'web.manual.title'), body: parts.join('') });
 }
 
-const MESSAGE_TOGGLES = ['ShowPoster', 'ShowOverview', 'ShowRatingGenres', 'ShowOpenInJellyfin', 'ShowProviderLinks', 'AnnounceUpgrades'];
-const UPDATE_MODES = ['SameMajor', 'AnyNewer'];
+/** The three update kinds (design §7): the settings path's last part, the switch's input name and its strings. */
+const UPDATE_KINDS = [
+    { key: 'Fixes', input: 'updFixes', label: 'web.updates.fixes', hint: 'web.updates.fixesHint' },
+    { key: 'NewReleases', input: 'updNewReleases', label: 'web.updates.newReleases', hint: 'web.updates.newReleasesHint' },
+    { key: 'NewMajor', input: 'updNewMajor', label: 'web.updates.newMajor', hint: 'web.updates.newMajorHint' },
+];
 
 /** The batching fields with their allowed ranges (spec §10.1) and the strings that label and describe them. */
 const BATCHING_FIELDS = [
@@ -920,19 +834,26 @@ const BATCHING_FIELDS = [
  * @param {object} settings
  */
 export function settingsFormData(settings) {
-    const mode = settings.UpdateCheck ? settings.UpdateCheck.Mode : undefined;
+    const check = settings.UpdateCheck ?? {};
     return {
         PublicUrl: settings.PublicUrl ?? '',
-        Message: { ...(settings.Message ?? {}) },
+        Message: messageFormData(settings.Message),
         Batching: { ...(settings.Batching ?? {}) },
         UpdateCheck: {
-            Enabled: Boolean(settings.UpdateCheck && settings.UpdateCheck.Enabled),
-            Mode: typeof mode === 'number' ? UPDATE_MODES[mode] ?? UPDATE_MODES[0] : mode ?? UPDATE_MODES[0],
+            Enabled: Boolean(check.Enabled),
+            Fixes: check.Fixes !== false,
+            NewReleases: check.NewReleases !== false,
+            NewMajor: Boolean(check.NewMajor),
         },
     };
 }
 
-/** The value at a dotted path ('Message.ShowPoster') of a nested object; undefined when a part is missing. */
+/** The UpdateCheck a PUT sends. */
+function updateCheckRequest(check) {
+    return { Enabled: check.Enabled, Fixes: check.Fixes, NewReleases: check.NewReleases, NewMajor: check.NewMajor };
+}
+
+/** The value at a dotted path ('UpdateCheck.Enabled') of a nested object; undefined when a part is missing. */
 function pathValue(obj, path) {
     return path.split('.').reduce((node, part) => (isPlainObject(node) ? node[part] : undefined), obj);
 }
@@ -958,7 +879,7 @@ function overlayPaths(target, source, paths) {
  * over the saved ones (the form's base), so edits still waiting in other fields are not sent with it. Also the
  * client-side errors that stop it (a batching value that isn't a whole number); see batchingError for the ranges.
  * @param {{ base: object, local: object }} form
- * @param {string[]} paths e.g. ['Message.ShowPoster']
+ * @param {string[]} paths e.g. ['Message.Switches.media.movie.ShowPoster']
  * @param {number} revision the Revision the page last saw (ExpectedRevision)
  * @param {Record<string, string>} S
  * @returns {{ body: object | null, errors: { Field: string, Message: string }[] }} Message is plain text
@@ -974,49 +895,12 @@ export function settingsRequest(form, paths, revision, S) {
             body: {
                 ExpectedRevision: revision,
                 PublicUrl: String(data.PublicUrl ?? '').trim(),
-                Message: data.Message,
+                Message: messageRequest(data.Message, paths),
                 Batching: data.Batching,
-                UpdateCheck: data.UpdateCheck,
+                UpdateCheck: updateCheckRequest(data.UpdateCheck),
             },
             errors: [],
         };
-}
-
-/**
- * Whether a public URL can be used for the "Open in Jellyfin" buttons: a port of the server's PublicUrlRules.IsValid
- * (an absolute http or https URL whose host contains a dot and is not an IPv6 literal). Empty text is valid: it turns
- * the buttons off. The server saves any string, so the page checks before it saves (design §6.3).
- * @param {unknown} value
- * @returns {boolean}
- */
-export function validatePublicUrl(value) {
-    const url = String(value ?? '').trim();
-    if (url === '') {
-        return true;
-    }
-
-    if (!/^https?:\/\//i.test(url)) {
-        return false;
-    }
-
-    let parsed;
-    try {
-        parsed = new URL(url);
-    } catch {
-        return false;
-    }
-
-    // System.Uri refuses a host with an empty label (".", ".a", "a..b"; one trailing dot is fine), with characters
-    // outside letters, digits, "-" and "_" ("*.b"), or with a %-escape ("a%2eb"), all of which URL accepts.
-    const host = parsed.hostname;
-    const rawHost = url.replace(/^https?:\/\//i, '').split(/[/?#]/)[0].replace(/^.*@/, '');
-    const labels = host.replace(/\.$/, '').split('.');
-    return (parsed.protocol === 'http:' || parsed.protocol === 'https:')
-        && !host.startsWith('[')
-        && host.includes('.')
-        && /^[a-z0-9._-]+$/.test(host)
-        && !rawHost.includes('%')
-        && labels.every(label => label !== '');
 }
 
 /**
@@ -1044,70 +928,11 @@ export function batchingError(field, batching, S) {
 }
 
 /**
- * The Messages card (spec §6.6 item 4, §8.3, §8.4; design §6.1): the public URL, which saves when the field is left
- * or on Enter, and the six message switches, which save at once. Each row has the cue spot of its own save.
- * @param {object | null} settings the SettingsDto
- * @param {Record<string, string>} S
- * @param {{ form?: { local: object } }} ui form is state.forms.settings
- * @returns {string} HTML
- */
-export function renderMessages(settings, S, ui) {
-    if (!settings || !ui.form) {
-        return '';
-    }
-
-    const local = ui.form.local;
-    const url = String(local.PublicUrl ?? '');
-    const rows = [row({
-        label: text(S, 'web.messages.url'),
-        hint: text(S, 'web.messages.urlHint'),
-        extraClass: 'tgj-row--stack',
-        cueKey: 'PublicUrl',
-        control: textField({
-            input: 'publicUrl',
-            value: url,
-            type: 'url',
-            attrs: { 'data-tgj-field': 'PublicUrl', 'data-tgj-save': 'PublicUrl', autocomplete: 'off', spellcheck: 'false', 'aria-label': text(S, 'web.messages.url') },
-        }),
-    })];
-    const suggestion = settings.PublicUrlSuggestion;
-    if (suggestion && suggestion !== url) {
-        rows.push(notice({
-            kind: 'info',
-            html: `${t(S, 'web.messages.suggested', { url: suggestion })} <strong>${t(S, 'web.messages.verify')}</strong> `
-                + actionButton({ label: text(S, 'web.messages.useSuggested'), act: 'useSuggested' }),
-        }));
-    }
-
-    // The server judged the saved value; once the user types another one, that verdict no longer applies.
-    if (settings.PublicUrl && !settings.PublicUrlValid && url === settings.PublicUrl) {
-        rows.push(notice({ kind: 'error', html: t(S, 'web.messages.urlInvalid') }));
-    }
-
-    for (const key of MESSAGE_TOGGLES) {
-        const label = text(S, `settings.msg.${key}`);
-        const path = `Message.${key}`;
-        rows.push(row({
-            label,
-            cueKey: path,
-            control: switchControl({
-                input: 'msgToggle',
-                checked: Boolean(local.Message && local.Message[key]),
-                label,
-                attrs: { 'data-tgj-key': key, 'data-tgj-field': path, 'data-tgj-save': path },
-            }),
-        }));
-    }
-
-    return card({ title: text(S, 'web.messages.title'), body: rows.join('') });
-}
-
-/**
  * The batching card under Advanced (spec §10.1): six whole-number fields, each with its range in the explanation.
  * Each saves 800 ms after the last keystroke, or when the field is left.
  * @param {object | null} settings
  * @param {Record<string, string>} S
- * @param {object} ui as for renderMessages
+ * @param {{ form?: { local: object } }} ui form is state.forms.settings
  * @returns {string} HTML
  */
 export function renderBatching(settings, S, ui) {
@@ -1134,10 +959,10 @@ export function renderBatching(settings, S, ui) {
 }
 
 /**
- * The update-check card under Advanced (spec §7.6): the switch and the mode, each saved at once.
+ * The update-check card under Advanced (spec §7.6): the Check switch and the three kinds, each saved at once.
  * @param {object | null} settings
  * @param {Record<string, string>} S
- * @param {object} ui as for renderMessages
+ * @param {{ form?: { local: object } }} ui form is state.forms.settings
  * @returns {string} HTML
  */
 export function renderUpdates(settings, S, ui) {
@@ -1156,328 +981,22 @@ export function renderUpdates(settings, S, ui) {
             label: enabled,
             attrs: { 'data-tgj-field': 'UpdateCheck.Enabled', 'data-tgj-save': 'UpdateCheck.Enabled' },
         }),
-    }) + row({
-        label: text(S, 'web.updates.mode'),
-        cueKey: 'UpdateCheck.Mode',
-        control: selectField({
-            input: 'updMode',
-            value: local.Mode,
-            options: UPDATE_MODES.map(mode => ({ value: mode, label: text(S, `settings.updates.mode.${mode}`) })),
-            attrs: { 'data-tgj-field': 'UpdateCheck.Mode', 'data-tgj-save': 'UpdateCheck.Mode', 'aria-label': text(S, 'web.updates.mode') },
-        }),
-    });
+    }) + UPDATE_KINDS.map(kind => {
+        const path = `UpdateCheck.${kind.key}`;
+        const name = text(S, kind.label);
+        return row({
+            label: name,
+            hint: text(S, kind.hint),
+            cueKey: path,
+            control: switchControl({
+                input: kind.input,
+                checked: Boolean(local[kind.key]),
+                label: name,
+                attrs: { 'data-tgj-field': path, 'data-tgj-save': path },
+            }),
+        });
+    }).join('');
     return card({ title: text(S, 'web.updates.title'), description: text(S, 'settings.updates.hint'), body });
-}
-
-const TEMPLATES_DOCS = 'https://github.com/MrSnowball-dev/tgjelly_plugin/blob/main/docs/templates.md';
-
-/** The template form data for one item (what a save sends besides the revision). */
-export function templateFormData(item) {
-    return { Text: String(item.Text ?? '') };
-}
-
-/** The auto-save and cue key of an event's template text. */
-const templateSaveKey = key => `template:${key}`;
-
-/** Tags of Telegram HTML that the preview shows as the same tag, without any attribute. */
-const PREVIEW_SAME = new Set(['b', 'strong', 'i', 'em', 'u', 'ins', 's', 'strike', 'del', 'code', 'pre']);
-/** Every tag the preview understands; any other tag is shown as text. */
-const PREVIEW_KNOWN = new Set([...PREVIEW_SAME, 'tg-spoiler', 'span', 'blockquote', 'a', 'tg-emoji', 'tg-time']);
-// A tag: optional /, the name, attributes (a name, maybe = and a quoted or bare value), >. Sticky: matched at lastIndex.
-const PREVIEW_TAG = /<(\/?)([a-zA-Z][a-zA-Z0-9-]*)((?:\s+[^\s=>/"']+(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s"'<>`]+))?)*)\s*>/y;
-const PREVIEW_ATTR = /([^\s=>/"']+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'<>`]+)))?/g;
-const NAMED_ENTITIES = { lt: '<', gt: '>', amp: '&', quot: '"' };
-
-/** Decodes the entities Telegram accepts (&lt; &gt; &amp; &quot; and numeric ones), once; anything else stays as it is. */
-function decodeEntities(text) {
-    return text.replace(/&(?:#(\d{1,7})|#[xX]([0-9a-fA-F]{1,6})|(lt|gt|amp|quot));/g, (whole, dec, hex, name) => {
-        if (name) {
-            return NAMED_ENTITIES[name];
-        }
-
-        const code = dec !== undefined ? Number(dec) : parseInt(hex, 16);
-        return code > 0 && code <= 0x10FFFF && (code < 0xD800 || code > 0xDFFF) ? String.fromCodePoint(code) : whole;
-    });
-}
-
-/** An href the preview may link to: http:, https: or tg:, else null. */
-function safeHref(value) {
-    const href = String(value ?? '').trim();
-    return /^(?:https?|tg):/i.test(href) ? href : null;
-}
-
-/** Splits Telegram HTML into tokens: text (decoded), and open and close tags with their attributes and raw source. */
-function previewTokens(source) {
-    const tokens = [];
-    let text = '';
-    let i = 0;
-    while (i < source.length) {
-        const lt = source.indexOf('<', i);
-        if (lt < 0) {
-            text += source.slice(i);
-            break;
-        }
-
-        text += source.slice(i, lt);
-        PREVIEW_TAG.lastIndex = lt;
-        const match = PREVIEW_TAG.exec(source);
-        if (!match) {
-            text += '<';
-            i = lt + 1;
-            continue;
-        }
-
-        if (text) {
-            tokens.push({ type: 'text', value: decodeEntities(text) });
-            text = '';
-        }
-
-        const attrs = {};
-        for (const attr of match[3].matchAll(PREVIEW_ATTR)) {
-            const name = attr[1].toLowerCase();
-            if (!Object.hasOwn(attrs, name)) {
-                attrs[name] = decodeEntities(attr[2] ?? attr[3] ?? attr[4] ?? '');
-            }
-        }
-
-        tokens.push({ type: match[1] ? 'close' : 'open', name: match[2].toLowerCase(), attrs, raw: match[0] });
-        i = lt + match[0].length;
-    }
-
-    if (text) {
-        tokens.push({ type: 'text', value: decodeEntities(text) });
-    }
-
-    return tokens;
-}
-
-/** A node list as HTML: text escaped, markup (already safe) as it is. */
-const nodesHtml = nodes => nodes.map(n => (n.html !== undefined ? n.html : esc(n.text))).join('');
-
-/** An expandable quote: the first line is the summary, the rest the body. */
-function expandableQuote(children) {
-    const index = children.findIndex(n => n.text !== undefined && n.text.includes('\n'));
-    let summary = children;
-    let body = [];
-    if (index >= 0) {
-        const cut = children[index].text.indexOf('\n');
-        summary = [...children.slice(0, index), { text: children[index].text.slice(0, cut) }];
-        body = [{ text: children[index].text.slice(cut + 1) }, ...children.slice(index + 1)];
-    }
-
-    return `<details class="tgj-tg-quote"><summary>${nodesHtml(summary)}</summary>${nodesHtml(body)}</details>`;
-}
-
-/** The safe preview markup for one closed Telegram element. */
-function previewElement(name, attrs, children) {
-    const inner = nodesHtml(children);
-    if (PREVIEW_SAME.has(name)) {
-        return `<${name}>${inner}</${name}>`;
-    }
-
-    switch (name) {
-        case 'tg-spoiler':
-            return `<span class="tgj-tg-spoiler">${inner}</span>`;
-        case 'span':
-            return String(attrs.class ?? '').trim() === 'tg-spoiler' ? `<span class="tgj-tg-spoiler">${inner}</span>` : inner;
-        case 'blockquote':
-            return Object.hasOwn(attrs, 'expandable') ? expandableQuote(children) : `<blockquote>${inner}</blockquote>`;
-        case 'a': {
-            const href = safeHref(attrs.href);
-            return href === null ? inner : `<a target="_blank" rel="noopener noreferrer" href="${esc(href)}">${inner}</a>`;
-        }
-        default:
-            // tg-emoji and tg-time show their fallback text.
-            return inner;
-    }
-}
-
-/**
- * Turns Telegram HTML (from the server's Validate) into markup that is safe to put into the page. It tokenizes the
- * input and re-emits only Telegram's formatting tags, with no attribute from the input except a checked link href:
- * b, strong, i, em, u, ins, s, strike, del, code and pre as themselves; tg-spoiler and span class="tg-spoiler" as a
- * span.tgj-tg-spoiler; blockquote (an expandable one as details/summary); a as a new-tab link for http:, https: and tg:
- * hrefs only, otherwise its text; tg-emoji and tg-time as their text. An unknown, unclosed or stray tag is shown as text.
- * Entities are decoded once, and all text is escaped on output.
- * @param {string} telegramHtml
- * @returns {string} HTML
- */
-export function previewHtml(telegramHtml) {
-    // Each open element: its tag, attributes, raw source and children; the root holds the output.
-    const root = { children: [] };
-    const stack = [root];
-    const top = () => stack.at(-1);
-    // An element that never closed: its tag's source as text, then its children.
-    const unwrap = frame => [{ text: frame.raw }, ...frame.children];
-
-    for (const token of previewTokens(String(telegramHtml ?? ''))) {
-        if (token.type === 'text') {
-            top().children.push({ text: token.value });
-        } else if (token.type === 'open' && PREVIEW_KNOWN.has(token.name)) {
-            stack.push({ name: token.name, attrs: token.attrs, raw: token.raw, children: [] });
-        } else if (token.type === 'close' && stack.some((f, i) => i > 0 && f.name === token.name)) {
-            while (top().name !== token.name) {
-                const open = stack.pop();
-                top().children.push(...unwrap(open));
-            }
-
-            const frame = stack.pop();
-            top().children.push({ html: previewElement(frame.name, frame.attrs, frame.children) });
-        } else {
-            top().children.push({ text: token.raw });
-        }
-    }
-
-    while (stack.length > 1) {
-        const open = stack.pop();
-        top().children.push(...unwrap(open));
-    }
-
-    return nodesHtml(root.children);
-}
-
-/** The message's inline buttons: one row each, a link only for an http:, https: or tg: URL. */
-function previewButtons(rows) {
-    const html = (rows ?? []).filter(row => Array.isArray(row) && row.length > 0).map(row => `<div class="tgj-tg-row">${row.map(b => {
-        const href = safeHref(b && b.Url);
-        const label = esc(b && b.Text);
-        return href === null
-            ? `<span class="tgj-tg-button">${label}</span>`
-            : `<a class="tgj-tg-button" target="_blank" rel="noopener noreferrer" href="${esc(href)}">${label}</a>`;
-    }).join('')}</div>`);
-    return html.length > 0 ? `<div class="tgj-tg-buttons">${html.join('')}</div>` : '';
-}
-
-/**
- * The template preview pane: the validation's errors and warnings, then the message as Telegram would show it (poster
- * placeholder, text, buttons) and its length. With errors, the last good preview is shown dimmed instead.
- * @param {object | null} result the last TemplateValidationDto; RequestError (HTML) when the request itself failed
- * @param {Record<string, string>} S
- * @param {string} [lang]
- * @param {object | null} [lastGood] the last validation of this template without errors
- * @returns {string} HTML
- */
-export function renderTemplatePreview(result, S, lang = 'en', lastGood = null) {
-    if (!result) {
-        return '';
-    }
-
-    const parts = [];
-    if (result.RequestError) {
-        parts.push(`<p class="tgj-error">${result.RequestError}</p>`);
-    }
-
-    for (const e of result.Errors ?? []) {
-        parts.push(`<p class="tgj-error">${e.Line
-            ? t(S, 'web.templates.errorAt', { line: e.Line, column: e.Column ?? 0, message: e.Message })
-            : esc(e.Message)}</p>`);
-    }
-
-    for (const w of result.Warnings ?? []) {
-        parts.push(`<p class="tgj-tpl-warning">${esc(w)}</p>`);
-    }
-
-    const failed = Boolean(result.RequestError) || (result.Errors ?? []).length > 0;
-    const shown = failed ? lastGood : result;
-    if (shown) {
-        parts.push(`<div class="tgj-tg-bubble${failed ? ' tgj-tg-stale' : ''}">`
-            + (shown.Poster ? `<div class="tgj-tg-poster">${t(S, 'web.templates.poster')}</div>` : '')
-            + `<div class="tgj-tg-text">${previewHtml(shown.Html)}</div>${previewButtons(shown.Buttons)}</div>`);
-    }
-
-    if (!result.RequestError && (!failed || result.Length > 0)) {
-        parts.push(`<p class="tgj-row-hint tgj-tpl-length">${t(S, 'web.templates.length', { length: formatNumber(result.Length ?? 0, lang), limit: formatNumber(result.Limit ?? 0, lang) })}</p>`);
-    }
-
-    return parts.join('');
-}
-
-/** Whether a validation result stops a test send: it had errors, or the request failed. */
-const validationFailed = result => Boolean(result && (result.RequestError || (result.Errors ?? []).length > 0));
-
-/** Whether Send test is off: no destination, the last validation failed, or a send or a reset is in flight. */
-export function templateTestBlocked(ui) {
-    return (ui.destinations ?? []).length === 0 || validationFailed(ui.result) || Boolean(ui.testing) || Boolean(ui.busy);
-}
-
-/**
- * The Message templates section (spec §8.5): every message comes from a template, and this edits the one in use per
- * event, with a live Telegram-like preview, a test send and a reset to the built-in template. The text saves itself
- * (design §6.1): its cue sits beside the textarea's label.
- * @param {object | null} dto the TemplatesDto
- * @param {Record<string, string>} S
- * @param {{ key?: string, forms?: Record<string, { local: object }>, result?: object | null,
- *   good?: object | null, busy?: boolean, lang?: string, destinations?: { Id: string, Title: string }[],
- *   testTo?: string, testing?: boolean, testResult?: string, resetAsk?: boolean }} ui key is the selected event;
- *   result is its last validation, good the last one without errors; testResult is HTML
- * @returns {string} HTML
- */
-export function renderTemplates(dto, S, ui) {
-    if (!dto || !Array.isArray(dto.Items) || dto.Items.length === 0) {
-        return '';
-    }
-
-    const lang = ui.lang ?? 'en';
-    const item = dto.Items.find(i => i.EventKey === ui.key) ?? dto.Items[0];
-    const form = (ui.forms ?? {})[`tpl:${item.EventKey}`];
-    const local = form ? form.local : templateFormData(item);
-    const saveKey = templateSaveKey(item.EventKey);
-    const eventLabel = text(S, 'web.templates.event');
-    const options = dto.Items.map(i => ({ value: i.EventKey, label: i.Edited ? text(S, 'web.templates.eventEdited', { label: i.Label }) : i.Label }));
-    const badge = item.Edited
-        ? `<span class="tgj-badge tgj-badge--edited">${t(S, 'web.templates.edited')}</span>`
-        : `<span class="tgj-badge">${t(S, 'web.templates.builtIn')}</span>`;
-    const parts = [row({
-        label: eventLabel,
-        control: badge + selectField({ input: 'tplEvent', value: item.EventKey, options, attrs: { 'aria-label': eventLabel } }),
-        extraClass: 'tgj-tpl-event',
-    })];
-    if (item.Flag) {
-        // A truncated template was sent, only shortened; any other flag means the built-in template was sent instead.
-        parts.push(item.Flag.Kind === 'truncated'
-            ? notice({ kind: 'warning', html: t(S, 'web.templates.flagTruncated') })
-            : notice({ kind: 'error', html: `${t(S, 'web.templates.flagError')} ${esc(item.Flag.Error)}` }));
-    }
-
-    // The textarea is told apart by its event key, not an id: a refresh keeps a pending text only in its own template.
-    const rows = (item.Fields ?? []).map(f => `<tr><td><code>${esc(f.Name)}</code></td><td>${esc(f.Type)}</td>`
-        + `<td>${f.Optional ? t(S, 'web.templates.optional') : ''}</td><td>${esc(f.Description)}</td></tr>`);
-    parts.push('<div class="tgj-tpl-grid"><div class="tgj-tpl-edit">'
-        + `<div class="tgj-tpl-label"><span class="tgj-row-label" id="tgj-tpl-label">${t(S, 'web.templates.text')}</span>`
-        + `<span class="tgj-cue" data-tgj-cue="${esc(saveKey)}" aria-live="polite"></span></div>`
-        + `<textarea class="tgj-field tgj-template-text" data-tgj-input="tplText" data-tgj-key="${esc(item.EventKey)}" data-tgj-save="${esc(saveKey)}"`
-        + ` aria-labelledby="tgj-tpl-label" rows="12" spellcheck="false">${esc(local.Text)}</textarea>`
-        + `<details class="tgj-tpl-fields"><summary>${t(S, 'web.templates.fields')}</summary><table class="tgj-template-fields">${rows.join('')}</table></details>`
-        + `<p class="tgj-tpl-docs"><a class="tgj-link" href="${TEMPLATES_DOCS}" target="_blank" rel="noopener noreferrer">${t(S, 'web.templates.docs')}</a></p></div>`
-        + `<div id="tgj-tpl-preview" class="tgj-tpl-preview">${renderTemplatePreview(ui.result ?? null, S, lang, ui.good ?? null)}</div></div>`);
-
-    const destinations = ui.destinations ?? [];
-    const chosen = destinations.some(d => d.Id === ui.testTo) ? ui.testTo : (destinations[0] ? destinations[0].Id : '');
-    const testTo = text(S, 'web.templates.testTo');
-    const target = destinations.length > 0
-        ? selectField({ input: 'tplTestTo', value: chosen, options: destinations.map(d => ({ value: d.Id, label: d.Title })), attrs: { 'aria-label': testTo } })
-        : '';
-    const testButton = actionButton({ label: text(S, 'web.templates.test'), act: 'tplTest', disabled: templateTestBlocked(ui), attrs: { id: 'tgj-tpl-test' } });
-    parts.push(row({
-        label: testTo,
-        hint: text(S, destinations.length > 0 ? 'web.templates.testNote' : 'web.templates.noDestinations'),
-        control: target + testButton + (ui.testResult ? `<span class="tgj-tpl-test-result">${ui.testResult}</span>` : ''),
-        extraClass: 'tgj-tpl-test',
-    }));
-
-    if (item.Edited) {
-        parts.push(ui.resetAsk
-            ? inlineConfirm({
-                question: text(S, 'web.templates.resetAsk'),
-                confirmLabel: text(S, 'web.templates.resetConfirm'),
-                confirmAct: 'tplResetConfirm',
-                cancelAct: 'tplResetCancel',
-                cancelLabel: text(S, 'web.templates.resetCancel'),
-            })
-            : `<div class="tgj-actions">${actionButton({ label: text(S, 'web.templates.reset'), act: 'tplReset', disabled: ui.busy })}</div>`);
-    }
-
-    return card({ title: text(S, 'web.templates.title'), description: text(S, 'web.templates.intro'), body: parts.join(''), extraClass: 'tgj-tpl' });
 }
 
 /**
@@ -1497,63 +1016,82 @@ export function renderDiagnostics(S, ui) {
             + `<textarea id="tgj-diagnostics-text" class="tgj-field tgj-diag-text" readonly rows="12">${esc(ui.text)}</textarea>`);
     }
 
-    return card({ title: text(S, 'web.diag.title'), body: parts.join('') });
+    const info = notice({ kind: 'info', html: `<p>${t(S, 'web.diag.contains')}</p><p>${t(S, 'web.diag.never')}</p><p>${t(S, 'web.diag.why')}</p>` });
+    return card({ title: text(S, 'web.diag.title'), body: info + parts.join('') });
 }
 
 // --- the shell (plan 8, design §5.1-5.2): header, sidebar, one section shown at a time ---
 
 /** The dashboard's sections, in sidebar order; each label is web.nav.<name>. */
-export const SECTIONS = ['overview', 'destinations', 'messages', 'templates', 'advanced'];
+export const SECTIONS = ['overview', 'destinations', 'messages', 'advanced', 'log'];
 const NAV_LABELS = {
     overview: 'web.nav.overview',
     destinations: 'web.nav.destinations',
     messages: 'web.nav.messages',
-    templates: 'web.nav.templates',
     advanced: 'web.nav.advanced',
+    log: 'web.nav.log',
 };
 
 /** Today's section containers, by the dashboard section that holds them (design §5.2). */
 const SECTION_HOSTS = {
     // Connect precedes Status: with no bot it leads (design §5.2), and with a bot it is empty, so Status leads.
-    overview: ['tgj-connect', 'tgj-status', 'tgj-bot', 'tgj-summary'],
+    overview: ['tgj-connect', 'tgj-status', 'tgj-bot'],
     destinations: ['tgj-destinations'],
+    // Messages holds the templates too (plan 9, design §6.1), and Batching sits in Advanced after Update checks (§7).
     messages: ['tgj-messages'],
-    templates: ['tgj-templates'],
-    advanced: ['tgj-proxy', 'tgj-batching', 'tgj-updates', 'tgj-manual', 'tgj-diagnostics'],
+    advanced: ['tgj-proxy', 'tgj-updates', 'tgj-batching', 'tgj-manual', 'tgj-diagnostics'],
+    // The Log (plan 9, design §8.1) is last: after Advanced in the sidebar, the last tab on a phone.
+    log: ['tgj-log'],
 };
 
 /** How long the first show waits for tgjelly.css before showing the page unstyled. */
 const STYLESHEET_WAIT_MS = 1000;
 
-/** The header's connection label: a state label's HTML, a coloured word and no symbol. */
-const connectionHtml = connection => stateLabel(connection);
+/** The header's connection label: a label's HTML, a word in an outline and no symbol. */
+const connectionHtml = connection => label(connection.text, connection.tone);
+
+/**
+ * The release an assembly version stands for: "1.0.4.0" is v0.4 and "2.1.12.0" is v1.12 (build/package.py
+ * track_version). A version without four numeric parts shows as it is.
+ * @param {string} version the status's Version
+ * @returns {string}
+ */
+export function releaseName(version) {
+    const parts = String(version ?? '').split('.');
+    return parts.length === 4 && parts.every(part => /^\d+$/.test(part)) ? `v${parts[1]}.${parts[2]}` : `v${version}`;
+}
+
+/** The header's version label with the full version and build target as its tooltip, or '' before the version is known. */
+const versionHtml = (S, version, buildTarget) => (version
+    ? label(releaseName(version), 'neutral', { title: text(S, 'web.header.versionTitle', { version, target: buildTarget ?? '' }) })
+    : '');
 
 /**
  * The header's connection label for a Status: "Connected · @bot", "Not connected", "Connecting", or a warning when the
  * connection needs attention or the status can't be read.
  * @param {object | null} status the last GET Status body
  * @param {Record<string, string> | null} S
- * @param {boolean} [failed] the last GET Status failed
- * @returns {{ kind: 'ok' | 'warning' | 'muted', text: string }} plain text, for stateLabel
+ * @param {string | false} [failed] why the last GET Status failed (plain text), or false
+ * @returns {{ tone: 'good' | 'progress' | 'neutral' | 'attention', text: string }} plain text, for label
  */
 export function connectionLabel(status, S, failed = false) {
     if (failed || !status) {
-        return failed ? { kind: 'warning', text: text(S, 'web.header.unknown') } : { kind: 'muted', text: text(S, 'web.header.notConnected') };
+        return failed ? { tone: 'attention', text: text(S, 'web.header.unknown', { reason: failed, seconds: POLL_SECONDS }) } : { tone: 'neutral', text: text(S, 'web.header.notConnected') };
     }
 
     if (!status.HasToken) {
-        return { kind: 'muted', text: text(S, 'web.header.notConnected') };
+        return { tone: 'neutral', text: text(S, 'web.header.notConnected') };
     }
 
     if (PROBLEM_STATES.has(status.ConnectionState) || status.Compatible === false) {
-        return { kind: 'warning', text: text(S, 'web.header.attention') };
+        return { tone: 'attention', text: text(S, 'web.header.attention') };
     }
 
     if (status.ConnectionState === 'Connected') {
-        return { kind: 'ok', text: status.BotUsername ? text(S, 'web.header.connected', { bot: status.BotUsername }) : text(S, 'web.header.connectedPlain') };
+        return { tone: 'good', text: status.BotUsername ? text(S, 'web.header.connected', { bot: status.BotUsername }) : text(S, 'web.header.connectedPlain') };
     }
 
-    return { kind: 'muted', text: text(S, 'web.header.connecting') };
+    return { tone: 'progress', text: text(S, 'web.header.connecting') };
 }
 
 /**
@@ -1561,11 +1099,12 @@ export function connectionLabel(status, S, failed = false) {
  * and one section per name holding today's containers. Only the active section is visible. The page fills the
  * containers, the label (#tgj-conn) and the counts (#tgj-nav-count-<name>) afterwards; this is written once.
  * @param {Record<string, string> | null} S
- * @param {{ active: string, connection: { kind: string, text: string }, counts?: Record<string, string> }} options
- *   counts are plain text by section name, e.g. { destinations: '3', templates: '1 edited' }
+ * @param {{ active: string, connection: { tone: string, text: string }, counts?: Record<string, string>, version?: string }} options
+ *   version is the plugin's, painted beside the title; empty until the first status arrives
+ *   counts are plain text by section name, e.g. { destinations: '3', messages: '1 edited' }
  * @returns {string}
  */
-export function renderShell(S, { active, connection, counts = {} }) {
+export function renderShell(S, { active, connection, counts = {}, version = '', buildTarget = '' }) {
     const current = SECTIONS.includes(active) ? active : 'overview';
     const nav = SECTIONS.map(name => `<button type="button" id="tgj-nav-${name}" data-tgj-nav="${name}"`
         + `${name === current ? ' aria-current="page"' : ''}>`
@@ -1574,7 +1113,7 @@ export function renderShell(S, { active, connection, counts = {} }) {
     const sections = SECTIONS.map(name => `<section id="tgj-sec-${name}" data-tgj-section="${name}" aria-labelledby="tgj-nav-${name}"`
         + `${name === current ? '' : ' hidden'}>${SECTION_HOSTS[name].map(id => `<div id="${id}"></div>`).join('')}</section>`);
     return '<div class="tgj-shell">'
-        + `<header class="tgj-header"><h1 class="tgj-header-title">TgJelly</h1><span id="tgj-conn">${connectionHtml(connection)}</span></header>`
+        + `<header class="tgj-header"><div class="tgj-header-brand"><h1 class="tgj-header-title">TgJelly</h1><span id="tgj-version">${versionHtml(S, version, buildTarget)}</span></div><span id="tgj-conn">${connectionHtml(connection)}</span></header>`
         + `<nav class="tgj-sidebar" aria-label="${t(S, 'web.nav.label')}">${nav.join('')}</nav>`
         + `<div class="tgj-content">${sections.join('')}</div>`
         + '</div>';
@@ -1598,7 +1137,9 @@ export function sectionFromHash(hash) {
         name = '';
     }
 
-    return SECTIONS.includes(name) ? name : 'overview';
+    // Templates became part of Messages (plan 9): an old link to them opens Messages.
+    const current = name === 'templates' ? 'messages' : name;
+    return SECTIONS.includes(current) ? current : 'overview';
 }
 
 /**
@@ -1785,7 +1326,7 @@ export default function TgJellyPage(view, params) {
         templates: null,
         // Editor forms by name: { base, local, dirty, changed } (see syncFormData).
         forms: {},
-        // errors: section name → HTML (escaped) shown under that section; statusFailed: the last GET Status failed.
+        // errors: section name → HTML (escaped) shown under that section; statusFailed: why the last GET Status failed (text), or false.
         ui: {
             errors: {},
             statusFailed: false,
@@ -1797,6 +1338,7 @@ export default function TgJellyPage(view, params) {
             result: null,
             unreachable: false,
             confirmDisconnect: false,
+            removeDestinations: false,
             // The destinations section (§6.6.3): the open editor, the remove confirm, and the last test/check outcome per id;
             // destPresetAsk is { id, preset } while leaving Custom for that preset waits for Replace (design §6.1a).
             destEditing: null,
@@ -1812,17 +1354,7 @@ export default function TgJellyPage(view, params) {
             // Diagnostics: the text when the clipboard refused it, and whether the last copy worked.
             diagText: '',
             diagCopied: false,
-            // The templates section: the selected event key, the last validation and the last one without errors per
-            // key, a reset in flight, the test send's destination, in-flight flag and outcome (HTML), and the
-            // open reset question.
-            tplKey: '',
-            tplResults: {},
-            tplGood: {},
-            tplBusy: false,
-            tplTestTo: '',
-            tplTesting: false,
-            tplTestResult: '',
-            tplResetAsk: false,
+            // The Messages section adds its own (tgjelly-messages.js, createMessages).
         },
     };
     const lang = () => document.documentElement.lang || 'en';
@@ -1836,11 +1368,7 @@ export default function TgJellyPage(view, params) {
     const typed = { token: '', proxyUsername: undefined, proxyPassword: undefined };
     // Section load errors (set by reloadSection), so a later good load can clear them without touching action errors.
     const loadErrors = new Set();
-    // The template preview, per event key: the newest Validate request's number (older replies are ignored) and the
-    // text its kept result was for (a save checks exactly the text it sends); and the typing debounce.
-    const tplSeqs = new Map();
-    const tplChecked = new Map();
-    let tplTimer = null;
+    const loggedLoadFailures = new Map();
     // Fields whose change hasn't been saved yet, by fieldSelector: a section write keeps their values (keepFocus).
     const pendingFields = new Set();
     // How many section writes are running (see renderSection and the focusout listener).
@@ -1908,7 +1436,7 @@ export default function TgJellyPage(view, params) {
     const loadSettings = () => {
         settingsLoad ??= api.get('Settings').then(result => {
             if (result.status !== 200 || !result.body) {
-                throw new Error('HTTP ' + result.status);
+                throw new Error(httpFailure(result));
             }
 
             takeSettings(result.body);
@@ -1923,7 +1451,7 @@ export default function TgJellyPage(view, params) {
     const loadLinks = () => {
         linksLoad ??= api.get('Links').then(result => {
             if (result.status !== 200 || !result.body) {
-                throw new Error('HTTP ' + result.status);
+                throw new Error(httpFailure(result));
             }
 
             state.links = result.body;
@@ -1984,135 +1512,59 @@ export default function TgJellyPage(view, params) {
 
     async function loadDestinations() {
         const [list, libraries] = await Promise.all([api.get('Destinations'), api.get('Libraries'), loadLinks()]);
-        if (list.status !== 200 || !list.body || libraries.status !== 200 || !Array.isArray(libraries.body)) {
-            throw new Error('HTTP ' + (list.status === 200 ? libraries.status : list.status));
+        if (list.status !== 200 || !list.body) {
+            throw new Error(httpFailure(list));
+        }
+
+        if (libraries.status !== 200 || !Array.isArray(libraries.body)) {
+            throw new Error(httpFailure(libraries));
         }
 
         state.libraries = libraries.body;
         takeDestinations(list.body);
     }
 
-    /** Takes a TemplatesDto into the state and one editor form per event key (keeping unsaved edits). */
-    const takeTemplates = dto => {
-        if (isOlder(state.templates, dto)) {
-            return;
-        }
+    // The Messages section (design §6.1-6.2) lives in tgjelly-messages.js. It gets the page's state and save machinery;
+    // the functions are looked up when called, so ones defined further down are fine.
+    const messages = createMessages({
+        view,
+        state,
+        api,
+        byId,
+        lang,
+        forget: id => rendered.delete(id),
+        renderSection: name => renderSection(name),
+        reloadSection: (name, options) => reloadSection(name, options),
+        runAction: (name, fn) => runAction(name, fn),
+        markDirty: (name, path, value) => markDirty(name, path, value),
+        syncForm: (name, data) => syncForm(name, data),
+        noteRevision,
+        isOlder,
+        pageRevision,
+        queueSave: job => queueSave(job),
+        saveResult: (result, on) => saveResult(result, on),
+        failureText: result => failureText(result),
+        releaseFields: key => releaseFields(key),
+        flush: key => autosave.flush(key),
+        cancelSave: key => autosave.cancel(key),
+        loadSettings: () => loadSettings(),
+        saveSetting: (path, mode, el, options) => saveSetting(path, mode, el, options),
+        requestError,
+        thrownError,
+        thrownText,
+        healthText,
+        fieldSelector,
+    });
 
-        noteRevision(dto);
-        state.templates = dto;
-        const live = new Set(dto.Items.map(i => `tpl:${i.EventKey}`));
-        for (const key of Object.keys(state.forms).filter(k => k.startsWith('tpl:') && !live.has(k))) {
-            delete state.forms[key];
-        }
-
-        for (const item of dto.Items) {
-            syncForm(`tpl:${item.EventKey}`, templateFormData(item));
-        }
-    };
-
-    /** The selected event key: the chosen one while it exists, else the first. */
-    const templateKey = () => {
-        const items = state.templates ? state.templates.Items : [];
-        return items.some(i => i.EventKey === state.ui.tplKey) ? state.ui.tplKey : (items[0] ? items[0].EventKey : '');
-    };
-
-    /** The destination a test send goes to: the chosen one while it exists, else the first ('' when there is none). */
-    const templateTestTarget = () => {
-        const items = state.destinations ? state.destinations.Items : [];
-        return items.some(d => d.Id === state.ui.tplTestTo) ? state.ui.tplTestTo : (items[0] ? items[0].Id : '');
-    };
-
-    /** The templates section's view of the state. */
-    const templatesUi = () => {
-        const key = templateKey();
-        return {
-            key,
-            forms: state.forms,
-            result: state.ui.tplResults[key] ?? null,
-            good: state.ui.tplGood[key] ?? null,
-            busy: state.ui.tplBusy,
-            lang: lang(),
-            destinations: state.destinations ? state.destinations.Items : [],
-            testTo: templateTestTarget(),
-            testing: state.ui.tplTesting,
-            testResult: state.ui.tplTestResult,
-            resetAsk: state.ui.tplResetAsk,
-        };
-    };
-
-    /**
-     * Shows the selected template's last validation in the preview pane, and turns Send test on or off to match. Only
-     * the pane is replaced: the textarea keeps its focus and caret.
-     */
-    const showTemplatePreview = () => {
-        const ui = templatesUi();
-        const pane = byId('tgj-tpl-preview');
-        if (pane) {
-            pane.innerHTML = renderTemplatePreview(ui.result, state.strings, ui.lang, ui.good);
-            // The section on the page no longer matches the copy setHtml keeps, so its next render must write.
-            rendered.delete('tgj-templates');
-        }
-
-        const test = byId('tgj-tpl-test');
-        if (test) {
-            test.disabled = templateTestBlocked(ui);
-        }
-    };
-
-    /**
-     * Validates an event's current text (default: the selected event's) and keeps the result for the preview and for the
-     * save's check. Every request gets the key's next number; a reply that is not for the newest request is not kept,
-     * so a slow older reply can't overwrite a newer one.
-     * @returns {Promise<{ text: string, reply: object, failure: string | null } | null>} the text checked, the reply (or
-     *   { RequestError } HTML when the request failed) and then the plain-text reason; null without that template
-     */
-    const validateTemplate = async (key = templateKey()) => {
-        const form = state.forms[`tpl:${key}`];
-        if (!key || !form) {
-            return null;
-        }
-
-        const value = String(form.local.Text ?? '');
-        const seq = (tplSeqs.get(key) ?? 0) + 1;
-        tplSeqs.set(key, seq);
-        const S = state.strings;
-        let reply;
-        let failure = null;
-        try {
-            const result = await api.post('Templates/Validate', { EventKey: key, Text: value });
-            if (result.status === 200 && result.body) {
-                reply = result.body;
-            } else {
-                reply = { RequestError: requestError(S, result) };
-                failure = failureText(result);
-            }
-        } catch (err) {
-            reply = { RequestError: t(S, 'web.requestFailed', { reason: err && err.message }) };
-            failure = text(S, 'web.requestFailed', { reason: err && err.message });
-        }
-
-        if (seq === tplSeqs.get(key)) {
-            state.ui.tplResults[key] = reply;
-            tplChecked.set(key, value);
-            if (!validationFailed(reply)) {
-                state.ui.tplGood[key] = reply;
-            }
-
-            if (key === templateKey()) {
-                showTemplatePreview();
-            }
-        }
-
-        return { text: value, reply, failure };
-    };
-
-    /** Drops a pending debounced validation. */
-    const cancelTemplateTimer = () => {
-        if (tplTimer !== null) {
-            clearTimeout(tplTimer);
-            tplTimer = null;
-        }
-    };
+    // The Log section (design §8.1) lives in tgjelly-log.js. It loads only while it is shown (selectSection, the poll).
+    const logSection = createLog({
+        state,
+        api,
+        lang,
+        renderSection: name => renderSection(name),
+        reloadSection: (name, options) => reloadSection(name, options),
+        runAction: (name, fn) => runAction(name, fn),
+    });
 
     const sections = {
         status: {
@@ -2124,22 +1576,22 @@ export default function TgJellyPage(view, params) {
                     if (result.status === 200 && result.body) {
                         state.status = result.body;
                     } else {
-                        failure = 'HTTP ' + result.status;
+                        failure = statusReason(state.strings, result);
                     }
                 } catch (err) {
-                    failure = err;
+                    failure = errorReason(err);
                 }
 
-                if (failure && !state.ui.statusFailed) {
+                if (failure && failure !== state.ui.statusFailed) {
                     console.error('TgJelly: could not load the status', failure);
                 }
 
-                state.ui.statusFailed = failure !== null;
+                state.ui.statusFailed = failure ?? false;
             },
             render: () => {
                 const S = state.strings;
                 const html = state.status ? renderStatus(state.status, S, lang()) : '';
-                return state.ui.statusFailed ? html + notice({ kind: 'error', html: t(S, 'web.status.failed') }) : html;
+                return state.ui.statusFailed ? html + notice({ kind: 'error', html: t(S, 'web.status.failed', { reason: state.ui.statusFailed, seconds: POLL_SECONDS }) }) : html;
             },
         },
         connect: {
@@ -2153,13 +1605,6 @@ export default function TgJellyPage(view, params) {
             dependsOnStatus: true,
             load: loadLinks,
             render: () => renderBot(state.status, state.links, state.strings, state.ui),
-        },
-        // Reads the status, destinations and templates state, so it has nothing to load itself.
-        summary: {
-            id: 'tgj-summary',
-            dependsOnStatus: true,
-            load: async () => {},
-            render: () => renderOverviewSummary(state.status, state.destinations, state.templates, state.strings, lang()),
         },
         proxy: {
             id: 'tgj-proxy',
@@ -2189,11 +1634,8 @@ export default function TgJellyPage(view, params) {
                 detectedPresets: state.ui.detectedPresets,
             }),
         },
-        messages: {
-            id: 'tgj-messages',
-            load: loadSettings,
-            render: () => renderMessages(state.settings, state.strings, settingsUi()),
-        },
+        // The settings and the templates (tgjelly-messages.js).
+        messages: messages.section,
         batching: {
             id: 'tgj-batching',
             load: loadSettings,
@@ -2209,23 +1651,10 @@ export default function TgJellyPage(view, params) {
             load: async () => {},
             render: () => renderDiagnostics(state.strings, { text: state.ui.diagText, copied: state.ui.diagCopied }),
         },
-        templates: {
-            id: 'tgj-templates',
-            load: async () => {
-                const result = await api.get('Templates');
-                if (result.status !== 200 || !result.body) {
-                    throw new Error('HTTP ' + result.status);
-                }
-
-                takeTemplates(result.body);
-                // Opening the section shows the preview of the template in use at once.
-                validateTemplate().catch(err => console.error('TgJelly: the template preview failed', err));
-            },
-            render: () => renderTemplates(state.templates, state.strings, templatesUi()),
-        },
+        log: logSection.section,
     };
 
-    /** The sidebar counts, plain text by section: the destinations, and how many templates are edited. */
+    /** The sidebar counts, plain text by section: the destinations, and how many templates are edited (under Messages). */
     const navCounts = () => {
         const S = state.strings;
         const counts = {};
@@ -2236,20 +1665,26 @@ export default function TgJellyPage(view, params) {
 
         const edited = state.templates ? (state.templates.Items ?? []).filter(item => item.Edited).length : 0;
         if (edited > 0) {
-            counts.templates = pluralText(S, 'web.nav.edited', edited, {}, lang());
+            counts.messages = pluralText(S, 'web.nav.edited', edited, {}, lang());
         }
 
         return counts;
     };
 
     const connection = () => connectionLabel(state.status, state.strings, state.ui.statusFailed);
+    const pluginVersion = () => (state.status && state.status.Version) || '';
+    const pluginTarget = () => (state.status && state.status.BuildTarget) || '';
 
-    /** Shows one section and marks its sidebar button; with { remember: true } also records it in the URL hash. */
+    /**
+     * Shows one section and marks its sidebar button; with { remember: true } (the admin chose it) also records it in the
+     * URL hash, and brings the Log up to date when it is the one opened.
+     */
     const selectSection = (name, { remember = false } = {}) => {
         if (!SECTIONS.includes(name)) {
             return;
         }
 
+        const previous = activeSection;
         activeSection = name;
         for (const other of SECTIONS) {
             const section = byId(`tgj-sec-${other}`);
@@ -2273,6 +1708,12 @@ export default function TgJellyPage(view, params) {
             // replaceState: no history entry, and no hashchange, so Jellyfin's router doesn't navigate.
             history.replaceState(history.state, '', hashWithSection(location.hash, name));
         }
+
+        // The Log loads only while it is shown: opening it brings it up to date at once, then the poll keeps it so. (On
+        // the first show, show() loads it.)
+        if (remember && name === 'log' && previous !== 'log') {
+            reloadSection('log');
+        }
     };
 
     /**
@@ -2287,7 +1728,7 @@ export default function TgJellyPage(view, params) {
 
         const connected = Boolean(state.status && state.status.HasToken);
         const first = connected ? sectionFromHash(window.location && window.location.hash) : 'overview';
-        root.innerHTML = renderShell(state.strings, { active: first, connection: connection(), counts: navCounts() });
+        root.innerHTML = renderShell(state.strings, { active: first, connection: connection(), counts: navCounts(), version: pluginVersion(), buildTarget: pluginTarget() });
         shellDrawn = true;
         selectSection(first);
     };
@@ -2299,6 +1740,7 @@ export default function TgJellyPage(view, params) {
         }
 
         setHtml('tgj-conn', connectionHtml(connection()));
+        setHtml('tgj-version', versionHtml(state.strings, pluginVersion(), pluginTarget()));
         const counts = navCounts();
         for (const name of SECTIONS) {
             setHtml(`tgj-nav-count-${name}`, esc(counts[name] ?? ''));
@@ -2308,10 +1750,13 @@ export default function TgJellyPage(view, params) {
     const renderSection = name => {
         drawShell();
         const section = sections[name];
+        const host = byId(section.id);
+        const write = () => setHtml(section.id, section.render() + sectionError(name));
         // While the write runs, a focused field it replaces may fire focusout: that is not the admin leaving the field.
+        // A section with its own write (the Log) keeps its place around it.
         writing++;
         try {
-            keepFocus(byId(section.id), () => setHtml(section.id, section.render() + sectionError(name)), { pending: pendingFields });
+            keepFocus(host, section.write ? () => section.write(host, write) : write, { pending: pendingFields });
         } finally {
             writing--;
         }
@@ -2321,14 +1766,10 @@ export default function TgJellyPage(view, params) {
 
         if (name === 'destinations') {
             // The manual block shows the same data (detected chats, the gate), so it follows every Destinations render;
-            // the templates section lists the destinations for its test send.
+            // the Messages section lists the destinations for its test send, and the Log's filter offers them.
             renderSection('manual');
-            renderSection('templates');
-        }
-
-        if (name === 'destinations' || name === 'templates') {
-            // The Overview summary counts these.
-            renderSection('summary');
+            renderSection('messages');
+            renderSection('log');
         }
 
         if (name === 'proxy' || name === 'connect') {
@@ -2394,16 +1835,23 @@ export default function TgJellyPage(view, params) {
             pending = (async () => {
                 try {
                     await sections[name].load();
+                    loggedLoadFailures.delete(name);
                     if (loadErrors.delete(name)) {
                         delete state.ui.errors[name];
                     }
 
                     renderSection(name);
                 } catch (err) {
-                    console.error(`TgJelly: the ${name} section failed to load or render`, err);
+                    // One diagnostic per distinct failure: a failing poll would otherwise log every 3 s.
+                    const reason = errorReason(err);
+                    if (loggedLoadFailures.get(name) !== reason) {
+                        loggedLoadFailures.set(name, reason);
+                        console.error(`TgJelly: the ${name} section failed to load or render`, err);
+                    }
+
                     loadErrors.add(name);
                     const S = state.strings;
-                    state.ui.errors[name] = t(S, 'web.requestFailed', { reason: err && err.message });
+                    state.ui.errors[name] = t(S, 'web.loadFailed', { reason, seconds: POLL_SECONDS });
                     try {
                         renderSection(name);
                     } catch (renderErr) {
@@ -2422,8 +1870,9 @@ export default function TgJellyPage(view, params) {
         return pending;
     };
 
-    // The sections that hold a copy of the one settings Revision (spec §10.4), by the state their load fills.
-    const REVISION_SECTIONS = { settings: ['proxy', 'messages', 'batching', 'updates'], destinations: ['destinations'], templates: ['templates'] };
+    // The sections that hold a copy of the one settings Revision (spec §10.4), by the state their load fills. Messages
+    // loads both the settings and the templates.
+    const REVISION_SECTIONS = { settings: ['proxy', 'messages', 'batching', 'updates'], destinations: ['destinations'], templates: ['messages'] };
     // The newest Revision the page has caught up with: the sections were loaded at it, or reloaded after it.
     let syncedRevision = 0;
     const newestRevision = () => Math.max(0, ...['status', ...Object.keys(REVISION_SECTIONS)]
@@ -2442,9 +1891,10 @@ export default function TgJellyPage(view, params) {
         }
 
         syncedRevision = newest;
-        await Promise.all(Object.entries(REVISION_SECTIONS)
+        const behind = new Set(Object.entries(REVISION_SECTIONS)
             .filter(([key]) => state[key] && state[key].Revision < newest)
-            .flatMap(([, names]) => names.map(name => reloadSection(name, { fresh: true }))));
+            .flatMap(([, names]) => names));
+        await Promise.all([...behind].map(name => reloadSection(name, { fresh: true })));
     };
 
     /**
@@ -2463,7 +1913,7 @@ export default function TgJellyPage(view, params) {
             }
         } catch (err) {
             console.error('TgJelly: action failed', err);
-            state.ui.errors[name] = t(S, 'web.requestFailed', { reason: err && err.message });
+            state.ui.errors[name] = thrownError(S, err);
         }
 
         await syncRevisions();
@@ -2507,6 +1957,7 @@ export default function TgJellyPage(view, params) {
 
     const setConfirmDisconnect = value => {
         state.ui.confirmDisconnect = value;
+        state.ui.removeDestinations = false;
         renderSection('bot');
     };
 
@@ -2580,25 +2031,34 @@ export default function TgJellyPage(view, params) {
     const changeSeq = new Map();
     const heldFields = new Map();
 
-    /** The words a cue shows: the cue states come from tgjelly-autosave.js, the text from the strings. */
-    const cueWords = cue => {
+    /**
+     * The markup a cue shows (design §3): the state word as a label, Saved good, Saving… progress and Not saved bad, and
+     * after Not saved the reason as plain text, so it can be long. The states come from tgjelly-autosave.js, the words
+     * from the strings.
+     */
+    const cueHtml = cue => {
         const S = state.strings;
         if (cue.state === 'saved') {
-            return text(S, 'web.autosave.saved');
+            return label(text(S, 'web.autosave.saved'), 'good');
         }
 
         if (cue.state === 'saving') {
-            return text(S, 'web.autosave.saving');
+            return label(text(S, 'web.autosave.saving'), 'progress');
         }
 
         if (cue.state === 'error') {
-            return text(S, 'web.autosave.notSaved', { reason: cue.text === CONFLICT_KEY ? text(S, 'web.autosave.conflict') : cue.text ?? '' });
+            const reason = cue.text === CONFLICT_KEY ? text(S, 'web.autosave.conflict') : cue.text ?? '';
+            return `${label(text(S, 'web.autosave.notSaved'), 'bad')} <span class="tgj-cue-reason">${esc(reason)}</span>`;
         }
 
         return '';
     };
 
-    /** Writes a key's cue into its spots, in place (the section is not written again). Idle clears class and text. */
+    // What each spot shows now: a spot is written only when its markup changes, so a repaint after another section's
+    // write doesn't make its live region say the same words again.
+    const painted = new WeakMap();
+
+    /** Writes a key's cue into its spots, in place (the section is not written again). Idle clears class and markup. */
     const paintCue = key => {
         if (typeof view.querySelectorAll !== 'function') {
             return;
@@ -2606,14 +2066,15 @@ export default function TgJellyPage(view, params) {
 
         const cue = cues.get(key);
         const className = cue ? `tgj-cue tgj-cue--${cue.state}` : 'tgj-cue';
-        const words = cue ? cueWords(cue) : '';
+        const html = cue ? cueHtml(cue) : '';
         for (const spot of view.querySelectorAll(`[data-tgj-cue="${selectorValue(key)}"]`)) {
             if (spot.className !== className) {
                 spot.className = className;
             }
 
-            if (spot.textContent !== words) {
-                spot.textContent = words;
+            if ((painted.get(spot) ?? '') !== html) {
+                spot.innerHTML = html;
+                painted.set(spot, html);
             }
         }
     };
@@ -2655,6 +2116,9 @@ export default function TgJellyPage(view, params) {
         clock: { now: () => Date.now(), setTimeout: (fn, ms) => setTimeout(fn, ms), clearTimeout: handle => clearTimeout(handle) },
         onCue,
         onSettled,
+        describeError: err => (isNetworkError(err)
+            ? text(state.strings, 'web.autosave.network', { reason: errorReason(err) })
+            : text(state.strings, 'web.unexpectedError', { reason: errorReason(err) })),
     });
 
     /**
@@ -2704,9 +2168,7 @@ export default function TgJellyPage(view, params) {
     };
 
     /** The plain-text reason a request failed, for a cue: the server's Message, or the status code. */
-    const failureText = result => (result.body && result.body.Message
-        ? String(result.body.Message)
-        : text(state.strings, 'web.requestFailed', { reason: result.status }));
+    const failureText = result => failureReason(state.strings, result);
 
     /**
      * Maps a save's reply to the queue's SaveResult: 200 with a body runs saved(body); 409 with Current gives a conflict
@@ -2749,7 +2211,7 @@ export default function TgJellyPage(view, params) {
         const form = state.forms.settings;
         const S = state.strings;
         if (!form || !state.settings) {
-            return { status: 'failed', message: text(S, 'web.requestFailed', { reason: 'no settings' }) };
+            return { status: 'failed', message: text(S, 'web.request.noSettings') };
         }
 
         const request = settingsRequest(form, paths, pageRevision(), S);
@@ -2776,9 +2238,9 @@ export default function TgJellyPage(view, params) {
         });
     };
 
-    /** Queues the save of one settings field (its dotted path is also its save and cue key). */
-    const saveSetting = (path, mode, el, { delay, validate } = {}) => queueSave({
-        key: path,
+    /** Queues the save of one settings field; its save and cue key is its dotted path unless key is given. */
+    const saveSetting = (path, mode, el, { delay, validate, key = path } = {}) => queueSave({
+        key,
         mode,
         delay,
         fields: el ? [fieldSelector(el)] : [],
@@ -2788,10 +2250,6 @@ export default function TgJellyPage(view, params) {
 
     /** Typed text and numbers save this long after the last keystroke (design §6.1). */
     const TYPING_SAVE_MS = 800;
-
-    const publicUrlError = () => (validatePublicUrl(state.forms.settings && state.forms.settings.local.PublicUrl)
-        ? null
-        : text(state.strings, 'web.messages.urlInvalid'));
 
     /** A switch's new state on click: the opposite of the form's value at path. */
     const flipped = path => !pathValue(state.forms.settings && state.forms.settings.local, path);
@@ -2809,7 +2267,7 @@ export default function TgJellyPage(view, params) {
     const sendProxy = async () => {
         const form = state.forms.proxy;
         if (!form || !state.settings) {
-            return { status: 'failed', message: text(state.strings, 'web.requestFailed', { reason: 'no settings' }) };
+            return { status: 'failed', message: text(state.strings, 'web.request.noSettings') };
         }
 
         const local = form.local;
@@ -2853,84 +2311,6 @@ export default function TgJellyPage(view, params) {
     /** Queues the proxy card's save: one job, saved when the focus leaves the card (or on Enter). */
     const saveProxy = el => queueSave({ key: 'proxy', mode: 'blur', fields: [fieldSelector(el)], validate: proxyError, send: sendProxy });
 
-    /**
-     * Why an event's typed template can't be saved (design §6.3), or null: empty text never saves (the server would take
-     * it as "remove the override"; Reset is the way back), nor does text whose latest validation had errors.
-     * @param {string} key the event key
-     */
-    const templateSaveError = key => {
-        const S = state.strings;
-        const form = state.forms[`tpl:${key}`];
-        const value = form ? String(form.local.Text ?? '') : '';
-        if (value.trim() === '') {
-            return text(S, 'web.templates.notSavedEmpty');
-        }
-
-        const result = state.ui.tplResults[key];
-        return tplChecked.get(key) === value && result && (result.Errors ?? []).length > 0 ? text(S, 'web.templates.notSavedErrors') : null;
-    };
-
-    /**
-     * Sends one auto-save of an event's template: its typed text, with the current Revision. A text the preview hasn't
-     * checked yet (its Validate is still on the way, or failed) is checked first, so a broken template never goes live.
-     * On success the form starts over from the reply, keeping text typed while the request ran.
-     * @param {string} key the event key
-     */
-    const sendTemplate = async key => {
-        const S = state.strings;
-        const name = `tpl:${key}`;
-        if (!state.forms[name] || !state.templates) {
-            return { status: 'failed', message: text(S, 'web.requestFailed', { reason: 'no template' }) };
-        }
-
-        const reason = templateSaveError(key);
-        if (reason) {
-            return { status: 'invalid', message: reason };
-        }
-
-        let value = String(state.forms[name].local.Text ?? '');
-        const known = state.ui.tplResults[key];
-        if (tplChecked.get(key) !== value || !known || known.RequestError) {
-            const checked = await validateTemplate(key);
-            if (checked.failure) {
-                return { status: 'failed', message: checked.failure };
-            }
-
-            if ((checked.reply.Errors ?? []).length > 0) {
-                return { status: 'invalid', message: text(S, 'web.templates.notSavedErrors') };
-            }
-
-            value = checked.text;
-        }
-
-        return saveResult(await api.put(`Templates/${encodeURIComponent(key)}`, { ExpectedRevision: pageRevision(), Text: value }), {
-            fields: ['Text'],
-            saved: dto => {
-                // The sent text is now the saved one; text typed while the request ran is still an edit.
-                const now = state.forms[name];
-                state.forms[name] = { base: { Text: value }, local: now ? now.local : { Text: value }, dirty: true, changed: [] };
-                takeTemplates(dto);
-                renderSection('templates');
-            },
-            conflict: current => {
-                // The form keeps the admin's text on top of the server data (syncFormData): the admin's value wins.
-                takeTemplates(current);
-                renderSection('templates');
-            },
-            again: () => sendTemplate(key),
-        });
-    };
-
-    /** Queues the save of an event's typed template, 1 s after the last keystroke or when the textarea is left. */
-    const saveTemplate = (key, el) => queueSave({
-        key: templateSaveKey(key),
-        mode: 'debounce',
-        delay: TEMPLATE_SAVE_MS,
-        fields: [fieldSelector(el)],
-        validate: () => templateSaveError(key),
-        send: () => sendTemplate(key),
-    });
-
     const destination = id => (state.destinations ? state.destinations.Items.find(d => d.Id === id) : undefined);
     const destKey = id => `dest:${id}`;
     const idOf = el => el.getAttribute('data-tgj-id');
@@ -2956,7 +2336,7 @@ export default function TgJellyPage(view, params) {
     const sendDestination = async id => {
         const form = state.forms[destKey(id)];
         if (!form || !destination(id)) {
-            return { status: 'failed', message: text(state.strings, 'web.requestFailed', { reason: 'no destination' }) };
+            return { status: 'failed', message: text(state.strings, 'web.request.noDestination') };
         }
 
         const body = destinationChanges(form.base, form.local, pageRevision());
@@ -3093,13 +2473,13 @@ export default function TgJellyPage(view, params) {
             state.ui.saving = true;
             renderSection('bot');
             try {
-                const result = await api.del('Token');
+                const result = await api.del(`Token?removeDestinations=${state.ui.removeDestinations}`);
                 if (result.status >= 300) {
                     return result;
                 }
 
-                Object.assign(state.ui, { confirmDisconnect: false, result: null, mode: null, changingToken: false });
-                await Promise.all([reloadSection('status', { fresh: true }), reloadSection('bot', { fresh: true })]);
+                Object.assign(state.ui, { confirmDisconnect: false, removeDestinations: false, result: null, mode: null, changingToken: false });
+                await Promise.all([reloadSection('status', { fresh: true }), reloadSection('bot', { fresh: true }), reloadSection('destinations', { fresh: true })]);
                 return result;
             } finally {
                 state.ui.saving = false;
@@ -3228,16 +2608,6 @@ export default function TgJellyPage(view, params) {
             await reloadSection('destinations', { fresh: true });
             return undefined;
         }),
-        // A whole URL, chosen with a button: it saves at once (the field itself saves on blur or Enter).
-        useSuggested: () => {
-            if (state.settings && state.settings.PublicUrlSuggestion) {
-                markDirty('settings', 'PublicUrl', state.settings.PublicUrlSuggestion);
-                // The suggestion replaces whatever was typed and waiting, so the field shows it.
-                releaseFields('PublicUrl');
-                renderSection('messages');
-                saveSetting('PublicUrl', 'now', null, { validate: publicUrlError });
-            }
-        },
         copyDiagnostics: () => runAction('diagnostics', async () => {
             Object.assign(state.ui, { diagText: '', diagCopied: false });
             const result = await api.get('Diagnostics');
@@ -3253,90 +2623,6 @@ export default function TgJellyPage(view, params) {
                 state.ui.diagText = text;
             }
 
-            return undefined;
-        }),
-        // Reset asks first, inline: Reset or Cancel.
-        tplReset: () => {
-            state.ui.tplResetAsk = true;
-            renderSection('templates');
-        },
-        tplResetCancel: () => {
-            state.ui.tplResetAsk = false;
-            renderSection('templates');
-        },
-        tplResetConfirm: () => runAction('templates', async () => {
-            const key = templateKey();
-            const name = `tpl:${key}`;
-            if (!state.templates) {
-                return undefined;
-            }
-
-            const S = state.strings;
-            // The reset replaces the typed text: a save still waiting for it is dropped, and one in flight is waited
-            // for, so the text doesn't come back and the reset sends the Revision that save moved to.
-            const saveKey = templateSaveKey(key);
-            autosave.cancel(saveKey);
-            releaseFields(saveKey);
-            state.ui.tplBusy = true;
-            renderSection('templates');
-            await autosave.flush(saveKey);
-            let result;
-            try {
-                result = await api.del(`Templates/${encodeURIComponent(key)}?expectedRevision=${pageRevision()}`);
-            } finally {
-                state.ui.tplBusy = false;
-                state.ui.tplResetAsk = false;
-            }
-
-            if (result.status === 200 && result.body) {
-                // The edits are gone: the form starts over from the built-in text, and the preview follows it.
-                cancelTemplateTimer();
-                delete state.forms[name];
-                takeTemplates(result.body);
-                validateTemplate().catch(err => console.error('TgJelly: the template preview failed', err));
-                return undefined;
-            }
-
-            if (result.status === 409 && result.body && result.body.Current) {
-                takeTemplates(result.body.Current);
-                state.ui.errors.templates = t(S, 'web.templates.conflict');
-                return undefined;
-            }
-
-            return result;
-        }),
-        // Sends the typed text, rendered with sample values, to the chosen destination; the outcome shows by the button.
-        tplTest: () => runAction('templates', async () => {
-            const key = templateKey();
-            const form = state.forms[`tpl:${key}`];
-            const target = templateTestTarget();
-            if (!form || !target) {
-                return undefined;
-            }
-
-            const S = state.strings;
-            state.ui.tplTesting = true;
-            state.ui.tplTestResult = '';
-            renderSection('templates');
-            let result;
-            try {
-                result = await api.post('Templates/Test', { EventKey: key, Text: String(form.local.Text ?? ''), DestinationId: target });
-            } finally {
-                state.ui.tplTesting = false;
-            }
-
-            if (result.status !== 200 || !result.body) {
-                state.ui.tplTestResult = requestError(S, result);
-                return undefined;
-            }
-
-            const reply = result.body;
-            const health = reply.Health;
-            state.ui.tplTestResult = reply.Sent
-                ? t(S, 'web.templates.sent')
-                : (reply.Error ? esc(reply.Error) : healthText(health && health.Status, S));
-            // The send may have changed the destination's health.
-            await reloadSection('destinations', { fresh: true });
             return undefined;
         }),
     };
@@ -3446,6 +2732,13 @@ export default function TgJellyPage(view, params) {
             renderSection('destinations');
             saveDestination(id, `silent:${group}`, fieldSelector(el));
         },
+        // Part of the disconnect question: it saves nothing.
+        disconnectRemoveDestinations: (el, event) => {
+            if (event.type === 'click') {
+                state.ui.removeDestinations = !state.ui.removeDestinations;
+                renderSection('bot');
+            }
+        },
         // Part of the remove question: it saves nothing.
         destLeave: (el, event) => {
             if (event.type === 'click') {
@@ -3465,23 +2758,6 @@ export default function TgJellyPage(view, params) {
             const id = detectedId(el);
             if (id !== null && PRESETS.includes(el.value)) {
                 state.ui.detectedPresets[id] = el.value;
-            }
-        },
-        // A partial URL can pass the rules, and would go live in message buttons: this saves on blur or Enter only.
-        publicUrl: (el, event) => {
-            if (event.type === 'input') {
-                markDirty('settings', 'PublicUrl', String(el.value ?? ''));
-                saveSetting('PublicUrl', 'blur', el, { validate: publicUrlError });
-            }
-        },
-        // Switches are buttons: they reach here on click.
-        msgToggle: (el, event) => {
-            const key = el.getAttribute('data-tgj-key');
-            if (MESSAGE_TOGGLES.includes(key) && event.type === 'click') {
-                const path = `Message.${key}`;
-                markDirty('settings', path, flipped(path));
-                renderSection('messages');
-                saveSetting(path, 'now', el);
             }
         },
         batching: (el, event) => {
@@ -3505,45 +2781,22 @@ export default function TgJellyPage(view, params) {
                 saveSetting('UpdateCheck.Enabled', 'now', el);
             }
         },
-        // A select fires input and then change; the change is the choice.
-        updMode: (el, event) => {
-            if (UPDATE_MODES.includes(el.value) && event.type === 'change') {
-                markDirty('settings', 'UpdateCheck.Mode', el.value);
-                saveSetting('UpdateCheck.Mode', 'now', el);
+        ...Object.fromEntries(UPDATE_KINDS.map(kind => [kind.input, (el, event) => {
+            if (event.type === 'click') {
+                const path = `UpdateCheck.${kind.key}`;
+                markDirty('settings', path, flipped(path));
+                renderSection('updates');
+                saveSetting(path, 'now', el);
             }
-        },
-        // Typing records the edit; after a pause it refreshes the preview pane (only the pane: re-rendering would move the
-        // caret), and after a longer one the text saves itself (design §6.1). Typed text acts on input only.
-        tplText: (el, event) => {
-            const own = el.getAttribute('data-tgj-key');
-            const key = state.templates && state.templates.Items.some(i => i.EventKey === own) ? own : templateKey();
-            if (event.type !== 'input' || !state.forms[`tpl:${key}`]) {
-                return;
-            }
-
-            markDirty(`tpl:${key}`, 'Text', String(el.value ?? ''));
-            cancelTemplateTimer();
-            tplTimer = setTimeout(() => {
-                tplTimer = null;
-                validateTemplate(key).catch(err => console.error('TgJelly: the template preview failed', err));
-            }, PREVIEW_DEBOUNCE_MS);
-            saveTemplate(key, el);
-        },
-        // A select fires input and then change; the change is the choice.
-        tplEvent: (el, event) => {
-            if (event.type === 'change' && state.templates && state.templates.Items.some(i => i.EventKey === el.value)) {
-                cancelTemplateTimer();
-                Object.assign(state.ui, { tplKey: el.value, tplResetAsk: false, tplTestResult: '' });
-                renderSection('templates');
-                return validateTemplate();
-            }
-
-            return undefined;
-        },
-        tplTestTo: el => {
-            state.ui.tplTestTo = String(el.value ?? '');
-        },
+        }])),
     };
+
+    // The Messages section's own clicks and inputs (tgjelly-messages.js).
+    Object.assign(actions, messages.actions);
+    Object.assign(inputs, messages.inputs);
+    // The Log section's (tgjelly-log.js).
+    Object.assign(actions, logSection.actions);
+    Object.assign(inputs, logSection.inputs);
 
     const stopPolling = () => {
         if (timer !== null) {
@@ -3560,6 +2813,11 @@ export default function TgJellyPage(view, params) {
 
         if (!document.hidden && !inFlight.has('status')) {
             reloadSection('status');
+        }
+
+        // The Log refreshes with the poll, only while it is shown.
+        if (!document.hidden && activeSection === 'log' && !inFlight.has('log')) {
+            reloadSection('log');
         }
     };
 
@@ -3578,7 +2836,7 @@ export default function TgJellyPage(view, params) {
 
         stringsLoad ??= api.get('Strings?lang=' + encodeURIComponent(lang())).then(result => {
             if (result.status !== 200 || !result.body) {
-                throw new Error('HTTP ' + result.status);
+                throw new Error(httpFailure(result));
             }
 
             return result.body;
@@ -3591,7 +2849,7 @@ export default function TgJellyPage(view, params) {
             console.error('TgJelly: could not load the page strings', err);
             const root = byId('tgjelly-root');
             if (root && !shellDrawn) {
-                root.textContent = 'Could not load TgJelly.';
+                root.textContent = `Could not load TgJelly: ${errorReason(err)}. Reload the page; if it keeps failing, check the Jellyfin log.`;
             }
 
             return false;
@@ -3611,14 +2869,15 @@ export default function TgJellyPage(view, params) {
 
         startPolling();
         await reloadSection('status');
-        await Promise.all(Object.keys(sections).filter(name => name !== 'status').map(name => reloadSection(name)));
+        // The Log loads only when it is the section shown (selectSection loads it when the admin opens it).
+        await Promise.all(Object.keys(sections).filter(name => name !== 'status' && (name !== 'log' || activeSection === 'log')).map(name => reloadSection(name)));
         syncedRevision = Math.max(syncedRevision, newestRevision());
     };
 
     const hide = () => {
         visible = false;
         stopPolling();
-        cancelTemplateTimer();
+        messages.hide();
         // Leaving the page saves what is still waiting (a debounce, or a field saved on blur that still has the focus).
         autosave.flush().catch(logFailure);
     };
@@ -3645,6 +2904,13 @@ export default function TgJellyPage(view, params) {
 
         event.preventDefault();
         if (found.el.disabled) {
+            return;
+        }
+
+        // A quick, repeatable action (inserting into the template, opening a table) never disables its button: that
+        // would take the keyboard focus from it.
+        if (found.el.getAttribute('data-tgj-instant') !== null) {
+            found.run().catch(logFailure);
             return;
         }
 
@@ -3698,6 +2964,21 @@ export default function TgJellyPage(view, params) {
             flushSoon(key);
         }
     });
+
+    // Pressing a field or format cell of the template tables must not take the focus (and the caret) from the textarea.
+    view.addEventListener('mousedown', event => {
+        if (event.target && event.target.closest && event.target.closest('[data-tgj-insert]')) {
+            event.preventDefault();
+        }
+    });
+
+    // The hover link between the template and its preview (design §6.5) follows the pointer; its mirror follows the
+    // textarea's scrolling (scroll events don't bubble, so this listens on the way down).
+    for (const type of ['mouseover', 'mousemove', 'mouseout']) {
+        view.addEventListener(type, messages.hover);
+    }
+
+    view.addEventListener('scroll', messages.scroll, true);
 
     // A spoiler in the template preview is revealed (and hidden again) on click, as in Telegram.
     view.addEventListener('click', event => {

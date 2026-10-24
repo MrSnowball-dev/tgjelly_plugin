@@ -26,7 +26,7 @@ public sealed class TemplateSample
     /// <param name="renderer">Fits and checks template text.</param>
     /// <param name="engine">The template engine, for the unfitted length.</param>
     /// <param name="models">Builds the sample models.</param>
-    /// <param name="settings">The settings: the toggles, the public URL and the language.</param>
+    /// <param name="settings">The settings: the message's switches, the public URL and the language.</param>
     /// <param name="strings">The string table, for the button labels.</param>
     public TemplateSample(TemplateRenderer renderer, TemplateEngine engine, TemplateModelBuilder models, SettingsStore settings, StringTable strings)
     {
@@ -49,22 +49,41 @@ public sealed class TemplateSample
         ArgumentNullException.ThrowIfNull(text);
         var config = _settings.Current;
         var values = _models.Sample(eventKey);
-        var poster = eventKey != TemplateKeys.Digest && TemplateFieldCatalog.IsMedia(eventKey) && config.Message.ShowPoster;
+        var poster = eventKey != TemplateKeys.Digest && config.Message.For(eventKey).ShowPoster;
         var limit = poster ? TemplateFitter.CaptionLimit : TemplateFitter.TextLimit;
         var buttons = Buttons(eventKey, config);
         var unfitted = _engine.Render(eventKey, text, values.Values, strict: false, config.Language).Output ?? string.Empty;
         var length = HtmlText.PlainLength(unfitted);
 
         var (caption, full, problem) = _renderer.FitBoth(eventKey, text, values, config.Language);
-        return problem is not null
-            ? new SampleMessage(null, poster, poster, buttons, length, limit, problem, null, eventKey)
-            : new SampleMessage(poster ? caption!.Html : full!.Html, poster, poster, buttons, length, limit, null, full!.Html, eventKey);
+        if (problem is not null)
+        {
+            return new SampleMessage(null, poster, poster, buttons, length, limit, problem, null, eventKey);
+        }
+
+        var shown = poster ? caption! : full!;
+        return new SampleMessage(shown.Html, poster, poster, buttons, length, limit, null, full!.Html, eventKey, Marked(text, shown, config.Language));
+    }
+
+    // The shown HTML with each template piece's output marked, for the dashboard's hover link (design §6.5): the fitted
+    // model variant rendered again with markers, then cut where the fitter cut. Marking never changes what is sent; when
+    // the marked render can't give exactly the shown HTML once stripped, the preview gets that HTML without markers.
+    private string Marked(string text, FitResult shown, string language)
+    {
+        var html = shown.Html ?? string.Empty;
+        if (shown.Model is null || _engine.RenderMarked(text, shown.Model, language).Output is not { } marked)
+        {
+            return TemplateMarkers.Strip(html);
+        }
+
+        var aligned = TemplateMarkers.Align(marked, html);
+        return string.Equals(TemplateMarkers.Strip(aligned), html, StringComparison.Ordinal) ? aligned : TemplateMarkers.Strip(html);
     }
 
     private List<IReadOnlyList<OutboxButton>> Buttons(string eventKey, PluginConfiguration config)
     {
         var rows = new List<IReadOnlyList<OutboxButton>>();
-        var options = config.Message;
+        var options = config.Message.For(eventKey);
 
         // As sent: media messages carry the Open and provider rows; alerts and the digest have none of them.
         var media = TemplateFieldCatalog.IsMedia(eventKey) && eventKey != TemplateKeys.Digest;

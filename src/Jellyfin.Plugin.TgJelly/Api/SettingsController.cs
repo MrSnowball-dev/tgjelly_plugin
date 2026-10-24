@@ -55,7 +55,7 @@ public class SettingsController : ControllerBase
     public ActionResult<SettingsDto> GetSettings() => ToDto(_settings.Current);
 
     /// <summary>
-    /// Saves the public URL, message toggles, batching and update-check settings.
+    /// Saves the public URL, message switches, batching and update-check settings.
     /// </summary>
     /// <param name="request">The new values and the expected revision.</param>
     /// <returns>The saved settings, 400 with per-field errors, or 409 with the current data.</returns>
@@ -71,13 +71,27 @@ public class SettingsController : ControllerBase
             return blocked;
         }
 
+        var message = request.Message ?? new MessageSettingsUpdate();
+        if (message.Validate() is { Count: > 0 } messageErrors)
+        {
+            return BadRequest(new ErrorsDto { Errors = messageErrors });
+        }
+
         var publicUrl = (request.PublicUrl ?? string.Empty).Trim();
         var before = _settings.Current.PublicUrl;
         var result = _settings.Update(request.ExpectedRevision, c =>
         {
             c.PublicUrl = publicUrl;
-            c.Message = request.Message;
+            message.ApplyTo(c.Message);
             c.Batching = request.Batching;
+            // v0.4's Mode, from a page loaded before the upgrade, is ignored: the three switches are what is saved.
+#pragma warning disable CS0618
+            if (request.UpdateCheck is { } update)
+            {
+                update.Mode = null;
+            }
+
+#pragma warning restore CS0618
             c.UpdateCheck = request.UpdateCheck;
         });
 
@@ -109,7 +123,7 @@ public class SettingsController : ControllerBase
 
         if (!Enum.TryParse<ProxyMode>(request.Mode, ignoreCase: true, out var mode) || !Enum.IsDefined(mode))
         {
-            return BadRequest(new ErrorsDto { Errors = [new SettingsError("Proxy.Mode", "Must be System, None, Http or Socks5.")] });
+            return BadRequest(new ErrorsDto { Errors = [new SettingsError("Proxy.Mode", "Must be System, None, Http or Socks5. Reload the page and pick the mode again.")] });
         }
 
         var url = (request.Url ?? string.Empty).Trim();
@@ -180,7 +194,7 @@ public class SettingsController : ControllerBase
             PublicUrl = c.PublicUrl,
             PublicUrlValid = PublicUrlRules.IsValid(c.PublicUrl),
             PublicUrlSuggestion = _links.Suggest(),
-            Message = c.Message,
+            Message = MessageSettingsDto.From(c.Message),
             Batching = c.Batching,
             UpdateCheck = c.UpdateCheck,
             ProxyMode = c.Proxy.Mode.ToString(),

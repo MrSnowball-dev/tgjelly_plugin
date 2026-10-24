@@ -307,6 +307,19 @@ public sealed class DestinationsControllerTests : IAsyncLifetime
     }
 
     [Fact]
+    public void Put_BadValues_SayWhatToDoNext()
+    {
+        var d = _h.AddDestination(-1001);
+        string Message(UpdateDestinationRequest r) => Assert.Single(Assert.IsType<ErrorsDto>(Assert.IsType<BadRequestObjectResult>(_controller.Update(d.Id, r).Result).Value).Errors).Message;
+        var rev = _h.Settings.Current.Revision;
+
+        Assert.Contains("Reload the page", Message(new UpdateDestinationRequest { ExpectedRevision = rev, Events = ["media.podcast"] }), System.StringComparison.Ordinal);
+        Assert.Contains("Reload the page", Message(new UpdateDestinationRequest { ExpectedRevision = rev, SilentGroups = ["noise"] }), System.StringComparison.Ordinal);
+        Assert.Contains("Reload the page", Message(new UpdateDestinationRequest { ExpectedRevision = rev, LibraryIds = ["not-a-guid"] }), System.StringComparison.Ordinal);
+        Assert.Contains("Reload the page", Message(new UpdateDestinationRequest { ExpectedRevision = rev, Preset = "Loud" }), System.StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Put_UnknownEventKey_Is400()
     {
         var d = _h.AddDestination(-1001);

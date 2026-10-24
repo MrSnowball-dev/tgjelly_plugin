@@ -43,7 +43,15 @@ PASSWORD = "smoke-pass-1"
 
 # Every dashboard asset GetPages() registers besides the page itself, with the content type a browser needs: a module
 # script with any other type is refused, and so is a stylesheet (design §8). test_smoke.py pins this to Plugin.cs.
-WEB_ASSETS = (("tgjelly.js", "javascript"), ("tgjelly-ui.js", "javascript"), ("tgjelly-autosave.js", "javascript"), ("tgjelly.css", "css"))
+WEB_ASSETS = (
+    ("tgjelly.js", "javascript"),
+    ("tgjelly-ui.js", "javascript"),
+    ("tgjelly-autosave.js", "javascript"),
+    ("tgjelly-messages.js", "javascript"),
+    ("tgjelly-preview.js", "javascript"),
+    ("tgjelly-log.js", "javascript"),
+    ("tgjelly.css", "css"),
+)
 
 
 def asset_served(status: int, content_type: str, kind: str) -> bool:

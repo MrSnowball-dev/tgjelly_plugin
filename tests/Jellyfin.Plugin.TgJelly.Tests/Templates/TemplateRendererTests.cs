@@ -78,12 +78,13 @@ public sealed class TemplateRendererTests : IDisposable
 
         var result = Renderer().Render(Movie(), hasPoster: false)!;
 
-        Assert.Equal(builtIn, result);
+        Assert.Equal(builtIn, result with { FallbackError = null });
         Assert.Null(result.TemplateKey);
         var flag = StoredFlag()!;
         Assert.Equal("error", flag.Kind);
         Assert.StartsWith("line 2, column ", flag.Error, StringComparison.Ordinal);
         Assert.Equal(TemplateText.Hash("line one\n{{ if }}"), flag.TextHash);
+        Assert.Equal(flag.Error, result.FallbackError);
     }
 
     [Fact]
@@ -94,7 +95,7 @@ public sealed class TemplateRendererTests : IDisposable
 
         var result = Renderer().Render(Movie(), hasPoster: false)!;
 
-        Assert.Equal(builtIn, result);
+        Assert.Equal(builtIn, result with { FallbackError = null });
         Assert.Equal(_h.Strings.Get("templates.html.notAllowed", ("tag", "h1")), StoredFlag()!.Error);
     }
 
@@ -110,7 +111,7 @@ public sealed class TemplateRendererTests : IDisposable
 
         var result = Renderer().Render(Movie(), hasPoster: false)!;
 
-        Assert.Equal(builtIn, result);
+        Assert.Equal(builtIn, result with { FallbackError = null });
         var flag = StoredFlag()!;
         Assert.Equal("error", flag.Kind);
         Assert.Equal(_h.Strings.Get("templates.empty"), flag.Error);
@@ -213,7 +214,7 @@ public sealed class TemplateRendererTests : IDisposable
 
         var result = Renderer(engine).Render(Movie(), hasPoster: true)!;
 
-        Assert.Equal(builtIn, result);
+        Assert.Equal(builtIn, result with { FallbackError = null });
         Assert.Null(result.TemplateKey);
         var flag = StoredFlag()!;
         Assert.Equal("error", flag.Kind);

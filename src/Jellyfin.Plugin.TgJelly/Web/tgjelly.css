@@ -46,6 +46,8 @@
     --tgj-error-tint: color-mix(in srgb, var(--tgj-error) 14%, transparent);
     --tgj-error-line: color-mix(in srgb, var(--tgj-error) 50%, transparent);
     --tgj-error-ring: color-mix(in srgb, var(--tgj-error) 35%, transparent);
+    --tgj-success-ring: color-mix(in srgb, var(--tgj-success) 35%, transparent);
+    --tgj-warning-ring: color-mix(in srgb, var(--tgj-warning) 35%, transparent);
 
     /* One spacing scale; the larger steps grow a little with the plugin's width. */
     --tgj-space-1: 0.25rem;
@@ -103,6 +105,13 @@
     gap: var(--tgj-space-2) var(--tgj-space-4);
     padding-bottom: var(--tgj-space-3);
     border-bottom: 1px solid var(--tgj-line);
+}
+
+#tgjelly-root .tgj-header-brand {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: var(--tgj-space-2);
 }
 
 #tgjelly-root .tgj-header-title {
@@ -539,31 +548,52 @@
     margin-top: var(--tgj-space-3);
 }
 
-/* ---- State label: a coloured word, no symbol ---- */
+/* ---- Label (plan 9 design §3): every state is a word in an outlined pill, no fill and no symbol ---- */
 
-#tgjelly-root .tgj-state {
-    font-weight: 600;
+/* A soft tint of the tone's colour outlines it, and the text is in the tone's colour. Neutral is today's Built-in. */
+#tgjelly-root .tgj-label {
+    display: inline-block;
+    padding: 0.0625rem var(--tgj-space-2);
+    border: 1px solid var(--tgj-line-strong);
+    border-radius: 999px;
+    color: var(--tgj-fg-2);
+    font-size: var(--tgj-step--1);
+    font-weight: 500;
+    line-height: 1.4;
     white-space: nowrap;
 }
 
-#tgjelly-root .tgj-state--ok {
+#tgjelly-root .tgj-label--good {
+    border-color: var(--tgj-success-ring);
     color: var(--tgj-success-text);
 }
 
-#tgjelly-root .tgj-state--warning {
+#tgjelly-root .tgj-label--progress {
+    border-color: var(--tgj-accent-ring);
+    color: var(--tgj-accent-text);
+}
+
+#tgjelly-root .tgj-label--neutral {
+    border-color: var(--tgj-line-strong);
+    color: var(--tgj-fg-2);
+}
+
+#tgjelly-root .tgj-label--attention {
+    border-color: var(--tgj-warning-ring);
     color: var(--tgj-warning-text);
 }
 
-#tgjelly-root .tgj-state--error {
+#tgjelly-root .tgj-label--bad {
+    border-color: var(--tgj-error-ring);
     color: var(--tgj-error-text);
 }
 
-#tgjelly-root .tgj-state--muted {
-    color: var(--tgj-fg-2);
-    font-weight: 400;
+#tgjelly-root .tgj-label--accent {
+    border-color: var(--tgj-accent-ring);
+    color: var(--tgj-accent-text);
 }
 
-/* ---- Save cue (design §6.2): Saved fades out over its 2 s; Not saved stays ---- */
+/* ---- Save cue (design §6.2, plan 9 §3): a label; Saved fades out over its 2 s; Not saved stays with its reason ---- */
 
 #tgjelly-root .tgj-cue {
     order: -1;
@@ -581,12 +611,10 @@
 }
 
 #tgjelly-root .tgj-cue--saved {
-    color: var(--tgj-success-text);
     animation: tgj-cue-saved 2000ms ease-in-out forwards;
 }
 
 #tgjelly-root .tgj-cue--saving {
-    color: var(--tgj-fg-2);
     animation: tgj-cue-in var(--tgj-dur) ease-out;
 }
 
@@ -595,9 +623,13 @@
     order: 1;
     flex-basis: 100%;
     contain: inline-size;
-    color: var(--tgj-error-text);
     text-align: end;
     white-space: normal;
+}
+
+/* The reason after the Not saved label: plain error-coloured text, which wraps. */
+#tgjelly-root .tgj-cue-reason {
+    color: var(--tgj-error-text);
 }
 
 @keyframes tgj-cue-saved {
@@ -638,40 +670,82 @@
     padding-left: 1.2em;
 }
 
-/* ---- Templates ---- */
+/* ---- Messages: one page per message (design §6.1) ---- */
 
-/* Built-in or Edited, as a word in a quiet pill beside the event; Edited in the accent colour. */
-#tgjelly-root .tgj-badge {
-    display: inline-block;
-    padding: 0.0625rem var(--tgj-space-2);
-    border: 1px solid var(--tgj-line-strong);
-    border-radius: 999px;
-    color: var(--tgj-fg-2);
-    font-size: var(--tgj-step--1);
-    white-space: nowrap;
-}
-
-#tgjelly-root .tgj-badge--edited {
-    border-color: var(--tgj-accent-ring);
-    color: var(--tgj-accent-text);
-}
-
-#tgjelly-root .tgj-tpl-event .tgj-select {
-    width: 18rem;
-    max-width: 100%;
-}
-
-#tgjelly-root .tgj-tpl-grid {
+/* The pickers across the top; What it shows and the template on the left; the preview beside them, in view on scroll. */
+#tgjelly-root .tgj-msg-layout {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    gap: var(--tgj-space-4) var(--tgj-space-5);
-    padding-block: var(--tgj-space-3);
+    grid-template-columns: minmax(0, 1fr) minmax(16rem, 24rem);
+    grid-template-areas:
+        "pick pick"
+        "cards side";
+    align-items: start;
+    gap: var(--tgj-space-4);
+}
+
+#tgjelly-root .tgj-msg-pick {
+    grid-area: pick;
+}
+
+#tgjelly-root .tgj-msg-cards {
+    grid-area: cards;
+    display: flex;
+    flex-direction: column;
+    gap: var(--tgj-space-4);
+    min-width: 0;
+}
+
+/* Jellyfin's header stays at the top of the window, so the preview stops below it. */
+#tgjelly-root .tgj-msg-side {
+    grid-area: side;
+    position: sticky;
+    top: 5rem;
+    min-width: 0;
+}
+
+#tgjelly-root .tgj-msg-pickers {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: var(--tgj-space-3) var(--tgj-space-4);
+}
+
+#tgjelly-root .tgj-msg-picker {
+    display: flex;
+    flex: 1 1 12rem;
+    flex-direction: column;
+    gap: var(--tgj-space-1);
+    min-width: 0;
+    max-width: 18rem;
+}
+
+#tgjelly-root .tgj-msg-picker .tgj-select {
+    width: 100%;
+}
+
+/* The Built-in or Edited label sits on the selects' line. */
+#tgjelly-root .tgj-msg-state {
+    display: flex;
+    align-items: center;
+    min-height: 2.25rem;
+}
+
+/* The public URL belongs to Open in Jellyfin: indented under it, between the switch rows' dividers. */
+#tgjelly-root .tgj-msg-nested {
+    padding-inline-start: var(--tgj-space-4);
+    border-top: 1px solid var(--tgj-line);
+    border-inline-start: 2px solid var(--tgj-line-strong);
+}
+
+#tgjelly-root .tgj-msg-nested + .tgj-row {
     border-top: 1px solid var(--tgj-line);
 }
 
-#tgjelly-root .tgj-tpl-grid > * {
-    min-width: 0;
+#tgjelly-root .tgj-msg-nested > .tgj-notice {
+    margin-bottom: var(--tgj-space-3);
 }
+
+/* ---- Templates ---- */
 
 /* The textarea's label, with the save cue beside it. */
 #tgjelly-root .tgj-tpl-label {
@@ -704,36 +778,147 @@
     tab-size: 4;
 }
 
-#tgjelly-root .tgj-tpl-fields {
+/* The Fields and Formatting tables: each opens from a toggle button, collapsed until the viewer opens it. */
+#tgjelly-root .tgj-tpl-tables {
+    display: grid;
+    gap: var(--tgj-space-2);
     margin-top: var(--tgj-space-3);
     font-size: var(--tgj-step--1);
 }
 
-#tgjelly-root .tgj-tpl-fields > summary {
+#tgjelly-root .tgj-ref-toggle {
+    appearance: none;
+    display: flex;
+    align-items: center;
+    gap: var(--tgj-space-2);
+    width: 100%;
+    margin: 0;
+    padding: var(--tgj-space-2) 0;
+    border: 0;
+    background: transparent;
     color: var(--tgj-fg-2);
+    font: inherit;
+    font-weight: 600;
+    text-align: start;
     cursor: pointer;
 }
 
-#tgjelly-root .tgj-tpl-fields > summary:hover {
+/* The chevron is drawn with borders, not a character, and turns when the table opens. */
+#tgjelly-root .tgj-ref-toggle::before {
+    content: "";
+    flex: none;
+    width: 0.45em;
+    height: 0.45em;
+    border-right: 2px solid currentColor;
+    border-bottom: 2px solid currentColor;
+    transform: rotate(-45deg);
+    transition: transform 0.15s ease;
+}
+
+#tgjelly-root .tgj-ref-toggle[aria-expanded="true"]::before {
+    transform: rotate(45deg);
+}
+
+#tgjelly-root .tgj-ref-toggle:hover {
     color: var(--tgj-fg);
 }
 
-#tgjelly-root .tgj-template-fields {
+#tgjelly-root .tgj-ref-toggle:focus-visible,
+#tgjelly-root .tgj-insert:focus-visible {
+    outline: 2px solid var(--tgj-accent);
+    outline-offset: 2px;
+}
+
+#tgjelly-root .tgj-ref-panel {
+    overflow-x: auto;
+}
+
+#tgjelly-root .tgj-ref-panel[hidden] {
+    display: none;
+}
+
+#tgjelly-root .tgj-ref-table {
     width: 100%;
-    margin-top: var(--tgj-space-2);
     border-collapse: collapse;
 }
 
-#tgjelly-root .tgj-template-fields td {
-    padding: var(--tgj-space-1) var(--tgj-space-2) var(--tgj-space-1) 0;
-    border-top: 1px solid var(--tgj-line);
-    vertical-align: top;
+#tgjelly-root .tgj-ref-table th {
+    padding: var(--tgj-space-1) var(--tgj-space-3) var(--tgj-space-1) 0;
+    color: var(--tgj-fg-2);
+    font-weight: 600;
+    text-align: start;
 }
 
-#tgjelly-root .tgj-template-fields td:nth-child(2),
-#tgjelly-root .tgj-template-fields td:nth-child(3) {
-    color: var(--tgj-fg-2);
+#tgjelly-root .tgj-ref-table td {
+    padding: var(--tgj-space-1) var(--tgj-space-3) var(--tgj-space-1) 0;
+    border-top: 1px solid var(--tgj-line);
+    vertical-align: top;
+    overflow-wrap: anywhere;
+}
+
+#tgjelly-root .tgj-ref-table td:first-child {
+    overflow-wrap: normal;
     white-space: nowrap;
+}
+
+/* The first cell of a row: a button that looks like a clickable chip. */
+#tgjelly-root .tgj-insert {
+    appearance: none;
+    margin: 0;
+    padding: var(--tgj-space-1) var(--tgj-space-2);
+    border: 1px solid var(--tgj-line-strong);
+    border-radius: var(--tgj-radius-sm);
+    background: transparent;
+    color: var(--tgj-fg);
+    font: inherit;
+    text-align: start;
+    cursor: pointer;
+}
+
+#tgjelly-root .tgj-insert:hover {
+    border-color: var(--tgj-accent);
+    background: var(--tgj-hover);
+}
+
+#tgjelly-root .tgj-insert code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+#tgjelly-root .tgj-muted {
+    color: var(--tgj-fg-2);
+}
+
+/* On a narrow page each row stacks: the field first, then its other cells under their column names. */
+@container tgjelly (max-width: 40rem) {
+    #tgjelly-root .tgj-ref-table thead {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip-path: inset(50%);
+    }
+
+    #tgjelly-root .tgj-ref-table,
+    #tgjelly-root .tgj-ref-table tbody,
+    #tgjelly-root .tgj-ref-table tr,
+    #tgjelly-root .tgj-ref-table td {
+        display: block;
+    }
+
+    #tgjelly-root .tgj-ref-table tr {
+        padding: var(--tgj-space-2) 0;
+        border-top: 1px solid var(--tgj-line);
+    }
+
+    #tgjelly-root .tgj-ref-table td {
+        padding: var(--tgj-space-1) 0 0;
+        border: 0;
+    }
+
+    #tgjelly-root .tgj-ref-table td[data-label]::before {
+        content: attr(data-label) ": ";
+        color: var(--tgj-fg-2);
+    }
 }
 
 #tgjelly-root .tgj-tpl-docs {
@@ -751,14 +936,10 @@
     text-decoration: underline;
 }
 
-/* The preview column: errors and warnings, then the message bubble, then its length. */
-#tgjelly-root .tgj-tpl-preview > p {
-    margin: 0 0 var(--tgj-space-2);
-    font-size: var(--tgj-step--1);
-}
-
-#tgjelly-root .tgj-tpl-preview > .tgj-tpl-length {
+/* Under the textarea: the errors and warnings, then the length. */
+#tgjelly-root .tgj-tpl-check > p {
     margin: var(--tgj-space-2) 0 0;
+    font-size: var(--tgj-step--1);
 }
 
 #tgjelly-root .tgj-tpl-warning {
@@ -772,18 +953,47 @@
 }
 
 /*
- * The template preview imitates a Telegram message bubble on purpose (design §3), so these tgj-tg- rules keep their
- * own colours (R3; tests/web/css.test.mjs exempts exactly this prefix).
+ * The template preview copies Telegram's dark theme on purpose (design §6.4), so these tgj-tg- rules keep Telegram's
+ * own colours (R3; tests/web/css.test.mjs exempts exactly this prefix): the chat background, the incoming bubble with
+ * its tail and the time in its corner, the photo on top, and the inline keys under the bubble.
  */
-#tgjelly-root .tgj-tg-bubble {
-    max-width: 28em;
-    border-radius: 0.8em;
-    overflow: hidden;
-    background: var(--jf-palette-background-paper, rgba(127, 127, 127, 0.15));
-    box-shadow: 0 0 0 1px rgba(127, 127, 127, 0.25);
+#tgjelly-root .tgj-tg-chat {
+    padding: 1rem 0.75rem 1rem 1.25rem;
+    border-radius: var(--tgj-radius-sm);
+    background: #0e1621 radial-gradient(circle at 20% 20%, #13202e 0, #0e1621 60%);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    font-size: 0.9375rem;
+    line-height: 1.35;
 }
 
-#tgjelly-root .tgj-tg-bubble.tgj-tg-stale {
+#tgjelly-root .tgj-tg-msg {
+    display: inline-flex;
+    flex-direction: column;
+    gap: 0.25em;
+    max-width: min(100%, 25em);
+    vertical-align: top;
+}
+
+#tgjelly-root .tgj-tg-bubble {
+    position: relative;
+    border-radius: 0.85em 0.85em 0.85em 0;
+    background: #182533;
+    color: #f5f5f5;
+    box-shadow: 0 1px 1px rgba(0, 0, 0, 0.25);
+}
+
+/* The tail: the corner outside an ellipse, so its edge curves in to the bubble's side. */
+#tgjelly-root .tgj-tg-bubble::before {
+    content: "";
+    position: absolute;
+    left: -0.5em;
+    bottom: 0;
+    width: 0.5em;
+    height: 0.85em;
+    background: radial-gradient(ellipse 100% 100% at 0 0, transparent 98%, #182533 100%);
+}
+
+#tgjelly-root .tgj-tg-stale {
     opacity: 0.45;
 }
 
@@ -791,55 +1001,117 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    height: 9em;
-    background: rgba(127, 127, 127, 0.3);
-    opacity: 0.8;
+    width: 22em;
+    max-width: 100%;
+    height: 15em;
+    border-radius: 0.85em 0.85em 0 0;
+    background: linear-gradient(160deg, #3a5068, #1c2a3a 70%);
+    color: rgba(255, 255, 255, 0.7);
 }
 
 #tgjelly-root .tgj-tg-text {
-    padding: 0.6em 0.8em;
+    padding: 0.4em 0.65em 0.45em;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
 }
 
+#tgjelly-root .tgj-tg-text b,
+#tgjelly-root .tgj-tg-text strong {
+    font-weight: 600;
+}
+
+/* The time: a spacer at the end of the text keeps room for it, so a full last line pushes it onto a line of its own. */
+#tgjelly-root .tgj-tg-time {
+    display: inline-block;
+    width: 2.8em;
+    height: 1em;
+}
+
+#tgjelly-root .tgj-tg-time > span {
+    position: absolute;
+    right: 0.65em;
+    bottom: 0.4em;
+    color: #6d7f8f;
+    font-size: 0.78em;
+    line-height: 1;
+    white-space: nowrap;
+}
+
+#tgjelly-root .tgj-tg-text.tgj-tg-sample {
+    display: inline-block;
+    padding: 0.3em 0.6em;
+    border-radius: 0.6em;
+    background: #182533;
+    color: #f5f5f5;
+}
+
 #tgjelly-root .tgj-tg-text a {
-    color: var(--jf-palette-primary-main, #00a4dc);
+    color: #6ab3f3;
+    text-decoration: none;
+}
+
+/*
+ * Quotes and code blocks are whole-width boxes on a line of their own. As inline blocks, the line break that follows
+ * one in the text only ends its line, as in Telegram, instead of adding an empty line under the box.
+ */
+#tgjelly-root .tgj-tg-text blockquote,
+#tgjelly-root .tgj-tg-quote,
+#tgjelly-root .tgj-tg-text pre {
+    display: inline-block;
+    width: 100%;
+    vertical-align: top;
 }
 
 #tgjelly-root .tgj-tg-text blockquote,
 #tgjelly-root .tgj-tg-quote {
-    margin: 0.3em 0;
-    padding: 0.2em 0.6em;
-    border-left: 3px solid var(--jf-palette-primary-main, #00a4dc);
-    background: rgba(127, 127, 127, 0.1);
+    margin: 0.25em 0;
+    padding: 0.15em 0.5em;
+    border-left: 3px solid #6ab3f3;
+    border-radius: 0.25em;
+    background: rgba(106, 179, 243, 0.1);
 }
 
 #tgjelly-root .tgj-tg-quote > summary {
     cursor: pointer;
 }
 
+#tgjelly-root .tgj-tg-text code,
 #tgjelly-root .tgj-tg-text pre {
-    margin: 0.3em 0;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.9em;
+}
+
+#tgjelly-root .tgj-tg-text pre {
+    margin: 0.25em 0;
+    padding: 0.35em 0.5em;
+    border-left: 3px solid #6ab3f3;
+    border-radius: 0.25em;
+    background: rgba(106, 179, 243, 0.08);
     white-space: pre-wrap;
 }
 
+/* A spoiler is a block of dots until clicked, as in Telegram. */
 #tgjelly-root .tgj-tg-spoiler {
     border-radius: 0.2em;
-    background: rgba(127, 127, 127, 0.35);
-    filter: blur(0.25em);
+    background: radial-gradient(circle, rgba(255, 255, 255, 0.6) 0.05em, transparent 0.07em) 0 0 / 0.3em 0.3em, #2b3d50;
+    color: transparent;
     cursor: pointer;
 }
 
-#tgjelly-root .tgj-tg-spoiler.tgj-tg-revealed {
-    background: rgba(127, 127, 127, 0.15);
-    filter: none;
+#tgjelly-root .tgj-tg-spoiler:not(.tgj-tg-revealed) * {
+    color: transparent;
 }
 
+#tgjelly-root .tgj-tg-spoiler.tgj-tg-revealed {
+    background: rgba(255, 255, 255, 0.08);
+    color: inherit;
+}
+
+/* The inline keyboard: separate keys under the bubble, in the reply_markup rows. */
 #tgjelly-root .tgj-tg-buttons {
     display: flex;
     flex-direction: column;
     gap: 0.25em;
-    padding: 0 0.4em 0.4em;
 }
 
 #tgjelly-root .tgj-tg-row {
@@ -848,20 +1120,90 @@
 }
 
 #tgjelly-root .tgj-tg-button {
-    flex: 1;
-    padding: 0.4em;
-    border-radius: 0.4em;
-    background: rgba(127, 127, 127, 0.25);
-    color: inherit;
+    position: relative;
+    flex: 1 1 0;
+    min-width: 0;
+    padding: 0.55em 1.1em;
+    border-radius: 0.5em;
+    background: rgba(24, 37, 51, 0.75);
+    color: #ffffff;
+    font-size: 0.93em;
+    font-weight: 500;
     text-align: center;
     text-decoration: none;
     overflow-wrap: anywhere;
 }
 
-/* The editor and the preview stack once the content column is too narrow for both (was a 700px window query). */
+#tgjelly-root a.tgj-tg-button:hover {
+    background: rgba(36, 54, 74, 0.85);
+}
+
+#tgjelly-root .tgj-tg-url::after {
+    content: "↗";
+    position: absolute;
+    top: 0.25em;
+    right: 0.35em;
+    color: rgba(255, 255, 255, 0.75);
+    font-size: 0.7em;
+    line-height: 1;
+}
+
+/*
+ * The hover link (design §6.5): the piece under the pointer, lit on both sides at once. In the template a mirror of the
+ * text lies behind the transparent textarea and draws the highlight; it never takes the pointer, the focus or the caret.
+ */
+#tgjelly-root .tgj-piece-hl {
+    border-radius: 2px;
+    background: var(--tgj-accent-soft);
+    outline: 1px solid var(--tgj-accent-ring);
+}
+
+#tgjelly-root .tgj-tg-text .tgj-piece-hl {
+    background: rgba(106, 179, 243, 0.28);
+    outline: 1px solid rgba(106, 179, 243, 0.75);
+}
+
+#tgjelly-root .tgj-tpl-field {
+    position: relative;
+    border-radius: var(--tgj-radius-sm);
+    background: var(--tgj-field-bg);
+}
+
+#tgjelly-root .tgj-tpl-field .tgj-template-text {
+    position: relative;
+    background: transparent;
+}
+
+#tgjelly-root .tgj-tpl-mirror {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    margin: 0;
+    padding: var(--tgj-space-2) var(--tgj-space-3);
+    border: 1px solid transparent;
+    pointer-events: none;
+    user-select: none;
+    color: transparent;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: var(--tgj-step--1);
+    line-height: 1.5;
+    tab-size: 4;
+    white-space: pre-wrap;
+    overflow-wrap: break-word;
+}
+
+/* The preview goes under the template once the content column is too narrow for both, and scrolls with the page. */
 @container tgjelly (max-width: 52rem) {
-    #tgjelly-root .tgj-tpl-grid {
+    #tgjelly-root .tgj-msg-layout {
         grid-template-columns: minmax(0, 1fr);
+        grid-template-areas:
+            "pick"
+            "cards"
+            "side";
+    }
+
+    #tgjelly-root .tgj-msg-side {
+        position: static;
     }
 }
 
@@ -944,7 +1286,9 @@
     #tgjelly-root .tgj-switch::after,
     #tgjelly-root .tgj-btn,
     #tgjelly-root .tgj-field,
-    #tgjelly-root .tgj-sidebar [data-tgj-nav] {
+    #tgjelly-root .tgj-sidebar [data-tgj-nav],
+    #tgjelly-root .tgj-seg-text,
+    #tgjelly-root .tgj-log-toggle::after {
         transition: none;
     }
 }
@@ -984,21 +1328,14 @@
     text-decoration: none;
 }
 
-#tgjelly-root .tgj-summary-count {
-    color: var(--tgj-fg);
-}
-
-#tgjelly-root .tgj-row-control .tgj-state,
-#tgjelly-root .tgj-row-control .tgj-summary-count {
-    margin-right: var(--tgj-space-2);
-}
-
 #tgjelly-root .tgj-unreachable {
     margin-top: var(--tgj-space-4);
 }
 
-#tgjelly-root .tgj-version {
-    margin: var(--tgj-space-3) 0 0;
+#tgjelly-root .tgj-conn-message {
+    margin-inline-start: var(--tgj-space-2);
+    color: var(--tgj-fg-2);
+    overflow-wrap: anywhere;
 }
 
 /* ---- Messages and Advanced ---- */
@@ -1049,10 +1386,17 @@
     font-size: var(--tgj-step--1);
 }
 
-#tgjelly-root .tgj-group-title {
-    margin: var(--tgj-space-3) 0 0;
-    color: var(--tgj-fg-2);
-    font-size: var(--tgj-step--1);
+/* One sub-card per event group, titled by the group. */
+#tgjelly-root .tgj-subcard {
+    margin: var(--tgj-space-3) 0;
+    padding: var(--tgj-space-2) var(--tgj-space-3);
+    border: 1px solid var(--tgj-line);
+    border-radius: var(--tgj-radius);
+}
+
+#tgjelly-root .tgj-subcard-title {
+    margin: var(--tgj-space-1) 0;
+    font-size: var(--tgj-step-0);
     font-weight: 600;
 }
 
@@ -1079,5 +1423,348 @@
 
     #tgjelly-root .tgj-dest-row .tgj-row-control {
         justify-content: flex-start;
+    }
+}
+
+/* ---- Log (plan 9 design §8.1): filters, the top lines, and one row per message per destination ---- */
+
+#tgjelly-root .tgj-log-controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--tgj-space-2);
+}
+
+#tgjelly-root .tgj-log-controls .tgj-select {
+    width: auto;
+    max-width: 100%;
+}
+
+/* All / Problems only: two radios drawn as one segmented control. */
+#tgjelly-root .tgj-seg {
+    display: inline-flex;
+    flex: none;
+    border: 1px solid var(--tgj-line-strong);
+    border-radius: var(--tgj-radius-sm);
+    overflow: hidden;
+}
+
+#tgjelly-root .tgj-seg-option {
+    position: relative;
+    display: flex;
+}
+
+#tgjelly-root .tgj-seg-option + .tgj-seg-option {
+    border-left: 1px solid var(--tgj-line-strong);
+}
+
+#tgjelly-root .tgj-seg-input {
+    position: absolute;
+    inset: 0;
+    margin: 0;
+    opacity: 0;
+    cursor: pointer;
+}
+
+#tgjelly-root .tgj-seg-text {
+    display: flex;
+    align-items: center;
+    min-height: 2.25rem;
+    padding: 0 var(--tgj-space-3);
+    color: var(--tgj-fg-2);
+    font-size: var(--tgj-step--1);
+    white-space: nowrap;
+    transition: background-color var(--tgj-dur) ease, color var(--tgj-dur) ease;
+}
+
+#tgjelly-root .tgj-seg-option:hover .tgj-seg-text {
+    background: var(--tgj-hover);
+    color: var(--tgj-fg);
+}
+
+#tgjelly-root .tgj-seg-input:checked + .tgj-seg-text {
+    background: var(--tgj-accent-soft);
+    color: var(--tgj-accent-text);
+}
+
+#tgjelly-root .tgj-seg-input:focus-visible + .tgj-seg-text {
+    outline: 2px solid var(--tgj-accent);
+    outline-offset: -2px;
+}
+
+#tgjelly-root .tgj-log-lines {
+    margin: var(--tgj-space-3) 0;
+}
+
+#tgjelly-root .tgj-log-line {
+    margin: 0;
+    color: var(--tgj-fg-2);
+    font-size: var(--tgj-step--1);
+}
+
+#tgjelly-root .tgj-log-line time {
+    color: var(--tgj-fg);
+    font-weight: 600;
+}
+
+/* A safety net: a table that still can't fit scrolls inside the card, never the page. */
+#tgjelly-root .tgj-log-scroll {
+    overflow-x: auto;
+}
+
+#tgjelly-root .tgj-log-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--tgj-step--1);
+}
+
+#tgjelly-root .tgj-log-table th {
+    padding: var(--tgj-space-2) var(--tgj-space-3) var(--tgj-space-2) 0;
+    border-bottom: 1px solid var(--tgj-line);
+    color: var(--tgj-fg-2);
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-align: start;
+    text-transform: uppercase;
+}
+
+#tgjelly-root .tgj-log-table td {
+    padding: var(--tgj-space-2) var(--tgj-space-3) var(--tgj-space-2) 0;
+    border-bottom: 1px solid var(--tgj-line);
+    vertical-align: top;
+    overflow-wrap: break-word;
+}
+
+#tgjelly-root .tgj-log-table td.tgj-log-when,
+#tgjelly-root .tgj-log-table td.tgj-log-result {
+    overflow-wrap: normal;
+    white-space: nowrap;
+}
+
+/* The event and the destination keep room for a title; Why takes the rest. */
+#tgjelly-root .tgj-log-table td.tgj-log-event {
+    min-width: 9rem;
+}
+
+#tgjelly-root .tgj-log-table td.tgj-log-dest {
+    min-width: 7rem;
+}
+
+#tgjelly-root .tgj-log-table td.tgj-log-why {
+    min-width: 10rem;
+}
+
+#tgjelly-root .tgj-log-when {
+    color: var(--tgj-fg-2);
+    font-variant-numeric: tabular-nums;
+}
+
+#tgjelly-root .tgj-log-title {
+    display: block;
+    color: var(--tgj-fg);
+    font-size: var(--tgj-step-0);
+}
+
+#tgjelly-root .tgj-log-kind,
+#tgjelly-root .tgj-log-dest,
+#tgjelly-root .tgj-log-why {
+    color: var(--tgj-fg-2);
+}
+
+#tgjelly-root .tgj-log-kind {
+    display: block;
+}
+
+#tgjelly-root .tgj-log-row--opens {
+    cursor: pointer;
+}
+
+#tgjelly-root .tgj-log-row--opens:hover td,
+#tgjelly-root .tgj-log-row--open td,
+#tgjelly-root .tgj-log-detail td {
+    background: var(--tgj-hover);
+}
+
+#tgjelly-root .tgj-log-row--open td {
+    border-bottom-color: transparent;
+}
+
+/* A Failed or attention row's label is the button that opens it; the chevron is drawn with borders, not a character. */
+#tgjelly-root .tgj-log-toggle {
+    appearance: none;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--tgj-space-2);
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--tgj-fg-2);
+    font: inherit;
+    cursor: pointer;
+}
+
+#tgjelly-root .tgj-log-toggle::after {
+    content: "";
+    flex: none;
+    width: 0.4em;
+    height: 0.4em;
+    border-right: 2px solid currentColor;
+    border-bottom: 2px solid currentColor;
+    transform: rotate(45deg) translateY(-0.1em);
+    transition: transform var(--tgj-dur) ease;
+}
+
+#tgjelly-root .tgj-log-toggle[aria-expanded="true"]::after {
+    transform: rotate(-135deg) translateX(-0.1em);
+}
+
+#tgjelly-root .tgj-log-toggle:focus-visible {
+    border-radius: 999px;
+    outline: 2px solid var(--tgj-accent);
+    outline-offset: 2px;
+}
+
+#tgjelly-root .tgj-log-detail td {
+    padding-top: 0;
+}
+
+#tgjelly-root .tgj-log-box {
+    padding: var(--tgj-space-1) var(--tgj-space-3);
+    border-left: 2px solid var(--tgj-line-strong);
+    color: var(--tgj-fg-2);
+}
+
+#tgjelly-root .tgj-log-detail--bad .tgj-log-box {
+    border-left-color: var(--tgj-error-line);
+}
+
+#tgjelly-root .tgj-log-detail--attention .tgj-log-box {
+    border-left-color: var(--tgj-warning-ring);
+}
+
+#tgjelly-root .tgj-log-box p {
+    margin: 0 0 var(--tgj-space-1);
+}
+
+#tgjelly-root .tgj-log-detail-label {
+    color: var(--tgj-fg);
+    font-weight: 600;
+}
+
+#tgjelly-root .tgj-log-box code {
+    padding: 0.0625rem var(--tgj-space-1);
+    border: 1px solid var(--tgj-line);
+    border-radius: var(--tgj-radius-sm);
+    background: var(--tgj-field-bg);
+    color: var(--tgj-fg);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    overflow-wrap: anywhere;
+}
+
+#tgjelly-root .tgj-log-older {
+    justify-content: center;
+}
+
+/* On a phone the filter spans the width, its two halves alike. */
+@container tgjelly (max-width: 40rem) {
+    #tgjelly-root .tgj-log-controls .tgj-seg {
+        flex: 1 1 100%;
+    }
+
+    #tgjelly-root .tgj-log-controls .tgj-seg-option {
+        flex: 1 1 0;
+    }
+
+    #tgjelly-root .tgj-log-controls .tgj-seg-text {
+        flex: 1;
+        justify-content: center;
+    }
+}
+
+/* Too narrow for five columns beside the sidebar (the content column is then under about 47rem): each row becomes a
+   block, the time and the result on one line, then the event, the destination and why. */
+@container tgjelly (max-width: 66rem) {
+    #tgjelly-root .tgj-log-table thead {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip-path: inset(50%);
+    }
+
+    #tgjelly-root .tgj-log-table,
+    #tgjelly-root .tgj-log-table tbody {
+        display: block;
+    }
+
+    #tgjelly-root .tgj-log-table tr.tgj-log-row {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        grid-template-areas:
+            "when result"
+            "event event"
+            "dest dest"
+            "why why";
+        column-gap: var(--tgj-space-3);
+        padding: var(--tgj-space-2) var(--tgj-space-2);
+        border-bottom: 1px solid var(--tgj-line);
+    }
+
+    #tgjelly-root .tgj-log-table tr.tgj-log-row--open {
+        border-bottom-color: transparent;
+    }
+
+    #tgjelly-root .tgj-log-row--opens:hover,
+    #tgjelly-root .tgj-log-row--open {
+        background: var(--tgj-hover);
+    }
+
+    #tgjelly-root .tgj-log-table tr.tgj-log-row td {
+        min-width: 0;
+        padding: 0;
+        border: 0;
+        background: transparent;
+    }
+
+    #tgjelly-root .tgj-log-table td.tgj-log-when {
+        grid-area: when;
+        align-self: center;
+    }
+
+    #tgjelly-root .tgj-log-table td.tgj-log-result {
+        grid-area: result;
+    }
+
+    #tgjelly-root .tgj-log-table td.tgj-log-event {
+        grid-area: event;
+        padding-top: var(--tgj-space-1);
+    }
+
+    #tgjelly-root .tgj-log-table td.tgj-log-dest {
+        grid-area: dest;
+    }
+
+    #tgjelly-root .tgj-log-table td.tgj-log-dest::before {
+        content: attr(data-label) ": ";
+    }
+
+    #tgjelly-root .tgj-log-table td.tgj-log-why {
+        grid-area: why;
+        color: var(--tgj-fg);
+    }
+
+    #tgjelly-root .tgj-log-table td.tgj-log-why:empty {
+        display: none;
+    }
+
+    #tgjelly-root .tgj-log-table tr.tgj-log-detail,
+    #tgjelly-root .tgj-log-table tr.tgj-log-detail td {
+        display: block;
+    }
+
+    #tgjelly-root .tgj-log-table tr.tgj-log-detail td {
+        padding: 0 var(--tgj-space-2) var(--tgj-space-2);
     }
 }

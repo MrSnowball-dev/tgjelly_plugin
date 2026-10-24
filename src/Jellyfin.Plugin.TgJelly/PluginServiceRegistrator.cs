@@ -42,6 +42,7 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddRedactedLogger<SecretsStore>();
         serviceCollection.AddRedactedLogger<StateStore>();
         serviceCollection.AddRedactedLogger<SettingsStore>();
+        serviceCollection.AddRedactedLogger<Rendering.LogoFile>();
         serviceCollection.AddRedactedLogger<InstanceGate>();
         serviceCollection.AddRedactedLogger<PersistenceService>();
         serviceCollection.AddRedactedLogger<HealthService>();
@@ -83,6 +84,8 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddRedactedLogger<PluginUninstalledConsumer>();
         serviceCollection.AddRedactedLogger<PluginInstallFailedConsumer>();
         serviceCollection.AddRedactedLogger<Templates.TemplateRenderer>();
+        serviceCollection.AddRedactedLogger<Log.EventLog>();
+        serviceCollection.AddRedactedLogger<Log.LogRecorder>();
         serviceCollection.AddSingleton(sp => new DataPaths(sp.GetRequiredService<IApplicationPaths>().PluginConfigurationsPath));
         serviceCollection.AddSingleton(sp => CompatGuard.Evaluate(sp.GetRequiredService<IServerApplicationHost>().ApplicationVersion));
         serviceCollection.AddSingleton(_ => StringTable.LoadEmbedded());
@@ -131,6 +134,7 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<Rendering.Formatter>();
         serviceCollection.AddSingleton<Rendering.LinkBuilder>();
         serviceCollection.AddSingleton<Rendering.MediaLayouts>();
+        serviceCollection.AddSingleton<Rendering.LogoFile>();
         serviceCollection.AddSingleton<Rendering.AlertLayouts>();
         serviceCollection.AddSingleton<Rendering.NotificationRenderer>();
         serviceCollection.AddSingleton<Templates.TemplateEngine>();
@@ -145,6 +149,8 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<TaskWatcher>();
         serviceCollection.AddSingleton<RestartWatcher>();
         serviceCollection.AddSingleton<StartupWatcher>();
+        serviceCollection.AddSingleton<Log.EventLog>();
+        serviceCollection.AddSingleton<Log.LogRecorder>();
         serviceCollection.AddSingleton<Pipeline.MediaReadiness>();
         serviceCollection.AddSingleton<Pipeline.MediaAggregator>();
         serviceCollection.AddSingleton<Pipeline.AlertCoalescer>();

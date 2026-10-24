@@ -6,11 +6,14 @@ using System.Threading.Tasks;
 using Jellyfin.Plugin.TgJelly.Bot;
 using Jellyfin.Plugin.TgJelly.Configuration;
 using Jellyfin.Plugin.TgJelly.Destinations;
+using Jellyfin.Plugin.TgJelly.Log;
+using Jellyfin.Plugin.TgJelly.Logging;
 using Jellyfin.Plugin.TgJelly.Rendering;
 using Jellyfin.Plugin.TgJelly.State;
 using Jellyfin.Plugin.TgJelly.State.Documents;
 using Jellyfin.Plugin.TgJelly.Templates;
 using Microsoft.Extensions.Logging;
+using Telegram.Bot.Exceptions;
 using Telegram.Bot.Extensions;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
@@ -42,6 +45,7 @@ public sealed class OutboxDelivery
     private readonly DestinationMigration _migration;
     private readonly TemplateFlags _templateFlags;
     private readonly ILogger<OutboxDelivery> _logger;
+    private readonly LogRecorder? _log;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="OutboxDelivery"/> class.
@@ -57,8 +61,10 @@ public sealed class OutboxDelivery
     /// <param name="migration">The chat migration.</param>
     /// <param name="templateFlags">The template flags.</param>
     /// <param name="logger">The logger.</param>
-    public OutboxDelivery(BotConnection connection, Outbox outbox, HealthService health, SettingsStore settings, StateStore state, PacingGate pacing, Formatter formatter, TimeProvider time, DestinationMigration migration, TemplateFlags templateFlags, ILogger<OutboxDelivery> logger)
+    /// <param name="log">Where each delivery's outcome is recorded for the Log, if anywhere.</param>
+    public OutboxDelivery(BotConnection connection, Outbox outbox, HealthService health, SettingsStore settings, StateStore state, PacingGate pacing, Formatter formatter, TimeProvider time, DestinationMigration migration, TemplateFlags templateFlags, ILogger<OutboxDelivery> logger, LogRecorder? log = null)
     {
+        _log = log;
         _templateFlags = templateFlags;
         _migration = migration;
         _connection = connection;
@@ -93,6 +99,9 @@ public sealed class OutboxDelivery
             return;
         }
 
+        DeliveryError? last = null;
+        var lastTelegram = string.Empty;
+        var lastFromTelegram = false;
         for (var hop = 0; hop <= MaxResends; hop++)
         {
             var attempt = Prepare(entry, destination);
@@ -108,7 +117,10 @@ public sealed class OutboxDelivery
             }
             catch (Exception ex)
             {
-                var resend = OnFailure(entry, destination, attempt, ex);
+                lastTelegram = TelegramText(ex);
+                lastFromTelegram = ex is ApiRequestException;
+                last = TelegramErrorClassifier.ClassifyDelivery(ex);
+                var resend = OnFailure(entry, destination, attempt, ex, last, lastTelegram);
                 if (resend is null)
                 {
                     return;
@@ -119,7 +131,32 @@ public sealed class OutboxDelivery
             }
         }
 
-        Drop(entry, destination, "too many fallbacks");
+        Drop(entry, destination, "too many fallbacks", last ?? new DeliveryError(DeliveryErrorKind.Other, "too many fallbacks"), lastTelegram, afterFallbacks: true, fromTelegram: lastFromTelegram);
+    }
+
+    /// <summary>
+    /// Returns what Telegram or the network said, for the Log: Telegram's error code and description, or every
+    /// message of a network failure (the outer one alone is often just "Exception during making request"). Redacted.
+    /// </summary>
+    /// <param name="exception">The failure.</param>
+    /// <returns>The text.</returns>
+    internal static string TelegramText(Exception exception)
+    {
+        if (exception is ApiRequestException api)
+        {
+            return SecretRedactor.Redact(api.ErrorCode.ToString(System.Globalization.CultureInfo.InvariantCulture) + " " + api.Message);
+        }
+
+        var messages = new System.Collections.Generic.List<string>();
+        for (var e = exception; e is not null; e = e.InnerException)
+        {
+            if (!string.IsNullOrWhiteSpace(e.Message) && !messages.Contains(e.Message, StringComparer.Ordinal))
+            {
+                messages.Add(e.Message);
+            }
+        }
+
+        return SecretRedactor.Redact(string.Join(": ", messages));
     }
 
     private static InlineKeyboardMarkup? Markup(OutboxMessage message)
@@ -211,13 +248,14 @@ public sealed class OutboxDelivery
     {
         var now = _time.GetUtcNow();
         _pacing.RecordSend(destination.ChatId, now);
+        var logId = entry.LogId.Length > 0 ? entry.LogId : entry.EntryId;
         if (sent is null)
         {
             _outbox.Complete(entry, null);
         }
         else
         {
-            _outbox.Complete(entry, new SentMessage { MessageId = sent.Id, Kind = attempt.Photo ? SentKind.Photo : SentKind.Text, SentAt = now, EventKey = entry.EventKey, Model = entry.Model });
+            _outbox.Complete(entry, new SentMessage { MessageId = sent.Id, Kind = attempt.Photo ? SentKind.Photo : SentKind.Text, SentAt = now, EventKey = entry.EventKey, Model = entry.Model, LogId = logId });
             if (attempt.UploadPath is not null && entry.Message.PosterCacheKey is { } cacheKey && sent.Photo is { Length: > 0 } sizes)
             {
                 _outbox.CacheFileId(cacheKey, sizes[^1].FileId, now);
@@ -228,35 +266,56 @@ public sealed class OutboxDelivery
         {
             _state.Update(s => s.Status.PublicUrlFlag = null);
         }
+
+        if (_log is not null)
+        {
+            try
+            {
+                // A poster left out because this chat blocks photos may have been decided by an earlier message (Prepare).
+                var noPhoto = entry.Message.NoPhoto
+                    ?? (attempt.EditTarget is null && !attempt.Photo && entry.Message.PosterPath is not null && _health.Get(destination.Id).PhotosBlocked ? "blocked" : null);
+                _log.Delivered(entry, destination, noPhoto);
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                _logger.LogWarning(ex, "TgJelly could not record a Log row; sending is not affected");
+            }
+        }
     }
 
     // Returns the changed entry (and destination) to re-send now, or null when the outcome is recorded.
-    private (OutboxEntry Entry, Destination Destination)? OnFailure(OutboxEntry entry, Destination destination, Attempt attempt, Exception exception)
+    private (OutboxEntry Entry, Destination Destination)? OnFailure(OutboxEntry entry, Destination destination, Attempt attempt, Exception exception, DeliveryError error, string telegram)
     {
         var message = entry.Message;
         if (exception is IOException or UnauthorizedAccessException && attempt.UploadPath is not null)
         {
             // The poster file couldn't be opened or read; Telegram's own transport errors arrive as RequestException.
             message.ForceTextOnly = true;
+            message.NoPhoto = "unreadable";
             return (entry, destination);
         }
 
-        var error = TelegramErrorClassifier.ClassifyDelivery(exception);
         var now = _time.GetUtcNow();
         switch (error.Kind)
         {
             case DeliveryErrorKind.PhotosBlocked when attempt.Photo && attempt.EditTarget is null:
                 _health.SetPhotosBlocked(destination.Id);
                 message.ForceTextOnly = true;
+                message.NoPhoto = "blocked";
                 return (entry, destination);
             case DeliveryErrorKind.Lost:
+                // The entry stays queued and goes out if the destination recovers (Check again) before the Outbox drops it;
+                // until then it failed, held.
                 _health.MarkProblem(destination.Id, HealthStatus.Lost, error.Description);
+                _log?.Failed(entry, destination, error, telegram, heldUntil: entry.QueuedAt + Outbox.Ttl);
                 return null;
             case DeliveryErrorKind.NeedsPermissions:
                 _health.MarkProblem(destination.Id, HealthStatus.NeedsPermissions, error.Description);
+                _log?.Failed(entry, destination, error, telegram, heldUntil: entry.QueuedAt + Outbox.Ttl);
                 return null;
             case DeliveryErrorKind.TopicMissing:
                 _health.MarkProblem(destination.Id, HealthStatus.TopicMissing, error.Description);
+                _log?.Failed(entry, destination, error, telegram, heldUntil: entry.QueuedAt + Outbox.Ttl);
                 return null;
             case DeliveryErrorKind.Migrated when !entry.Migrated && error.MigrateToChatId is { } newChatId:
                 var map = _migration.MigrateAll(destination.ChatId, newChatId);
@@ -285,6 +344,7 @@ public sealed class OutboxDelivery
                 return (entry, destination);
             case DeliveryErrorKind.BadPhoto when attempt.Photo && attempt.EditTarget is null:
                 message.ForceTextOnly = true;
+                message.NoPhoto = "rejected";
                 return (entry, destination);
             case DeliveryErrorKind.TooLong when !message.Truncated:
                 message.Truncated = true;
@@ -311,11 +371,13 @@ public sealed class OutboxDelivery
             case DeliveryErrorKind.NotModified:
                 _pacing.RecordSend(destination.ChatId, now);
                 _outbox.Complete(entry, null);
+                _log?.Delivered(entry, destination, message.NoPhoto);
                 return null;
             case DeliveryErrorKind.RateLimited:
                 var until = now + (error.RetryAfter ?? TimeSpan.FromSeconds(5));
                 _pacing.Pause(destination.ChatId, until);
                 _outbox.Retry(entry.EntryId, until, countAttempt: false);
+                _log?.Retrying(entry, destination, error.Kind, telegram, until);
                 return null;
             case DeliveryErrorKind.Transport:
             case DeliveryErrorKind.ServerError:
@@ -323,24 +385,28 @@ public sealed class OutboxDelivery
                 if (error.Kind == DeliveryErrorKind.Transport && attempt.UploadPath is not null && ++entry.PhotoFailures >= 2)
                 {
                     message.ForceTextOnly = true;
+                    message.NoPhoto = "upload";
                 }
 
                 _outbox.Replace(entry);
-                _outbox.Retry(entry.EntryId, now + Outbox.Backoff(entry.Attempts + 1, Random()), countAttempt: true);
+                var retryAt = now + Outbox.Backoff(entry.Attempts + 1, Random());
+                _outbox.Retry(entry.EntryId, retryAt, countAttempt: true);
                 _logger.LogInformation("TgJelly will retry a message to {Destination}: {Error}", destination.Title, error.Description);
+                _log?.Retrying(entry, destination, error.Kind, telegram, retryAt);
                 return null;
         }
 
-        Drop(entry, destination, error.Description);
+        Drop(entry, destination, error.Description, error, telegram, fromTelegram: exception is ApiRequestException);
         return null;
     }
 
-    private void Drop(OutboxEntry entry, Destination destination, string reason)
+    private void Drop(OutboxEntry entry, Destination destination, string reason, DeliveryError error, string telegram, bool afterFallbacks = false, bool fromTelegram = true)
     {
         _logger.LogWarning("TgJelly dropped a message to {Destination}: {Reason}", destination.Title, reason);
         _outbox.Drop(entry.EntryId);
         // The ID, not the title: last errors outlive the destination, and diagnostics must never show its title (§12).
         _state.RecordError("outbox", DestinationRef.Of(destination) + ": " + reason);
+        _log?.Failed(entry, destination, error, telegram, afterFallbacks, fromTelegram);
     }
 
     private sealed record Attempt(SentMessage? EditTarget, int? ReplyTo, bool Photo, string? FileId, string? UploadPath);

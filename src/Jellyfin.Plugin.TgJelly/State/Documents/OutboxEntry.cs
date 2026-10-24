@@ -10,6 +10,9 @@ public sealed class OutboxEntry
     /// <summary>Gets or sets the entry ID.</summary>
     public string EntryId { get; set; } = string.Empty;
 
+    /// <summary>Gets or sets the ID of the Log row this message updates; empty for entries queued before the Log existed.</summary>
+    public string LogId { get; set; } = string.Empty;
+
     /// <summary>Gets or sets the destination ID.</summary>
     public string DestinationId { get; set; } = string.Empty;
 

@@ -105,6 +105,7 @@ public sealed class TemplatesControllerTests : IAsyncLifetime
         var result = Assert.IsType<BadRequestObjectResult>(_controller.Put("media.movie", Req(0, new string('a', 16385))).Result);
 
         Assert.Equal("Text", Assert.IsType<ErrorsDto>(result.Value).Errors.Single().Field);
+        Assert.Contains("Shorten the template", Assert.IsType<ErrorsDto>(result.Value).Errors.Single().Message, System.StringComparison.Ordinal);
         Assert.Empty(_h.Settings.Current.Templates);
     }
 
@@ -130,6 +131,21 @@ public sealed class TemplatesControllerTests : IAsyncLifetime
         _controller.Put("media.movie", Req(0, "Hi {{ title }}"));
         var after = _controller.Get().Value!.Items.Single(i => i.EventKey == "media.movie");
         Assert.Equal(("Hi {{ title }}", builtIn, true), (after.Text, after.BuiltIn, after.Edited));
+    }
+
+    [Fact]
+    public void Get_ItemsCarryTheirApplicableSwitches()
+    {
+        // The dashboard's "What it shows" card lists exactly these (design §6.2, Ruling R6): the page reads them from
+        // here rather than keeping its own copy of the table.
+        var items = _controller.Get().Value!.Items;
+
+        Assert.All(items, item => Assert.Equal(MessageSwitches.Applicable(item.EventKey), item.ApplicableSwitches));
+        Assert.Equal(MessageSwitches.Names, items.Single(i => i.EventKey == "media.movie").ApplicableSwitches);
+        Assert.Equal(["ShowPoster", "ShowOpenInJellyfin", "ShowProviderLinks"], items.Single(i => i.EventKey == "media.episodes").ApplicableSwitches);
+        Assert.Equal(["ShowPoster"], items.Single(i => i.EventKey == "security.lockout").ApplicableSwitches);
+        Assert.Equal(["ShowPoster"], items.Single(i => i.EventKey == "server.started").ApplicableSwitches);
+        Assert.Empty(items.Single(i => i.EventKey == "media.digest").ApplicableSwitches);
     }
 
     [Fact]
@@ -245,8 +261,11 @@ public sealed class TemplatesControllerTests : IAsyncLifetime
         // The length line describes the preview, which the message toggles shape.
         _h.Settings.Update(null, c =>
         {
-            c.Message.ShowOverview = false;
-            c.Message.ShowRatingGenres = false;
+            c.Message.Change("media.movie", s =>
+            {
+                s.ShowOverview = false;
+                s.ShowRatingGenres = false;
+            });
         });
         const string Text = "<b>{{ title }}</b> {{ overview }} {{ rating_text }} {{ genres | array.join \", \" }}";
         var toggled = new System.Collections.Generic.Dictionary<string, object?>(TemplateFieldCatalog.SampleFull("media.movie"))
@@ -272,7 +291,7 @@ public sealed class TemplatesControllerTests : IAsyncLifetime
     public void Validate_PosterWarning_UsesTheToggledLength()
     {
         // Untoggled the overview pushes the text over the caption limit; with Show overview off it fits.
-        _h.Settings.Update(null, c => c.Message.ShowOverview = false);
+        _h.Settings.Update(null, c => c.Message.Change("media.movie", s => s.ShowOverview = false));
 
         var dto = Validate("media.movie", "{{ title }} {{ overview }}" + new string('a', 990));
 
@@ -284,7 +303,7 @@ public sealed class TemplatesControllerTests : IAsyncLifetime
     [Fact]
     public void Validate_ShowPosterOff_TextLimit()
     {
-        _h.Settings.Update(null, c => c.Message.ShowPoster = false);
+        _h.Settings.Update(null, c => c.Message.Change("media.movie", s => s.ShowPoster = false));
 
         var dto = Validate("media.movie", new string('a', 1500));
 
@@ -329,6 +348,26 @@ public sealed class TemplatesControllerTests : IAsyncLifetime
 
         Assert.True(result.Sent);
         Assert.Equal("<b>Arrival</b>", (string)Assert.Single(_h.Api.CallsTo("sendPhoto")).Body["caption"]!);
+    }
+
+    [Fact]
+    public void Validate_HasPiecesMarkedHtmlAndTheTextItWasFor()
+    {
+        const string text = "<b>{{ title }}</b> ({{ year }})";
+
+        var dto = Validate("media.movie", text);
+
+        Assert.Equal(text, dto.ForText);
+        Assert.Equal(["<b>", "{{ title }}", "</b> (", "{{ year }}", ")"], dto.Pieces.Select(p => text.Substring(p.Start, p.Length)));
+        Assert.Equal(dto.Html, TemplateMarkers.Strip(dto.MarkedHtml));
+        Assert.Contains("\uE0001\uE001", dto.MarkedHtml, System.StringComparison.Ordinal);
+        Assert.Equal(-1, dto.Html.IndexOfAny(['\uE000', '\uE001', '\uE002']));
+        Assert.Equal(-1, dto.Preview.IndexOfAny(['\uE000', '\uE001', '\uE002']));
+
+        var broken = Validate("media.movie", "{{ if }}");
+        Assert.Equal("{{ if }}", broken.ForText);
+        Assert.Empty(broken.Pieces);
+        Assert.Equal(string.Empty, broken.MarkedHtml);
     }
 
     [Fact]

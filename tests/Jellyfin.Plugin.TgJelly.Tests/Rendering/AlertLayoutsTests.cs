@@ -24,13 +24,14 @@ public sealed class AlertLayoutsTests : IDisposable
 {
     private static readonly DateTimeOffset At = new(2026, 10, 18, 14, 5, 9, TimeSpan.Zero);
     private const string TimeTag = "<tg-time unix=\"1792332309\" format=\"t\">14:05 UTC</tg-time>";
-    private readonly AlertLayouts _layouts = new(new Formatter(StringTable.LoadEmbedded()));
     private readonly BotTestHarness _h = new();
+    private readonly AlertLayouts _layouts;
     private readonly NotificationRenderer _renderer;
 
     public AlertLayoutsTests()
     {
         var formatter = new Formatter(_h.Strings);
+        _layouts = new AlertLayouts(formatter, _h.Settings, _h.Logo);
         var time = new FakeTimeProvider(At + TimeSpan.FromHours(1));
         var links = new LinkBuilder(new FakeServerInfo());
         var library = new FakeLibrary();
@@ -58,6 +59,66 @@ public sealed class AlertLayoutsTests : IDisposable
         Assert.Equal(string.Empty, message.Caption);
         Assert.Null(message.PosterPath);
         Assert.Empty(message.Buttons);
+    }
+
+    [Theory]
+    [InlineData("security.lockout")]
+    [InlineData("server.started")]
+    public void Alert_PosterOn_UsesLogoPathAndStableCacheKey(string key)
+    {
+        _h.Settings.Update(null, c => c.Message.Change(key, s => s.ShowPoster = true));
+
+        var first = _layouts.Render(Alert(key, new()));
+        var second = _layouts.Render(Alert(key, new()));
+
+        Assert.Equal(_h.Paths.LogoPath, first.PosterPath);
+        Assert.True(File.Exists(first.PosterPath));
+        Assert.Matches("^tgjelly-logo:[0-9a-f]{16}$", first.PosterCacheKey);
+        Assert.Equal(first.PosterCacheKey, second.PosterCacheKey);
+    }
+
+    [Fact]
+    public void Alert_PosterOff_NoPoster()
+    {
+        var message = _layouts.Render(Alert("security.lockout", new()));
+
+        Assert.Null(message.PosterPath);
+        Assert.Null(message.PosterCacheKey);
+        Assert.False(File.Exists(_h.Paths.LogoPath));
+    }
+
+    [Fact]
+    public void Alert_PosterOn_UnwritableFolder_FallsBackToTextAndLogsWhy()
+    {
+        var blocker = new TempDir();
+        var file = Path.Combine(blocker.Path, "not-a-folder");
+        File.WriteAllText(file, "x");
+        var logger = new ListLogger<LogoFile>();
+        var layouts = new AlertLayouts(new Formatter(_h.Strings), _h.Settings, new LogoFile(new Jellyfin.Plugin.TgJelly.State.DataPaths(file), logger));
+        _h.Settings.Update(null, c => c.Message.Change("server.started", s => s.ShowPoster = true));
+
+        var message = layouts.Render(Alert("server.started", new()));
+
+        Assert.Null(message.PosterPath);
+        Assert.Contains(logger.Entries, e => e.Message.Contains("could not write the logo", StringComparison.Ordinal));
+        blocker.Dispose();
+    }
+
+    [Fact]
+    public void Logo_WrittenOnce_RewrittenWhenSizeDiffers()
+    {
+        var logo = _h.Logo;
+        var path = logo.Ensure()!;
+        var size = new FileInfo(path).Length;
+        Assert.True(size > 0);
+
+        File.SetLastWriteTimeUtc(path, new DateTime(2020, 1, 1, 0, 0, 0, DateTimeKind.Utc));
+        logo.Ensure();
+        Assert.Equal(2020, File.GetLastWriteTimeUtc(path).Year);
+
+        File.WriteAllBytes(path, [1, 2, 3]);
+        logo.Ensure();
+        Assert.Equal(size, new FileInfo(path).Length);
     }
 
     [Fact]

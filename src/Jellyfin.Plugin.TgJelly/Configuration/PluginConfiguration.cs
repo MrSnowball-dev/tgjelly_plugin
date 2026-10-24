@@ -42,7 +42,7 @@ public class PluginConfiguration : BasePluginConfiguration
     public ProxySettings Proxy { get; set; } = new();
 
     /// <summary>
-    /// Gets or sets the message toggles.
+    /// Gets or sets what messages show: the switches of each message.
     /// </summary>
     public MessageOptions Message { get; set; } = new();
 
@@ -99,7 +99,17 @@ public class PluginConfiguration : BasePluginConfiguration
             t.Text ??= string.Empty;
         }
 
+        Message.PerMessage ??= [];
+        Message.PerMessage = [.. Message.PerMessage.Where(e => e is not null)];
+        foreach (var entry in Message.PerMessage)
+        {
+            entry.EventKey ??= string.Empty;
+            entry.Switches ??= MessageSwitches.DefaultFor(entry.EventKey);
+        }
+
         MigrateTemplates();
+        MigrateMessageOptions();
+        UpdateCheck.MigrateMode();
     }
 
     /// <summary>
@@ -110,5 +120,43 @@ public class PluginConfiguration : BasePluginConfiguration
     {
         Templates ??= Array.Empty<TemplateOverride>();
         Templates = [.. Templates.Where(t => t is not null && t.Enabled && !string.IsNullOrWhiteSpace(t.Text))];
+    }
+
+    /// <summary>
+    /// Plan 9 migration (design §6.2): v0.4's one set of switches becomes each media message's switches, the digest's
+    /// included, so nothing a user sees changes. Security and Server messages keep their defaults: no poster. Runs on
+    /// every settings load (each <c>SettingsStore</c> copy); the v0.4 values are cleared once read, so later runs and
+    /// saves leave the per-message switches alone.
+    /// </summary>
+    public void MigrateMessageOptions()
+    {
+        Message ??= new MessageOptions();
+        var m = Message;
+        m.PerMessage ??= [];
+#pragma warning disable CS0618 // the migration is what reads the v0.4 values
+        var legacy = m.ShowPoster.HasValue || m.ShowOverview.HasValue || m.ShowRatingGenres.HasValue
+            || m.ShowOpenInJellyfin.HasValue || m.ShowProviderLinks.HasValue;
+        if (legacy && m.PerMessage.Length == 0)
+        {
+            var media = new MessageSwitches
+            {
+                ShowPoster = m.ShowPoster ?? true,
+                ShowOverview = m.ShowOverview ?? true,
+                ShowRatingGenres = m.ShowRatingGenres ?? true,
+                ShowOpenInJellyfin = m.ShowOpenInJellyfin ?? true,
+                ShowProviderLinks = m.ShowProviderLinks ?? true,
+            };
+            m.PerMessage =
+            [
+                .. MessageOptions.Keys.Select(key => new MessageSwitchesEntry
+                {
+                    EventKey = key,
+                    Switches = EventCatalog.GroupOf(key) == "media" ? media.Copy() : MessageSwitches.DefaultFor(key),
+                }),
+            ];
+        }
+
+        m.ShowPoster = m.ShowOverview = m.ShowRatingGenres = m.ShowOpenInJellyfin = m.ShowProviderLinks = null;
+#pragma warning restore CS0618
     }
 }

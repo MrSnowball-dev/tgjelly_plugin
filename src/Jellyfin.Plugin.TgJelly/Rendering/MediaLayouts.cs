@@ -24,7 +24,7 @@ public sealed class MediaLayouts
     /// <param name="formatter">The formatter, for the button labels.</param>
     /// <param name="links">The link builder.</param>
     /// <param name="library">The library.</param>
-    /// <param name="settings">The settings (message toggles and the public URL).</param>
+    /// <param name="settings">The settings (the message's switches and the public URL).</param>
     public MediaLayouts(Formatter formatter, LinkBuilder links, ILibraryAccess library, SettingsStore settings)
     {
         _formatter = formatter;
@@ -48,7 +48,7 @@ public sealed class MediaLayouts
         }
 
         var config = _settings.Current;
-        var options = config.Message;
+        var options = config.Message.For(model.EventKey);
         var layout = items[0].Kind switch
         {
             MediaKind.Episode => Episodes(items),
@@ -125,7 +125,7 @@ public sealed class MediaLayouts
         return new Layout([(first.Id, first.Primary), (folderId, folder?.Primary)], folder?.Id ?? first.Id, null, Tv: false);
     }
 
-    private List<List<OutboxButton>> Buttons(Layout layout, MessageOptions options, string publicUrl)
+    private List<List<OutboxButton>> Buttons(Layout layout, MessageSwitches options, string publicUrl)
     {
         var rows = new List<List<OutboxButton>>(2);
         if (options.ShowOpenInJellyfin && _links.OpenInJellyfin(publicUrl, layout.OpenId) is { } open)

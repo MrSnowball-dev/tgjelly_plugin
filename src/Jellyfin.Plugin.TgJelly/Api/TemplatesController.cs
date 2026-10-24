@@ -99,7 +99,7 @@ public class TemplatesController : ControllerBase
         var text = request.Text ?? string.Empty;
         if (text.Length > MaxText)
         {
-            return BadRequest(new ErrorsDto { Errors = [new SettingsError("Text", "Must be at most 16384 characters.")] });
+            return BadRequest(new ErrorsDto { Errors = [new SettingsError("Text", "The template is longer than 16384 characters. Shorten the template to 16384 characters or fewer.")] });
         }
 
         // Text that is the built-in one (or nothing) is no override: the built-in template stays in use.
@@ -269,7 +269,7 @@ public class TemplatesController : ControllerBase
         var parse = _engine.Parse(text);
         if (parse.Count > 0)
         {
-            return (new TemplateValidationDto { Errors = [.. parse.Select(ToDto)], Limit = limit, Caption = sample.Caption, Poster = poster }, null);
+            return (new TemplateValidationDto { Errors = [.. parse.Select(ToDto)], Limit = limit, Caption = sample.Caption, Poster = poster, ForText = text }, null);
         }
 
         var errors = new List<TemplateErrorDto>();
@@ -307,18 +307,22 @@ public class TemplatesController : ControllerBase
 
         if (errors.Count > 0)
         {
-            return (new TemplateValidationDto { Errors = errors, Warnings = warnings, Preview = preview, Length = length, Limit = limit, Caption = sample.Caption, Poster = poster }, null);
+            return (new TemplateValidationDto { Errors = errors, Warnings = warnings, Preview = preview, Length = length, Limit = limit, Caption = sample.Caption, Poster = poster, ForText = text }, null);
         }
 
+        // An empty result is only a warning (the built-in template takes over at send time); the test send still refuses it.
+        var sendable = sample.Error is null || (warnings.Count > 0 && IsEmptyProblem(sample.Error));
         var dto = new TemplateValidationDto
         {
-            // An empty result is only a warning (the built-in template takes over at send time); the test send still refuses it.
-            Errors = sample.Error is null || (warnings.Count > 0 && IsEmptyProblem(sample.Error)) ? errors : [ToDto(sample.Error)],
+            Errors = sendable ? errors : [ToDto(sample.Error!)],
             Warnings = warnings,
             Preview = preview,
             Length = length,
             Limit = limit,
             Html = sample.Html ?? string.Empty,
+            ForText = text,
+            Pieces = sendable ? [.. _engine.Pieces(text).Select(p => new TemplatePieceDto { Index = p.Index, Start = p.Start, Length = p.Length })] : [],
+            MarkedHtml = sendable ? sample.MarkedHtml ?? string.Empty : string.Empty,
             Caption = sample.Caption,
             Poster = poster,
             Buttons = [.. sample.Buttons.Select(row => (IReadOnlyList<TemplateButtonDto>)[.. row.Select(b => new TemplateButtonDto { Text = b.Text, Url = b.Url })])],
@@ -345,6 +349,7 @@ public class TemplatesController : ControllerBase
                 Fields = [.. TemplateFieldCatalog.For(key).Select(f => new TemplateFieldDto { Name = f.Name, Type = f.Type, Description = f.Description, Optional = f.Optional })],
                 SampleFull = Plain(TemplateFieldCatalog.SampleFull(key)),
                 SampleSparse = Plain(TemplateFieldCatalog.SampleSparse(key)),
+                ApplicableSwitches = MessageSwitches.Applicable(key),
                 Flag = flag is null ? null : new TemplateFlagDto { Kind = flag.Kind, Error = flag.Error, At = flag.At },
             };
         })],

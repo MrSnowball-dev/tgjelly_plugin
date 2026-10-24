@@ -116,37 +116,7 @@ public sealed class TemplateEngine
                 return new TemplateRenderResult(null, ToError(first.Message, first.Span));
             }
 
-            using var cts = new CancellationTokenSource(_timeout, _time);
-            var context = new TelegramTemplateContext
-            {
-                LoopLimit = Limit,
-                RecursiveLimit = Depth,
-                ObjectRecursionLimit = Depth,
-                LimitToString = TextLimit,
-                OnStringLimit = ScriptLimitBehavior.Throw,
-                OutputLimit = TextLimit,
-                OnOutputLimit = ScriptLimitBehavior.Throw,
-                RegexTimeOut = TimeSpan.FromSeconds(1),
-                StrictVariables = strict,
-                EnableRelaxedMemberAccess = !strict,
-                CancellationToken = cts.Token,
-            };
-
-            var globals = new ScriptObject();
-            foreach (var (key, value) in model)
-            {
-                globals[key] = ToScript(value);
-            }
-
-            // Imported last, so a model key named raw can never replace the function.
-            globals.Import("raw", new Func<object?, RawHtml>(value => new RawHtml(Convert.ToString(value, CultureInfo.InvariantCulture) ?? string.Empty)));
-
-            // Same for plural.
-            globals.Import("plural", new Func<object?, object?[], string>((count, forms) =>
-                PluralRules.Pick(language, Convert.ToInt64(count, CultureInfo.InvariantCulture), forms.Select(f => Convert.ToString(f, CultureInfo.InvariantCulture) ?? string.Empty).ToList())));
-
-            context.PushGlobal(globals);
-            return new TemplateRenderResult(template.Render(context), null);
+            return Run(template, model, strict, language);
         }
         catch (ScriptRuntimeException ex)
         {
@@ -158,6 +128,146 @@ public sealed class TemplateEngine
         {
             return new TemplateRenderResult(null, new TemplateError(ex.Message, null, null));
         }
+    }
+
+    /// <summary>
+    /// The template's top-level pieces (design §6.5): each run of literal text, each <c>{{ … }}</c> expression and each
+    /// whole block, with its place in <paramref name="text"/>. Never throws.
+    /// </summary>
+    /// <param name="text">The template text.</param>
+    /// <returns>The pieces in order; empty when the text does not parse.</returns>
+    public IReadOnlyList<TemplatePiece> Pieces(string text)
+    {
+        try
+        {
+            var template = _parse(text ?? string.Empty);
+            return template.HasErrors ? [] : [.. TopLevel(template).Select((p, i) => new TemplatePiece(i, p.Start, p.End - p.Start))];
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            return [];
+        }
+    }
+
+    /// <summary>
+    /// Renders a template for the dashboard's preview only, with each top-level piece's output between invisible
+    /// markers (<see cref="TemplateMarkers"/>). Once the markers are stripped, the output is exactly what
+    /// <see cref="Render"/> gives without <c>strict</c>: the markers are statements of their own, added around the
+    /// parsed pieces, so whitespace trimming, blocks and loops render as they do unmarked. Never throws.
+    /// </summary>
+    /// <param name="text">The template text.</param>
+    /// <param name="model">The flat template model.</param>
+    /// <param name="language">The language <c>plural</c> uses.</param>
+    /// <returns>The marked output, or the error.</returns>
+    public TemplateRenderResult RenderMarked(string text, IReadOnlyDictionary<string, object?> model, string language = "en")
+    {
+        try
+        {
+            // A parse of its own: the markers change the statements, and the cached template must stay as parsed.
+            var template = _parse(text ?? string.Empty);
+            if (template.HasErrors)
+            {
+                var first = template.Messages[0];
+                return new TemplateRenderResult(null, ToError(first.Message, first.Span));
+            }
+
+            // Pieces exist only when the page has statements (TopLevel), so the loop never runs without them.
+            var pieces = TopLevel(template);
+            for (var i = pieces.Count - 1; i >= 0; i--)
+            {
+                var statements = template.Page!.Body!.Statements;
+                var at = statements.IndexOf(pieces[i].Statement);
+                statements.Insert(at + 1, Marker(TemplateMarkers.End.ToString()));
+                statements.Insert(at, Marker(string.Create(CultureInfo.InvariantCulture, $"{TemplateMarkers.Start}{i}{TemplateMarkers.IndexEnd}")));
+            }
+
+            return Run(template, model, strict: false, language);
+        }
+        catch (ScriptRuntimeException ex)
+        {
+            return new TemplateRenderResult(null, ToError(ex.OriginalMessage, ex.Span));
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            return new TemplateRenderResult(null, new TemplateError(ex.Message, null, null));
+        }
+    }
+
+    private static ScriptRawStatement Marker(string text) => new() { Text = new ScriptStringSlice(text) };
+
+    // The top-level statements that are pieces, each with its source range: an expression or block takes in the {{ and
+    // }} around it, literal text is its own (already trimmed) span. The {{ and }} themselves are no pieces.
+    private static List<(ScriptStatement Statement, int Start, int End)> TopLevel(Template template)
+    {
+        var result = new List<(ScriptStatement, int, int)>();
+        if (template.Page?.Body?.Statements is not { } statements)
+        {
+            return result;
+        }
+
+        for (var i = 0; i < statements.Count; i++)
+        {
+            var statement = statements[i];
+            if (statement is ScriptEscapeStatement || (statement is ScriptRawStatement raw && raw.Text.Length == 0))
+            {
+                continue;
+            }
+
+            var start = statement.Span.Start.Offset;
+            var end = statement.Span.End.Offset + 1;
+            if (statement is not ScriptRawStatement)
+            {
+                if (i > 0 && statements[i - 1] is ScriptEscapeStatement open)
+                {
+                    start = open.Span.Start.Offset;
+                }
+
+                if (i + 1 < statements.Count && statements[i + 1] is ScriptEscapeStatement close)
+                {
+                    end = close.Span.End.Offset + 1;
+                }
+            }
+
+            result.Add((statement, start, Math.Max(start, end)));
+        }
+
+        return result;
+    }
+
+    // Renders a parsed template under the limits, with the model and the raw and plural functions. Throws as Scriban does.
+    private TemplateRenderResult Run(Template template, IReadOnlyDictionary<string, object?> model, bool strict, string language)
+    {
+        using var cts = new CancellationTokenSource(_timeout, _time);
+        var context = new TelegramTemplateContext
+        {
+            LoopLimit = Limit,
+            RecursiveLimit = Depth,
+            ObjectRecursionLimit = Depth,
+            LimitToString = TextLimit,
+            OnStringLimit = ScriptLimitBehavior.Throw,
+            OutputLimit = TextLimit,
+            OnOutputLimit = ScriptLimitBehavior.Throw,
+            RegexTimeOut = TimeSpan.FromSeconds(1),
+            StrictVariables = strict,
+            EnableRelaxedMemberAccess = !strict,
+            CancellationToken = cts.Token,
+        };
+
+        var globals = new ScriptObject();
+        foreach (var (key, value) in model)
+        {
+            globals[key] = ToScript(value);
+        }
+
+        // Imported last, so a model key named raw can never replace the function.
+        globals.Import("raw", new Func<object?, RawHtml>(value => new RawHtml(Convert.ToString(value, CultureInfo.InvariantCulture) ?? string.Empty)));
+
+        // Same for plural.
+        globals.Import("plural", new Func<object?, object?[], string>((count, forms) =>
+            PluralRules.Pick(language, Convert.ToInt64(count, CultureInfo.InvariantCulture), forms.Select(f => Convert.ToString(f, CultureInfo.InvariantCulture) ?? string.Empty).ToList())));
+
+        context.PushGlobal(globals);
+        return new TemplateRenderResult(template.Render(context), null);
     }
 
     private static TemplateError ToError(string message, SourceSpan span) =>

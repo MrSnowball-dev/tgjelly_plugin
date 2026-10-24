@@ -171,7 +171,7 @@ public sealed class BotTokenServiceTests : IDisposable
         SeedBotScopedState(FakeBotApi.BotId, d.Id);
         var identity = (_h.State.Read(s => s.Telegram.BotId)!.Value, _h.State.Read(s => s.Telegram.BotUsername));
 
-        await _service.DisconnectAsync(Ct);
+        await _service.DisconnectAsync(false, Ct);
 
         var secrets = _h.Secrets.Load();
         Assert.Equal((string.Empty, "u", "p"), (secrets.BotToken, secrets.ProxyUsername, secrets.ProxyPassword));
@@ -186,11 +186,49 @@ public sealed class BotTokenServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Disconnect_Default_KeepsDestinations()
+    {
+        var d = _h.AddDestination(-1001);
+        SeedBotScopedState(FakeBotApi.BotId, d.Id);
+
+        await _service.DisconnectAsync(false, Ct);
+
+        Assert.Equal([d.Id], _h.Settings.Current.Destinations.Select(x => x.Id));
+    }
+
+    [Fact]
+    public async Task Disconnect_RemoveDestinations_ClearsDestinationsAndTheirState()
+    {
+        var d = _h.AddDestination(-1001);
+        _h.AddDestination(-1002);
+        SeedBotScopedState(FakeBotApi.BotId, d.Id);
+
+        await _service.DisconnectAsync(true, Ct);
+
+        Assert.Empty(_h.Settings.Current.Destinations);
+        Assert.Empty(_h.State.Read(s => s.Health));
+        Assert.Empty(_h.State.ReadQueue(q => q.SentMessages));
+        Assert.Empty(_h.State.ReadQueue(q => q.Outbox));
+        Assert.Equal(string.Empty, _h.Secrets.Load().BotToken);
+    }
+
+    [Fact]
+    public async Task Disconnect_RemoveDestinations_BumpsRevision()
+    {
+        _h.AddDestination(-1001);
+        var before = _h.Settings.Current.Revision;
+
+        await _service.DisconnectAsync(true, Ct);
+
+        Assert.Equal(before + 1, _h.Settings.Current.Revision);
+    }
+
+    [Fact]
     public async Task ReconnectingTheSameBotAfterDisconnect_IsNotASwitch()
     {
         _h.AddDestination(-1001);
         await _service.SaveAsync(FakeBotApi.Token, true, false, Ct);
-        await _service.DisconnectAsync(Ct);
+        await _service.DisconnectAsync(false, Ct);
 
         var result = await _service.SaveAsync(FakeBotApi.Token, true, false, Ct);
 
@@ -224,7 +262,7 @@ public sealed class BotTokenServiceTests : IDisposable
 
         var save = _service.SaveAsync(FakeBotApi.Token, true, false, Ct);
         await entered.Task.WaitAsync(Ct);
-        var disconnect = _service.DisconnectAsync(Ct);
+        var disconnect = _service.DisconnectAsync(false, Ct);
         await Task.Delay(100, Ct);
         Assert.False(disconnect.IsCompleted);
 

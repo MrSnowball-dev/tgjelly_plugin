@@ -74,4 +74,17 @@ public class StringTableTests
             }
         }
     }
+
+    [Fact]
+    public void Strings_NoVagueErrors()
+    {
+        foreach (var (key, value) in StringTable.LoadEmbedded("en").Snapshot())
+        {
+            Assert.False(value.Contains("unknown error", System.StringComparison.OrdinalIgnoreCase), $"{key} says 'unknown error'");
+            Assert.False(value.Contains("something went wrong", System.StringComparison.OrdinalIgnoreCase), $"{key} says 'something went wrong'");
+            Assert.False(
+                value.Trim().TrimEnd('.', '!').Equals("try again", System.StringComparison.OrdinalIgnoreCase) && !key.EndsWith("tryAgain", System.StringComparison.Ordinal),
+                $"{key} is only 'try again'");
+        }
+    }
 }

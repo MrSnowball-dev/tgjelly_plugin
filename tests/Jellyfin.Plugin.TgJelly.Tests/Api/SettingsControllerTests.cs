@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using Jellyfin.Plugin.TgJelly.Api;
 using Jellyfin.Plugin.TgJelly.Configuration;
 using Jellyfin.Plugin.TgJelly.Rendering;
@@ -63,14 +64,96 @@ public sealed class SettingsControllerTests : IAsyncLifetime
     {
         var request = Request(0);
         request.PublicUrl = " https://jf.example.com ";
-        request.Message.ShowPoster = false;
+        request.Message.PerMessage = [new MessageSwitchesChange { EventKey = "media.movie", Switches = new MessageSwitchesPatch { ShowPoster = false } }];
         request.Batching.DigestThreshold = 20;
 
         var dto = Assert.IsType<SettingsDto>(_controller.PutSettings(request).Value);
 
         Assert.Equal((1L, "https://jf.example.com", true), (dto.Revision, dto.PublicUrl, dto.PublicUrlValid));
-        Assert.False(_h.Settings.Current.Message.ShowPoster);
+        Assert.False(_h.Settings.Current.Message.For("media.movie").ShowPoster);
         Assert.Equal(20, _h.Settings.Current.Batching.DigestThreshold);
+    }
+
+    [Fact]
+    public void Put_SingleEntry_MergesAndKeepsOthers()
+    {
+        _h.Settings.Update(null, c =>
+        {
+            c.Message.Change("media.movie", s => s.ShowOverview = false);
+            c.Message.Change("media.episodes", s => s.ShowPoster = false);
+            c.Message.Change("security.lockout", s => s.ShowPoster = true);
+            c.Message.AnnounceUpgrades = true;
+        });
+        var request = Request(1);
+        request.Message.PerMessage = [new MessageSwitchesChange { EventKey = "media.movie", Switches = new MessageSwitchesPatch { ShowPoster = false } }];
+
+        var dto = Assert.IsType<SettingsDto>(_controller.PutSettings(request).Value);
+
+        var saved = _h.Settings.Current.Message;
+        var movie = saved.For("media.movie");
+        Assert.Equal((false, false, true, true, true), (movie.ShowPoster, movie.ShowOverview, movie.ShowRatingGenres, movie.ShowOpenInJellyfin, movie.ShowProviderLinks));
+        Assert.False(saved.For("media.episodes").ShowPoster);
+        Assert.True(saved.For("media.episodes").ShowOverview);
+        Assert.True(saved.For("security.lockout").ShowPoster);
+        Assert.True(saved.AnnounceUpgrades, "a switch not sent keeps its value");
+
+        // The reply lists every message with its switches.
+        Assert.Equal(MessageOptions.Keys, dto.Message.PerMessage.Select(e => e.EventKey));
+        Assert.False(dto.Message.PerMessage.Single(e => e.EventKey == "media.movie").Switches.ShowOverview);
+        Assert.False(dto.Message.PerMessage.Single(e => e.EventKey == "server.started").Switches.ShowPoster);
+        Assert.True(dto.Message.AnnounceUpgrades);
+    }
+
+    [Fact]
+    public void Put_UnknownEventKey_400WithMessage()
+    {
+        var request = Request(0);
+        request.Message.PerMessage =
+        [
+            new MessageSwitchesChange { EventKey = "media.movie", Switches = new MessageSwitchesPatch { ShowPoster = false } },
+            new MessageSwitchesChange { EventKey = "media.podcast", Switches = new MessageSwitchesPatch { ShowPoster = false } },
+        ];
+
+        var result = Assert.IsType<BadRequestObjectResult>(_controller.PutSettings(request).Result);
+
+        var error = Assert.Single(Assert.IsType<ErrorsDto>(result.Value).Errors);
+        Assert.Equal("Message.PerMessage[1].EventKey", error.Field);
+        Assert.Contains("media.podcast", error.Message, StringComparison.Ordinal);
+        Assert.Contains("media.movie", error.Message, StringComparison.Ordinal);
+        Assert.Equal(0, _h.Settings.Current.Revision);
+        Assert.True(_h.Settings.Current.Message.For("media.movie").ShowPoster);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Put_AnEntryWithNoSwitches_400SaysWhatToSend(bool emptyPatch)
+    {
+        var request = Request(0);
+        request.Message.PerMessage = [new MessageSwitchesChange { EventKey = "media.movie", Switches = emptyPatch ? new MessageSwitchesPatch() : null }];
+
+        var result = Assert.IsType<BadRequestObjectResult>(_controller.PutSettings(request).Result);
+
+        var error = Assert.Single(Assert.IsType<ErrorsDto>(result.Value).Errors);
+        Assert.Equal("Message.PerMessage[0].Switches", error.Field);
+        Assert.Contains("media.movie", error.Message, StringComparison.Ordinal);
+        Assert.Contains("ShowPoster", error.Message, StringComparison.Ordinal);
+        Assert.Equal(0, _h.Settings.Current.Revision);
+    }
+
+    [Fact]
+    public void Put_AnOldFlatMessageShape_400SaysToReloadThePage()
+    {
+        var request = System.Text.Json.JsonSerializer.Deserialize<SettingsUpdateRequest>(
+            "{\"ExpectedRevision\":0,\"PublicUrl\":\"\",\"Message\":{\"ShowPoster\":false,\"ShowOverview\":true},\"Batching\":{},\"UpdateCheck\":{}}")!;
+
+        var result = Assert.IsType<BadRequestObjectResult>(_controller.PutSettings(request).Result);
+
+        var error = Assert.Single(Assert.IsType<ErrorsDto>(result.Value).Errors);
+        Assert.Equal("Message", error.Field);
+        Assert.Contains("ShowPoster", error.Message, StringComparison.Ordinal);
+        Assert.Contains("Reload", error.Message, StringComparison.Ordinal);
+        Assert.Equal(0, _h.Settings.Current.Revision);
     }
 
     [Fact]
@@ -195,7 +278,7 @@ public sealed class SettingsControllerTests : IAsyncLifetime
     {
         ExpectedRevision = revision,
         PublicUrl = string.Empty,
-        Message = new MessageOptions(),
+        Message = new MessageSettingsUpdate(),
         Batching = new BatchingOptions(),
         UpdateCheck = new UpdateCheckOptions(),
     };

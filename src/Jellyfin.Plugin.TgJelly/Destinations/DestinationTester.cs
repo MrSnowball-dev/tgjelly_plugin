@@ -23,6 +23,7 @@ namespace Jellyfin.Plugin.TgJelly.Destinations;
 public sealed class DestinationTester
 {
     private const string PosterResource = "Jellyfin.Plugin.TgJelly.Templates.sample-poster.png";
+    private const string LogoResource = "Jellyfin.Plugin.TgJelly.Logo.png";
 
     private readonly BotConnection _connection;
     private readonly HealthService _health;
@@ -86,7 +87,7 @@ public sealed class DestinationTester
 
             try
             {
-                var stream = typeof(DestinationTester).Assembly.GetManifestResourceStream(PosterResource)
+                var stream = typeof(DestinationTester).Assembly.GetManifestResourceStream(group == "media" ? PosterResource : LogoResource)
                     ?? throw new InvalidOperationException("The sample poster is missing from the plugin.");
                 await using (stream.ConfigureAwait(false))
                 {

@@ -68,18 +68,19 @@ public class BotController : ControllerBase
     /// <summary>
     /// Disconnects the bot (spec §10.4).
     /// </summary>
+    /// <param name="removeDestinations">Also removes every destination, in the same settings change.</param>
     /// <param name="cancellationToken">Cancels the request.</param>
     /// <returns>No content.</returns>
     [HttpDelete("Token")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
-    public async Task<IActionResult> DeleteToken(CancellationToken cancellationToken)
+    public async Task<IActionResult> DeleteToken([FromQuery] bool removeDestinations, CancellationToken cancellationToken)
     {
         if (ApiGuard.Block(_gate, _state) is { } blocked)
         {
             return blocked;
         }
 
-        await _tokens.DisconnectAsync(cancellationToken).ConfigureAwait(false);
+        await _tokens.DisconnectAsync(removeDestinations, cancellationToken).ConfigureAwait(false);
         return NoContent();
     }
 

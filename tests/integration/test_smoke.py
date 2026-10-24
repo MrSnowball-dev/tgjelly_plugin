@@ -61,7 +61,7 @@ class WebAssetTests(unittest.TestCase):
         self.assertEqual(sorted(registered), sorted(name for name, _ in smoke.WEB_ASSETS))
 
     def test_scripts_need_javascript_and_the_stylesheet_css(self):
-        self.assertEqual(dict(smoke.WEB_ASSETS), {"tgjelly.js": "javascript", "tgjelly-ui.js": "javascript", "tgjelly-autosave.js": "javascript", "tgjelly.css": "css"})
+        self.assertEqual(dict(smoke.WEB_ASSETS), {"tgjelly.js": "javascript", "tgjelly-ui.js": "javascript", "tgjelly-autosave.js": "javascript", "tgjelly-messages.js": "javascript", "tgjelly-preview.js": "javascript", "tgjelly-log.js": "javascript", "tgjelly.css": "css"})
 
     def test_asset_served_checks_status_and_type(self):
         self.assertTrue(smoke.asset_served(200, "text/css; charset=utf-8", "css"))

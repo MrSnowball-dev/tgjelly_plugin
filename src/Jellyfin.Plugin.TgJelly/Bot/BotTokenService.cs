@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -26,6 +27,7 @@ public sealed class BotTokenService : IDisposable
     private readonly StringTable _strings;
     private readonly TimeProvider _time;
     private readonly ILogger<BotTokenService> _logger;
+    private readonly Log.LogRecorder? _log;
     private readonly SemaphoreSlim _saving = new(1, 1);
 
     /// <summary>
@@ -39,8 +41,10 @@ public sealed class BotTokenService : IDisposable
     /// <param name="strings">The string table.</param>
     /// <param name="time">The clock.</param>
     /// <param name="logger">The logger.</param>
-    public BotTokenService(ITelegramClientFactory factory, SecretsStore secrets, StateStore state, SettingsStore settings, ISupervisorControl supervisor, StringTable strings, TimeProvider time, ILogger<BotTokenService> logger)
+    /// <param name="log">Where messages a disconnect drops from the Outbox are recorded for the Log, if anywhere.</param>
+    public BotTokenService(ITelegramClientFactory factory, SecretsStore secrets, StateStore state, SettingsStore settings, ISupervisorControl supervisor, StringTable strings, TimeProvider time, ILogger<BotTokenService> logger, Log.LogRecorder? log = null)
     {
+        _log = log;
         _factory = factory;
         _secrets = secrets;
         _state = state;
@@ -151,15 +155,28 @@ public sealed class BotTokenService : IDisposable
     /// Disconnects the bot (spec §10.4): clears the token and the bot-scoped state, keeps the proxy credentials and
     /// the bot identity. Waits for a token save still in flight, so that save can't finish after it.
     /// </summary>
+    /// <param name="removeDestinations">Whether to remove every destination too, in one settings change. Their Health,
+    /// SentMessages and Outbox entries go with the bot-scoped state either way.</param>
     /// <param name="ct">Cancels the wait.</param>
     /// <returns>A task.</returns>
-    public async Task DisconnectAsync(CancellationToken ct)
+    public async Task DisconnectAsync(bool removeDestinations, CancellationToken ct)
     {
         await _saving.WaitAsync(ct).ConfigureAwait(false);
         try
         {
+            if (removeDestinations)
+            {
+                _settings.Update(null, c => c.Destinations = []);
+            }
+
             _secrets.Update(s => s with { BotToken = string.Empty });
-            _state.Update(s => _state.UpdateQueue(q => BotStateReset.ForDisconnect(s, q)));
+            List<string> dropped = [];
+            _state.Update(s => _state.UpdateQueue(q =>
+            {
+                dropped = [.. q.Outbox.Select(Log.LogRecorder.RowIdOf)];
+                BotStateReset.ForDisconnect(s, q);
+            }));
+            _log?.Disconnected(dropped);
             _supervisor.Restart();
         }
         finally

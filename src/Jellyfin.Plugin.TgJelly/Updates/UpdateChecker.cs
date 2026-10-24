@@ -150,7 +150,7 @@ public sealed class UpdateChecker : BackgroundService
         }
 
         var current = ReleaseVersion.Normalize(_server.Version);
-        var anyNewer = _settings.Current.UpdateCheck.Mode == UpdateCheckMode.AnyNewer;
+        var kinds = _settings.Current.UpdateCheck;
         GitHubRelease? newest = null;
         Version? newestVersion = null;
         foreach (var release in releases)
@@ -158,7 +158,7 @@ public sealed class UpdateChecker : BackgroundService
             if (!release.Draft && !release.Prerelease
                 && ReleaseVersion.TryParse(release.TagName, out var version)
                 && version > current
-                && (anyNewer || version.Major == current.Major)
+                && Qualifies(kinds, current, version)
                 && (newestVersion is null || version > newestVersion))
             {
                 newest = release;
@@ -193,6 +193,20 @@ public sealed class UpdateChecker : BackgroundService
         });
         return true;
     }
+
+    /// <summary>
+    /// Returns whether a newer release is of a kind the settings announce. With the running version a.b.c and the
+    /// candidate x.y.z: a fix is the same a.b and a higher z, a new release the same a and a higher b, a new major a
+    /// higher x.
+    /// </summary>
+    /// <param name="kinds">The enabled kinds.</param>
+    /// <param name="current">The running version.</param>
+    /// <param name="candidate">The candidate, already known to be newer.</param>
+    /// <returns><c>true</c> when any enabled kind matches.</returns>
+    internal static bool Qualifies(UpdateCheckOptions kinds, Version current, Version candidate)
+        => (kinds.NewMajor && candidate.Major > current.Major)
+            || (kinds.NewReleases && candidate.Major == current.Major && candidate.Minor > current.Minor)
+            || (kinds.Fixes && candidate.Major == current.Major && candidate.Minor == current.Minor && candidate.Build > current.Build);
 
     /// <inheritdoc />
     protected override Task ExecuteAsync(CancellationToken stoppingToken)

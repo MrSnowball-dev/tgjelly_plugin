@@ -22,6 +22,9 @@ public sealed class SentMessage
     /// <summary>Gets or sets the event key it was sent for.</summary>
     public string EventKey { get; set; } = string.Empty;
 
+    /// <summary>Gets or sets the ID of the Log row of this message, so later edits update that row.</summary>
+    public string? LogId { get; set; }
+
     /// <summary>Gets or sets the model it was last rendered from; late items and coalescing merge into it.</summary>
     public RenderModel? Model { get; set; }
 }

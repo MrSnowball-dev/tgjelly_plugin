@@ -103,23 +103,111 @@ public sealed class UpdateCheckerTests : IDisposable
         Assert.Equal(1, _feed.Calls);
     }
 
-    [Theory]
-    [InlineData(UpdateCheckMode.SameMajor, "10.11.12", "https://github.com/jellyfin/jellyfin/releases/tag/v10.11.12")]
-    [InlineData(UpdateCheckMode.AnyNewer, "12.2", "https://github.com/jellyfin/jellyfin/releases/tag/v12.2")]
-    public async Task SameMajor_IgnoresOtherMajors_AnyNewer_DoesNot(UpdateCheckMode mode, string version, string url)
+    [Fact]
+    public async Task Checker_FixesOnly_Ignores10_12()
     {
-        Assert.Equal(SettingsUpdateStatus.Saved, _h.Settings.Update(null, c => c.UpdateCheck.Mode = mode).Status);
-        Release("v12.2");
+        Kinds(fixes: true, releases: false, major: false);
+        Release("v10.12.0");
         Release("v10.11.12");
-        Release("v10.11.10");
+        Release("v12.2");
         using var checker = await NewAsync();
 
         Assert.True(await checker.CheckOnceAsync(CancellationToken.None));
 
         var e = Assert.Single(_queues.TakeOther(10));
-        Assert.Equal("server.update_available", e.EventKey);
-        Assert.Equal((version, "10.11.11", url), (e.Values[EventFields.Version], e.Values[EventFields.Current], e.Values[EventFields.Url]));
+        Assert.Equal(("10.11.12", "10.11.11", "https://github.com/jellyfin/jellyfin/releases/tag/v10.11.12"), (e.Values[EventFields.Version], e.Values[EventFields.Current], e.Values[EventFields.Url]));
     }
+
+    [Fact]
+    public async Task Checker_FixesOnly_IgnoresTheOtherKindsOfRelease()
+    {
+        Kinds(fixes: true, releases: false, major: false);
+        _server.Version = new Version(10, 11, 1, 0);
+        Release("v10.11.2");
+        Release("v10.12.0");
+
+        using var checker = await NewAsync();
+        await checker.CheckOnceAsync(CancellationToken.None);
+
+        Assert.Equal("10.11.2", Assert.Single(_queues.TakeOther(10)).Values[EventFields.Version]);
+    }
+
+    [Fact]
+    public async Task Checker_NewReleasesOnly_Announces10_12_NotFixesOrMajors()
+    {
+        Kinds(fixes: false, releases: true, major: false);
+        Release("v10.11.12");
+        Release("v10.12.0");
+        Release("v12.2");
+        using var checker = await NewAsync();
+
+        await checker.CheckOnceAsync(CancellationToken.None);
+
+        Assert.Equal("10.12.0", Assert.Single(_queues.TakeOther(10)).Values[EventFields.Version]);
+    }
+
+    [Fact]
+    public async Task Checker_NewMajorOnly_Announces12()
+    {
+        Kinds(fixes: false, releases: false, major: true);
+        Release("v10.11.12");
+        Release("v10.12.0");
+        Release("v12.2");
+        using var checker = await NewAsync();
+
+        await checker.CheckOnceAsync(CancellationToken.None);
+
+        var e = Assert.Single(_queues.TakeOther(10));
+        Assert.Equal(("12.2", "https://github.com/jellyfin/jellyfin/releases/tag/v12.2"), (e.Values[EventFields.Version], e.Values[EventFields.Url]));
+    }
+
+    [Fact]
+    public async Task Checker_AllOff_AnnouncesNothing()
+    {
+        Kinds(fixes: false, releases: false, major: false);
+        Release("v10.11.12");
+        Release("v10.12.0");
+        Release("v12.2");
+        using var checker = await NewAsync();
+
+        Assert.True(await checker.CheckOnceAsync(CancellationToken.None));
+
+        Assert.Empty(_queues.TakeOther(10));
+    }
+
+    [Fact]
+    public async Task Checker_Defaults_AnnounceFixesAndNewReleasesButNotMajors()
+    {
+        Release("v12.2");
+        Release("v10.11.12");
+        Release("v10.12.0");
+        using var checker = await NewAsync();
+
+        await checker.CheckOnceAsync(CancellationToken.None);
+
+        Assert.Equal("10.12.0", Assert.Single(_queues.TakeOther(10)).Values[EventFields.Version]);
+    }
+
+    [Fact]
+    public async Task Checker_AllThree_AnnouncesTheNewest()
+    {
+        Kinds(fixes: true, releases: true, major: true);
+        Release("v10.11.12");
+        Release("v12.2");
+        using var checker = await NewAsync();
+
+        await checker.CheckOnceAsync(CancellationToken.None);
+
+        Assert.Equal("12.2", Assert.Single(_queues.TakeOther(10)).Values[EventFields.Version]);
+    }
+
+    private void Kinds(bool fixes, bool releases, bool major)
+        => Assert.Equal(SettingsUpdateStatus.Saved, _h.Settings.Update(null, c =>
+        {
+            c.UpdateCheck.Fixes = fixes;
+            c.UpdateCheck.NewReleases = releases;
+            c.UpdateCheck.NewMajor = major;
+        }).Status);
 
     [Fact]
     public async Task DraftsAndPrereleases_Skipped()

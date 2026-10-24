@@ -1,12 +1,16 @@
 // TgJelly dashboard components (plan 8, design §5.3). Imported as './configurationpage?name=tgjelly-ui.js'.
 //
-// Every helper is a pure function that returns an HTML string styled by tgjelly.css:
+// It also holds the string and number helpers (t, text, plural, formatNumber, ...) that every page module shares; the
+// sibling modules import them from here, never from tgjelly.js, so no two modules import each other.
+//
+// Every component is a pure function that returns an HTML string styled by tgjelly.css:
 // - every text argument is escaped here, so callers pass plain text;
 // - arguments named control, body, html or actionHtml are trusted HTML that the caller has already built from
 //   esc()/t() output or from these helpers;
 // - every helper takes an optional extraClass, appended to its outer element's class list.
 // Controls carry the page's usual hooks: data-tgj-input for inputs, data-tgj-act and data-tgj-id for actions.
-// No browser dialogs and no status symbols: a destructive action asks with inlineConfirm, and a state is a coloured word.
+// No browser dialogs and no status symbols: a destructive action asks with inlineConfirm, and a state is a label (a
+// word in an outline).
 
 const ESCAPES = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
 
@@ -18,6 +22,120 @@ const ESCAPES = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&
 export function esc(value) {
     return value === null || value === undefined ? '' : String(value).replace(/[&<>"']/g, c => ESCAPES[c]);
 }
+
+/**
+ * The short cause of a failed API result, for the error a load throws: the HTTP status and the server's own message
+ * when it sent one ("HTTP 500: The log file is locked"), else just the status.
+ * @param {{ status: number, body: any }} result
+ * @returns {string}
+ */
+export function httpFailure(result) {
+    return `HTTP ${result.status}${result.body && result.body.Message ? `: ${result.body.Message}` : ''}`;
+}
+
+// --- strings and numbers ---
+// The strings table is always called S, so the key checks in tests/web can find the key at every t() and plural() call.
+
+/**
+ * Looks up a string and fills its {name} placeholders. The result is HTML: the text and the args are both escaped.
+ * A missing key gives the key itself; a placeholder without an arg stays as it is.
+ * @param {Record<string, string> | null} S the string table from GET Strings
+ * @param {string} key
+ * @param {Record<string, unknown>} [args]
+ * @returns {string}
+ */
+export function t(S, key, args = {}) {
+    return fill(S, key, args, esc);
+}
+
+/**
+ * The plain-text twin of t(): the same lookup and fallbacks, nothing escaped. For the labels passed to the
+ * tgjelly-ui.js helpers, which escape their text themselves; t() stays for HTML written here.
+ * @param {Record<string, string> | null} S
+ * @param {string} key
+ * @param {Record<string, unknown>} [args]
+ * @returns {string}
+ */
+export function text(S, key, args = {}) {
+    return fill(S, key, args, String);
+}
+
+function fill(S, key, args, encode) {
+    const source = S && Object.hasOwn(S, key) ? String(S[key]) : key;
+    let out = '';
+    let last = 0;
+    for (const match of source.matchAll(/\{(\w+)\}/g)) {
+        out += encode(source.slice(last, match.index)) + encode(Object.hasOwn(args, match[1]) ? args[match[1]] ?? '' : match[0]);
+        last = match.index + match[0].length;
+    }
+
+    return out + encode(source.slice(last));
+}
+
+/** The key plural() and pluralText() look up: key.<category>, or key.other when the table lacks that category. */
+function pluralKey(S, key, count, lang) {
+    let category;
+    try {
+        category = new Intl.PluralRules(lang).select(count);
+    } catch {
+        category = new Intl.PluralRules('en').select(count);
+    }
+
+    return S && Object.hasOwn(S, `${key}.${category}`) ? `${key}.${category}` : `${key}.other`;
+}
+
+/**
+ * Picks key.one or key.other (any other plural category falls back to .other) and passes the formatted count as {count}.
+ * @param {Record<string, string> | null} S
+ * @param {string} key the key without its .one/.other suffix
+ * @param {number} count
+ * @param {Record<string, unknown>} [args]
+ * @param {string} [lang]
+ * @returns {string} HTML, as t() returns
+ */
+export function plural(S, key, count, args = {}, lang = 'en') {
+    return t(S, pluralKey(S, key, count, lang), { ...args, count: formatNumber(count, lang) });
+}
+
+/** plural() as plain text, as text() is to t(). */
+export function pluralText(S, key, count, args = {}, lang = 'en') {
+    return text(S, pluralKey(S, key, count, lang), { ...args, count: formatNumber(count, lang) });
+}
+
+/**
+ * Formats a number for the page's language, e.g. 1,000.
+ * @param {number} value
+ * @param {string} [lang]
+ * @returns {string}
+ */
+export function formatNumber(value, lang = 'en') {
+    try {
+        return new Intl.NumberFormat(lang).format(value);
+    } catch {
+        return String(value);
+    }
+}
+
+/**
+ * Formats an ISO timestamp from the API as local date and time.
+ * @param {string} iso
+ * @param {string} [lang]
+ * @returns {string}
+ */
+export function formatTime(iso, lang = 'en') {
+    const date = new Date(iso);
+    if (Number.isNaN(date.getTime())) {
+        return String(iso ?? '');
+    }
+
+    try {
+        return date.toLocaleString(lang);
+    } catch {
+        return date.toISOString();
+    }
+}
+
+// --- components ---
 
 /** The class attribute value: the base classes plus the caller's extraClass, escaped. */
 function cls(base, extraClass) {
@@ -187,13 +305,23 @@ export function emptyState({ text, actionHtml = '', extraClass = '' }) {
         + `${actionHtml ? `<div class="tgj-empty-actions">${actionHtml}</div>` : ''}</div>`;
 }
 
-const STATE_KINDS = ['ok', 'warning', 'error', 'muted'];
+const LABEL_TONES = ['good', 'progress', 'neutral', 'attention', 'bad', 'accent'];
 
 /**
- * A state shown as a coloured word, with no dot or symbol: "Connected", "Not connected", "2 failing".
- * @param {{ kind?: 'ok' | 'warning' | 'error' | 'muted', text: string, extraClass?: string }} options
+ * A label (design §3): a state word in an outlined pill, coloured by its tone, with no fill and no symbol. It is the
+ * one way the dashboard shows a state: "Saved", "Connected", "Edited", "Lost".
+ * - good is success (Saved, Connected); progress is the accent (Saving…, Connecting); neutral is muted (Built-in,
+ *   Off); attention is the warning colour (Photos blocked); bad is the error colour (Not saved, Lost); accent marks a
+ *   change (Edited);
+ * - an unknown tone shows as neutral, so a state this page doesn't know is still a word;
+ * - attrs are extra attributes, as the other helpers take them; a class in attrs joins the class list.
+ * @param {string} text plain text, escaped here
+ * @param {'good' | 'progress' | 'neutral' | 'attention' | 'bad' | 'accent'} [tone]
+ * @param {Record<string, unknown>} [attrs]
  * @returns {string}
  */
-export function stateLabel({ kind = 'ok', text, extraClass = '' }) {
-    return `<span class="${cls(`tgj-state tgj-state--${oneOf(kind, STATE_KINDS, 'stateLabel kind')}`, extraClass)}">${esc(text)}</span>`;
+export function label(text, tone = 'neutral', attrs = {}) {
+    const { class: extraClass = '', ...rest } = attrs ?? {};
+    const known = LABEL_TONES.includes(tone) ? tone : 'neutral';
+    return `<span class="${cls(`tgj-label tgj-label--${known}`, extraClass)}"${attributes(rest)}>${esc(text)}</span>`;
 }
