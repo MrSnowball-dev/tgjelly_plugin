@@ -3,6 +3,7 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Xml.Linq;
 using System.Xml.Serialization;
 using Jellyfin.Plugin.TgJelly.Configuration;
 using Jellyfin.Plugin.TgJelly.Tests.Fakes;
@@ -62,10 +63,11 @@ public sealed class MessageOptionsMigrationTests : IDisposable
         Assert.Equal("abcd1234", Assert.Single(reloaded.Destinations).Id);
         Assert.Equal("{{ title }}", Assert.Single(reloaded.Templates).Text);
 
-        // The v0.4 switches were read once: they are not written back.
-        var message = xml[xml.IndexOf("<Message>", StringComparison.Ordinal)..xml.IndexOf("<PerMessage>", StringComparison.Ordinal)];
-        Assert.DoesNotContain("ShowPoster", message, StringComparison.Ordinal);
-        Assert.DoesNotContain("ShowOverview", message, StringComparison.Ordinal);
+        // The v0.4 switches were read once: they are not written back. Only <PerMessage> entries hold switches now.
+        var message = Assert.Single(XDocument.Parse(xml).Root!.Elements("Message"));
+        string[] v04 = ["ShowPoster", "ShowOverview", "ShowRatingGenres", "ShowOpenInJellyfin", "ShowProviderLinks"];
+        Assert.Empty(message.Elements().Where(e => v04.Contains(e.Name.LocalName)).Select(e => e.Name.LocalName));
+        Assert.Single(message.Elements("PerMessage"));
     }
 
     [Fact]
