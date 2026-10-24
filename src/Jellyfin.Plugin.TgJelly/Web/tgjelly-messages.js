@@ -911,7 +911,7 @@ export function createMessages(page) {
             }
         } catch (err) {
             reply = { RequestError: page.thrownError(S, err) };
-            failure = texpage.thrownError(S, err);
+            failure = page.thrownText(S, err);
         }
 
         if (seq === tplSeqs.get(key)) {

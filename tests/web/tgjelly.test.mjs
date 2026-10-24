@@ -16,7 +16,7 @@ const EN = JSON.parse(readFileSync(new URL('../../src/Jellyfin.Plugin.TgJelly/St
 // The section hosts are listed too, so a test can hold an element before the shell is written.
 const IDS = [
     'tgjelly-root', 'tgj-status', 'tgj-connect', 'tgj-bot', 'tgj-destinations', 'tgj-messages', 'tgj-demo',
-    'tgj-proxy', 'tgj-batching', 'tgj-updates', 'tgj-tpl-preview', 'tgj-manual', 'tgj-diagnostics',
+    'tgj-proxy', 'tgj-batching', 'tgj-updates', 'tgj-tpl-preview', 'tgj-tpl-check', 'tgj-manual', 'tgj-diagnostics',
 ];
 
 function status(overrides = {}) {
@@ -3885,4 +3885,42 @@ test('bodyless 404, 401 and 403 name their known causes', () => {
 
     assert.equal(m.requestError(EN, { status: 404, body: { Message: 'gone' } }), 'gone (HTTP 404)', 'a server message wins');
     assert.ok(m.requestError(EN, { status: 502, body: null }).includes('without saying why'));
+});
+
+// --- Task 14 fix round 2 ---
+
+test('a throwing template check shows the cause and the next step, and clears', async t => {
+    t.mock.method(console, 'error', () => {});
+    for (const [error, expected] of [[new TypeError('Failed to fetch'), 'Could not reach Jellyfin: Failed to fetch'], [new Error('boom'), 'unexpected error: boom']]) {
+        const { view, api, el } = mount({ 'GET TgJelly/Templates': templates() });
+        const original = api.fetch;
+        api.fetch = request => (request.url.endsWith('/Templates/Validate') ? Promise.reject(error) : original(request));
+        await show(view);
+        await flush();
+        const html = el('tgj-tpl-check').innerHTML;
+        assert.ok(html.includes(expected), html);
+        assert.ok(/Reload the page|repeat the action/.test(html), 'says what to do next');
+        assert.ok(!/Checking/i.test(html), 'the checking state cleared');
+    }
+});
+
+test('only fetch-style failures count as network errors, through runAction and auto-save', async t => {
+    t.mock.method(console, 'error', () => {});
+    const { view, hooks, el } = mount();
+    hooks.sections.demo = { id: 'tgj-demo', load: async () => {}, render: () => '<p>demo</p>' };
+    hooks.actions.bug = () => hooks.runAction('demo', async () => { throw new TypeError("Cannot read properties of null (reading 'x')"); });
+    hooks.actions.net = () => hooks.runAction('demo', async () => { throw new TypeError('NetworkError when attempting to fetch resource.'); });
+    await show(view);
+
+    clickOn(view, { 'data-tgj-act': 'bug' });
+    await flush();
+    assert.ok(el('tgj-demo').innerHTML.includes('unexpected error') && !el('tgj-demo').innerHTML.includes('Could not reach'));
+    clickOn(view, { 'data-tgj-act': 'net' });
+    await flush();
+    assert.ok(el('tgj-demo').innerHTML.includes('Could not reach Jellyfin'));
+
+    hooks.queueSave({ key: 'proxy', mode: 'now', send: async () => { throw new TypeError('x is not a function'); } });
+    await flush();
+    const cue = view.cues.get('proxy').innerHTML;
+    assert.ok(cue.includes('unexpected error') && !cue.includes("Couldn&#39;t reach") && !cue.includes('reach Jellyfin'), cue);
 });

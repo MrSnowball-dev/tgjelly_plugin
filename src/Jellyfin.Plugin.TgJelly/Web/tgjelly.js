@@ -224,8 +224,9 @@ function failureReason(S, result) {
         : text(S, 'web.request.httpBare', { status: result.status });
 }
 
-/** Whether a thrown error is the browser's or network's failure to reach the server (fetch rejects with a TypeError). */
-const isNetworkError = err => err instanceof TypeError || (err && (err.name === 'NetworkError' || err.name === 'AbortError'));
+/** Whether a thrown error is the browser's or network's failure to reach the server (fetch rejects with a TypeError such as "Failed to fetch"; other TypeErrors are code bugs). */
+const isNetworkError = err => Boolean(err) && (err.name === 'NetworkError' || err.name === 'AbortError'
+    || (err instanceof TypeError && /failed to fetch|networkerror|load failed|network error/i.test(err.message)));
 
 /**
  * The plain-text cue for a thrown error: "could not reach Jellyfin" for a network failure, otherwise the error as an
