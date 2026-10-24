@@ -3,6 +3,14 @@
     "guid": "e547b901-0dc4-42ae-8999-3871dd141270",
     "versions": [
       {
+        "version": "2.0.5.0",
+        "changelog": "Messages on one page, a Log, and clearer everything\n\n- Every status is a coloured label, like the Built-in and Edited badges. The release version sits next to TgJelly in the header.\n- Messages and Templates are one page. Pick a message to see what it shows, its template and a preview that looks like Telegram.\n- Message switches are per message now: posters on movies but not on episodes, for example. Security and Server messages can carry the TgJelly logo.\n- Click a field or a format in the reference tables to insert it into the template. Hover a piece of the template to see what it produces in the preview, and the other way round.\n- New Log section: every message, per destination, with what happened to it. Failed messages show Telegram's own words and what to do.\n- Destinations show health only when something is wrong. Disconnecting the bot can also remove all destinations.\n- Update checks: choose fixes, new releases and new major versions of Jellyfin separately, in the dashboard and in the bot.\n- Proxy username and password appear only with a proxy. Diagnostics says exactly what the report contains.\n- Every error says what happened and what to do.\n- Upgrading from v0.4 keeps every message looking the same.",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://github.com/MrSnowball-dev/tgjelly_plugin/releases/download/v0.5/tgjelly_2.0.5.0.zip",
+        "checksum": "e3dc11644d263a59481483321dca4096",
+        "timestamp": "2026-10-24T21:01:13Z"
+      },
+      {
         "version": "2.0.4.0",
         "changelog": "A new dashboard: sections, cards and auto-save\n\n- The Telegram page is redesigned. A sidebar holds Overview, Destinations, Messages, Templates and Advanced, and becomes a row of tabs on a phone.\n- Settings are grouped into cards with clear spacing and follow your Jellyfin theme.\n- There are no Save buttons. Every setting saves itself, and \"Saved\" or \"Not saved:\" with the reason shows beside it.\n- The public URL and proxy settings save when you leave the field or press Enter. Templates save a second after you stop typing, and never while they have errors.\n- A change made in the bot while the dashboard is open is kept, and so is what you were typing.\n- Destinations show their health in words, and switching away from a Custom preset asks first.\n- Status in the bot now names your Jellyfin server.",
         "targetAbi": "12.0.0.0",
@@ -33,6 +41,14 @@
         "sourceUrl": "https://github.com/MrSnowball-dev/tgjelly_plugin/releases/download/v0.1/tgjelly_2.0.1.0.zip",
         "checksum": "cb0feb4d6ee44d02cc6cc3be21287301",
         "timestamp": "2026-10-20T21:57:13Z"
+      },
+      {
+        "version": "1.0.5.0",
+        "changelog": "Messages on one page, a Log, and clearer everything\n\n- Every status is a coloured label, like the Built-in and Edited badges. The release version sits next to TgJelly in the header.\n- Messages and Templates are one page. Pick a message to see what it shows, its template and a preview that looks like Telegram.\n- Message switches are per message now: posters on movies but not on episodes, for example. Security and Server messages can carry the TgJelly logo.\n- Click a field or a format in the reference tables to insert it into the template. Hover a piece of the template to see what it produces in the preview, and the other way round.\n- New Log section: every message, per destination, with what happened to it. Failed messages show Telegram's own words and what to do.\n- Destinations show health only when something is wrong. Disconnecting the bot can also remove all destinations.\n- Update checks: choose fixes, new releases and new major versions of Jellyfin separately, in the dashboard and in the bot.\n- Proxy username and password appear only with a proxy. Diagnostics says exactly what the report contains.\n- Every error says what happened and what to do.\n- Upgrading from v0.4 keeps every message looking the same.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/MrSnowball-dev/tgjelly_plugin/releases/download/v0.5/tgjelly_1.0.5.0.zip",
+        "checksum": "49eb0dc8b2d6907a2594ac1e82e21b5f",
+        "timestamp": "2026-10-24T21:01:13Z"
       },
       {
         "version": "1.0.4.0",
