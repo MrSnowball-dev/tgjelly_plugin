@@ -3,6 +3,14 @@
     "guid": "e547b901-0dc4-42ae-8999-3871dd141270",
     "versions": [
       {
+        "version": "2.0.6.0",
+        "changelog": "No presets, a preview that stays in view, and test messages in the Log\n\n- Presets are gone. A new chat starts with every event on; switch off what you don't want. New kinds of event in later versions are added only to destinations that still have every event on. Upgrading keeps every destination's events as they are.\n- In the bot, Add destination now sits in the Destinations screen as a blue button.\n- Open in Telegram just opens the chat with the bot.\n- The message preview stays in view under Jellyfin's header while you scroll.\n- The Fields and Formatting tables keep their columns; long tags wrap instead of stretching the table.\n- Test messages appear in the Log, labelled Test or Test failed.\n- A group with topics is shown as a Forum.\n- The sidebar counts are labels, the version in the header opens its release page, and Change token opens right where you pressed it.\n- TgJelly sends at most two messages a second, to stay clear of Telegram's flood limits.",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://github.com/MrSnowball-dev/tgjelly_plugin/releases/download/v0.6/tgjelly_2.0.6.0.zip",
+        "checksum": "19b39f56d3f061c06fd5cfc8e316ddc2",
+        "timestamp": "2026-10-24T23:43:05Z"
+      },
+      {
         "version": "2.0.5.0",
         "changelog": "Messages on one page, a Log, and clearer everything\n\n- Every status is a coloured label, like the Built-in and Edited badges. The release version sits next to TgJelly in the header.\n- Messages and Templates are one page. Pick a message to see what it shows, its template and a preview that looks like Telegram.\n- Message switches are per message now: posters on movies but not on episodes, for example. Security and Server messages can carry the TgJelly logo.\n- Click a field or a format in the reference tables to insert it into the template. Hover a piece of the template to see what it produces in the preview, and the other way round.\n- New Log section: every message, per destination, with what happened to it. Failed messages show Telegram's own words and what to do.\n- Destinations show health only when something is wrong. Disconnecting the bot can also remove all destinations.\n- Update checks: choose fixes, new releases and new major versions of Jellyfin separately, in the dashboard and in the bot.\n- Proxy username and password appear only with a proxy. Diagnostics says exactly what the report contains.\n- Every error says what happened and what to do.\n- Upgrading from v0.4 keeps every message looking the same.",
         "targetAbi": "12.0.0.0",
@@ -41,6 +49,14 @@
         "sourceUrl": "https://github.com/MrSnowball-dev/tgjelly_plugin/releases/download/v0.1/tgjelly_2.0.1.0.zip",
         "checksum": "cb0feb4d6ee44d02cc6cc3be21287301",
         "timestamp": "2026-10-20T21:57:13Z"
+      },
+      {
+        "version": "1.0.6.0",
+        "changelog": "No presets, a preview that stays in view, and test messages in the Log\n\n- Presets are gone. A new chat starts with every event on; switch off what you don't want. New kinds of event in later versions are added only to destinations that still have every event on. Upgrading keeps every destination's events as they are.\n- In the bot, Add destination now sits in the Destinations screen as a blue button.\n- Open in Telegram just opens the chat with the bot.\n- The message preview stays in view under Jellyfin's header while you scroll.\n- The Fields and Formatting tables keep their columns; long tags wrap instead of stretching the table.\n- Test messages appear in the Log, labelled Test or Test failed.\n- A group with topics is shown as a Forum.\n- The sidebar counts are labels, the version in the header opens its release page, and Change token opens right where you pressed it.\n- TgJelly sends at most two messages a second, to stay clear of Telegram's flood limits.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/MrSnowball-dev/tgjelly_plugin/releases/download/v0.6/tgjelly_1.0.6.0.zip",
+        "checksum": "38148b02525c0f07bedc368a7cee3cfe",
+        "timestamp": "2026-10-24T23:43:05Z"
       },
       {
         "version": "1.0.5.0",
