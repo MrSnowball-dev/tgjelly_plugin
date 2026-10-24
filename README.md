@@ -28,8 +28,8 @@ The repository has one build for Jellyfin 10.11 and one for Jellyfin 12. Jellyfi
 1. Open @BotFather in Telegram and send `/newbot`. Copy the token it gives you.
 2. Restrict access to your bot in BotFather's Mini App, so that only the people you want can use it.
 3. In Jellyfin, open the Dashboard and pick **Telegram** in its menu. Paste the token.
-4. Press **Open @bot**. Telegram opens the bot.
-5. In the bot, tap **Add to a channel** or **Add to a group** and choose the chat in Telegram. Then pick a preset.
+4. Press **Open in Telegram**. Telegram opens the chat with the bot.
+5. In the bot, open **Destinations**, tap **Add destination**, then **Add to a channel** or **Add to a group**, and choose the chat in Telegram. The destination starts with every event on.
 
 <!-- screenshot: the Telegram page after the token is accepted -->
 
@@ -37,16 +37,9 @@ You never type a chat ID. The Advanced section of the dashboard has manual optio
 
 The custom icons on the bot's buttons and headings show only when the bot owner's Telegram account has Premium; otherwise the bot shows plain labels.
 
-## Events and presets
+## Events
 
-Each destination has event switches. A preset sets them for you:
-
-| Preset | What it sends |
-|---|---|
-| Everything | All events. |
-| New media | All media events. |
-| Admin alerts | All security events except successful logins, plus all server events. |
-| Custom | Only the switches you turn on. |
+Each destination has event switches, grouped into Media, Security and Server. A new destination starts with every event on; turn off what you don't want. When a later version adds a new kind of event, it is turned on only for destinations that still have every event on.
 
 You can also limit a destination to some libraries, send media, security or server events silently, pause a destination, and send a test message.
 
@@ -54,13 +47,13 @@ You can also limit a destination to some libraries, send media, security or serv
 
 ## The dashboard
 
-The **Telegram** page in the Jellyfin Dashboard has a sidebar of sections. On a phone it becomes a row of tabs. The header shows the connection state and the plugin's version, such as v0.5.
+The **Telegram** page in the Jellyfin Dashboard has a sidebar of sections. On a phone it becomes a row of tabs. The header shows the connection state and the plugin's version, such as v0.6; click the version to open its release page.
 
 - **Overview:** the connection state, notices, and the bot. With no bot connected, it starts with Connect. A notice reminds you to restrict the bot's access in BotFather.
 - **Destinations:** the chats that get messages, with their events, libraries, silent groups, pause, and test.
 - **Messages:** one page per message: what it shows, its template, a preview, and the fields you can use.
 - **Advanced:** proxy, batching, update checks, adding a chat by ID, and diagnostics.
-- **Log:** what happened to every event TgJelly received.
+- **Log:** what happened to every message TgJelly sent or held back, and to every test message.
 
 There are no Save buttons. Every setting saves itself, and a short label beside it says what happened. "Saved" fades after two seconds. "Not saved" stays, with the reason, until you fix the value. A value that is not valid is never saved. Buttons are only for actions, like Remove, Send test and Reset.
 
@@ -68,7 +61,7 @@ When something goes wrong, the message says what happened and what to do next, i
 
 ### Destinations
 
-A destination shows a status only when something is wrong: Photos blocked, Needs permissions, Topic missing or Lost. A healthy one shows nothing. In the editor, the events are grouped into Media, Security and Server.
+A destination shows a status only when something is wrong: Photos blocked, Needs permissions, Topic missing or Lost. A healthy one shows nothing. Under its name you see the kind of chat: Channel, Group, Supergroup, or Forum for a group with topics. In the editor, the events are grouped into Media, Security and Server.
 
 Disconnecting the bot keeps your destinations, so they work again when you connect the same bot. The confirmation has a switch, "Also remove all destinations", that is off by default.
 
@@ -93,11 +86,13 @@ Hover a piece of the template, such as one field, an `if` block or a run of text
 
 ### Log
 
-The **Log** has one row for each message and each destination, newest first. Each row shows when, the event, the destination, the result and, if it is not Sent, why. A Sent row also says why when a later update of that message failed: the chat then still shows the earlier version. The results are Sent, Waiting, Skipped, Sent late, Sent with built-in, Sent without photo and Failed. Click a row that needs attention to see what Telegram said, how many tries there were, and what to do.
+The **Log** has one row for each message and each destination, newest first. Each row shows when, the event, the destination, the result and, if it is not Sent, why. A Sent row also says why when a later update of that message failed: the chat then still shows the earlier version. The results are Sent, Waiting, Skipped, Sent late, Sent with built-in, Sent without photo and Failed. Test messages have their own label, Test or Test failed. Click a row that needs attention to see what Telegram said, how many tries there were, and what to do.
 
 Use **Problems only** to hide the rows that went well, and the Destination and Event selects to narrow the list. The top line shows when the last message reached Telegram, and tells you when Jellyfin has sent no events for a day, so you can tell silence from a failure.
 
-The Log keeps 7 days or 5,000 rows, whichever is less. Test messages are not in it. It is stored apart from your settings.
+The Log keeps 7 days or 5,000 rows, whichever is less. It is stored apart from your settings.
+
+TgJelly sends at most two messages a second, so a big library scan doesn't run into Telegram's flood limits.
 
 ## Message templates
 
