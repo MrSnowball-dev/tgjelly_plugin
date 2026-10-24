@@ -1,6 +1,6 @@
 # Message templates
 
-To change a message, open the event in the dashboard's Templates section and change the built-in template.
+To change a message, open the message on the dashboard's Messages page and change the built-in template.
 This page lists the fields you can use in each template, and the built-in templates.
 The tables below are generated from the plugin's field list, so they always match the plugin.
 
@@ -12,8 +12,9 @@ You can use `if`, `for` and the other Scriban statements.
 ### Start from the built-in template
 
 Every message is a template. Even the default messages are built-in templates.
-To change a message, open the event in the dashboard's **Templates** section.
+To change a message, open the message on the dashboard's **Messages** page.
 The editor shows the built-in template. Start there and change what you want.
+Under the template, the Available fields and Formatting tables list what you can use. Click the first cell of a row to insert it at the cursor.
 You see a live preview of the result as you type. Press **Send test** to send it to a destination.
 Press **Reset** to go back to the built-in template.
 The built-in templates are also listed at the end of this page.
@@ -541,7 +542,7 @@ Example:
 
 ## Built-in templates
 
-These are the templates the plugin uses when you have not edited a message. Copy one into the editor and change it.
+These are the templates the plugin uses when you have not edited a message. Copy one into the editor on the Messages page and change it.
 
 ### `media.movie`
 

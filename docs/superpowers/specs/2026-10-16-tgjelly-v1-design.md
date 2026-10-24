@@ -340,14 +340,14 @@ At that point the dashboard's Destinations section shows "Telegram setup didn't 
 - A detected chat receives nothing.
 
 ### 6.6 Dashboard page after setup
-Amended by the [dashboard redesign](2026-10-22-tgjelly-dashboard-redesign-design.md). The page has its own scoped stylesheet and no Save buttons. A header shows the title and the connection state in words. A sidebar lists the sections and shows one at a time. On a narrow page the sidebar becomes a row of tabs. Each section is made of cards, and each setting is a row: a label, a one-line explanation and the control, with a cue beside it. The active section is kept in the URL hash.
+Amended by the [dashboard redesign](2026-10-22-tgjelly-dashboard-redesign-design.md) and the [dashboard tweaks](2026-10-23-tgjelly-dashboard-tweaks-design.md). The page has its own scoped stylesheet and no Save buttons. A header shows the title, a small version label (the release, such as v0.5) and the connection state in words. A sidebar lists the sections and shows one at a time. On a narrow page the sidebar becomes a row of tabs. Each section is made of cards, and each setting is a row: a label, a one-line explanation and the control, with a cue beside it. The active section is kept in the URL hash. Every state is a label: a word in a coloured outline (good, in progress, neutral, attention, bad, accent).
 
 Sections, in sidebar order:
-1. **Overview:** the connection state with its last errors, counts (pending media, outbox, dropped) and notices (backup restored, template flagged, public URL flagged, update check failing, removed libraries in a filter), each with `[Dismiss]`; `[Take over]` on a webhook conflict. With no bot, it leads with Connect. After that it shows the bot: @username (shown only here), the access reminder (§6.4), `[Open in Telegram]`, `[Change token]`, `[Disconnect bot]` (confirm → §10.4). An "At a glance" card sums up destinations and their health, templates edited or flagged, and notices, with an Open link to each section.
-2. **Destinations:** a card per destination with a health word (OK / Photos blocked / Needs permissions / Topic missing / Lost) and a **Pause/Resume** switch (`Enabled`). The editor covers the preset, event switches, a library multi-select and silent groups, plus `[Send test]` `[Check again]` `[Remove]` (inline confirmation, with a "Bot leaves the chat" choice → `leaveChat`). Leaving a Custom event list for a preset asks first. `[Add destination]` opens `https://t.me/<bot>?start=add`. The "Set up manually" link appears per §6.5.
-3. **Messages:** public URL (pre-filled with a suggestion marked "verify", §8.3) and the toggles in §8.4.
-4. **Templates:** one editor per template key, starting from the built-in template, with a live Telegram preview, `[Send test]`, `[Reset]` and the guide link under the template (§8.5).
-5. **Advanced:** proxy (§9.1), batching values (§7.4, with the ranges in §10.1), update checks (on/off, mode), the manual block (§6.5, only when it is unlocked), `[Copy diagnostics]`.
+1. **Overview:** the connection state with its last errors, counts (pending media, outbox, dropped) and notices (backup restored, template flagged, public URL flagged, update check failing, removed libraries in a filter), each with `[Dismiss]`; `[Take over]` on a webhook conflict. With no bot, it leads with Connect. After that it shows the bot: @username (shown only here), `[Open in Telegram]`, `[Change token]`, `[Disconnect bot]`. The access reminder (§6.4) is an info notice. Disconnecting asks inline and has a switch, "Also remove all destinations", off by default: off keeps the destinations (§10.4), on deletes them and their state too.
+2. **Destinations:** a card per destination with a health label only when something is wrong (Photos blocked / Needs permissions / Topic missing / Lost) and a **Pause/Resume** switch (`Enabled`). The editor covers the preset, the event switches grouped into Media, Security and Server (without the group name repeated in each option), a library multi-select and silent groups, plus `[Send test]` `[Check again]` `[Remove]` (inline confirmation, with a "Bot leaves the chat" choice → `leaveChat`). Leaving a Custom event list for a preset asks first. `[Add destination]` opens `https://t.me/<bot>?start=add`. The "Set up manually" link appears per §6.5.
+3. **Messages:** one page per message, chosen with a Section picker (Media, Security, Server) and a Message picker (the section's events, and the Digest under Media); the choice is kept in the URL hash. The page holds: the Built-in or Edited label; **What it shows**, the switches in §8.4 kept per message, with only the ones that fit the message (Security and Server have only Poster, off by default, which sends the plugin logo as the photo), and the public URL (pre-filled with a suggestion marked "verify", §8.3) inside the Open in Jellyfin switch; the template, with `[Send test]`, `[Reset]` and the guide link (§8.5); a preview that copies Telegram's own rendering (bubble, photo, caption, inline keys under the bubble); and the collapsible **Available fields** and **Formatting** tables, whose first cell inserts at the caret or wraps the selection. Hovering a piece of the template (an output expression, an `if` block or a run of literal text) highlights what it produced in the preview, and the other way round.
+4. **Advanced:** proxy (§9.1; the credentials appear only for SOCKS5 and HTTP, which are the only types a bot can use), batching values (§7.4, with the ranges in §10.1), update checks (on/off, and three kinds of Jellyfin release: fixes for the installed version, new releases, new major versions; all three off means no update messages), the manual block (§6.5, only when it is unlocked), `[Copy diagnostics]` with a notice that lists what the report contains and never contains.
+5. **Log:** every event received and what happened to it (§6.7).
 
 **Auto-save.** Every setting saves itself, and a cue beside it says what happened: "Saving…" if the request is slow, "Saved" for about two seconds, or "Not saved:" with the reason until the value is fixed.
 - Switches and selects save at once.
@@ -362,6 +362,14 @@ Sections, in sidebar order:
 The dashboard shows no decorative symbols. State is words and colour. The dashboard has its own `web.*` copies of strings the bot shares, such as the health labels, so the bot keeps its emoji.
 
 Everything in §6.3 not marked dashboard-only can be done in both the dashboard and the bot.
+
+### 6.7 The Log
+A read-only record of what became of each event, for the last 7 days and at most 5,000 rows (oldest dropped first). It is stored apart from the settings, written off the sending path, and a lost or corrupt file never affects sending. It is served by `GET Log` (admin only). It is not part of the diagnostics report.
+- **One row per message per destination**, newest first. A batch or a merged alert is one row. Outcomes before any destination is chosen show a dash for the destination.
+- **Columns:** When (local time, full date and time on hover), Event (the title and the message label), Destination, Result and Why (empty for Sent).
+- **Results:** Sent, Waiting (updated in place when the message goes out), Skipped (with the reason), Sent late, Sent with built-in, Sent without photo and Failed. With more than one detail the row takes the most serious label, and Why lists them all. Shortening is not a problem. Test messages are not logged.
+- **Controls:** All or Problems only, a Destination select and an Event select. A top line shows the last message sent to Telegram, and when Jellyfin has been quiet for over a day, the time of the last event received.
+- **A Failed or attention row** expands to show Telegram's or the network's own words, the number of tries and whether it will retry, and what to do.
 
 ---
 
@@ -1051,6 +1059,13 @@ They are parsed with Telegram.Bot and passed to `UpdateRouter`, FlowEngine and t
   - Change a switch, a text field and a template. Each shows "Saved" beside it. An invalid public URL shows "Not saved:" with the reason, and isn't saved. A template with an error doesn't go live.
   - Change a setting in the bot while the dashboard is open, then change another in the dashboard. Nothing is lost.
   - Go to another Jellyfin settings page and back. The other page looks unchanged, so no styles leaked.
+- **Dashboard tweaks** (tweaks design §12):
+  - Labels look like the Built-in/Edited badge everywhere, in dark and light themes.
+  - Overview: the version is next to "TgJelly", there is no "At a glance", and Access is a notice.
+  - Destinations: a healthy one shows no label and a broken one does; the events are grouped, without prefixes; disconnect with and without "Also remove all destinations".
+  - Messages: turn Poster off for New episodes only, and a movie still gets its poster; a Security alert with Poster on sends the logo; click fields and formatting to insert; the hover link works both ways on a line with several fields; the preview matches the real Telegram message, buttons included.
+  - Advanced: proxy credentials appear only with a proxy; the three update switches; the Diagnostics notice.
+  - Log: a movie added shows Sent; a destination with that library filtered out shows Skipped with the reason; kicking the bot from a chat shows Failed with Telegram's words; the hover shows the full date.
 - **Icons** on a bot whose owner has no Telegram Premium: every screen still sends; icons absent or stripped (TelegramSender fallback).
 
 ### 14.5 Process
