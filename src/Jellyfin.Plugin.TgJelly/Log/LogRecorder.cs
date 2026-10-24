@@ -322,6 +322,36 @@ public sealed class LogRecorder
     });
 
     /// <summary>
+    /// Records a test message, sent or not, as its own row (Test, or Test failed with the reason and Telegram's words).
+    /// Tests never go through the Outbox, so this is their only record.
+    /// </summary>
+    /// <param name="destination">The destination.</param>
+    /// <param name="eventKey">The sample's event key, or <c>test</c> for the plain test message.</param>
+    /// <param name="sent">Whether it went out.</param>
+    /// <param name="error">Why it didn't, when it didn't.</param>
+    public void Test(Destination destination, string eventKey, bool sent, string? error) => Safe(() =>
+    {
+        ArgumentNullException.ThrowIfNull(destination);
+        var now = _time.GetUtcNow();
+        var reason = NonEmpty(error);
+        _log.Upsert(new LogEntry
+        {
+            Id = "test|" + destination.Id + "|" + now.UtcTicks.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            At = now,
+            UpdatedAt = now,
+            EventKey = eventKey,
+            Title = _strings.Get("web.log.title.test"),
+            DestinationId = destination.Id,
+            DestinationTitle = destination.Title,
+            Result = sent ? LogResult.TestSent : LogResult.TestFailed,
+            Details = sent ? [] : [_strings.Get("web.log.why.testFailed", ("error", reason ?? _strings.Get("web.log.noDetails")))],
+            Telegram = sent ? null : reason,
+            Tries = 1,
+            Advice = sent ? null : _strings.Get("web.log.advice.testFailed"),
+        });
+    });
+
+    /// <summary>
     /// Removes the rows of held groups that went out inside another message (a digest), which has its own row.
     /// </summary>
     /// <param name="logIds">The rows.</param>

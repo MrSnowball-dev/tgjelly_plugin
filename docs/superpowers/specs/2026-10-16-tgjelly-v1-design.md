@@ -666,7 +666,7 @@ Groups: `media.*` = **media**, `security.*` = **security**, `server.*` = **serve
 - **Pacing:**
   - at least 1 s between sends to the same chat,
   - at most 20 per minute per group or channel,
-  - at most 25 per second overall,
+  - at most 2 per second overall (owner, 2026-10-25: avoids flood waits),
   - a 429's `retry_after` pauses that chat's queue.
 - **Limits:**
   - **media** entries: 500 per destination; when full, the oldest media entry is dropped;

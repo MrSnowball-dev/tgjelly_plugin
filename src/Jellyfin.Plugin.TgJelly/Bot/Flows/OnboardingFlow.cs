@@ -19,7 +19,7 @@ namespace Jellyfin.Plugin.TgJelly.Bot.Flows;
 
 /// <summary>
 /// The bot's onboarding (spec §6.2): an inline prompt whose <c>startchannel</c>/<c>startgroup</c> links open
-/// Telegram's chat chooser, the check of the chosen chat, the preset wizard and the Done message, all in one message
+/// Telegram's chat chooser, the check of the chosen chat and the Done message, all in one message
 /// that gets edited. The chosen chat is learned from the <c>my_chat_member</c> its add produces, or from a group
 /// <c>/start@bot</c>, matched to the private flow of the person who sent it. Each step keys off its own marker in the
 /// chat's flow (the await marker, the wizard message ID), never off <see cref="FlowState.Screen"/> alone, because the
@@ -39,7 +39,6 @@ public sealed class OnboardingFlow
     /// <summary>The flow parameter that says what a prompt waits for; <c>chat</c> while the prompt waits for a chat.</summary>
     internal const string AwaitKey = "await";
 
-    private const string EventsKey = "events";
     private const string AwaitChat = "chat";
 
     /// <summary>Marks a spent flow whose check failed; its <see cref="ChatIdKey"/> is the chat Try again re-checks.</summary>
@@ -347,97 +346,6 @@ public sealed class OnboardingFlow
     }
 
     /// <summary>
-    /// Handles a preset button on the wizard (<c>op</c>): Custom opens the event switches with nothing selected; any
-    /// other preset creates the destination (spec §6.2 steps 4–5).
-    /// </summary>
-    /// <param name="query">The button press.</param>
-    /// <param name="preset">The <see cref="PresetKind"/> name.</param>
-    /// <param name="ct">Cancels the work.</param>
-    /// <returns>A task.</returns>
-    public async Task OnPresetAsync(CallbackQuery query, string preset, CancellationToken ct)
-    {
-        ArgumentNullException.ThrowIfNull(query);
-        if (Wizard(query) is not { } flow || !Enum.TryParse<PresetKind>(preset, out var kind) || !Enum.IsDefined(kind))
-        {
-            await MenuExpiredAsync(query, ct).ConfigureAwait(false);
-            return;
-        }
-
-        var chatId = query.Message!.Chat.Id;
-        if (kind == PresetKind.Custom)
-        {
-            flow.Params[EventsKey] = string.Empty;
-            await ShowCustomAsync(chatId, flow, null, ct).ConfigureAwait(false);
-            return;
-        }
-
-        await CreateAsync(chatId, flow, kind, EventCatalog.Expand(kind), ct).ConfigureAwait(false);
-    }
-
-    /// <summary>
-    /// Handles an event switch on the Custom wizard (<c>oc</c>).
-    /// </summary>
-    /// <param name="query">The button press.</param>
-    /// <param name="key">The event key.</param>
-    /// <param name="ct">Cancels the work.</param>
-    /// <returns>A task.</returns>
-    public async Task OnCustomToggleAsync(CallbackQuery query, string key, CancellationToken ct)
-    {
-        ArgumentNullException.ThrowIfNull(query);
-        if (Wizard(query) is not { } flow || !flow.Params.TryGetValue(EventsKey, out var csv))
-        {
-            await MenuExpiredAsync(query, ct).ConfigureAwait(false);
-            return;
-        }
-
-        if (EventCatalog.IsKnown(key))
-        {
-            var selected = Split(csv);
-            var on = selected.Contains(key, StringComparer.Ordinal);
-            flow.Params[EventsKey] = string.Join(',', EventCatalog.AllKeys.Where(k => k == key ? !on : selected.Contains(k, StringComparer.Ordinal)));
-        }
-
-        await ShowCustomAsync(query.Message!.Chat.Id, flow, EventCatalog.IsKnown(key) ? EventCatalog.GroupOf(key) : null, ct).ConfigureAwait(false);
-    }
-
-    /// <summary>
-    /// Handles a group button on the Custom wizard (<c>ocg</c>): opens that group's switches, or the groups without one.
-    /// </summary>
-    /// <param name="query">The button press.</param>
-    /// <param name="group">The event group, or <c>null</c> for the chooser.</param>
-    /// <param name="ct">Cancels the work.</param>
-    /// <returns>A task.</returns>
-    public async Task OnCustomGroupAsync(CallbackQuery query, string? group, CancellationToken ct)
-    {
-        ArgumentNullException.ThrowIfNull(query);
-        if (Wizard(query) is not { } flow || !flow.Params.ContainsKey(EventsKey))
-        {
-            await MenuExpiredAsync(query, ct).ConfigureAwait(false);
-            return;
-        }
-
-        await ShowCustomAsync(query.Message!.Chat.Id, flow, group, ct).ConfigureAwait(false);
-    }
-
-    /// <summary>
-    /// Handles Done on the Custom wizard (<c>ocd</c>): creates the destination with the chosen events.
-    /// </summary>
-    /// <param name="query">The button press.</param>
-    /// <param name="ct">Cancels the work.</param>
-    /// <returns>A task.</returns>
-    public async Task OnCustomDoneAsync(CallbackQuery query, CancellationToken ct)
-    {
-        ArgumentNullException.ThrowIfNull(query);
-        if (Wizard(query) is not { } flow || !flow.Params.TryGetValue(EventsKey, out var csv))
-        {
-            await MenuExpiredAsync(query, ct).ConfigureAwait(false);
-            return;
-        }
-
-        await CreateAsync(query.Message!.Chat.Id, flow, PresetKind.Custom, Split(csv), ct).ConfigureAwait(false);
-    }
-
-    /// <summary>
     /// Handles a button on the topic wizard: General (<c>tg</c>), Create a "Jellyfin" topic (<c>tc</c>), Use an
     /// existing topic (<c>te</c>), the link prompt's Cancel (<c>tb</c>) or the promotion screen's Check again
     /// (<c>tk</c>) (spec §6.2 step 3).
@@ -568,8 +476,6 @@ public sealed class OnboardingFlow
 
     private static string Flag(bool value) => value ? "1" : "0";
 
-    private static string[] Split(string csv) => csv.Split(',', StringSplitOptions.RemoveEmptyEntries);
-
     /// <summary>
     /// A chat was chosen in Telegram while the prompt waited: the prompt is spent, the chat remembered, and the prompt's
     /// message turns into "Checking <i>Title</i>…" while the check runs with retries (spec §6.2 step 2).
@@ -613,13 +519,13 @@ public sealed class OnboardingFlow
         => _strings.Get("onboard.checking", ("title", _formatter.Escape(string.IsNullOrEmpty(title) ? Text(chatId) : title)));
 
     /// <summary>
-    /// After the topic step: a chosen topic (General is thread 0) meets the duplicate rule, then the preset step. Nothing
+    /// After the topic step: a chosen topic (General is thread 0) meets the duplicate rule, then the destination is added. Nothing
     /// to do when the step is still waiting or has ended with its own message.
     /// </summary>
     private Task ContinueWithTopicAsync(long chatId, TopicChoice? choice, CancellationToken ct)
         => choice is null ? Task.CompletedTask : ContinueWithChatAsync(chatId, choice.Check, choice.ThreadId, choice.WizardMessageId, ct);
 
-    /// <summary>The duplicate rule, then the preset step.</summary>
+    /// <summary>The duplicate rule, then the destination is added with every event on.</summary>
     private async Task ContinueWithChatAsync(long chatId, ChatCheckResult check, int threadId, int? wizardMessageId, CancellationToken ct)
     {
         if (DestinationCreator.Find(_settings.Current, check.ChatId, threadId) is { } existing)
@@ -645,12 +551,17 @@ public sealed class OnboardingFlow
         flow.Params[IsForumKey] = Flag(check.IsForum);
         flow.Params[PhotosBlockedKey] = Flag(check.PhotosBlocked);
         flow.Params[ThreadIdKey] = Text(threadId);
-        flow.WizardMessageId = await _screens.ShowAsync(chatId, PresetScreen(check.Title), wizardMessageId, ct).ConfigureAwait(false);
-        _memory.SaveFlow(chatId, flow);
+        // No "what should I send" step (presets were removed): a new destination starts with every event on, and the
+        // admin trims it from its screen afterwards.
+        flow.WizardMessageId = wizardMessageId;
+        await CreateAsync(chatId, flow, check, ct).ConfigureAwait(false);
     }
 
-    /// <summary>Re-checks the chat, adds the destination, and edits the wizard to Done (spec §6.2 step 5).</summary>
-    private async Task CreateAsync(long chatId, FlowState flow, PresetKind preset, string[] events, CancellationToken ct)
+    /// <summary>
+    /// Adds the destination with every event on, using the check that was just made, and edits the wizard to Done
+    /// (spec §6.2 step 5).
+    /// </summary>
+    private async Task CreateAsync(long chatId, FlowState flow, ChatCheckResult check, CancellationToken ct)
     {
         // Marks the wizard as used, so a second press while this runs, or a redelivered one, does nothing more.
         flow.Params[CreatingKey] = "1";
@@ -659,26 +570,13 @@ public sealed class OnboardingFlow
         var target = long.Parse(flow.Params[ChatIdKey], CultureInfo.InvariantCulture);
         var threadId = int.Parse(flow.Params[ThreadIdKey], CultureInfo.InvariantCulture);
 
-        // The chat may have changed while the admin chose.
-        ChatCheckResult check;
-        try
-        {
-            check = await _checker.CheckAsync(target, threadId, ct).ConfigureAwait(false);
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            _logger.LogWarning(ex, "TgJelly could not re-check {Title} before adding it", flow.Params[TitleKey]);
-            await FailAsync(chatId, _strings.Get("token.unreachable"), wizard, target, ct).ConfigureAwait(false);
-            return;
-        }
-
         if (!check.Passed)
         {
             await FailAsync(chatId, check.Message ?? _strings.Get("check.groupCantSend"), wizard, target, ct).ConfigureAwait(false);
             return;
         }
 
-        var result = await _creator.CreateAsync(check, threadId, events, preset, null, ct).ConfigureAwait(false);
+        var result = await _creator.CreateAsync(check, threadId, EventCatalog.Expand(PresetKind.Everything), PresetKind.Everything, null, ct).ConfigureAwait(false);
         switch (result.Outcome)
         {
             case CreateOutcome.Added:
@@ -746,50 +644,6 @@ public sealed class OnboardingFlow
         var note = _strings.Get("destination.duplicate", ("title", "<b>" + _formatter.Escape(existing.Title) + "</b>"));
         var screen = new Screen(note + "\n\n" + detail!.Html, detail.Buttons);
         await _screens.ShowAsync(chatId, screen, wizardMessageId, ct).ConfigureAwait(false);
-    }
-
-    private async Task ShowCustomAsync(long chatId, FlowState flow, string? group, CancellationToken ct)
-    {
-        var selected = Split(flow.Params[EventsKey]);
-        var title = "<b>" + _formatter.Escape(flow.Params[TitleKey]) + "</b>\n";
-        Screen screen;
-        if (group is not null && EventCatalog.Groups.Contains(group, StringComparer.Ordinal))
-        {
-            var rows = EventPicker.ToggleRows(_strings, group, selected, k => CallbackData.Format("oc", k));
-            rows.Add([Button("menu.back", "ocg")]);
-            screen = new Screen(title + "<b>" + Icons.Heading(_strings, _formatter, "events.group." + group) + "</b>\n\n" + _formatter.Escape(_strings.Get("dest.events.pick")), new InlineKeyboardMarkup(rows));
-        }
-        else
-        {
-            var rows = EventPicker.GroupRows(_strings, selected, g => CallbackData.Format("ocg", g));
-            rows.Add([Button("onboard.customDone", "ocd")]);
-            var guide = ButtonGuide.Lines(
-                _strings,
-                _formatter,
-                [.. EventCatalog.Groups.Select(g => ("events.group." + g, "events.group." + g + ".about")), ("onboard.customDone", "onboard.customDone.about")]);
-            screen = new Screen(title + _formatter.Escape(_strings.Get("events.choose")) + guide, new InlineKeyboardMarkup(rows));
-        }
-
-        flow.WizardMessageId = await _screens.ShowAsync(chatId, screen, flow.WizardMessageId, ct).ConfigureAwait(false);
-        _memory.SaveFlow(chatId, flow);
-    }
-
-    private Screen PresetScreen(string title)
-    {
-        var rows = new[]
-        {
-            new[] { Button("onboard.preset.everything", "op", nameof(PresetKind.Everything)), Button("onboard.preset.newMedia", "op", nameof(PresetKind.NewMedia)) },
-            new[] { Button("onboard.preset.adminAlerts", "op", nameof(PresetKind.AdminAlerts)), Button("onboard.preset.custom", "op", nameof(PresetKind.Custom)) },
-        };
-        var guide = ButtonGuide.Lines(
-            _strings,
-            _formatter,
-            ("onboard.preset.everything", "onboard.preset.everything.about"),
-            ("onboard.preset.newMedia", "onboard.preset.newMedia.about"),
-            ("onboard.preset.adminAlerts", "onboard.preset.adminAlerts.about"),
-            ("onboard.preset.custom", "onboard.preset.custom.about"));
-        var html = "<b>" + _formatter.Escape(title) + "</b>\n" + _formatter.Escape(_strings.Get("onboard.preset")) + guide;
-        return new Screen(html, new InlineKeyboardMarkup(rows));
     }
 
     /// <summary>

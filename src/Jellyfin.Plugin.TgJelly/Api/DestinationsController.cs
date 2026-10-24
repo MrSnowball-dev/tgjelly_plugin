@@ -87,7 +87,7 @@ public class DestinationsController : ControllerBase
     /// <summary>
     /// Adds a chat by ID or topic link, after checking the bot can post there, and sends the test message.
     /// </summary>
-    /// <param name="request">The chat and preset.</param>
+    /// <param name="request">The chat.</param>
     /// <param name="cancellationToken">Cancels the request.</param>
     /// <returns>Added or AlreadyExists, 400 when the check fails, or 409 with the current data.</returns>
     [HttpPost("Destinations")]
@@ -128,11 +128,6 @@ public class DestinationsController : ControllerBase
             return Error("ChatId", "Give a chat ID or a topic link.");
         }
 
-        if (!TryPreset(request.Preset, out var preset))
-        {
-            return Error("Preset", "Must be Everything, NewMedia, AdminAlerts or Custom. Reload the page and pick the preset again.");
-        }
-
         ChatCheckResult check;
         try
         {
@@ -155,7 +150,8 @@ public class DestinationsController : ControllerBase
             return Error("TopicLink", _strings.Get("destination.notForum"));
         }
 
-        var created = await _creator.CreateAsync(check, threadId, EventCatalog.Expand(preset), preset, request.ExpectedRevision, cancellationToken).ConfigureAwait(false);
+        // A new destination starts with every event on; the admin trims it afterwards.
+        var created = await _creator.CreateAsync(check, threadId, EventCatalog.Expand(PresetKind.Everything), PresetKind.Everything, request.ExpectedRevision, cancellationToken).ConfigureAwait(false);
         switch (created.Outcome)
         {
             case CreateOutcome.Conflict:
@@ -170,7 +166,7 @@ public class DestinationsController : ControllerBase
     }
 
     /// <summary>
-    /// Changes a destination's preset, events, libraries, silent groups or pause state.
+    /// Changes a destination's events, libraries, silent groups or pause state.
     /// </summary>
     /// <param name="id">The destination.</param>
     /// <param name="request">The fields to change.</param>
@@ -186,17 +182,6 @@ public class DestinationsController : ControllerBase
         if (ApiGuard.Block(_gate, _state) is { } blocked)
         {
             return blocked;
-        }
-
-        PresetKind? preset = null;
-        if (request.Preset is not null)
-        {
-            if (!TryPreset(request.Preset, out var parsed))
-            {
-                return Error("Preset", "Must be Everything, NewMedia, AdminAlerts or Custom. Reload the page and pick the preset again.");
-            }
-
-            preset = parsed;
         }
 
         if (request.Events?.FirstOrDefault(e => !EventCatalog.IsKnown(e)) is { } unknown)
@@ -236,16 +221,8 @@ public class DestinationsController : ControllerBase
 
             if (request.Events is not null)
             {
-                d.Preset = PresetKind.Custom;
                 d.Events = [.. request.Events.Distinct(StringComparer.Ordinal)];
-            }
-            else if (preset is { } p)
-            {
-                d.Preset = p;
-                if (p != PresetKind.Custom)
-                {
-                    d.Events = EventCatalog.Expand(p);
-                }
+                d.Preset = EventCatalog.PresetFor(d.Events);
             }
 
             d.LibraryIds = libraries ?? d.LibraryIds;
@@ -405,9 +382,6 @@ public class DestinationsController : ControllerBase
             StartChannel = BotLinks.StartChannel(bot),
         };
     }
-
-    internal static bool TryPreset(string? text, out PresetKind preset)
-        => Enum.TryParse(text, ignoreCase: true, out preset) && Enum.IsDefined(preset);
 
     /// <summary>
     /// Explains why a check could not run: not connected, rejected by Telegram, or unreachable.

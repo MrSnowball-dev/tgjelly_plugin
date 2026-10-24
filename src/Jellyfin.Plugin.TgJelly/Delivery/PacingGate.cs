@@ -11,7 +11,9 @@ namespace Jellyfin.Plugin.TgJelly.Delivery;
 public sealed class PacingGate
 {
     private const int PerMinuteLimit = 20;
-    private const int PerSecondLimit = 25;
+    // At most 2 messages a second overall (owner, 2026-10-25), well under Telegram's 30, so a busy library scan
+    // never runs into flood waits.
+    private const int PerSecondLimit = 2;
 
     private static readonly TimeSpan PerChat = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan Minute = TimeSpan.FromMinutes(1);

@@ -50,6 +50,18 @@ public static class EventCatalog
     public static bool IsKnown(string key) => KeySet.Contains(key);
 
     /// <summary>
+    /// The internal preset for a set of events: <see cref="PresetKind.Everything"/> when it has every event, so an event a
+    /// later version adds is switched on too; <see cref="PresetKind.Custom"/> otherwise. Presets aren't shown anywhere.
+    /// </summary>
+    /// <param name="events">The destination's events.</param>
+    /// <returns>The preset.</returns>
+    public static PresetKind PresetFor(IReadOnlyCollection<string> events)
+    {
+        ArgumentNullException.ThrowIfNull(events);
+        return Keys.All(k => events.Contains(k, StringComparer.Ordinal)) ? PresetKind.Everything : PresetKind.Custom;
+    }
+
+    /// <summary>
     /// Expands a preset to its concrete keys; <see cref="PresetKind.Custom"/> expands to none.
     /// </summary>
     /// <param name="preset">The preset.</param>

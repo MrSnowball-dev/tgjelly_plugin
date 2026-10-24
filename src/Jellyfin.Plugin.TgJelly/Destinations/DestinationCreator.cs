@@ -101,6 +101,7 @@ public sealed class DestinationCreator
                     ThreadId = threadId,
                     Title = check.Title,
                     Kind = check.Kind,
+                    IsForum = check.IsForum,
                     Preset = preset,
                     Events = events,
                 },

@@ -289,7 +289,7 @@ public sealed class EventLog : IDisposable
     // Failed and attention rows, rows waiting after a failed try or held by a destination's problem, and sent rows
     // whose later update failed (a plain Sent row has no details).
     private static bool IsProblem(LogEntry row)
-        => row.Result is LogResult.Failed or LogResult.SentLate or LogResult.SentWithBuiltIn or LogResult.SentWithoutPhoto
+        => row.Result is LogResult.Failed or LogResult.SentLate or LogResult.SentWithBuiltIn or LogResult.SentWithoutPhoto or LogResult.TestFailed
             || (row.Result == LogResult.Waiting && row.Telegram is not null)
             || (row.Result == LogResult.Sent && row.Details.Count > 0);
 

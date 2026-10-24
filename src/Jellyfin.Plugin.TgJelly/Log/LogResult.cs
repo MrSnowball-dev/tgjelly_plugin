@@ -27,4 +27,10 @@ public enum LogResult
 
     /// <summary>Telegram refused it, or it couldn't be delivered in time.</summary>
     Failed,
+
+    /// <summary>A test message (Send test, or the one sent when a destination is added) that went out.</summary>
+    TestSent,
+
+    /// <summary>A test message that didn't go out; it counts as a problem.</summary>
+    TestFailed,
 }

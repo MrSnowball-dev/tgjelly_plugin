@@ -77,12 +77,6 @@ public sealed class DestinationDtoMapper
     {
         EventKeys = EventCatalog.AllKeys,
         Groups = EventCatalog.Groups,
-        Presets = new Dictionary<string, string[]>
-        {
-            [nameof(PresetKind.Everything)] = EventCatalog.Expand(PresetKind.Everything),
-            [nameof(PresetKind.NewMedia)] = EventCatalog.Expand(PresetKind.NewMedia),
-            [nameof(PresetKind.AdminAlerts)] = EventCatalog.Expand(PresetKind.AdminAlerts),
-        },
     };
 
     private DestinationDto ToDto(Destination d, IReadOnlyCollection<Guid> existing, long revision) => new()
@@ -93,8 +87,8 @@ public sealed class DestinationDtoMapper
         ThreadId = d.ThreadId,
         Title = d.Title,
         Kind = d.Kind.ToString(),
+        IsForum = d.KindKey == "dest.kind.Forum",
         Enabled = d.Enabled,
-        Preset = d.Preset.ToString(),
         Events = d.Events,
         LibraryIds = d.LibraryIds,
         SilentGroups = d.SilentGroups,

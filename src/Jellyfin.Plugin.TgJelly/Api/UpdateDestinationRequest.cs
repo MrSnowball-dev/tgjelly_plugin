@@ -11,9 +11,6 @@ public sealed class UpdateDestinationRequest
     /// <summary>Gets or sets the revision the change is based on.</summary>
     public long ExpectedRevision { get; set; }
 
-    /// <summary>Gets or sets the preset; a non-Custom preset expands to its events.</summary>
-    public string? Preset { get; set; }
-
     /// <summary>Gets or sets the events; giving them makes the destination Custom.</summary>
     public string[]? Events { get; set; }
 

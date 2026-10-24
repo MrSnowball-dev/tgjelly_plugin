@@ -334,9 +334,9 @@ export function renderStatus(status, S, lang = 'en') {
 }
 
 /** A link to Telegram, or '' when the URL isn't one the server should have sent. */
-function telegramLink(url, label) {
+function telegramLink(url, label, { primary = false } = {}) {
     return typeof url === 'string' && url.startsWith('https://t.me/')
-        ? `<a class="tgj-btn" href="${esc(url)}" target="_blank" rel="noopener noreferrer">${label}</a>`
+        ? `<a class="tgj-btn${primary ? ' tgj-btn--primary' : ''}" href="${esc(url)}" target="_blank" rel="noopener noreferrer">${label}</a>`
         : '';
 }
 
@@ -513,13 +513,10 @@ export function proxyFormData(settings) {
     return { Mode: settings.ProxyMode, Url: settings.ProxyUrl };
 }
 
-const PRESETS = ['Everything', 'NewMedia', 'AdminAlerts', 'Custom'];
-
 /** The editor's data for one destination from the DestinationDto: the fields its auto-saves can send. */
 export function destinationFormData(dest) {
     return {
         Enabled: Boolean(dest.Enabled),
-        Preset: dest.Preset,
         Events: [...(dest.Events ?? [])],
         LibraryIds: [...(dest.LibraryIds ?? [])],
         SilentGroups: [...(dest.SilentGroups ?? [])],
@@ -528,7 +525,6 @@ export function destinationFormData(dest) {
 
 /**
  * The body of a destination's PUT: only the fields that differ from base, plus ExpectedRevision (spec §7.2, §10.4).
- * Events make the server switch the destination to Custom; a Preset other than Custom sends the Preset alone.
  * @param {object} base the form data the edit started from
  * @param {object} local the form's current data
  * @param {number} revision
@@ -537,13 +533,7 @@ export function destinationFormData(dest) {
 export function destinationChanges(base, local, revision) {
     const body = { ExpectedRevision: revision };
     const differs = key => !sameValue(local[key], base[key]);
-    if (local.Preset === 'Custom' && differs('Events')) {
-        body.Events = local.Events;
-    } else if (differs('Preset')) {
-        body.Preset = local.Preset;
-    }
-
-    for (const key of ['LibraryIds', 'SilentGroups', 'Enabled']) {
+    for (const key of ['Events', 'LibraryIds', 'SilentGroups', 'Enabled']) {
         if (differs(key)) {
             body[key] = local[key];
         }
@@ -588,16 +578,15 @@ function healthLabels(health, S) {
 const destSaveKey = (id, what) => `dest:${id}:${what}`;
 
 /**
- * The editor card for one destination (spec §7.2, §7.3; design §6.1, §6.1a): the preset, the event switches by group,
+ * The editor card for one destination (spec §7.2, §7.3; design §6.1): the event switches by group,
  * the libraries and the silent groups. Every control saves itself at once (data-tgj-save, with its cue beside it);
  * Send test, Check again and Remove stay actions, and Remove asks inline first.
  * @param {object} dest the DestinationDto
  * @param {{ EventKeys: string[], Groups: string[] }} catalog
  * @param {{ Id: string, Name: string }[]} libraries
  * @param {Record<string, string>} S
- * @param {{ form?: { local: object }, confirmRemove?: boolean, leave?: boolean, result?: string, presetAsk?: boolean }} ui
- *   form defaults to the destination's own values; result is HTML shown under the buttons; presetAsk shows the
- *   "replace your custom events?" question under the preset
+ * @param {{ form?: { local: object }, confirmRemove?: boolean, leave?: boolean, result?: string }} ui
+ *   form defaults to the destination's own values; result is HTML shown under the buttons
  * @returns {string} HTML
  */
 export function renderEditor(dest, catalog, libraries, S, ui) {
@@ -608,28 +597,6 @@ export function renderEditor(dest, catalog, libraries, S, ui) {
         return row({ label, control: switchControl({ input, checked, label, attrs: { 'data-tgj-id': id, ...attrs, 'data-tgj-save': key } }), cueKey: key });
     };
     const parts = [];
-
-    const presetKey = destSaveKey(id, 'Preset');
-    parts.push(row({
-        label: text(S, 'web.dest.preset'),
-        control: selectField({
-            input: 'destPreset',
-            value: local.Preset,
-            options: PRESETS.map(p => ({ value: p, label: text(S, `dest.preset.${p}`) })),
-            attrs: { 'data-tgj-id': id, 'data-tgj-save': presetKey, 'aria-label': text(S, 'web.dest.preset') },
-        }),
-        cueKey: presetKey,
-    }));
-    if (ui.presetAsk) {
-        parts.push(inlineConfirm({
-            question: text(S, 'web.dest.presetConfirm'),
-            confirmLabel: text(S, 'web.dest.presetReplace'),
-            confirmAct: 'presetReplace',
-            cancelAct: 'presetCancel',
-            cancelLabel: text(S, 'dest.btn.cancel'),
-            id,
-        }));
-    }
 
     const events = new Set(local.Events);
     parts.push(`<h3 class="tgj-subtitle">${t(S, 'dest.events.title')}</h3>`);
@@ -691,12 +658,12 @@ export function renderEditor(dest, catalog, libraries, S, ui) {
     return card({ title: dest.Title, description: destinationMeta(dest, S), body: parts.join(''), extraClass: 'tgj-dest-editor' });
 }
 
-/** A destination's kind and preset, as plain text: "Supergroup · Everything". */
-const destinationMeta = (dest, S) => text(S, 'web.dest.meta', { kind: text(S, `dest.kind.${dest.Kind}`), preset: text(S, `dest.preset.${dest.Preset}`) });
+/** A destination's kind as plain text: "Channel", or "Forum" for a supergroup with topics. */
+const destinationMeta = (dest, S) => text(S, dest.IsForum ? 'dest.kind.Forum' : `dest.kind.${dest.Kind}`);
 
 /**
- * The Destinations section (spec §6.6 item 3; design §5.2): a card with one row per destination (its title, the kind and
- * preset muted, the health as coloured words, the Sending switch and Edit), then the open destination's editor card.
+ * The Destinations section (spec §6.6 item 3; design §5.2): a card with one row per destination (its title, the kind
+ * muted, the health as coloured words, the Sending switch and Edit), then the open destination's editor card.
  * Add destination, and "Set up manually" once the manual block is unlocked (spec §6.5), close the list, or make its
  * empty state.
  * @param {object | null} dto the DestinationsDto
@@ -704,8 +671,7 @@ const destinationMeta = (dest, S) => text(S, 'web.dest.meta', { kind: text(S, `d
  * @param {{ StartAdd?: string } | null} links
  * @param {Record<string, string>} S
  * @param {{ editing?: string | null, forms?: Record<string, object>, confirmRemove?: string | null, leave?: boolean,
- *   results?: Record<string, string>, presetAsk?: string | null }} ui forms is keyed 'dest:<id>' like the controller's
- *   state.forms; presetAsk is the id whose editor asks before leaving Custom
+ *   results?: Record<string, string> }} ui forms is keyed 'dest:<id>' like the controller's state.forms
  * @returns {string} HTML
  */
 export function renderDestinations(dto, libraries, links, S, ui) {
@@ -714,7 +680,7 @@ export function renderDestinations(dto, libraries, links, S, ui) {
     }
 
     const forms = ui.forms ?? {};
-    const add = telegramLink(links && links.StartAdd, t(S, 'web.dest.add'))
+    const add = telegramLink(links && links.StartAdd, t(S, 'web.dest.add'), { primary: true })
         + (dto.ManualUnlocked
             ? `<span class="tgj-row-hint">${t(S, 'web.dest.manualHint')}</span>${actionButton({ label: text(S, 'web.dest.manualLink'), act: 'open-manual' })}`
             : '');
@@ -750,7 +716,6 @@ export function renderDestinations(dto, libraries, links, S, ui) {
             confirmRemove: ui.confirmRemove === editing.Id,
             leave: ui.leave,
             result: (ui.results ?? {})[editing.Id],
-            presetAsk: ui.presetAsk === editing.Id,
         }));
     }
 
@@ -758,15 +723,12 @@ export function renderDestinations(dto, libraries, links, S, ui) {
 }
 
 
-/** The preset choices for the manual block: every preset but Custom. */
-const presetOptions = S => PRESETS.filter(p => p !== 'Custom').map(p => ({ value: p, label: text(S, `dest.preset.${p}`) }));
-
 /**
  * The manual card under Advanced (spec §6.5): "Add chat by ID" and the detected chats. Only when the gate is unlocked.
  * These are actions (Add, Set up, Dismiss), not settings: nothing here auto-saves.
  * @param {object | null} dto the DestinationsDto
  * @param {Record<string, string>} S
- * @param {{ input?: string, preset?: string, result?: string, detectedPresets?: Record<string, string>, busy?: boolean }} ui
+ * @param {{ input?: string, result?: string, busy?: boolean }} ui
  *   result is HTML from the last add
  * @returns {string} HTML, or '' while locked
  */
@@ -780,10 +742,6 @@ export function renderManual(dto, S, ui) {
             label: text(S, 'web.manual.label'),
             extraClass: 'tgj-row--stack',
             control: textField({ input: 'manualInput', value: ui.input ?? '', attrs: { autocomplete: 'off', 'aria-label': text(S, 'web.manual.label') } }),
-        }),
-        row({
-            label: text(S, 'web.dest.preset'),
-            control: selectField({ input: 'manualPreset', value: ui.preset ?? 'Everything', options: presetOptions(S), attrs: { 'aria-label': text(S, 'web.dest.preset') } }),
         }),
         `<div class="tgj-actions">${actionButton({ label: text(S, 'web.manual.add'), act: 'manualAdd', kind: 'primary' })}</div>`,
     ];
@@ -799,13 +757,7 @@ export function renderManual(dto, S, ui) {
             parts.push(row({
                 label: text(S, 'detected.line', { title: chat.Title }),
                 extraClass: 'tgj-detected',
-                control: selectField({
-                    input: 'detectedPreset',
-                    value: (ui.detectedPresets ?? {})[id] ?? 'Everything',
-                    options: presetOptions(S),
-                    attrs: { 'data-tgj-id': id, 'aria-label': text(S, 'web.dest.preset') },
-                })
-                    + actionButton({ label: text(S, 'web.manual.setUp'), act: 'detectedSetUp', kind: 'primary', id })
+                control: actionButton({ label: text(S, 'web.manual.setUp'), act: 'detectedSetUp', kind: 'primary', id })
                     + actionButton({ label: text(S, 'web.manual.dismiss'), act: 'detectedDismiss', id }),
             }));
         }
@@ -1369,18 +1321,14 @@ export default function TgJellyPage(view, params) {
             unreachable: false,
             confirmDisconnect: false,
             removeDestinations: false,
-            // The destinations section (§6.6.3): the open editor, the remove confirm, and the last test/check outcome per id;
-            // destPresetAsk is { id, preset } while leaving Custom for that preset waits for Replace (design §6.1a).
+            // The destinations section (§6.6.3): the open editor, the remove confirm, and the last test/check outcome per id.
             destEditing: null,
             destConfirm: null,
             destLeave: false,
             destResults: {},
-            destPresetAsk: null,
-            // The manual block (§6.5): the typed chat ID or link, the presets, and the last add's outcome (HTML).
+            // The manual block (§6.5): the typed chat ID or link, and the last add's outcome (HTML).
             manualInput: '',
-            manualPreset: 'Everything',
             manualResult: '',
-            detectedPresets: {},
             // Diagnostics: the text when the clipboard refused it, and whether the last copy worked.
             diagText: '',
             diagCopied: false,
@@ -1516,9 +1464,6 @@ export default function TgJellyPage(view, params) {
             state.ui.destConfirm = null;
         }
 
-        if (state.ui.destPresetAsk && !dto.Items.some(d => d.Id === state.ui.destPresetAsk.id)) {
-            state.ui.destPresetAsk = null;
-        }
     };
 
     /**
@@ -1654,7 +1599,6 @@ export default function TgJellyPage(view, params) {
                 confirmRemove: state.ui.destConfirm,
                 leave: state.ui.destLeave,
                 results: state.ui.destResults,
-                presetAsk: state.ui.destPresetAsk && state.ui.destPresetAsk.id,
             }),
         },
         // Reads the destinations state (same data as the Destinations section), so it has nothing to load itself.
@@ -1663,9 +1607,7 @@ export default function TgJellyPage(view, params) {
             load: async () => {},
             render: () => renderManual(state.destinations, state.strings, {
                 input: state.ui.manualInput,
-                preset: state.ui.manualPreset,
                 result: state.ui.manualResult,
-                detectedPresets: state.ui.detectedPresets,
             }),
         },
         // The settings and the templates (tgjelly-messages.js).
@@ -2405,25 +2347,13 @@ export default function TgJellyPage(view, params) {
         });
     };
 
-    /** Queues the save of one destination control (switches and the preset save at once); field is its fieldSelector. */
+    /** Queues the save of one destination control (switches save at once); field is its fieldSelector. */
     const saveDestination = (id, what, field) => queueSave({
         key: destSaveKey(id, what),
         mode: 'now',
         fields: [field],
         send: () => sendDestination(id),
     });
-
-    /** The preset select of a destination's editor, as fieldSelector finds it. */
-    const presetField = id => fieldSelector({ getAttribute: name => ({ 'data-tgj-input': 'destPreset', 'data-tgj-id': id })[name] ?? null });
-
-    /** Switches a destination to a preset (its events with it), shows it, and saves it. */
-    const applyPreset = (id, preset) => {
-        const events = state.destinations.Catalog.Presets[preset];
-        editDestination(id, events ? { Preset: preset, Events: [...events] } : { Preset: preset });
-        // Rendered before the save holds the select, so the write shows the new preset rather than keeping the old one.
-        renderSection('destinations');
-        saveDestination(id, 'Preset', presetField(id));
-    };
 
     const destinationOutcome = (id, html) => {
         state.ui.destResults[id] = html;
@@ -2532,21 +2462,6 @@ export default function TgJellyPage(view, params) {
             const id = idOf(el);
             state.ui.destEditing = state.ui.destEditing === id ? null : id;
             state.ui.destConfirm = null;
-            state.ui.destPresetAsk = null;
-            renderSection('destinations');
-        },
-        // Leaving Custom for a preset, confirmed: the preset's events replace the hand-picked ones.
-        presetReplace: el => {
-            const ask = state.ui.destPresetAsk;
-            state.ui.destPresetAsk = null;
-            if (ask && ask.id === idOf(el) && state.forms[destKey(ask.id)]) {
-                applyPreset(ask.id, ask.preset);
-            } else {
-                renderSection('destinations');
-            }
-        },
-        presetCancel: () => {
-            state.ui.destPresetAsk = null;
             renderSection('destinations');
         },
         // A leftover library is removed from the filter, and that saves at once (the Libraries title shows the cue).
@@ -2623,7 +2538,7 @@ export default function TgJellyPage(view, params) {
             state.ui.manualResult = '';
             const target = /^-?\d+$/.test(value) && Number.isSafeInteger(Number(value)) ? { ChatId: Number(value) } : { TopicLink: value };
             await autosave.flush();
-            return manualReply(await api.post('Destinations', { ExpectedRevision: pageRevision(), ...target, Preset: state.ui.manualPreset }));
+            return manualReply(await api.post('Destinations', { ExpectedRevision: pageRevision(), ...target }));
         }),
         detectedSetUp: el => runAction('manual', async () => {
             const id = detectedId(el);
@@ -2632,9 +2547,8 @@ export default function TgJellyPage(view, params) {
             }
 
             state.ui.manualResult = '';
-            const preset = state.ui.detectedPresets[id] ?? 'Everything';
             await autosave.flush();
-            return manualReply(await api.post(`DetectedChats/${id}`, { ExpectedRevision: pageRevision(), Preset: preset }));
+            return manualReply(await api.post(`DetectedChats/${id}`, { ExpectedRevision: pageRevision() }));
         }),
         detectedDismiss: el => runAction('manual', async () => {
             const id = detectedId(el);
@@ -2715,27 +2629,6 @@ export default function TgJellyPage(view, params) {
                 saveDestination(id, 'Enabled', fieldSelector(el));
             }
         },
-        // A select fires input and then change; the change is the choice. Between presets, or into Custom, it saves at
-        // once; leaving Custom asks first (design §6.1a), and until Replace the select shows Custom and nothing is sent.
-        destPreset: (el, event) => {
-            const id = idOf(el);
-            const form = state.forms[destKey(id)];
-            const preset = el.value;
-            if (event.type !== 'change' || !form || !destination(id) || !PRESETS.includes(preset)) {
-                return;
-            }
-
-            if (preset === form.local.Preset) {
-                state.ui.destPresetAsk = null;
-                renderSection('destinations');
-            } else if (form.local.Preset === 'Custom') {
-                state.ui.destPresetAsk = { id, preset };
-                renderSection('destinations');
-            } else {
-                state.ui.destPresetAsk = null;
-                applyPreset(id, preset);
-            }
-        },
         destEvent: (el, event) => {
             const id = idOf(el);
             const form = state.forms[destKey(id)];
@@ -2746,7 +2639,7 @@ export default function TgJellyPage(view, params) {
             }
 
             const chosen = toggled(form.local.Events, key, !form.local.Events.includes(key));
-            editDestination(id, { Events: keys.filter(k => chosen.includes(k)), Preset: 'Custom' });
+            editDestination(id, { Events: keys.filter(k => chosen.includes(k)) });
             renderSection('destinations');
             saveDestination(id, `event:${key}`, fieldSelector(el));
         },
@@ -2791,17 +2684,6 @@ export default function TgJellyPage(view, params) {
         },
         manualInput: el => {
             state.ui.manualInput = String(el.value ?? '');
-        },
-        manualPreset: el => {
-            if (PRESETS.includes(el.value)) {
-                state.ui.manualPreset = el.value;
-            }
-        },
-        detectedPreset: el => {
-            const id = detectedId(el);
-            if (id !== null && PRESETS.includes(el.value)) {
-                state.ui.detectedPresets[id] = el.value;
-            }
         },
         batching: (el, event) => {
             const field = BATCHING_FIELDS.find(f => f.key === el.getAttribute('data-tgj-key'));

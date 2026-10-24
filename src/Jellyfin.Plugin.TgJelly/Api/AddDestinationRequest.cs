@@ -13,7 +13,4 @@ public sealed class AddDestinationRequest
 
     /// <summary>Gets or sets a forum topic's link.</summary>
     public string? TopicLink { get; set; }
-
-    /// <summary>Gets or sets the preset: Everything, NewMedia, AdminAlerts or Custom.</summary>
-    public string Preset { get; set; } = "Everything";
 }
