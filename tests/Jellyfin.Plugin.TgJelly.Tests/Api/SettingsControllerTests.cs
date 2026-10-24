@@ -124,6 +124,38 @@ public sealed class SettingsControllerTests : IAsyncLifetime
         Assert.True(_h.Settings.Current.Message.For("media.movie").ShowPoster);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Put_AnEntryWithNoSwitches_400SaysWhatToSend(bool emptyPatch)
+    {
+        var request = Request(0);
+        request.Message.PerMessage = [new MessageSwitchesChange { EventKey = "media.movie", Switches = emptyPatch ? new MessageSwitchesPatch() : null }];
+
+        var result = Assert.IsType<BadRequestObjectResult>(_controller.PutSettings(request).Result);
+
+        var error = Assert.Single(Assert.IsType<ErrorsDto>(result.Value).Errors);
+        Assert.Equal("Message.PerMessage[0].Switches", error.Field);
+        Assert.Contains("media.movie", error.Message, StringComparison.Ordinal);
+        Assert.Contains("ShowPoster", error.Message, StringComparison.Ordinal);
+        Assert.Equal(0, _h.Settings.Current.Revision);
+    }
+
+    [Fact]
+    public void Put_AnOldFlatMessageShape_400SaysToReloadThePage()
+    {
+        var request = System.Text.Json.JsonSerializer.Deserialize<SettingsUpdateRequest>(
+            "{\"ExpectedRevision\":0,\"PublicUrl\":\"\",\"Message\":{\"ShowPoster\":false,\"ShowOverview\":true},\"Batching\":{},\"UpdateCheck\":{}}")!;
+
+        var result = Assert.IsType<BadRequestObjectResult>(_controller.PutSettings(request).Result);
+
+        var error = Assert.Single(Assert.IsType<ErrorsDto>(result.Value).Errors);
+        Assert.Equal("Message", error.Field);
+        Assert.Contains("ShowPoster", error.Message, StringComparison.Ordinal);
+        Assert.Contains("Reload", error.Message, StringComparison.Ordinal);
+        Assert.Equal(0, _h.Settings.Current.Revision);
+    }
+
     [Fact]
     public void Put_ChangingThePublicUrl_ClearsItsFlag()
     {

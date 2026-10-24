@@ -411,7 +411,9 @@ test('change and input events reach the inputs map', async () => {
     assert.deepEqual(seen, [['change', 'a'], ['input', 'ab']]);
 });
 
-test('an action error lands in its own section', async () => {
+test('an action error lands in its own section', async t => {
+    const logged = [];
+    t.mock.method(console, 'error', (...args) => logged.push(args));
     const { view, hooks, el } = mount({ 'POST TgJelly/Boom': { status: 400, body: { Message: 'bad <x>' } } });
     hooks.sections.demo = { id: 'tgj-demo', load: async () => {}, render: () => '<p>demo</p>' };
     hooks.actions.boom = () => hooks.runAction('demo', () => hooks.api.post('Boom'));
@@ -420,7 +422,7 @@ test('an action error lands in its own section', async () => {
 
     clickOn(view, { 'data-tgj-act': 'boom' });
     await flush();
-    assert.ok(el('tgj-demo').innerHTML.includes('<p class="tgj-error">bad &lt;x&gt;</p>'));
+    assert.ok(el('tgj-demo').innerHTML.includes('<p class="tgj-error">bad &lt;x&gt; (HTTP 400)</p>'));
     assert.ok(el('tgj-demo').innerHTML.includes('<p>demo</p>'));
     assert.ok(!el('tgj-status').innerHTML.includes('bad'));
 
@@ -428,6 +430,8 @@ test('an action error lands in its own section', async () => {
     await flush();
     assert.ok(el('tgj-demo').innerHTML.includes(m.t(EN, 'web.requestFailed', { reason: 'kaput' })));
     assert.ok(!el('tgj-demo').innerHTML.includes('bad'));
+    assert.equal(logged.length, 1, 'the crash is logged once for diagnosis');
+    assert.equal(logged[0][1].message, 'kaput');
 });
 
 test('a dirty form survives a re-show and a poll, merged onto fresh data', async () => {
@@ -561,7 +565,7 @@ test('a failed status poll says so, escaped through the strings', async t => {
     t.mock.method(console, 'error', () => {});
     const { view, el } = mount({ 'GET TgJelly/Status': { status: 500, body: { Message: 'x' } } });
     await show(view);
-    assert.ok(el('tgj-status').innerHTML.includes(m.t(EN, 'web.status.failed')));
+    assert.ok(el('tgj-status').innerHTML.includes(m.t(EN, 'web.status.failed', { reason: 'HTTP 500: x', seconds: 3 })));
 });
 
 // --- core fixes from the Task 7 review ---
@@ -2818,7 +2822,7 @@ test('connectionLabel: connected names the bot, no token is neutral, problems ne
     assert.deepEqual(m.connectionLabel(status({ HasToken: false, BotUsername: null, ConnectionState: 'NoToken' }), EN), { tone: 'neutral', text: EN['web.header.notConnected'] });
     assert.deepEqual(m.connectionLabel(status({ ConnectionState: 'TokenRejected' }), EN), { tone: 'attention', text: EN['web.header.attention'] });
     assert.deepEqual(m.connectionLabel(status({ ConnectionState: 'Connecting' }), EN), { tone: 'progress', text: EN['web.header.connecting'] });
-    assert.deepEqual(m.connectionLabel(null, EN, true), { tone: 'attention', text: EN['web.header.unknown'] });
+    assert.deepEqual(m.connectionLabel(null, EN, 'HTTP 500'), { tone: 'attention', text: m.text(EN, 'web.header.unknown', { reason: 'HTTP 500', seconds: 3 }) });
     for (const key of ['web.header.connected', 'web.header.notConnected', 'web.header.attention', 'web.header.connecting', 'web.header.unknown']) {
         assert.doesNotMatch(EN[key], /[●✓✔✅⚠❌✗🟢🔴]/u, key);
     }
@@ -3782,5 +3786,60 @@ test('remove, add and set up started while a settings save is in flight send the
         assert.equal(sent(api), 6, `${act}: it sends the Revision the settings save moved to`);
         assert.equal(revision, 7, `${act}: the server took it`);
         assert.ok(!section(el).includes(conflict), `${act}: no changed-elsewhere message`);
+    }
+});
+
+// --- Task 14: no vague errors ---
+
+test('requestError_includesStatusAndServerText', () => {
+    const withText = m.requestError(EN, { status: 409, body: { Message: 'Changed <elsewhere>' } });
+    assert.ok(withText.includes('Changed &lt;elsewhere&gt;') && withText.includes('409'), withText);
+
+    const bare = m.requestError(EN, { status: 500, body: null });
+    assert.ok(bare.includes('500') && /Copy diagnostics/.test(bare) && !/try again/i.test(bare), bare);
+});
+
+test('requestError_networkFailure_namesTheCause', async t => {
+    t.mock.method(console, 'error', () => {});
+    const { view, hooks, el } = mount();
+    hooks.sections.demo = { id: 'tgj-demo', load: async () => {}, render: () => '<p>demo</p>' };
+    hooks.actions.crash = () => hooks.runAction('demo', async () => { throw new TypeError('Failed to fetch'); });
+    await show(view);
+    clickOn(view, { 'data-tgj-act': 'crash' });
+    await flush();
+
+    const html = el('tgj-demo').innerHTML;
+    assert.ok(html.includes('Failed to fetch'), html);
+    assert.ok(/connection/i.test(html) && /repeat|retr/i.test(html), 'says what to do next');
+});
+
+test('headerUnknown_includesReason', async t => {
+    t.mock.method(console, 'error', () => {});
+    const { view, el } = mount({ 'GET TgJelly/Status': { status: 503, body: { Message: 'Starting up' } } });
+    await show(view);
+    const header = el('tgjelly-root').innerHTML;
+    assert.ok(header.includes('HTTP 503') && header.includes('Starting up') && /retries every 3 s/.test(header), header);
+});
+
+test('a section load that keeps failing logs once per distinct failure', async t => {
+    const logged = [];
+    t.mock.method(console, 'error', (...args) => logged.push(args));
+    let n = 0;
+    const { view, hooks } = mount();
+    hooks.sections.demo = { id: 'tgj-demo', load: async () => { throw new Error(n++ < 3 ? 'down' : 'still down'); }, render: () => '<p>demo</p>' };
+    await show(view);
+    const before = logged.length;
+    for (let i = 0; i < 3; i++) {
+        await hooks.reloadSection('demo');
+    }
+
+    assert.equal(logged.filter(a => String(a[0]).includes('demo')).length, 2, 'one for "down", one for "still down"');
+    assert.ok(logged.length >= before);
+});
+
+test('a save with nothing to save into says what happened and what to do', () => {
+    assert.ok(!/reason: '(no destination|no settings|no template)'/.test(SOURCE), 'no placeholder reasons are left');
+    for (const key of ['web.request.noDestination', 'web.request.noSettings', 'web.request.noTemplate']) {
+        assert.ok(EN[key] && /reload/i.test(EN[key]) && /not saved/i.test(EN[key]), key);
     }
 });

@@ -23,6 +23,11 @@ public sealed class MessageSwitchesPatch
     /// <summary>Gets or sets <see cref="MessageSwitches.ShowProviderLinks"/>, or <c>null</c> to keep it.</summary>
     public bool? ShowProviderLinks { get; set; }
 
+    /// <summary>Gets a value indicating whether at least one switch was sent.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool HasAny => ShowPoster is not null || ShowOverview is not null || ShowRatingGenres is not null
+        || ShowOpenInJellyfin is not null || ShowProviderLinks is not null;
+
     /// <summary>
     /// Sets the switches that were sent.
     /// </summary>

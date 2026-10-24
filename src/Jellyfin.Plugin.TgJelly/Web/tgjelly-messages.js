@@ -910,8 +910,8 @@ export function createMessages(page) {
                 failure = page.failureText(result);
             }
         } catch (err) {
-            reply = { RequestError: t(S, 'web.requestFailed', { reason: err && err.message }) };
-            failure = text(S, 'web.requestFailed', { reason: err && err.message });
+            reply = { RequestError: t(S, 'web.requestFailed', { reason: err && err.message ? err.message : 'the browser gave no details' }) };
+            failure = text(S, 'web.requestFailed', { reason: err && err.message ? err.message : 'the browser gave no details' });
         }
 
         if (seq === tplSeqs.get(key)) {
@@ -979,7 +979,7 @@ export function createMessages(page) {
         const S = state.strings;
         const name = `tpl:${key}`;
         if (!state.forms[name] || !state.templates) {
-            return { status: 'failed', message: text(S, 'web.requestFailed', { reason: 'no template' }) };
+            return { status: 'failed', message: text(S, 'web.request.noTemplate') };
         }
 
         const reason = templateSaveError(key);

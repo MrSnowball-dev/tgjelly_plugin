@@ -198,16 +198,38 @@ export function createApi(ApiClient) {
     };
 }
 
+const POLL_SECONDS = POLL_MS / 1000;
+
+/** The plain-text cause of a thrown error: the browser's or network's own words, or a note that it gave none. */
+const errorReason = err => (err && err.message ? String(err.message) : 'the browser gave no details');
+
 /**
- * The error text for a failed API result: the server's Message when it sent one, otherwise the status code.
+ * The plain-text reason a failed API result gives: the server's Message with the HTTP status, or, when the server sent
+ * no message, the status and where to look next.
+ * @param {Record<string, string>} S
+ * @param {{ status: number, body: any }} result
+ * @returns {string}
+ */
+function failureReason(S, result) {
+    return result.body && result.body.Message
+        ? text(S, 'web.request.http', { message: result.body.Message, status: result.status })
+        : text(S, 'web.request.httpBare', { status: result.status });
+}
+
+/** The short cause of a failed Status request for the header: "HTTP 503: message", or the network's own words. */
+const statusReason = (S, result) => (result.body && result.body.Message
+    ? text(S, 'web.header.reasonHttp', { status: result.status, message: result.body.Message })
+    : text(S, 'web.header.reasonHttpBare', { status: result.status }));
+
+/**
+ * The error text for a failed API result: the server's Message and the HTTP status; without a message, the status and
+ * what to check.
  * @param {Record<string, string>} S
  * @param {{ status: number, body: any }} result
  * @returns {string} HTML
  */
 export function requestError(S, result) {
-    return result.body && result.body.Message
-        ? esc(result.body.Message)
-        : t(S, 'web.requestFailed', { reason: result.status });
+    return esc(failureReason(S, result));
 }
 
 /**
@@ -1021,12 +1043,12 @@ const versionHtml = (S, version, buildTarget) => (version
  * connection needs attention or the status can't be read.
  * @param {object | null} status the last GET Status body
  * @param {Record<string, string> | null} S
- * @param {boolean} [failed] the last GET Status failed
+ * @param {string | false} [failed] why the last GET Status failed (plain text), or false
  * @returns {{ tone: 'good' | 'progress' | 'neutral' | 'attention', text: string }} plain text, for label
  */
 export function connectionLabel(status, S, failed = false) {
     if (failed || !status) {
-        return failed ? { tone: 'attention', text: text(S, 'web.header.unknown') } : { tone: 'neutral', text: text(S, 'web.header.notConnected') };
+        return failed ? { tone: 'attention', text: text(S, 'web.header.unknown', { reason: failed, seconds: POLL_SECONDS }) } : { tone: 'neutral', text: text(S, 'web.header.notConnected') };
     }
 
     if (!status.HasToken) {
@@ -1276,7 +1298,7 @@ export default function TgJellyPage(view, params) {
         templates: null,
         // Editor forms by name: { base, local, dirty, changed } (see syncFormData).
         forms: {},
-        // errors: section name → HTML (escaped) shown under that section; statusFailed: the last GET Status failed.
+        // errors: section name → HTML (escaped) shown under that section; statusFailed: why the last GET Status failed (text), or false.
         ui: {
             errors: {},
             statusFailed: false,
@@ -1318,6 +1340,7 @@ export default function TgJellyPage(view, params) {
     const typed = { token: '', proxyUsername: undefined, proxyPassword: undefined };
     // Section load errors (set by reloadSection), so a later good load can clear them without touching action errors.
     const loadErrors = new Set();
+    const loggedLoadFailures = new Map();
     // Fields whose change hasn't been saved yet, by fieldSelector: a section write keeps their values (keepFocus).
     const pendingFields = new Set();
     // How many section writes are running (see renderSection and the focusout listener).
@@ -1519,22 +1542,22 @@ export default function TgJellyPage(view, params) {
                     if (result.status === 200 && result.body) {
                         state.status = result.body;
                     } else {
-                        failure = 'HTTP ' + result.status;
+                        failure = statusReason(state.strings, result);
                     }
                 } catch (err) {
-                    failure = err;
+                    failure = errorReason(err);
                 }
 
-                if (failure && !state.ui.statusFailed) {
+                if (failure && failure !== state.ui.statusFailed) {
                     console.error('TgJelly: could not load the status', failure);
                 }
 
-                state.ui.statusFailed = failure !== null;
+                state.ui.statusFailed = failure ?? false;
             },
             render: () => {
                 const S = state.strings;
                 const html = state.status ? renderStatus(state.status, S, lang()) : '';
-                return state.ui.statusFailed ? html + notice({ kind: 'error', html: t(S, 'web.status.failed') }) : html;
+                return state.ui.statusFailed ? html + notice({ kind: 'error', html: t(S, 'web.status.failed', { reason: state.ui.statusFailed, seconds: POLL_SECONDS }) }) : html;
             },
         },
         connect: {
@@ -1778,16 +1801,23 @@ export default function TgJellyPage(view, params) {
             pending = (async () => {
                 try {
                     await sections[name].load();
+                    loggedLoadFailures.delete(name);
                     if (loadErrors.delete(name)) {
                         delete state.ui.errors[name];
                     }
 
                     renderSection(name);
                 } catch (err) {
-                    console.error(`TgJelly: the ${name} section failed to load or render`, err);
+                    // One diagnostic per distinct failure: a failing poll would otherwise log every 3 s.
+                    const reason = errorReason(err);
+                    if (loggedLoadFailures.get(name) !== reason) {
+                        loggedLoadFailures.set(name, reason);
+                        console.error(`TgJelly: the ${name} section failed to load or render`, err);
+                    }
+
                     loadErrors.add(name);
                     const S = state.strings;
-                    state.ui.errors[name] = t(S, 'web.requestFailed', { reason: err && err.message });
+                    state.ui.errors[name] = t(S, 'web.loadFailed', { reason, seconds: POLL_SECONDS });
                     try {
                         renderSection(name);
                     } catch (renderErr) {
@@ -1849,7 +1879,7 @@ export default function TgJellyPage(view, params) {
             }
         } catch (err) {
             console.error('TgJelly: action failed', err);
-            state.ui.errors[name] = t(S, 'web.requestFailed', { reason: err && err.message });
+            state.ui.errors[name] = t(S, 'web.requestFailed', { reason: errorReason(err) });
         }
 
         await syncRevisions();
@@ -2101,9 +2131,7 @@ export default function TgJellyPage(view, params) {
     };
 
     /** The plain-text reason a request failed, for a cue: the server's Message, or the status code. */
-    const failureText = result => (result.body && result.body.Message
-        ? String(result.body.Message)
-        : text(state.strings, 'web.requestFailed', { reason: result.status }));
+    const failureText = result => failureReason(state.strings, result);
 
     /**
      * Maps a save's reply to the queue's SaveResult: 200 with a body runs saved(body); 409 with Current gives a conflict
@@ -2146,7 +2174,7 @@ export default function TgJellyPage(view, params) {
         const form = state.forms.settings;
         const S = state.strings;
         if (!form || !state.settings) {
-            return { status: 'failed', message: text(S, 'web.requestFailed', { reason: 'no settings' }) };
+            return { status: 'failed', message: text(S, 'web.request.noSettings') };
         }
 
         const request = settingsRequest(form, paths, pageRevision(), S);
@@ -2202,7 +2230,7 @@ export default function TgJellyPage(view, params) {
     const sendProxy = async () => {
         const form = state.forms.proxy;
         if (!form || !state.settings) {
-            return { status: 'failed', message: text(state.strings, 'web.requestFailed', { reason: 'no settings' }) };
+            return { status: 'failed', message: text(state.strings, 'web.request.noSettings') };
         }
 
         const local = form.local;
@@ -2271,7 +2299,7 @@ export default function TgJellyPage(view, params) {
     const sendDestination = async id => {
         const form = state.forms[destKey(id)];
         if (!form || !destination(id)) {
-            return { status: 'failed', message: text(state.strings, 'web.requestFailed', { reason: 'no destination' }) };
+            return { status: 'failed', message: text(state.strings, 'web.request.noDestination') };
         }
 
         const body = destinationChanges(form.base, form.local, pageRevision());
