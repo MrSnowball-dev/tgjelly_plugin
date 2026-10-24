@@ -1798,6 +1798,10 @@ export default function TgJellyPage(view, params) {
         paintCues();
         renderChrome();
 
+        if (name === 'messages') {
+            messages.placePreview();
+        }
+
         if (name === 'destinations') {
             // The manual block shows the same data (detected chats, the gate), so it follows every Destinations render;
             // the Messages section lists the destinations for its test send, and the Log's filter offers them.
@@ -2897,8 +2901,32 @@ export default function TgJellyPage(view, params) {
         return true;
     };
 
+    // The preview follows the page's scrolling, which happens outside this view (Jellyfin's own scroller or the
+    // window), so it listens on the document while the page is shown.
+    const scrollDoc = view.ownerDocument;
+    const scrollWin = scrollDoc && scrollDoc.defaultView;
+    let placing = false;
+    const onPageScroll = () => {
+        if (placing) {
+            return;
+        }
+
+        placing = true;
+        const run = () => {
+            placing = false;
+            messages.placePreview();
+        };
+        if (scrollWin && typeof scrollWin.requestAnimationFrame === 'function') {
+            scrollWin.requestAnimationFrame(run);
+        } else {
+            run();
+        }
+    };
+
     const show = async () => {
         visible = true;
+        scrollDoc?.addEventListener?.('scroll', onPageScroll, { capture: true, passive: true });
+        scrollWin?.addEventListener?.('resize', onPageScroll, { passive: true });
         stopPolling();
         stylesheet ??= waitForStylesheet(byId('tgjelly-css'));
         const [ready] = await Promise.all([ensureStrings(), stylesheet]);
@@ -2915,6 +2943,8 @@ export default function TgJellyPage(view, params) {
 
     const hide = () => {
         visible = false;
+        scrollDoc?.removeEventListener?.('scroll', onPageScroll, { capture: true });
+        scrollWin?.removeEventListener?.('resize', onPageScroll);
         stopPolling();
         messages.hide();
         // Leaving the page saves what is still waiting (a debounce, or a field saved on blur that still has the focus).
