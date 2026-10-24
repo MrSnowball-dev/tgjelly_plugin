@@ -77,11 +77,13 @@ public class LogController : ControllerBase
                 Telegram = r.Telegram,
                 Tries = r.Tries,
                 RetryAt = r.RetryAt,
+                HeldUntil = r.HeldUntil,
                 Advice = r.Advice,
             })],
             LastSentAt = page.LastSentAt,
             LastEventAt = page.LastEventAt,
             StartedEmpty = page.StartedEmpty,
+            StartedUnreadable = page.StartedUnreadable,
             Next = page.Next,
         };
     }

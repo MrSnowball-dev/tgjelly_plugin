@@ -9,7 +9,7 @@
 //   the section, the click actions, the input handlers and the hide hook it returns into its own.
 // This module imports only its leaf siblings (tgjelly-ui.js, tgjelly-preview.js), never tgjelly.js, which imports it.
 import {
-    esc, t, text, label, card, row, actionButton, inlineConfirm, notice, textField, switchControl, selectField,
+    esc, t, text, label, card, row, actionButton, inlineConfirm, notice, textField, switchControl, selectField, httpFailure,
 } from './configurationpage?name=tgjelly-ui.js';
 import { renderTemplateCheck, renderTemplatePreview, previewHtml } from './configurationpage?name=tgjelly-preview.js';
 
@@ -691,7 +691,7 @@ export function createMessages(page) {
     const loadTemplates = async () => {
         const result = await api.get('Templates');
         if (result.status !== 200 || !result.body) {
-            throw new Error('HTTP ' + result.status);
+            throw new Error(httpFailure(result));
         }
 
         takeTemplates(result.body);

@@ -175,6 +175,7 @@ public sealed class LogRecordingTests : IDisposable
 
         var row = Assert.Single(Rows());
         Assert.Equal((LogResult.SentLate, 2), (row.Result, row.Tries));
+        Assert.Null(row.HeldUntil);
         Assert.Equal(["Held while the destination had a problem (403 Forbidden: bot was kicked from the supergroup chat), sent 10 min after it was ready, once it was fixed"], row.Details);
     }
 
@@ -362,7 +363,7 @@ public sealed class LogRecordingTests : IDisposable
         var row = Assert.Single(Rows());
         Assert.Equal(LogResult.Failed, row.Result);
         Assert.Equal(["It couldn't be delivered within 24 hours, so it was dropped"], row.Details);
-        Assert.False(string.IsNullOrWhiteSpace(row.Advice));
+        Assert.Equal(_h.Strings.Get("web.log.advice.expiredPlain"), row.Advice);
     }
 
     [Fact]
@@ -591,6 +592,101 @@ public sealed class LogRecordingTests : IDisposable
         var row = Assert.Single(Rows());
         Assert.Equal((LogResult.Skipped, (string?)null), (row.Result, row.DestinationId));
         Assert.Equal(["It was removed from Jellyfin before its details were ready, so there was nothing to announce"], row.Details);
+    }
+
+    [Fact]
+    public async Task Log_HeldFailedRow_GoesOutUntilTheOutboxDropsIt()
+    {
+        _h.AddDestination(-1001, preset: PresetKind.AdminAlerts);
+        _h.Api.On("sendMessage", _ => FakeBotApi.Error(403, "Forbidden: bot was kicked from the supergroup chat"));
+        LoginFailed();
+        var queuedAt = Assert.Single(_rig.Pipeline.Outbox.Snapshot()).QueuedAt;
+
+        await _rig.DeliverAllAsync();
+
+        // The entry stays queued (held) until the destination works again: the row says until when, not "never again".
+        Assert.Equal(1, _rig.Pipeline.Outbox.Count);
+        var row = Assert.Single(Rows());
+        Assert.Equal(LogResult.Failed, row.Result);
+        Assert.Equal(queuedAt + Jellyfin.Plugin.TgJelly.Delivery.Outbox.Ttl, row.HeldUntil);
+        Assert.Null(row.RetryAt);
+    }
+
+    [Fact]
+    public async Task Log_HeldFailedRowExpires_GetsTheExpiredAdvice()
+    {
+        _h.AddDestination(-1001, preset: PresetKind.AdminAlerts);
+        _h.Api.On("sendMessage", _ => FakeBotApi.Error(403, "Forbidden: bot was kicked from the supergroup chat"));
+        LoginFailed();
+        await _rig.DeliverAllAsync();
+        _h.Time.Advance(TimeSpan.FromHours(25));
+
+        Assert.Equal(1, _rig.Pipeline.Outbox.PurgeExpired(Now));
+
+        var row = Assert.Single(Rows());
+        Assert.Equal(LogResult.Failed, row.Result);
+        Assert.Null(row.HeldUntil);
+        Assert.Equal("It couldn't be delivered within 24 hours, so it was dropped", row.Details[0]);
+        Assert.Equal(_h.Strings.Get("web.log.advice.expired"), row.Advice);
+        Assert.DoesNotContain("wait up to 24 hours", row.Advice, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Log_HeldFailedRow_DestinationRemoved_RowSkipped()
+    {
+        var d = _h.AddDestination(-1001, preset: PresetKind.AdminAlerts);
+        _h.Api.On("sendMessage", _ => FakeBotApi.Error(403, "Forbidden: bot was kicked from the supergroup chat"));
+        LoginFailed();
+        await _rig.DeliverAllAsync();
+
+        _rig.Pipeline.Outbox.RemoveDestination(d.Id);
+
+        var row = Assert.Single(Rows());
+        Assert.Equal((LogResult.Skipped, (DateTimeOffset?)null), (row.Result, row.HeldUntil));
+        Assert.Equal(["The destination was removed before the message went out"], row.Details);
+        Assert.Null(row.Advice);
+    }
+
+    [Fact]
+    public void Log_ExpiredWithoutATelegramAnswer_AdviceDoesNotPointAtOne()
+    {
+        // Queued, then the destination was paused: nothing went to Telegram, so there is no answer to point at.
+        _h.AddDestination(-1001, preset: PresetKind.AdminAlerts);
+        LoginFailed();
+        _h.Settings.Update(null, c => c.Destinations[0].Enabled = false);
+        _h.Time.Advance(TimeSpan.FromHours(25));
+
+        Assert.Equal(1, _rig.Pipeline.Outbox.PurgeExpired(Now));
+
+        var row = Assert.Single(Rows());
+        Assert.Null(row.Telegram);
+        Assert.Equal(_h.Strings.Get("web.log.advice.expiredPlain"), row.Advice);
+        Assert.DoesNotContain("Telegram's answer", row.Advice, StringComparison.Ordinal);
+        Assert.Contains("paused", row.Advice, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Log_RateLimited_SaysTelegramAskedToSlowDown_AndCountsNoTry()
+    {
+        _h.AddDestination(-1001, preset: PresetKind.AdminAlerts);
+        _h.Api.OnSequence("sendMessage", FakeBotApi.Error(429, "Too Many Requests: retry after 7", """{"retry_after":7}"""), SentOk);
+        LoginFailed();
+
+        await _rig.DeliverAllAsync();
+
+        var waiting = Assert.Single(Rows());
+        Assert.Equal((LogResult.Waiting, 0), (waiting.Result, waiting.Tries));
+        Assert.Equal(["Telegram asked TgJelly to slow down, waiting before sending"], waiting.Details);
+
+        _h.Time.Advance(TimeSpan.FromSeconds(7));
+        await _rig.DeliverAllAsync();
+
+        var sent = Assert.Single(Rows());
+        Assert.Equal((LogResult.SentLate, 1), (sent.Result, sent.Tries));
+        var why = Assert.Single(sent.Details);
+        Assert.StartsWith("Telegram asked TgJelly to slow down (429 Too Many Requests: retry after 7), sent after waiting ", why, StringComparison.Ordinal);
+        Assert.DoesNotContain("Couldn't get through", why, StringComparison.Ordinal);
+        Assert.Equal(_h.Strings.Get("web.log.advice.RateLimited"), sent.Advice);
     }
 
     public void Dispose()

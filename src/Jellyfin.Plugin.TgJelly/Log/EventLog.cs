@@ -47,6 +47,7 @@ public sealed class EventLog : IDisposable
     private bool _loaded;
     private bool _dirty;
     private bool _startedEmpty;
+    private bool _startedUnreadable;
     private bool _disposed;
     private DateTimeOffset _lastAgePrune = DateTimeOffset.MinValue;
     private string? _lastWriteError;
@@ -144,7 +145,7 @@ public sealed class EventLog : IDisposable
                 next = items.Count > 0 ? CursorOf(items[^1]) : null;
             }
 
-            page = new LogPage(items, lastSent, lastEvent, _startedEmpty, next);
+            page = new LogPage(items, lastSent, lastEvent, _startedEmpty, next, _startedUnreadable);
         }
 
         if (pruned)
@@ -410,6 +411,10 @@ public sealed class EventLog : IDisposable
     {
         List<LogEntry>? rows = null;
         var empty = true;
+
+        // A missing file is no loss (a new install, or a quiet server: an empty log writes no file); only a file that
+        // can't be read makes the Log say it started empty.
+        var unreadable = false;
         try
         {
             if (File.Exists(_path))
@@ -417,6 +422,7 @@ public sealed class EventLog : IDisposable
                 rows = Parse(ReadFile(_path));
                 if (rows is null)
                 {
+                    unreadable = true;
                     MoveAside("it is unreadable or was written by a newer version of TgJelly");
                 }
                 else
@@ -430,6 +436,7 @@ public sealed class EventLog : IDisposable
             // Whatever went wrong, the log must still start (empty) so it records and writes from now on.
             rows = null;
             empty = true;
+            unreadable = true;
             MoveAside(ex.Message);
         }
 
@@ -443,6 +450,7 @@ public sealed class EventLog : IDisposable
             }
 
             _startedEmpty = empty;
+            _startedUnreadable = unreadable;
             _loaded = true;
             Prune(_time.GetUtcNow(), force: true);
             dirty = _dirty;

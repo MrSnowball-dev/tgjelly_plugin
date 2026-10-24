@@ -22,4 +22,7 @@ public sealed class LogDto
 
     /// <summary>Gets a value indicating whether the Log file was missing or unreadable when this run started.</summary>
     public bool StartedEmpty { get; init; }
+
+    /// <summary>Gets a value indicating whether the Log file was unreadable or written by a newer version when this run started (a missing file is not).</summary>
+    public bool StartedUnreadable { get; init; }
 }

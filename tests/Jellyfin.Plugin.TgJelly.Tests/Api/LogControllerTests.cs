@@ -43,6 +43,7 @@ public sealed class LogControllerTests : IDisposable
         Assert.Equal(Now + TimeSpan.FromMinutes(8), first.LastSentAt);
         Assert.Equal(Now + TimeSpan.FromMinutes(8), first.LastEventAt);
         Assert.True(first.StartedEmpty);
+        Assert.False(first.StartedUnreadable);
 
         Assert.NotNull(first.Next);
         var older = controller.Get(problemsOnly: true, before: first.Next, limit: 3).Value!;
@@ -66,6 +67,17 @@ public sealed class LogControllerTests : IDisposable
 
         var bad = Assert.IsType<Microsoft.AspNetCore.Mvc.BadRequestObjectResult>(result);
         Assert.Contains("Next", Assert.IsType<MessageDto>(bad.Value).Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task LogController_HeldRow_CarriesHeldUntil()
+    {
+        await _log.Loaded;
+        _log.Upsert(new LogEntry { Id = "held", At = Now, UpdatedAt = Now, EventKey = "media.movie", Title = "Arrival", Result = LogResult.Failed, HeldUntil = Now + TimeSpan.FromHours(24) });
+
+        var row = Assert.Single(new LogController(_log).Get().Value!.Items);
+
+        Assert.Equal(Now + TimeSpan.FromHours(24), row.HeldUntil);
     }
 
     [Fact]

@@ -304,17 +304,18 @@ public sealed class OutboxDelivery
                 message.NoPhoto = "blocked";
                 return (entry, destination);
             case DeliveryErrorKind.Lost:
-                // The entry stays queued and goes out if the destination recovers (Check again); until then it failed.
+                // The entry stays queued and goes out if the destination recovers (Check again) before the Outbox drops it;
+                // until then it failed, held.
                 _health.MarkProblem(destination.Id, HealthStatus.Lost, error.Description);
-                _log?.Failed(entry, destination, error, telegram);
+                _log?.Failed(entry, destination, error, telegram, heldUntil: entry.QueuedAt + Outbox.Ttl);
                 return null;
             case DeliveryErrorKind.NeedsPermissions:
                 _health.MarkProblem(destination.Id, HealthStatus.NeedsPermissions, error.Description);
-                _log?.Failed(entry, destination, error, telegram);
+                _log?.Failed(entry, destination, error, telegram, heldUntil: entry.QueuedAt + Outbox.Ttl);
                 return null;
             case DeliveryErrorKind.TopicMissing:
                 _health.MarkProblem(destination.Id, HealthStatus.TopicMissing, error.Description);
-                _log?.Failed(entry, destination, error, telegram);
+                _log?.Failed(entry, destination, error, telegram, heldUntil: entry.QueuedAt + Outbox.Ttl);
                 return null;
             case DeliveryErrorKind.Migrated when !entry.Migrated && error.MigrateToChatId is { } newChatId:
                 var map = _migration.MigrateAll(destination.ChatId, newChatId);

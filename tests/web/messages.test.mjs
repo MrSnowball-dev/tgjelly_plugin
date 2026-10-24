@@ -154,6 +154,17 @@ async function show(view) {
     await flush();
 }
 
+
+test('messages_templatesLoadFailure_carriesTheServerMessage', async t => {
+    t.mock.method(console, 'error', () => {});
+    const { view, el } = mount({ 'GET TgJelly/Templates': { status: 500, body: { Message: 'The templates file is locked' } } });
+    await show(view);
+
+    const html = el('tgj-messages').innerHTML;
+    assert.ok(html.includes('HTTP 500') && html.includes('The templates file is locked'), html);
+    assert.ok(/Copy diagnostics/.test(html), 'says what to do if it keeps failing');
+});
+
 /** The Messages section as the controller renders it: the state's data, the selected key and no validation yet. */
 function render(key, { tpl = templates(), set = settings() } = {}) {
     const forms = { settings: { base: m.settingsFormData(set), local: m.settingsFormData(set), dirty: false, changed: [] } };

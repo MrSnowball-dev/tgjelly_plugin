@@ -235,6 +235,21 @@ test('log_failedRow_expandsWithTelegramWords', async () => {
     assert.ok(!el('tgj-log').innerHTML.includes('bot was kicked'));
 });
 
+test('log_heldFailedRow_saysUntilWhen_notNeverAgain', () => {
+    // Failed for a Lost destination, but still queued: it goes out if the destination works again in time.
+    const until = new Date(2026, 9, 25, 14, 0, 0).toISOString();
+    const held = { ...FAILED, Id: 'h', HeldUntil: until, Advice: 'Add the bot back to Admin alerts, then press Check again on the destination. Messages wait up to 24 hours and go out once it\'s back.' };
+    const html = render(dto({ Items: [held] }), FILTERS, { expanded: new Set(['h']) });
+    const noRetry = ui.t(EN, 'web.log.detail.noRetry');
+    assert.ok(!html.includes(noRetry), 'a held row is not "never tried again"');
+    assert.match(html, /It goes out once the destination works again, if that is before Oct 25, (2:00\sPM|14:00)\./);
+
+    // Dropped (no longer held): it is not tried again.
+    const dropped = render(dto({ Items: [{ ...held, HeldUntil: null }] }), FILTERS, { expanded: new Set(['h']) });
+    assert.ok(dropped.includes(noRetry), dropped);
+    assert.ok(!dropped.includes('It goes out once the destination works again, if'), dropped);
+});
+
 test('log_problemsOnly_requestsFilter', async () => {
     const { view, api, el } = mount();
     await show(view);
@@ -324,8 +339,15 @@ test('log_quietLine_whenNoEventsFor24h', () => {
     const quiet = render(dto({ LastEventAt: hoursAgo(25), LastSentAt: hoursAgo(25) }));
     assert.match(quiet, /No events from Jellyfin since <time[^>]*>[^<]+<\/time>/);
 
-    const empty = render(dto({ Items: [], LastEventAt: null, LastSentAt: null, StartedEmpty: true }));
-    assert.ok(empty.includes(EN['web.log.lastSentNone']), empty);
+    // No log file yet (a new install, or a quiet server's restart): nothing was lost, so no notice says it was.
+    const fresh = render(dto({ Items: [], LastEventAt: null, LastSentAt: null, StartedEmpty: true, StartedUnreadable: false }));
+    assert.ok(fresh.includes(EN['web.log.lastSentNone']), fresh);
+    assert.ok(fresh.includes(EN['web.log.quietSinceStart']));
+    assert.ok(!fresh.includes(EN['web.log.startedEmpty']), 'a missing log is not called missing or unreadable');
+    assert.ok(fresh.includes(EN['web.log.empty']));
+
+    // An unreadable (or newer) file: the log says it started empty.
+    const empty = render(dto({ Items: [], LastEventAt: null, LastSentAt: null, StartedEmpty: true, StartedUnreadable: true }));
     assert.ok(empty.includes(EN['web.log.quietSinceStart']));
     assert.ok(empty.includes(EN['web.log.startedEmpty']), 'says the log started empty');
     assert.ok(empty.includes(EN['web.log.empty']));

@@ -3821,6 +3821,17 @@ test('headerUnknown_includesReason', async t => {
     assert.ok(header.includes('HTTP 503') && header.includes('Starting up') && /retries every 3 s/.test(header), header);
 });
 
+test('loadFailed_carriesTheServerMessage_andSuggestsCopyDiagnostics', async t => {
+    t.mock.method(console, 'error', () => {});
+
+    // The Libraries half of the Destinations load.
+    const dests = mount({ 'GET TgJelly/Libraries': { status: 500, body: { Message: 'The library manager is not ready' } } }, { hash: '#/configurationpage?name=TgJelly&tgj=destinations' });
+    await show(dests.view);
+    const html = dests.el('tgj-destinations').innerHTML;
+    assert.ok(html.includes('HTTP 500') && html.includes('The library manager is not ready'), html);
+    assert.ok(/Copy diagnostics/.test(html), 'says what to do if it keeps failing');
+});
+
 test('a section load that keeps failing logs once per distinct failure', async t => {
     const logged = [];
     t.mock.method(console, 'error', (...args) => logged.push(args));

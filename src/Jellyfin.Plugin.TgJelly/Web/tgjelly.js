@@ -11,6 +11,7 @@
 import {
     esc, t, text, plural, pluralText, formatNumber, formatTime,
     label, card, row, actionButton, inlineConfirm, notice, emptyState, textField, switchControl, selectField, numberField,
+    httpFailure,
 } from './configurationpage?name=tgjelly-ui.js';
 import { createAutosave, CONFLICT_KEY } from './configurationpage?name=tgjelly-autosave.js';
 import { createMessages, messageFormData, messageRequest } from './configurationpage?name=tgjelly-messages.js';
@@ -1435,7 +1436,7 @@ export default function TgJellyPage(view, params) {
     const loadSettings = () => {
         settingsLoad ??= api.get('Settings').then(result => {
             if (result.status !== 200 || !result.body) {
-                throw new Error('HTTP ' + result.status + (result.body && result.body.Message ? ': ' + result.body.Message : ''));
+                throw new Error(httpFailure(result));
             }
 
             takeSettings(result.body);
@@ -1450,7 +1451,7 @@ export default function TgJellyPage(view, params) {
     const loadLinks = () => {
         linksLoad ??= api.get('Links').then(result => {
             if (result.status !== 200 || !result.body) {
-                throw new Error('HTTP ' + result.status + (result.body && result.body.Message ? ': ' + result.body.Message : ''));
+                throw new Error(httpFailure(result));
             }
 
             state.links = result.body;
@@ -1511,8 +1512,12 @@ export default function TgJellyPage(view, params) {
 
     async function loadDestinations() {
         const [list, libraries] = await Promise.all([api.get('Destinations'), api.get('Libraries'), loadLinks()]);
-        if (list.status !== 200 || !list.body || libraries.status !== 200 || !Array.isArray(libraries.body)) {
-            throw new Error('HTTP ' + (list.status === 200 ? libraries.status : list.status));
+        if (list.status !== 200 || !list.body) {
+            throw new Error(httpFailure(list));
+        }
+
+        if (libraries.status !== 200 || !Array.isArray(libraries.body)) {
+            throw new Error(httpFailure(libraries));
         }
 
         state.libraries = libraries.body;
@@ -2831,7 +2836,7 @@ export default function TgJellyPage(view, params) {
 
         stringsLoad ??= api.get('Strings?lang=' + encodeURIComponent(lang())).then(result => {
             if (result.status !== 200 || !result.body) {
-                throw new Error('HTTP ' + result.status + (result.body && result.body.Message ? ': ' + result.body.Message : ''));
+                throw new Error(httpFailure(result));
             }
 
             return result.body;

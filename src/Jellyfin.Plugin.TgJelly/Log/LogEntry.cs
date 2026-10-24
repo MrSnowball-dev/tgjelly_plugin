@@ -44,6 +44,12 @@ public sealed record LogEntry
     /// <summary>Gets when the next try is due, while it waits to retry.</summary>
     public DateTimeOffset? RetryAt { get; init; }
 
+    /// <summary>
+    /// Gets, for a Failed row whose message is still queued and held until its destination works again (Lost and the
+    /// like), when the Outbox drops it; <c>null</c> otherwise.
+    /// </summary>
+    public DateTimeOffset? HeldUntil { get; init; }
+
     /// <summary>Gets what to do about it, for failed and attention rows.</summary>
     public string? Advice { get; init; }
 }

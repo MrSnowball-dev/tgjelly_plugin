@@ -45,6 +45,7 @@ public sealed class EventLogTests : IDisposable
         await reloaded.Loaded;
         Assert.Equal(["m2", "m1"], reloaded.Query(new LogQuery()).Items.Select(i => i.Id));
         Assert.False(reloaded.Query(new LogQuery()).StartedEmpty);
+        Assert.False(reloaded.Query(new LogQuery()).StartedUnreadable);
     }
 
     [Fact]
@@ -97,6 +98,7 @@ public sealed class EventLogTests : IDisposable
         Assert.Equal(contents, await File.ReadAllTextAsync(_paths.EventLog + ".corrupt", TestContext.Current.CancellationToken));
         var page = log.Query(new LogQuery());
         Assert.True(page.StartedEmpty);
+        Assert.True(page.StartedUnreadable);
         var row = Assert.Single(page.Items);
         Assert.Equal((LogResult.Sent, d.Id), (row.Result, row.DestinationId));
 
@@ -107,12 +109,15 @@ public sealed class EventLogTests : IDisposable
     }
 
     [Fact]
-    public async Task EventLog_MissingFile_StartsEmpty()
+    public async Task EventLog_MissingFile_StartsEmpty_WithoutTheUnreadableNotice()
     {
+        // A fresh install, an upgrade, or a quiet server's restart (an empty log writes no file): nothing was lost.
         using var log = NewLog();
         await log.Loaded;
 
-        Assert.True(log.Query(new LogQuery()).StartedEmpty);
+        var page = log.Query(new LogQuery());
+        Assert.True(page.StartedEmpty);
+        Assert.False(page.StartedUnreadable);
         Assert.False(File.Exists(_paths.EventLog + ".corrupt"));
     }
 
@@ -186,6 +191,7 @@ public sealed class EventLogTests : IDisposable
         var page = log.Query(new LogQuery());
 
         Assert.True(page.StartedEmpty);
+        Assert.True(page.StartedUnreadable);
         Assert.Single(page.Items);
         log.Flush();
         Assert.Equal(2, (await File.ReadAllLinesAsync(_paths.EventLog, TestContext.Current.CancellationToken)).Length);

@@ -103,9 +103,9 @@ public sealed class LogRecorder
         var why = _strings.Get("web.log.why.disconnected");
         foreach (var id in logIds.Distinct(StringComparer.Ordinal))
         {
-            _log.Update(id, existing => existing is null || IsFinal(existing.Result)
+            _log.Update(id, existing => existing is null || IsSettled(existing)
                 ? null
-                : existing with { Result = LogResult.Skipped, UpdatedAt = now, Details = [why], RetryAt = null, Advice = null });
+                : existing with { Result = LogResult.Skipped, UpdatedAt = now, Details = [why], RetryAt = null, HeldUntil = null, Advice = null });
         }
     });
 
@@ -219,9 +219,9 @@ public sealed class LogRecorder
     {
         var now = _time.GetUtcNow();
         var why = Why(SkipReason.DestinationRemoved, string.Empty, null);
-        _log.Update(logId, existing => existing is null || IsFinal(existing.Result)
+        _log.Update(logId, existing => existing is null || IsSettled(existing)
             ? null
-            : existing with { Result = LogResult.Skipped, UpdatedAt = now, Details = [why], RetryAt = null, Advice = null });
+            : existing with { Result = LogResult.Skipped, UpdatedAt = now, Details = [why], RetryAt = null, HeldUntil = null, Advice = null });
     });
 
     /// <summary>
@@ -237,7 +237,7 @@ public sealed class LogRecorder
     /// </summary>
     /// <param name="logIds">The dropped entries' rows.</param>
     public void Expired(IReadOnlyList<string> logIds)
-        => Discard(logIds, _strings.Get("web.log.why.failed.expired"), _strings.Get("web.log.advice.expired"));
+        => Discard(logIds, _strings.Get("web.log.why.failed.expired"), _strings.Get("web.log.advice.expired"), _strings.Get("web.log.advice.expiredPlain"));
 
     /// <summary>
     /// Records an item that is waiting for Jellyfin to finish reading its details, as Waiting without a destination.
@@ -404,6 +404,10 @@ public sealed class LogRecorder
                     : _strings.Get("web.log.why.lateRecovered", ("delay", Duration(delay)), ("error", lastError));
                 details.Add((LogResult.SentLate, why, _strings.Get("web.log.advice.late")));
             }
+            else if (lastError is not null && IsRateLimited(existing!))
+            {
+                details.Add((LogResult.SentLate, _strings.Get("web.log.why.lateRateLimited", ("delay", Duration(delay)), ("error", lastError)), _strings.Get("web.log.advice.RateLimited")));
+            }
             else if (lastError is not null)
             {
                 details.Add((LogResult.SentLate, _strings.Get("web.log.why.lateRetried", ("delay", Duration(delay)), ("error", lastError), ("tries", tries)), _strings.Get("web.log.advice.late")));
@@ -452,8 +456,11 @@ public sealed class LogRecorder
             Result = LogResult.Waiting,
             Details = [_strings.Get("web.log.why.retry." + kind)],
             Telegram = NonEmpty(telegram),
-            Tries = (existing?.Tries ?? 0) + 1,
+
+            // Telegram asking to slow down is a wait, not a try (the Outbox doesn't count it either).
+            Tries = (existing?.Tries ?? 0) + (kind == DeliveryErrorKind.RateLimited ? 0 : 1),
             RetryAt = retryAt,
+            HeldUntil = null,
             Advice = _strings.Get("web.log.advice." + kind, ("destination", destination.Title)),
         });
     });
@@ -467,7 +474,8 @@ public sealed class LogRecorder
     /// <param name="telegram">What Telegram or the network said, with the error code, redacted.</param>
     /// <param name="afterFallbacks">Whether it failed after every fallback was tried.</param>
     /// <param name="fromTelegram">Whether Telegram answered with the error; <c>false</c> when TgJelly or the server failed.</param>
-    public void Failed(OutboxEntry entry, Destination destination, DeliveryError error, string telegram, bool afterFallbacks = false, bool fromTelegram = true) => Safe(() =>
+    /// <param name="heldUntil">When the message stays queued, held until its destination works again: when the Outbox drops it.</param>
+    public void Failed(OutboxEntry entry, Destination destination, DeliveryError error, string telegram, bool afterFallbacks = false, bool fromTelegram = true, DateTimeOffset? heldUntil = null) => Safe(() =>
     {
         var now = _time.GetUtcNow();
         var (why, advice) = error.Kind switch
@@ -492,6 +500,7 @@ public sealed class LogRecorder
             Telegram = NonEmpty(telegram),
             Tries = (existing?.Tries ?? 0) + 1,
             RetryAt = null,
+            HeldUntil = heldUntil,
             Advice = _strings.Get(advice, args),
         });
     });
@@ -519,6 +528,9 @@ public sealed class LogRecorder
         => result is LogResult.Sent or LogResult.SentLate or LogResult.SentWithBuiltIn or LogResult.SentWithoutPhoto;
 
     private static bool IsFinal(LogResult result) => IsSent(result) || result is LogResult.Failed or LogResult.Skipped;
+
+    // Final and no longer queued: a Failed row held until its destination works again is still queued.
+    private static bool IsSettled(LogEntry row) => IsFinal(row.Result) && row.HeldUntil is null;
 
     private static string PendingId(Guid itemId) => "pending|" + itemId.ToString("N", CultureInfo.InvariantCulture);
 
@@ -563,6 +575,10 @@ public sealed class LogRecorder
 
     private bool IsEditProblem(string detail) => StartsLike(detail, "web.log.why.edit.retry", "web.log.why.edit.failed");
 
+    // A row waiting because Telegram asked TgJelly to slow down (429).
+    private bool IsRateLimited(LogEntry row)
+        => row.Result == LogResult.Waiting && row.Details.Count == 1 && StartsLike(row.Details[0], "web.log.why.retry.RateLimited");
+
     // A row waiting because its destination had a problem (Lost and the like).
     private bool IsHeld(LogEntry row)
         => row.Result == LogResult.Waiting && row.Details.Count == 1
@@ -578,17 +594,21 @@ public sealed class LogRecorder
         Advice = sent.Advice ?? _strings.Get("web.log.advice.edit"),
     };
 
-    private void Discard(IReadOnlyList<string> logIds, string why, string advice) => Safe(() =>
+    // plainAdvice, when given, is for a row without Telegram's answer (advice may point at that answer).
+    private void Discard(IReadOnlyList<string> logIds, string why, string advice, string? plainAdvice = null) => Safe(() =>
     {
         var now = _time.GetUtcNow();
+        string AdviceFor(LogEntry row) => NonEmpty(row.Telegram) is null ? plainAdvice ?? advice : advice;
         foreach (var id in logIds.Distinct(StringComparer.Ordinal))
         {
             _log.Update(id, existing => existing switch
             {
                 null or { Result: LogResult.Skipped } => null,
                 { } sent when IsSent(sent.Result) => EditProblem(sent, _strings.Get("web.log.why.edit.failed", ("error", why)), now),
-                { Result: LogResult.Failed } failed => failed with { UpdatedAt = now, Details = [why, .. failed.Details.Where(d => d != why)] },
-                { } waiting => waiting with { Result = LogResult.Failed, UpdatedAt = now, Details = [why], RetryAt = null, Advice = advice },
+
+                // A held row was still queued: it is dropped now, so its advice (it goes out once fixed) no longer holds.
+                { Result: LogResult.Failed } failed => failed with { UpdatedAt = now, Details = [why, .. failed.Details.Where(d => d != why)], HeldUntil = null, Advice = AdviceFor(failed) },
+                { } waiting => waiting with { Result = LogResult.Failed, UpdatedAt = now, Details = [why], RetryAt = null, HeldUntil = null, Advice = AdviceFor(waiting) },
             });
         }
     });

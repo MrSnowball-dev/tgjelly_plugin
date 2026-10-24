@@ -44,6 +44,9 @@ public sealed class LogEntryDto
     /// <summary>Gets when the next try is due, while it waits to retry.</summary>
     public DateTimeOffset? RetryAt { get; init; }
 
+    /// <summary>Gets, for a Failed message still held until its destination works again, when it is dropped if it hasn't gone out.</summary>
+    public DateTimeOffset? HeldUntil { get; init; }
+
     /// <summary>Gets what to do about it.</summary>
     public string? Advice { get; init; }
 }

@@ -23,6 +23,16 @@ export function esc(value) {
     return value === null || value === undefined ? '' : String(value).replace(/[&<>"']/g, c => ESCAPES[c]);
 }
 
+/**
+ * The short cause of a failed API result, for the error a load throws: the HTTP status and the server's own message
+ * when it sent one ("HTTP 500: The log file is locked"), else just the status.
+ * @param {{ status: number, body: any }} result
+ * @returns {string}
+ */
+export function httpFailure(result) {
+    return `HTTP ${result.status}${result.body && result.body.Message ? `: ${result.body.Message}` : ''}`;
+}
+
 // --- strings and numbers ---
 // The strings table is always called S, so the key checks in tests/web can find the key at every t() and plural() call.
 

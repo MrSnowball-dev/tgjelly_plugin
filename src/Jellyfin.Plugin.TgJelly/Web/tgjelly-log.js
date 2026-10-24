@@ -6,7 +6,7 @@
 // No summary counts: the owner dropped them.
 //
 // Like tgjelly-messages.js, it imports only the leaf tgjelly-ui.js, never tgjelly.js, which imports it.
-import { esc, t, text, plural, label, card, actionButton, emptyState, selectField } from './configurationpage?name=tgjelly-ui.js';
+import { esc, t, text, plural, label, card, actionButton, emptyState, selectField, httpFailure } from './configurationpage?name=tgjelly-ui.js';
 
 /** Rows asked for per page. */
 const PAGE_SIZE = 100;
@@ -179,7 +179,10 @@ function renderControls(filters, S, destinations, catalog, page) {
     return `<div class="tgj-log-controls">${segment}${destination}${event}</div>`;
 }
 
-/** The top lines: when a message last reached Telegram, whether Jellyfin has been quiet, and whether the log started empty. */
+/**
+ * The top lines: when a message last reached Telegram, whether Jellyfin has been quiet, and whether the log file was
+ * unreadable at startup. A missing file (a new install, a quiet server's restart) lost nothing, so it has no notice.
+ */
 function renderTopLines(page, S, lang, now) {
     const lines = [page.LastSentAt
         ? withTime(S, 'web.log.lastSent', timeHtml(page.LastSentAt, lang, now))
@@ -191,7 +194,7 @@ function renderTopLines(page, S, lang, now) {
     }
 
     const notes = lines.map(line => `<p class="tgj-log-line">${line}</p>`).join('');
-    const empty = page.StartedEmpty ? `<p class="tgj-log-line tgj-muted">${t(S, 'web.log.startedEmpty')}</p>` : '';
+    const empty = page.StartedUnreadable ? `<p class="tgj-log-line tgj-muted">${t(S, 'web.log.startedEmpty')}</p>` : '';
     return `<div class="tgj-log-lines">${notes}${empty}</div>`;
 }
 
@@ -212,6 +215,9 @@ function renderDetail(row, index, tone, S, lang, now) {
 
     if (row.RetryAt) {
         tries.push(t(S, 'web.log.detail.retry', { time: logTime(row.RetryAt, lang, now).shown }));
+    } else if (row.HeldUntil) {
+        // Failed, but still queued until its destination works again (Lost and the like), up to when it is dropped.
+        tries.push(t(S, 'web.log.detail.held', { time: logTime(row.HeldUntil, lang, now).shown }));
     } else if (row.Result === 'Failed') {
         tries.push(t(S, 'web.log.detail.noRetry'));
     }
@@ -397,7 +403,6 @@ export function createLog(page) {
         return 'Log?' + params.toString();
     };
 
-    const failure = result => `HTTP ${result.status}${result.body && result.body.Message ? `: ${result.body.Message}` : ''}`;
     const held = () => (heldGeneration === generation ? state.log : null);
 
     /** Loads the newest rows; rows loaded with Show older stay (mergeLog). */
@@ -406,7 +411,7 @@ export function createLog(page) {
         const rows = held() ? held().Items.length : 0;
         const result = await api.get(query({ limit: Math.min(MAX_LIMIT, Math.max(PAGE_SIZE, rows)) }));
         if (result.status !== 200 || !result.body) {
-            throw new Error(failure(result));
+            throw new Error(httpFailure(result));
         }
 
         if (asked === generation) {
