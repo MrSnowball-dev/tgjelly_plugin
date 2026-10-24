@@ -33,6 +33,24 @@ public sealed class LogRecordingTests : IDisposable
     private DateTimeOffset Now => _h.Time.GetUtcNow();
 
     [Fact]
+    public void Log_TestMessages_HaveTheirOwnRows_AndAFailedOneIsAProblem()
+    {
+        var d = _h.AddDestination(-1001);
+
+        _rig.Recorder.Test(d, "test", sent: true, error: null);
+        _h.Time.Advance(TimeSpan.FromSeconds(1));
+        _rig.Recorder.Test(d, "media.movie", sent: false, error: "403 Forbidden: bot was kicked from the channel chat");
+
+        var rows = _log.Query(new LogQuery()).Items;
+        Assert.Equal([LogResult.TestFailed, LogResult.TestSent], rows.Select(r => r.Result));
+        Assert.Empty(rows[1].Details);
+        Assert.Equal("403 Forbidden: bot was kicked from the channel chat", rows[0].Telegram);
+        Assert.Contains("403 Forbidden", rows[0].Details.Single(), StringComparison.Ordinal);
+        Assert.NotNull(rows[0].Advice);
+        Assert.Equal([rows[0].Id], _log.Query(new LogQuery { ProblemsOnly = true }).Items.Select(r => r.Id));
+    }
+
+    [Fact]
     public void Log_LibraryExcluded_SkippedWithLibraryName()
     {
         var kidsOnly = _h.AddDestination(-1001, preset: PresetKind.NewMedia);
