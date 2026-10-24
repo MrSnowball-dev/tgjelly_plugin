@@ -30,6 +30,13 @@ public static class PresetUpgrader
 
             if (d.Preset == PresetKind.Custom)
             {
+                // A Custom destination that has every event on counts as having every event, so it gets new ones too.
+                if (EventCatalog.PresetFor(d.Events) == PresetKind.Everything)
+                {
+                    d.Preset = PresetKind.Everything;
+                    changed = true;
+                }
+
                 continue;
             }
 

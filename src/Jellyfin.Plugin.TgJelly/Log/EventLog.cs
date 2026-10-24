@@ -128,7 +128,8 @@ public sealed class EventLog : IDisposable
             pruned = Prune(now, force: true);
             var rows = _rows.Values;
             var lastSent = rows.Where(r => IsSent(r.Result)).Select(r => (DateTimeOffset?)r.UpdatedAt).DefaultIfEmpty().Max();
-            var lastEvent = rows.Select(r => (DateTimeOffset?)r.At).DefaultIfEmpty().Max();
+            // Test messages aren't events from Jellyfin: a Send test must not hide the "quiet since" line.
+            var lastEvent = rows.Where(r => r.Result is not (LogResult.TestSent or LogResult.TestFailed)).Select(r => (DateTimeOffset?)r.At).DefaultIfEmpty().Max();
             var items = rows
                 .Where(r => (!query.ProblemsOnly || IsProblem(r))
                     && (query.DestinationId is null || string.Equals(r.DestinationId, query.DestinationId, StringComparison.Ordinal))

@@ -412,8 +412,8 @@ public sealed class OnboardingFlow
     /// <summary>
     /// Continues after a chat was checked: a failure is explained with <c>[Try again] [Advanced options]</c>; a forum
     /// whose topic isn't chosen yet goes to the topic question (the topic's answers continue through
-    /// <see cref="OnTopicAsync"/>, not through here, so General doesn't loop back); anything else meets the duplicate rule, then the preset
-    /// step (spec §6.2 steps 2–4).
+    /// <see cref="OnTopicAsync"/>, not through here, so General doesn't loop back); anything else meets the duplicate rule, then is added
+    /// with every event on (spec §6.2 steps 2–4).
     /// </summary>
     /// <param name="privateChatId">The private chat.</param>
     /// <param name="check">The check of the chosen chat.</param>
@@ -583,7 +583,7 @@ public sealed class OnboardingFlow
                 await _screens.ShowAsync(chatId, DoneScreen(result.Destination!, result.Test, check.PhotosBlocked), wizard, ct).ConfigureAwait(false);
                 break;
             case CreateOutcome.AlreadyExists:
-                // Added meanwhile elsewhere; CreateAsync already re-checked it.
+                // Added meanwhile elsewhere; the creator already re-checked it.
                 await ShowExistingAsync(chatId, result.Destination!, wizard, ct).ConfigureAwait(false);
                 break;
             default:

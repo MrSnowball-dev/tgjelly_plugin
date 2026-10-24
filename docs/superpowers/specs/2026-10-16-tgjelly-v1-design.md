@@ -237,7 +237,7 @@ A single card: **"Connect a Telegram bot"** with `[Create a new bot]` `[I alread
      - `setMyDefaultAdministratorRights`: for channels post + edit messages.
 
      The choice and any calls still pending are stored in `state.telegram.profile` and retried when the supervisor next starts, until each one succeeds. Failures are shown in Status and never fail the save.
-- Result: the connect card closes. The Bot section (§6.6) shows @MyJellyBot with **[Open in Telegram]** (`https://t.me/<username>?start=setup`).
+- Result: the connect card closes. The Bot section (§6.6) shows @MyJellyBot with **[Open in Telegram]** (`https://t.me/<username>`: it just opens the chat with the bot, amended 2026-10-25).
 - If `getMe` fails with a network error, a **"Can't reach Telegram?"** panel opens with the proxy settings (§9.1). Otherwise proxy settings stay under Advanced.
 
 ### 6.2 Bot onboarding: the main flow, inline buttons only

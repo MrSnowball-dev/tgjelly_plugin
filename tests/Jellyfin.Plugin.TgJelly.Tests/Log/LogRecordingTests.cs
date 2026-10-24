@@ -48,6 +48,7 @@ public sealed class LogRecordingTests : IDisposable
         Assert.Contains("403 Forbidden", rows[0].Details.Single(), StringComparison.Ordinal);
         Assert.NotNull(rows[0].Advice);
         Assert.Equal([rows[0].Id], _log.Query(new LogQuery { ProblemsOnly = true }).Items.Select(r => r.Id));
+        Assert.Null(_log.Query(new LogQuery()).LastEventAt); // a test isn't an event from Jellyfin, so "quiet" still shows
     }
 
     [Fact]

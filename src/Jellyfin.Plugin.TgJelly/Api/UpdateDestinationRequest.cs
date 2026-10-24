@@ -11,7 +11,7 @@ public sealed class UpdateDestinationRequest
     /// <summary>Gets or sets the revision the change is based on.</summary>
     public long ExpectedRevision { get; set; }
 
-    /// <summary>Gets or sets the events; giving them makes the destination Custom.</summary>
+    /// <summary>Gets or sets the events; whether every event is on is worked out from them.</summary>
     public string[]? Events { get; set; }
 
     /// <summary>Gets or sets the library filter (Guids; empty means all).</summary>

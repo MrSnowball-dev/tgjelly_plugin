@@ -6,7 +6,7 @@ namespace Jellyfin.Plugin.TgJelly.Delivery;
 
 /// <summary>
 /// Telegram's rate guidance (spec §9.3, F36): at least 1 s between sends to one chat, at most 20 per minute per group
-/// or channel, at most 25 per second overall, and a chat paused by a 429's <c>retry_after</c>. In memory only.
+/// or channel, at most 2 per second overall (owner, 2026-10-25, to stay clear of flood waits), and a chat paused by a 429's <c>retry_after</c>. In memory only.
 /// </summary>
 public sealed class PacingGate
 {

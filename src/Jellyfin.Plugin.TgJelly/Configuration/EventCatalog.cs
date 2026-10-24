@@ -5,7 +5,7 @@ using System.Linq;
 namespace Jellyfin.Plugin.TgJelly.Configuration;
 
 /// <summary>
-/// The event keys (spec §7.1, stable strings) and the presets that expand to them (§7.2).
+/// The event keys (spec §7.1, stable strings) and the internal presets (§7.2: Everything while every event is on).
 /// </summary>
 public static class EventCatalog
 {

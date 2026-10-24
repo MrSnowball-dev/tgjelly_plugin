@@ -154,7 +154,7 @@ public sealed class DetectedChatFlow
 
     /// <summary>
     /// Sets up a detected chat: one check, without retries, then the onboarding continues at the topic question or the
-    /// preset step (spec §6.5), editing the list message.
+    /// destination being added with every event on (spec §6.5), editing the list message.
     /// </summary>
     /// <param name="privateChatId">The private chat with the person who pressed Set up.</param>
     /// <param name="chatId">The detected chat.</param>

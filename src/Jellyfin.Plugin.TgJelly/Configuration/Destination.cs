@@ -50,7 +50,10 @@ public class Destination
     [JsonIgnore]
     public string KindKey => Kind == ChatKind.Supergroup && (IsForum || ThreadId != 0) ? "dest.kind.Forum" : "dest.kind." + Kind;
 
-    /// <summary>Gets or sets the preset the event keys were expanded from.</summary>
+    /// <summary>
+    /// Gets or sets the internal preset: Everything while every event is on (so later versions' events are added),
+    /// Custom otherwise (spec §7.2). Not shown anywhere.
+    /// </summary>
     [XmlIgnore]
     public PresetKind Preset { get; set; } = PresetKind.Everything;
 

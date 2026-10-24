@@ -97,7 +97,7 @@ public sealed class PersistenceService : BackgroundService
             _restoreChecked = true;
         }
 
-        // Spec §7.2: keys a later version added to a preset are added when the config loads.
+        // Spec §7.2: keys a later version added are switched on, when the config loads, for destinations with every event.
         if (!_presetsUpgraded)
         {
             _settings.UpdateIf(null, PresetUpgrader.Apply);

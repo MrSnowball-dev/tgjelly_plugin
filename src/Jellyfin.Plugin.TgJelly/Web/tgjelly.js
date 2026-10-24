@@ -1025,7 +1025,8 @@ const RELEASES_URL = 'https://github.com/MrSnowball-dev/tgjelly_plugin/releases'
  */
 export function releaseUrl(version) {
     const name = releaseName(version);
-    return /^v\d+\.\d+$/.test(name) ? `${RELEASES_URL}/tag/${name}` : RELEASES_URL;
+    // v0.0 is a development build, which has no release page.
+    return /^v\d+\.\d+$/.test(name) && name !== 'v0.0' ? `${RELEASES_URL}/tag/${name}` : RELEASES_URL;
 }
 
 /**
@@ -1727,7 +1728,10 @@ export default function TgJellyPage(view, params) {
         drawShell();
         const section = sections[name];
         const host = byId(section.id);
-        const write = () => setHtml(section.id, section.render() + sectionError(name));
+        // While the change-token form sits in the Bot card, its errors show there too, not above Status.
+        const tokenInBot = state.status && state.status.HasToken && state.ui.changingToken;
+        const error = name === 'connect' && tokenInBot ? '' : sectionError(name) + (name === 'bot' && tokenInBot ? sectionError('connect') : '');
+        const write = () => setHtml(section.id, section.render() + error);
         // While the write runs, a focused field it replaces may fire focusout: that is not the admin leaving the field.
         // A section with its own write (the Log) keeps its place around it.
         writing++;

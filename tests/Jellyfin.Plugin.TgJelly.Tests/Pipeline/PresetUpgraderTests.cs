@@ -32,6 +32,17 @@ public class PresetUpgraderTests
     }
 
     [Fact]
+    public void Custom_WithEveryEventOn_CountsAsEverything()
+    {
+        var c = Config(PresetKind.Custom, EventCatalog.Expand(PresetKind.Everything));
+
+        Assert.True(PresetUpgrader.Apply(c));
+
+        Assert.Equal(PresetKind.Everything, c.Destinations[0].Preset);
+        Assert.Equal(EventCatalog.Expand(PresetKind.Everything), c.Destinations[0].Events);
+    }
+
+    [Fact]
     public void Custom_IsNeverTouched()
     {
         var c = Config(PresetKind.Custom, ["media.movie"]);

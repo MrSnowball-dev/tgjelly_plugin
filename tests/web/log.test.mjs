@@ -356,7 +356,7 @@ test('log_quietLine_whenNoEventsFor24h', () => {
     assert.ok(week.includes(EN['web.log.quietWeek']));
 
     // The lead states the retention.
-    assert.equal(EN['web.log.lead'], 'Every event TgJelly received, and what happened to it, for the last 7 days.');
+    assert.equal(EN['web.log.lead'], 'Every message TgJelly handled, and every test message, and what happened to it, for the last 7 days.');
     assert.ok(busy.includes(EN['web.log.lead']));
 });
 
