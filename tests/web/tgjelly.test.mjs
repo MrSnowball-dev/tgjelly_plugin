@@ -2584,7 +2584,7 @@ test('every t(…) key used in tgjelly.js exists in en.json', () => {
 const SERVER_SIDE_KEY = 'web.status.connected';
 
 // Filled in by the server's LogRecorder: the Log rows arrive with these texts already in them.
-const SERVER_SIDE_PREFIXES = ['web.log.why.', 'web.log.advice.', 'web.log.right.', 'web.log.duration.', 'web.log.title.'];
+const SERVER_SIDE_PREFIXES = ['web.log.why.', 'web.log.advice.', 'web.log.right.', 'web.log.duration.', 'web.log.title.', 'web.log.noDetails'];
 
 test('every web.* key in en.json is used by tgjelly.js', () => {
     // web.event.* keys are built from the catalog's event keys (editor_eventLabels_haveNoGroupPrefix covers them).

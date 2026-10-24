@@ -196,6 +196,74 @@ public sealed class LogRecordingTests : IDisposable
         Assert.Contains("Add the bot back to " + d.Title, bob.Advice, StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Log_Disconnect_SettlesQueuedRowsAsSkipped(bool removeDestinations)
+    {
+        var d = _h.AddDestination(-1001, preset: PresetKind.AdminAlerts);
+        LoginFailed();
+        LoginFailed("bob");
+        var tokens = new Jellyfin.Plugin.TgJelly.Bot.BotTokenService(new FakeClientFactory(_h.Api), _h.Secrets, _h.State, _h.Settings, new FakeSupervisorControl(), _h.Strings, _h.Time, NullLogger<Jellyfin.Plugin.TgJelly.Bot.BotTokenService>.Instance, _rig.Recorder);
+
+        await tokens.DisconnectAsync(removeDestinations, TestContext.Current.CancellationToken);
+
+        Assert.Equal(0, _rig.Pipeline.Outbox.Count);
+        Assert.Equal(2, Rows().Count);
+        Assert.All(Rows(), r =>
+        {
+            Assert.Equal((LogResult.Skipped, d.Id), (r.Result, r.DestinationId));
+            Assert.Equal(["The bot was disconnected before this was sent"], r.Details);
+            Assert.Null(r.Advice);
+        });
+    }
+
+    [Fact]
+    public void Log_RetriedWithoutARecordedError_CountsTriesFromTheEntry()
+    {
+        var d = _h.AddDestination(-1001);
+        var entry = AnEntry(d);
+        entry.Attempts = 2;
+
+        _rig.Recorder.Delivered(entry, d, null);
+
+        var row = Assert.Single(Rows());
+        Assert.Equal((LogResult.SentLate, 3), (row.Result, row.Tries));
+        Assert.StartsWith("Sent on try 3, ", Assert.Single(row.Details), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Log_HeldWithoutAnError_NoEmptyParentheses()
+    {
+        var d = _h.AddDestination(-1001, preset: PresetKind.AdminAlerts);
+        _rig.Health.MarkProblem(d.Id, Jellyfin.Plugin.TgJelly.State.Documents.HealthStatus.Lost, string.Empty);
+        LoginFailed();
+
+        var held = Assert.Single(Rows());
+        Assert.Null(held.Telegram);
+        Assert.Equal(["Held: the bot was removed from this chat or blocked. It goes out once the destination works again"], held.Details);
+
+        _h.Time.Advance(TimeSpan.FromMinutes(3));
+        await _rig.DeliverAllAsync();
+
+        var sent = Assert.Single(Rows());
+        Assert.Equal(LogResult.SentLate, sent.Result);
+        Assert.Null(sent.Telegram);
+        Assert.Equal(["Held while the destination had a problem, sent 3 min after it was ready, once it was fixed"], sent.Details);
+    }
+
+    [Fact]
+    public void Log_EmptyTelegramAnswer_IsNeverAnEmptyReason()
+    {
+        var d = _h.AddDestination(-1001);
+
+        _rig.Recorder.Retrying(AnEntry(d), d, Jellyfin.Plugin.TgJelly.Bot.DeliveryErrorKind.Transport, string.Empty, Now + TimeSpan.FromSeconds(2));
+
+        var row = Assert.Single(Rows());
+        Assert.Null(row.Telegram);
+        Assert.All(row.Details, why => Assert.DoesNotContain("()", why, StringComparison.Ordinal));
+    }
+
     [Fact]
     public async Task Log_LateEditRetries_RowStaysSent()
     {

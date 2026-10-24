@@ -622,5 +622,8 @@
   "web.log.advice.edit": "Nothing to do for this message: the chat shows the version sent before. If updates keep failing, check this destination on the Destinations page.",
   "web.log.advice.cap": "Messages pile up when a destination can't receive them. Check its health on the Destinations page and the connection to Telegram in Advanced.",
   "web.log.advice.unaccounted": "Check this destination on the Destinations page. If it happens again, press Copy diagnostics in Advanced and include it in a bug report.",
-  "web.log.advice.ours": "This is a problem in TgJelly or on the Jellyfin server, not in Telegram. Press Copy diagnostics in Advanced and include it in a bug report."
+  "web.log.advice.ours": "This is a problem in TgJelly or on the Jellyfin server, not in Telegram. Press Copy diagnostics in Advanced and include it in a bug report.",
+  "web.log.why.disconnected": "The bot was disconnected before this was sent",
+  "web.log.why.lateRecoveredPlain": "Held while the destination had a problem, sent {delay} after it was ready, once it was fixed",
+  "web.log.noDetails": "no details given"
 }

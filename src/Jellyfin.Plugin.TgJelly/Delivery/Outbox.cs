@@ -160,7 +160,7 @@ public sealed class Outbox
                     for (var i = 0; i <= media.Count - MediaCap; i++)
                     {
                         q.Outbox.Remove(media[i]);
-                        dropped.Add(RowId(media[i]));
+                        dropped.Add(LogRecorder.RowIdOf(media[i]));
                     }
                 }
                 else if (IsAlert(entry) && mine.Count(IsAlert) >= AlertCap)
@@ -387,7 +387,7 @@ public sealed class Outbox
         var removed = new List<string>();
         _state.UpdateQueue(q =>
         {
-            removed.AddRange(q.Outbox.Where(e => e.QueuedAt + Ttl <= now).Select(RowId));
+            removed.AddRange(q.Outbox.Where(e => e.QueuedAt + Ttl <= now).Select(LogRecorder.RowIdOf));
             q.Outbox.RemoveAll(e => e.QueuedAt + Ttl <= now);
         });
         AddCounters(droppedOutbox: removed.Count);
@@ -409,7 +409,7 @@ public sealed class Outbox
         var removed = new List<string>();
         _state.UpdateQueue(q =>
         {
-            removed.AddRange(q.Outbox.Where(e => e.DestinationId == destinationId).Select(RowId));
+            removed.AddRange(q.Outbox.Where(e => e.DestinationId == destinationId).Select(LogRecorder.RowIdOf));
             q.Outbox.RemoveAll(e => e.DestinationId == destinationId);
             foreach (var key in q.SentMessages.Keys.Where(k => k.StartsWith(prefix, StringComparison.Ordinal)).ToList())
             {
@@ -546,8 +546,6 @@ public sealed class Outbox
     }
 
     private static string SentKey(string destinationId, string key) => destinationId + "|" + key;
-
-    private static string RowId(OutboxEntry e) => e.LogId.Length > 0 ? e.LogId : e.EntryId;
 
     private static bool IsAlert(OutboxEntry e)
         => e.Op == OutboxOp.Send && e.Summary == 0 && EventCatalog.GroupOf(e.EventKey) is "security" or "server";

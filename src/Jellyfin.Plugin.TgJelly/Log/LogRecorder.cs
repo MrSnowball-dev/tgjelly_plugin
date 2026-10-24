@@ -82,6 +82,34 @@ public sealed class LogRecorder
         => string.Create(CultureInfo.InvariantCulture, $"{groupKey}|{destinationId}|{firstAt.UtcTicks}");
 
     /// <summary>
+    /// Returns the Log row of an Outbox entry: its <c>LogId</c>, or its entry ID when it was queued before the Log existed.
+    /// </summary>
+    /// <param name="entry">The entry.</param>
+    /// <returns>The row ID.</returns>
+    public static string RowIdOf(OutboxEntry entry)
+    {
+        ArgumentNullException.ThrowIfNull(entry);
+        return entry.LogId.Length > 0 ? entry.LogId : entry.EntryId;
+    }
+
+    /// <summary>
+    /// Records the messages a disconnect dropped from the Outbox: the owner disconnected the bot, so they are Skipped.
+    /// A message already sent, or already failed, keeps its row as it was.
+    /// </summary>
+    /// <param name="logIds">The dropped entries' rows.</param>
+    public void Disconnected(IReadOnlyList<string> logIds) => Safe(() =>
+    {
+        var now = _time.GetUtcNow();
+        var why = _strings.Get("web.log.why.disconnected");
+        foreach (var id in logIds.Distinct(StringComparer.Ordinal))
+        {
+            _log.Update(id, existing => existing is null || IsFinal(existing.Result)
+                ? null
+                : existing with { Result = LogResult.Skipped, UpdatedAt = now, Details = [why], RetryAt = null, Advice = null });
+        }
+    });
+
+    /// <summary>
     /// Records the destinations a ready item doesn't go to, with the reason for each; or one row without a
     /// destination when none has its event on.
     /// </summary>
@@ -263,7 +291,7 @@ public sealed class LogRecorder
             var args = Args(destination);
             why = _strings.Get("web.log.why.held." + health.Status, args);
             advice = _strings.Get("web.log.advice." + health.Status, args);
-            telegram = health.LastError;
+            telegram = NonEmpty(health.LastError);
         }
 
         _log.Update(logId, existing =>
@@ -343,7 +371,7 @@ public sealed class LogRecorder
     {
         var now = _time.GetUtcNow();
         var title = TitleOf(entry.Model, entry.EventKey, entry.Summary);
-        _log.Update(RowId(entry), existing =>
+        _log.Update(RowIdOf(entry), existing =>
         {
             if (entry.Op == OutboxOp.Edit && existing is { } sent && IsSent(sent.Result))
             {
@@ -353,7 +381,8 @@ public sealed class LogRecorder
                 return sent with { Title = title, UpdatedAt = now, DestinationId = destination.Id, DestinationTitle = destination.Title, Details = kept, Advice = advice };
             }
 
-            var tries = (existing?.Tries ?? 0) + 1;
+            // The entry counts the retries it was scheduled for, even when this row missed them.
+            var tries = Math.Max((existing?.Tries ?? 0) + 1, entry.Attempts + 1);
             var details = new List<(LogResult Result, string Why, string Advice)>();
             if (entry.Message.TemplateFallback is { } error)
             {
@@ -367,14 +396,17 @@ public sealed class LogRecorder
 
             var delay = now - entry.QueuedAt;
             // Ruling R7: late means a try failed or Telegram made it wait; time in the queue (pacing) doesn't count.
-            var lastError = existing?.Telegram;
-            if (lastError is not null)
+            var lastError = NonEmpty(existing?.Telegram);
+            if (existing is not null && (existing.Result == LogResult.Failed || IsHeld(existing)))
             {
-                var recovered = existing!.Result == LogResult.Failed || existing.Tries == 0;
-                var why = recovered
-                    ? _strings.Get("web.log.why.lateRecovered", ("delay", Duration(delay)), ("error", lastError))
-                    : _strings.Get("web.log.why.lateRetried", ("delay", Duration(delay)), ("error", lastError), ("tries", tries));
+                var why = lastError is null
+                    ? _strings.Get("web.log.why.lateRecoveredPlain", ("delay", Duration(delay)))
+                    : _strings.Get("web.log.why.lateRecovered", ("delay", Duration(delay)), ("error", lastError));
                 details.Add((LogResult.SentLate, why, _strings.Get("web.log.advice.late")));
+            }
+            else if (lastError is not null)
+            {
+                details.Add((LogResult.SentLate, _strings.Get("web.log.why.lateRetried", ("delay", Duration(delay)), ("error", lastError), ("tries", tries)), _strings.Get("web.log.advice.late")));
             }
             else if (entry.Attempts > 0)
             {
@@ -383,7 +415,7 @@ public sealed class LogRecorder
 
             return new LogEntry
             {
-                Id = RowId(entry),
+                Id = RowIdOf(entry),
                 At = existing?.At ?? entry.QueuedAt,
                 UpdatedAt = now,
                 EventKey = entry.EventKey,
@@ -410,8 +442,8 @@ public sealed class LogRecorder
     public void Retrying(OutboxEntry entry, Destination destination, DeliveryErrorKind kind, string telegram, DateTimeOffset retryAt) => Safe(() =>
     {
         var now = _time.GetUtcNow();
-        _log.Update(RowId(entry), existing => entry.Op == OutboxOp.Edit && existing is { } sent && IsSent(sent.Result)
-            ? EditProblem(sent, _strings.Get("web.log.why.edit.retry", ("error", telegram)), now)
+        _log.Update(RowIdOf(entry), existing => entry.Op == OutboxOp.Edit && existing is { } sent && IsSent(sent.Result)
+            ? EditProblem(sent, _strings.Get("web.log.why.edit.retry", ("error", Err(telegram))), now)
             : (existing ?? NewRow(entry, destination, now)) with
         {
             UpdatedAt = now,
@@ -419,7 +451,7 @@ public sealed class LogRecorder
             DestinationTitle = destination.Title,
             Result = LogResult.Waiting,
             Details = [_strings.Get("web.log.why.retry." + kind)],
-            Telegram = telegram,
+            Telegram = NonEmpty(telegram),
             Tries = (existing?.Tries ?? 0) + 1,
             RetryAt = retryAt,
             Advice = _strings.Get("web.log.advice." + kind, ("destination", destination.Title)),
@@ -445,11 +477,11 @@ public sealed class LogRecorder
             _ when !fromTelegram => ("web.log.why.failed.ours", "web.log.advice.ours"),
             _ => (afterFallbacks ? "web.log.why.failed.fallbacks" : "web.log.why.failed.Other", "web.log.advice.Other"),
         };
-        var args = Args(destination, error.Description);
+        var args = Args(destination, Err(error.Description));
 
         // A refused update leaves the message in the chat as it was: the row keeps its result and says so.
-        _log.Update(RowId(entry), existing => entry.Op == OutboxOp.Edit && existing is { } sent && IsSent(sent.Result)
-            ? EditProblem(sent, _strings.Get("web.log.why.edit.failed", ("error", error.Description)), now)
+        _log.Update(RowIdOf(entry), existing => entry.Op == OutboxOp.Edit && existing is { } sent && IsSent(sent.Result)
+            ? EditProblem(sent, _strings.Get("web.log.why.edit.failed", ("error", Err(error.Description))), now)
             : (existing ?? NewRow(entry, destination, now)) with
         {
             UpdatedAt = now,
@@ -457,7 +489,7 @@ public sealed class LogRecorder
             DestinationTitle = destination.Title,
             Result = LogResult.Failed,
             Details = [_strings.Get(why, args)],
-            Telegram = telegram,
+            Telegram = NonEmpty(telegram),
             Tries = (existing?.Tries ?? 0) + 1,
             RetryAt = null,
             Advice = _strings.Get(advice, args),
@@ -490,7 +522,7 @@ public sealed class LogRecorder
 
     private static string PendingId(Guid itemId) => "pending|" + itemId.ToString("N", CultureInfo.InvariantCulture);
 
-    private static string RowId(OutboxEntry entry) => entry.LogId.Length > 0 ? entry.LogId : entry.EntryId;
+    private static string? NonEmpty(string? text) => string.IsNullOrWhiteSpace(text) ? null : text;
 
     private static string NewId(string prefix) => prefix + "|" + Guid.NewGuid().ToString("N");
 
@@ -522,12 +554,22 @@ public sealed class LogRecorder
         }
     }
 
-    // The text before the placeholder of each "updating this message failed" detail, to find them again.
-    private bool IsEditProblem(string detail)
-        => new[] { "web.log.why.edit.retry", "web.log.why.edit.failed" }
+    // The text before the first placeholder of each detail kind, to find those details again.
+    private bool StartsLike(string detail, params string[] keys)
+        => keys
             .Select(key => _strings.Get(key))
             .Select(text => text.IndexOf('{', StringComparison.Ordinal) is var at and > 0 ? text[..at] : text)
             .Any(prefix => detail.StartsWith(prefix, StringComparison.Ordinal));
+
+    private bool IsEditProblem(string detail) => StartsLike(detail, "web.log.why.edit.retry", "web.log.why.edit.failed");
+
+    // A row waiting because its destination had a problem (Lost and the like).
+    private bool IsHeld(LogEntry row)
+        => row.Result == LogResult.Waiting && row.Details.Count == 1
+            && StartsLike(row.Details[0], "web.log.why.held.Lost", "web.log.why.held.NeedsPermissions", "web.log.why.held.TopicMissing");
+
+    // Telegram's or the network's words for an {error} placeholder; never empty.
+    private string Err(string? text) => NonEmpty(text) ?? _strings.Get("web.log.noDetails");
 
     private LogEntry EditProblem(LogEntry sent, string detail, DateTimeOffset now) => sent with
     {
@@ -572,7 +614,7 @@ public sealed class LogRecorder
         var advice = _strings.Get("web.log.advice." + health.Status, args);
         _log.UpdateWhere(
             r => r.DestinationId == destinationId && r.Result == LogResult.Waiting && r.Details.Count == 1 && r.Details[0] == queued,
-            r => r with { UpdatedAt = now, Details = [why], Advice = advice, Telegram = health.LastError });
+            r => r with { UpdatedAt = now, Details = [why], Advice = advice, Telegram = NonEmpty(health.LastError) });
     });
 
     private (string Name, object? Value)[] Args(Destination destination, string? error = null)
@@ -644,7 +686,7 @@ public sealed class LogRecorder
 
     private LogEntry NewRow(OutboxEntry entry, Destination destination, DateTimeOffset now) => new()
     {
-        Id = RowId(entry),
+        Id = RowIdOf(entry),
         At = entry.QueuedAt,
         UpdatedAt = now,
         EventKey = entry.EventKey,
