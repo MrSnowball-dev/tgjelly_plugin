@@ -5,10 +5,10 @@ namespace Jellyfin.Plugin.TgJelly.Bot;
 /// </summary>
 public static class BotLinks
 {
-    /// <summary>Gets the link that opens the bot's setup.</summary>
+    /// <summary>Gets the link that opens the chat with the bot, without starting any flow.</summary>
     /// <param name="bot">The bot's username.</param>
     /// <returns>The link.</returns>
-    public static string OpenBot(string bot) => Base(bot) + "?start=setup";
+    public static string OpenBot(string bot) => Base(bot);
 
     /// <summary>Gets the link that starts adding a destination.</summary>
     /// <param name="bot">The bot's username.</param>

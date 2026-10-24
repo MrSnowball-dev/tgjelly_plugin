@@ -821,13 +821,16 @@ test('the Bot section shows the username and the buttons', async () => {
     assert.ok(html.includes('Change token') && html.includes('Disconnect bot'));
 });
 
-test('Change token reuses the token form', async () => {
+test('Change token opens the token form in the Bot card, where the button was', async () => {
     const { view, el } = mount();
     await show(view);
     await click(view, 'changeToken');
-    assert.ok(el('tgj-connect').innerHTML.includes('type="password"'));
+    assert.ok(el('tgj-bot').innerHTML.includes('type="password"'));
+    assert.ok(!el('tgj-bot').innerHTML.includes('data-tgj-act="changeToken"'), 'the form replaces the actions');
+    assert.equal(el('tgj-connect').innerHTML, '', 'nothing above the Status card');
     await click(view, 'cancelToken');
-    assert.equal(el('tgj-connect').innerHTML, '');
+    assert.ok(!el('tgj-bot').innerHTML.includes('type="password"'));
+    assert.ok(el('tgj-bot').innerHTML.includes('data-tgj-act="changeToken"'));
 });
 
 test('disconnect needs two clicks', async () => {
@@ -1138,15 +1141,21 @@ test('a poll with a new message leaves the typed token and the open disconnect c
     await show(view);
     await click(view, 'changeToken');
     input(view, 'token', '1:a');
-    await click(view, 'disconnect');
-    const connectWrites = el('tgj-connect').writes;
-    const botWrites = el('tgj-bot').writes;
+    let botWrites = el('tgj-bot').writes;
 
     message = 'second';
     timers.tick();
     await flush();
     assert.ok(el('tgj-status').innerHTML.includes('second'));
-    assert.equal(el('tgj-connect').writes, connectWrites);
+    assert.equal(el('tgj-bot').writes, botWrites, 'the token form in the Bot card is left alone');
+
+    await click(view, 'cancelToken');
+    await click(view, 'disconnect');
+    botWrites = el('tgj-bot').writes;
+    message = 'third';
+    timers.tick();
+    await flush();
+    assert.ok(el('tgj-status').innerHTML.includes('third'));
     assert.equal(el('tgj-bot').writes, botWrites);
     assert.ok(el('tgj-bot').innerHTML.includes('disconnectYes'));
 });
@@ -2783,8 +2792,8 @@ test('shell_rendersAllSections_onlyActiveVisible', () => {
         assert.equal(/aria-current="page"/.test(button), name === 'messages', `${name} aria-current`);
     }
 
-    assert.match(nav.get('destinations'), /<span id="tgj-nav-count-destinations" class="tgj-nav-count">3<\/span>/);
-    assert.match(nav.get('messages'), /<span id="tgj-nav-count-messages" class="tgj-nav-count">1 edited<\/span>/);
+    assert.ok(nav.get('destinations').includes(`<span id="tgj-nav-count-destinations" class="tgj-nav-count">${ui.label('3', 'neutral')}</span>`));
+    assert.ok(nav.get('messages').includes(`<span id="tgj-nav-count-messages" class="tgj-nav-count">${ui.label('1 edited', 'accent')}</span>`));
     assert.match(nav.get('overview'), /<span id="tgj-nav-count-overview" class="tgj-nav-count"><\/span>/);
 
     const sections = shellSections(html);
@@ -2804,7 +2813,7 @@ test('shell_rendersAllSections_onlyActiveVisible', () => {
 test('renderShell escapes the label and counts, and an unknown active section shows Overview', () => {
     const html = m.renderShell(EN, { active: 'nope', connection: { tone: 'attention', text: '<b>x</b>' }, counts: { destinations: '<i>' } });
     assert.ok(html.includes('&lt;b&gt;x&lt;/b&gt;') && !html.includes('<b>x</b>'));
-    assert.ok(html.includes('class="tgj-nav-count">&lt;i&gt;</span>'));
+    assert.ok(html.includes(`class="tgj-nav-count">${ui.label('<i>', 'neutral')}</span>`));
     const hidden = [...shellSections(html)].filter(([, s]) => !/\shidden(\s|$)/.test(s.attrs)).map(([name]) => name);
     assert.deepEqual(hidden, ['overview']);
 });
@@ -2833,8 +2842,8 @@ test('the header and the sidebar counts follow the data', async () => {
     const { view, el, timers } = mount({ 'GET TgJelly/Status': () => current, 'GET TgJelly/Templates': templates() });
     await show(view);
     assert.equal(el('tgj-conn').innerHTML, ui.label('Connected · @jf_bot', 'good'));
-    assert.equal(el('tgj-nav-count-destinations').innerHTML, '1');
-    assert.equal(el('tgj-nav-count-messages').innerHTML, '1 edited');
+    assert.equal(el('tgj-nav-count-destinations').innerHTML, ui.label('1', 'neutral'));
+    assert.equal(el('tgj-nav-count-messages').innerHTML, ui.label('1 edited', 'accent'));
 
     current = status({ ConnectionState: 'Unreachable' });
     timers.tick();
@@ -3112,7 +3121,9 @@ test('overview_connected_statusLeads', async () => {
 
 test('header_showsVersionLabelNextToTitle', async () => {
     const html = m.renderShell(EN, { active: 'overview', connection: { tone: 'good', text: 'Connected' }, version: '1.0.5.0', buildTarget: '10.11' });
-    const version = ui.label('v0.5', 'neutral', { title: 'TgJelly 1.0.5.0, built for Jellyfin 10.11' });
+    const version = '<a class="tgj-version-link" href="https://github.com/MrSnowball-dev/tgjelly_plugin/releases/tag/v0.5"'
+        + ' target="_blank" rel="noopener noreferrer" title="TgJelly 1.0.5.0, built for Jellyfin 10.11">'
+        + `${ui.label('v0.5', 'neutral')}</a>`;
     assert.match(html, /<h1 class="tgj-header-title">TgJelly<\/h1>/);
     assert.ok(html.indexOf('</h1>') < html.indexOf(version), 'the version follows the title');
     assert.ok(html.indexOf(version) < html.indexOf(ui.label('Connected', 'good')), 'and precedes the connection');
@@ -3128,6 +3139,8 @@ test('header_versionLabel_isReleaseName', async () => {
     assert.equal(m.releaseName('2.1.12.0'), 'v1.12');
     assert.equal(m.releaseName('1.0.4'), 'v1.0.4', 'a malformed version shows raw');
     assert.equal(m.releaseName('1.x.4.0'), 'v1.x.4.0');
+    assert.equal(m.releaseUrl('1.0.4.0'), 'https://github.com/MrSnowball-dev/tgjelly_plugin/releases/tag/v0.4');
+    assert.equal(m.releaseUrl('1.x.4.0'), 'https://github.com/MrSnowball-dev/tgjelly_plugin/releases', 'no release name: the list');
     const { view, el } = mount({ 'GET TgJelly/Status': status({ Version: '2.1.12.0' }) });
     await show(view);
     assert.ok(el('tgj-version').innerHTML.includes('>v1.12<'));

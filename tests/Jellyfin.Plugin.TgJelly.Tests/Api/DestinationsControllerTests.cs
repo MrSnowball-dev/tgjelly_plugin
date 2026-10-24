@@ -408,7 +408,7 @@ public sealed class DestinationsControllerTests : IAsyncLifetime
     public void Links_UseTheBotUsername_AndAreEmptyWithoutOne()
     {
         var links = _controller.GetLinks().Value!;
-        Assert.Equal("https://t.me/tgjelly_test_bot?start=setup", links.OpenBot);
+        Assert.Equal("https://t.me/tgjelly_test_bot", links.OpenBot);
         Assert.Equal("https://t.me/tgjelly_test_bot?start=add", links.StartAdd);
         Assert.Equal("https://t.me/tgjelly_test_bot?startgroup=add", links.StartGroup);
         Assert.Equal("https://t.me/tgjelly_test_bot?startchannel&admin=post_messages+edit_messages", links.StartChannel);

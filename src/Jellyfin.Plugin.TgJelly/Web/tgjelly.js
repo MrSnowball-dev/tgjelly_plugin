@@ -418,9 +418,10 @@ function renderTokenForm(ui, S) {
  * @param {Record<string, string>} S
  * @param {{ OpenBot?: string } | null} links
  * @param {object | null} [settings] for the proxy panel
+ * @param {{ bare?: boolean }} [options] bare: the body only, for the Bot card while the token is being changed
  * @returns {string} HTML
  */
-export function renderConnect(ui, S, links, settings = null) {
+export function renderConnect(ui, S, links, settings = null, { bare = false } = {}) {
     const result = ui.result;
     const busy = Boolean(ui.saving);
     if (result && result.kind === 'Connected') {
@@ -432,14 +433,12 @@ export function renderConnect(ui, S, links, settings = null) {
     }
 
     const title = text(S, 'web.connect.title');
+    const wrap = body => (bare ? body : card({ title, body }));
     if (result && result.kind === 'NeedsConfirm') {
-        return card({
-            title,
-            body: `<p>${esc(result.message)}</p><div class="tgj-actions">`
-                + actionButton({ label: text(S, 'web.connect.switch'), act: 'switchBot', kind: 'primary', disabled: busy })
-                + actionButton({ label: text(S, 'web.connect.cancel'), act: 'cancelSwitch', disabled: busy })
-                + '</div>',
-        });
+        return wrap(`<p>${esc(result.message)}</p><div class="tgj-actions">`
+            + actionButton({ label: text(S, 'web.connect.switch'), act: 'switchBot', kind: 'primary', disabled: busy })
+            + actionButton({ label: text(S, 'web.connect.cancel'), act: 'cancelSwitch', disabled: busy })
+            + '</div>');
     }
 
     const parts = [];
@@ -467,7 +466,7 @@ export function renderConnect(ui, S, links, settings = null) {
             + `<p class="tgj-row-hint">${t(S, 'web.connect.unreachableHint')}</p>${renderProxyForm(settings, S, ui.proxy ?? {}, { nested: true })}</div>`);
     }
 
-    return card({ title, body: parts.join('') });
+    return wrap(parts.join(''));
 }
 
 /**
@@ -477,9 +476,10 @@ export function renderConnect(ui, S, links, settings = null) {
  * @param {{ OpenBot?: string } | null} links
  * @param {Record<string, string>} S
  * @param {{ confirmDisconnect?: boolean, removeDestinations?: boolean, saving?: boolean }} ui
+ * @param {string} [changeHtml] the change-token form, shown in place of the card's actions while the token is changed
  * @returns {string} HTML
  */
-export function renderBot(status, links, S, ui) {
+export function renderBot(status, links, S, ui, changeHtml = '') {
     if (!status || !status.HasToken) {
         return '';
     }
@@ -501,8 +501,10 @@ export function renderBot(status, links, S, ui) {
     return card({
         title: text(S, 'web.bot.title'),
         body: row({ label: text(S, 'web.bot.name'), control: `<b>@${esc(status.BotUsername)}</b>` })
-            + `<div class="tgj-actions">${telegramLink(links && links.OpenBot, t(S, 'web.bot.open'))}`
-            + `${actionButton({ label: text(S, 'web.bot.change'), act: 'changeToken', disabled: busy })}${disconnect}</div>`,
+            + (changeHtml
+                ? `<div class="tgj-bot-change">${changeHtml}</div>`
+                : `<div class="tgj-actions">${telegramLink(links && links.OpenBot, t(S, 'web.bot.open'))}`
+                    + `${actionButton({ label: text(S, 'web.bot.change'), act: 'changeToken', disabled: busy })}${disconnect}</div>`),
     });
 }
 
@@ -1061,9 +1063,27 @@ export function releaseName(version) {
     return parts.length === 4 && parts.every(part => /^\d+$/.test(part)) ? `v${parts[1]}.${parts[2]}` : `v${version}`;
 }
 
-/** The header's version label with the full version and build target as its tooltip, or '' before the version is known. */
+/** The project's GitHub releases; a release name links to its tag there. */
+const RELEASES_URL = 'https://github.com/MrSnowball-dev/tgjelly_plugin/releases';
+
+/**
+ * The GitHub page for a plugin version: its release, or the releases list when the version has no release name.
+ * @param {string} version
+ * @returns {string}
+ */
+export function releaseUrl(version) {
+    const name = releaseName(version);
+    return /^v\d+\.\d+$/.test(name) ? `${RELEASES_URL}/tag/${name}` : RELEASES_URL;
+}
+
+/**
+ * The header's version label, a link to its release page in a new tab, with the full version and build target as its
+ * tooltip; '' before the version is known.
+ */
 const versionHtml = (S, version, buildTarget) => (version
-    ? label(releaseName(version), 'neutral', { title: text(S, 'web.header.versionTitle', { version, target: buildTarget ?? '' }) })
+    ? `<a class="tgj-version-link" href="${esc(releaseUrl(version))}" target="_blank" rel="noopener noreferrer"`
+        + ` title="${esc(text(S, 'web.header.versionTitle', { version, target: buildTarget ?? '' }))}">`
+        + `${label(releaseName(version), 'neutral')}</a>`
     : '');
 
 /**
@@ -1095,6 +1115,16 @@ export function connectionLabel(status, S, failed = false) {
 }
 
 /**
+ * A sidebar count as a label: the edited-templates count in the accent tone (like the Edited badge), others neutral.
+ * @param {string} name the section
+ * @param {string | undefined} text
+ * @returns {string} HTML, or '' without a count
+ */
+export function navCountHtml(name, text) {
+    return text ? label(text, name === 'messages' ? 'accent' : 'neutral') : '';
+}
+
+/**
  * Renders the dashboard shell: the header with the connection label, the sidebar of sections with their muted counts,
  * and one section per name holding today's containers. Only the active section is visible. The page fills the
  * containers, the label (#tgj-conn) and the counts (#tgj-nav-count-<name>) afterwards; this is written once.
@@ -1109,7 +1139,7 @@ export function renderShell(S, { active, connection, counts = {}, version = '', 
     const nav = SECTIONS.map(name => `<button type="button" id="tgj-nav-${name}" data-tgj-nav="${name}"`
         + `${name === current ? ' aria-current="page"' : ''}>`
         + `<span class="tgj-nav-label">${t(S, NAV_LABELS[name])}</span>`
-        + `<span id="tgj-nav-count-${name}" class="tgj-nav-count">${esc(counts[name] ?? '')}</span></button>`);
+        + `<span id="tgj-nav-count-${name}" class="tgj-nav-count">${navCountHtml(name, counts[name])}</span></button>`);
     const sections = SECTIONS.map(name => `<section id="tgj-sec-${name}" data-tgj-section="${name}" aria-labelledby="tgj-nav-${name}"`
         + `${name === current ? '' : ' hidden'}>${SECTION_HOSTS[name].map(id => `<div id="${id}"></div>`).join('')}</section>`);
     return '<div class="tgj-shell">'
@@ -1598,13 +1628,17 @@ export default function TgJellyPage(view, params) {
             id: 'tgj-connect',
             dependsOnStatus: true,
             load: async () => {},
-            render: () => (state.status ? renderConnect(connectUi(), state.strings, state.links, state.settings) : ''),
+            // While a connected bot's token is being changed, the form sits in the Bot card instead (see bot).
+            render: () => (state.status && !(state.status.HasToken && state.ui.changingToken)
+                ? renderConnect(connectUi(), state.strings, state.links, state.settings)
+                : ''),
         },
         bot: {
             id: 'tgj-bot',
             dependsOnStatus: true,
             load: loadLinks,
-            render: () => renderBot(state.status, state.links, state.strings, state.ui),
+            render: () => renderBot(state.status, state.links, state.strings, state.ui,
+                state.ui.changingToken ? renderConnect(connectUi(), state.strings, state.links, state.settings, { bare: true }) : ''),
         },
         proxy: {
             id: 'tgj-proxy',
@@ -1743,7 +1777,7 @@ export default function TgJellyPage(view, params) {
         setHtml('tgj-version', versionHtml(state.strings, pluginVersion(), pluginTarget()));
         const counts = navCounts();
         for (const name of SECTIONS) {
-            setHtml(`tgj-nav-count-${name}`, esc(counts[name] ?? ''));
+            setHtml(`tgj-nav-count-${name}`, navCountHtml(name, counts[name]));
         }
     };
 
@@ -1772,7 +1806,12 @@ export default function TgJellyPage(view, params) {
             renderSection('log');
         }
 
-        if (name === 'proxy' || name === 'connect') {
+        // The change-token form lives in the Bot card, so a connect re-render must reach it there too.
+        if (name === 'connect' && state.status && state.status.HasToken) {
+            renderSection('bot');
+        }
+
+        if (name === 'proxy' || name === 'connect' || name === 'bot') {
             restoreSecrets();
         }
 

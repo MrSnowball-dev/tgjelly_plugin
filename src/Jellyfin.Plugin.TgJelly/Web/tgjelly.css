@@ -163,9 +163,24 @@
     font-weight: 600;
 }
 
+#tgjelly-root .tgj-version-link {
+    color: inherit;
+    text-decoration: none;
+    border-radius: 999px;
+}
+
+#tgjelly-root .tgj-version-link:hover .tgj-label,
+#tgjelly-root .tgj-version-link:focus-visible .tgj-label {
+    border-color: var(--tgj-accent-ring);
+    color: var(--tgj-accent-text);
+}
+
+#tgjelly-root .tgj-version-link:focus-visible {
+    outline: 2px solid var(--tgj-accent-ring);
+    outline-offset: 2px;
+}
+
 #tgjelly-root .tgj-nav-count {
-    color: var(--tgj-fg-2);
-    font-size: var(--tgj-step--1);
     font-weight: 400;
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
