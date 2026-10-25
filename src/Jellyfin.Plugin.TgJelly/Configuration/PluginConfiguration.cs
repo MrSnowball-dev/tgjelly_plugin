@@ -121,6 +121,7 @@ public class PluginConfiguration : BasePluginConfiguration
         MigrateTemplates();
         MigrateMessageOptions();
         UpdateCheck.MigrateMode();
+        MigrateTopics();
     }
 
     /// <summary>
@@ -131,6 +132,29 @@ public class PluginConfiguration : BasePluginConfiguration
     {
         Templates ??= Array.Empty<TemplateOverride>();
         Templates = [.. Templates.Where(t => t is not null && t.Enabled && !string.IsNullOrWhiteSpace(t.Text))];
+    }
+
+    /// <summary>
+    /// v0.7 routed media events one by one, with no Media topic: such a destination keeps its routes by turning
+    /// separate media topics on, once (schema 2). Later on, per-event routes are kept while separate topics are off,
+    /// so this must not run again.
+    /// </summary>
+    public void MigrateTopics()
+    {
+        if (SchemaVersion >= 2)
+        {
+            return;
+        }
+
+        foreach (var d in Destinations ?? [])
+        {
+            if (d is not null && (d.TopicRoutes ?? []).Any(r => r?.Slot?.StartsWith("media.", StringComparison.Ordinal) == true))
+            {
+                d.SeparateMediaTopics = true;
+            }
+        }
+
+        SchemaVersion = 2;
     }
 
     /// <summary>

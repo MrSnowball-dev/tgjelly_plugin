@@ -234,7 +234,7 @@ public sealed class NotificationRendererTemplateTests : IDisposable
 
         var message = _renderer.Render(Media(item), Dest())!;
 
-        Assert.Equal("<b>Movies</b>", message.Text);
+        Assert.Equal("<b>Media: Movies</b>", message.Text);
         Assert.Equal(message.Text, message.Caption);
         Assert.Null(message.TemplateKey);
         Assert.Equal(item.Primary!.Path, message.PosterPath);

@@ -75,7 +75,7 @@ public class NoticeBuilderTests
         Assert.Equal(2, notices.Count);
         var error = notices.Single(n => n.Id.StartsWith("template:security.lockout:", StringComparison.Ordinal));
         Assert.Equal("TemplateFlagged", error.Kind);
-        Assert.Contains("for Lockouts failed", error.Text, StringComparison.Ordinal);
+        Assert.Contains("Security: Lockouts", error.Text, StringComparison.Ordinal);
         Assert.Contains("line 1, column 2: bad", error.Text, StringComparison.Ordinal);
         Assert.Contains("Movies", notices.Single(n => n.Id.StartsWith("template:media.movie:", StringComparison.Ordinal)).Text, StringComparison.Ordinal);
 

@@ -178,7 +178,7 @@ public sealed class TemplateRendererTests : IDisposable
 
         var result = Renderer(engine).Render(Movie(name: "Tom & Jerry"), hasPoster: true)!;
 
-        Assert.Equal("<b>Movies</b>\nTom &amp; Jerry", result.Caption);
+        Assert.Equal("<b>Media: Movies</b>\nTom &amp; Jerry", result.Caption);
         Assert.Equal(result.Caption, result.Text);
         Assert.Null(result.TemplateKey);
         Assert.Null(StoredFlag());
@@ -199,7 +199,7 @@ public sealed class TemplateRendererTests : IDisposable
 
         var result = Renderer(engine).Render(Movie(), hasPoster: false)!;
 
-        Assert.Equal("<b>Movies</b>\nArrival", result.Text);
+        Assert.Equal("<b>Media: Movies</b>\nArrival", result.Text);
         Assert.Equal("error", StoredFlag()!.Kind);
     }
 
@@ -241,7 +241,7 @@ public sealed class TemplateRendererTests : IDisposable
 
         var result = Renderer(engine).Render(Movie(overview: new string('o', 3000)), hasPoster: true)!;
 
-        Assert.Equal("<b>Movies</b>\nArrival", result.Text);
+        Assert.Equal("<b>Media: Movies</b>\nArrival", result.Text);
         Assert.Null(result.TemplateKey);
         var warning = Assert.Single(_logger.Entries, e => e.Level == LogLevel.Warning);
         Assert.Contains(_h.Strings.Get("templates.tooSlow"), warning.Message, StringComparison.Ordinal);
@@ -255,7 +255,7 @@ public sealed class TemplateRendererTests : IDisposable
 
         var result = Renderer().Render(model, hasPoster: false)!;
 
-        Assert.Equal("<b>Movies</b>", result.Text);
+        Assert.Equal("<b>Media: Movies</b>", result.Text);
         Assert.Equal(result.Text, result.Caption);
         Assert.Contains("library broke", Assert.Single(_logger.Entries, e => e.Level == LogLevel.Warning).Message, StringComparison.Ordinal);
     }

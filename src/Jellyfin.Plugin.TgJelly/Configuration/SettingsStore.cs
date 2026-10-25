@@ -175,6 +175,7 @@ public sealed class SettingsStore : IDisposable
         copy.MigrateTemplates();
         copy.MigrateMessageOptions();
         copy.UpdateCheck?.MigrateMode();
+        copy.MigrateTopics();
         return copy;
     }
 

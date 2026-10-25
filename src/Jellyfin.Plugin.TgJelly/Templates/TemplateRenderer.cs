@@ -226,7 +226,7 @@ public sealed class TemplateRenderer
 
     private RenderedText LastResort(string key, TemplateModel? values)
     {
-        var label = TemplateKeys.Label(_strings, key);
+        var label = TemplateKeys.FullLabel(_strings, key);
         var html = "<b>" + HtmlText.Escape(label) + "</b>";
         var name = values is null
             ? null

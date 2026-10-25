@@ -111,7 +111,7 @@ public sealed class DestinationTester
             }
         }
 
-        return LoggedAsync(destination, sample.EventKey, CheckAndSendAsync(destination, Send, ct));
+        return LoggedAsync(destination, sample.EventKey, CheckAndSendAsync(destination, Send, ct, thread));
     }
 
     /// <summary>Records the test's outcome in the Log (never failing the test because of the Log).</summary>
@@ -122,7 +122,7 @@ public sealed class DestinationTester
         return result;
     }
 
-    private async Task<TestSendResult> CheckAndSendAsync(Destination destination, Func<ITelegramSender, CancellationToken, Task<Message?>> send, CancellationToken ct)
+    private async Task<TestSendResult> CheckAndSendAsync(Destination destination, Func<ITelegramSender, CancellationToken, Task<Message?>> send, CancellationToken ct, int? thread = null)
     {
         if (_connection.Sender is not { } sender)
         {
@@ -148,9 +148,17 @@ public sealed class DestinationTester
         try
         {
             var sent = await send(sender, ct).ConfigureAwait(false);
-            if (_settings is not null)
+            try
             {
-                TopicNames.LearnFrom(_settings, destination.Id, sent);
+                if (_settings is not null)
+                {
+                    TopicNames.LearnFrom(_settings, destination.Id, sent);
+                }
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                // The test went out; a name it couldn't remember mustn't make it look failed.
+                _logger.LogWarning(ex, "TgJelly could not remember a topic's name");
             }
 
             return new TestSendResult(true, null, _health.Get(destination.Id));
@@ -165,7 +173,12 @@ public sealed class DestinationTester
                 DeliveryErrorKind.TopicMissing => HealthStatus.TopicMissing,
                 _ => (HealthStatus?)null,
             };
-            if (status is { } problem)
+            if (status == HealthStatus.TopicMissing && thread is { } t && t != destination.ThreadId)
+            {
+                // A routed topic is gone, not the destination's own: remember it, as delivery does.
+                _health.SetTopicMissing(destination.Id, t);
+            }
+            else if (status is { } problem)
             {
                 _health.MarkProblem(destination.Id, problem, error.Description);
             }

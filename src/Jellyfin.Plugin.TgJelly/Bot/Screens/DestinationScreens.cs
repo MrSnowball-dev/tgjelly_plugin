@@ -34,6 +34,7 @@ public sealed class DestinationScreens
     private readonly StringTable _strings;
     private readonly Formatter _formatter;
     private readonly ILogger<DestinationScreens> _logger;
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, byte> _creating = new(StringComparer.Ordinal);
 
     /// <summary>
     /// Initializes a new instance of the <see cref="DestinationScreens"/> class.
@@ -216,9 +217,9 @@ public sealed class DestinationScreens
         html.Append(_formatter.Escape(_strings.Get("dest.line.kind", ("kind", _strings.Get(d.KindKey))))).Append('\n');
         if (d.KindKey == "dest.kind.Forum")
         {
-            // Which topic it posts to, and the slots that have their own (set in the dashboard).
+            // Which topic it posts to, and the slots in use that have their own (Topics changes them).
             html.Append(_formatter.Escape(_strings.Get("dest.line.topic", ("topic", TopicName(d, d.ThreadId))))).Append('\n');
-            foreach (var route in d.TopicRoutes)
+            foreach (var route in d.TopicRoutes.Where(r => r.Slot.StartsWith("media.", StringComparison.Ordinal) == d.SeparateMediaTopics || !r.Slot.StartsWith("media", StringComparison.Ordinal)))
             {
                 var what = _strings.Get(route.Slot.Contains('.', StringComparison.Ordinal) ? "web.event." + route.Slot : "web.event.group." + route.Slot);
                 html.Append(_formatter.Escape(_strings.Get("dest.line.route", ("what", what), ("topic", TopicName(d, route.ThreadId))))).Append('\n');
@@ -355,6 +356,12 @@ public sealed class DestinationScreens
                 return Topics(id);
             case "n":
                 name = SlotLabel(slot);
+                // A double tap, or a redelivered press, must not create a second topic.
+                if (!_creating.TryAdd(id + "|" + slot, 0))
+                {
+                    return Topics(id);
+                }
+
                 try
                 {
                     thread = await _connection.RequireSender().CreateForumTopicAsync(d.ChatId, name, ct).ConfigureAwait(false);
@@ -364,6 +371,10 @@ public sealed class DestinationScreens
                     var error = TelegramErrorClassifier.ClassifyDelivery(ex);
                     _logger.LogWarning("TgJelly could not create a topic in {Destination}: {Error}", d.Title, error.Description);
                     return Topics(id, _formatter.Escape(_strings.Get("web.topics.createFailed", ("error", error.Description))));
+                }
+                finally
+                {
+                    _creating.TryRemove(id + "|" + slot, out _);
                 }
 
                 break;
