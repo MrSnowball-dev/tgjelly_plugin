@@ -1,7 +1,7 @@
 namespace Jellyfin.Plugin.TgJelly.Bot;
 
 /// <summary>
-/// The bot connection's state, shown on the Status page (spec §6.6, §9.2).
+/// The bot connection's state, shown on the Status page.
 /// </summary>
 public enum ConnectionState
 {

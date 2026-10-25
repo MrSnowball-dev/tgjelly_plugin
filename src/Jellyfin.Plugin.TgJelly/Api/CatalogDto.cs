@@ -3,7 +3,7 @@ using System.Collections.Generic;
 namespace Jellyfin.Plugin.TgJelly.Api;
 
 /// <summary>
-/// The event catalog the dashboard's destination editor draws its switches from (spec §7.2).
+/// The event catalog the dashboard's destination editor draws its switches from.
 /// </summary>
 public sealed class CatalogDto
 {

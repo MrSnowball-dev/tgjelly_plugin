@@ -12,9 +12,9 @@ using Telegram.Bot.Extensions;
 namespace Jellyfin.Plugin.TgJelly.Templates;
 
 /// <summary>
-/// Renders a message's caption and text from its template (design §5): the edited template when there is one,
+/// Renders a message's caption and text from its template: the edited template when there is one,
 /// otherwise the built-in one, each fitted to the caption and text limits. An edited template that fails is flagged
-/// and the built-in one is used; a built-in one that fails is logged and a short last-resort text is sent (§5.4).
+/// and the built-in one is used; a built-in one that fails is logged and a short last-resort text is sent.
 /// </summary>
 public sealed class TemplateRenderer
 {
@@ -86,7 +86,7 @@ public sealed class TemplateRenderer
             return LastResort(key, null);
         }
 
-        // Design §5.1: Enabled is ignored; an override with text is the template in use.
+        // Enabled is ignored; an override with text is the template in use.
         var edited = config.Templates.FirstOrDefault(t => string.Equals(t.EventKey, key, StringComparison.Ordinal) && !string.IsNullOrWhiteSpace(t.Text));
         string? editedError = null;
         if (edited is not null)

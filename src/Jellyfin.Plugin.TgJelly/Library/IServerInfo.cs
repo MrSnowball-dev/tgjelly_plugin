@@ -3,7 +3,7 @@ using System;
 namespace Jellyfin.Plugin.TgJelly.Library;
 
 /// <summary>
-/// The server facts messages and links need (spec §8.1, §8.3).
+/// The server facts messages and links need.
 /// </summary>
 public interface IServerInfo
 {

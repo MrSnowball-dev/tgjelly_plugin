@@ -4,7 +4,7 @@ using System.Collections.Generic;
 namespace Jellyfin.Plugin.TgJelly.Configuration;
 
 /// <summary>
-/// What messages show (design §6.2): one set of switches per message, keyed by event key, and whether quality upgrades
+/// What messages show: one set of switches per message, keyed by event key, and whether quality upgrades
 /// are announced at all.
 /// </summary>
 public class MessageOptions

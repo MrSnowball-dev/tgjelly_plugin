@@ -10,7 +10,7 @@ using Jellyfin.Plugin.TgJelly.State.Documents;
 namespace Jellyfin.Plugin.TgJelly.Pipeline;
 
 /// <summary>
-/// Batches ready media per destination (spec §7.4 steps 4–7): open groups close after a quiet window or a maximum
+/// Batches ready media per destination: open groups close after a quiet window or a maximum
 /// hold, closed groups wait in a release buffer while a scan runs, a big release becomes one digest, and a late item
 /// of a group already sent becomes an edit. All state lives in queue.json, so it survives a restart.
 /// </summary>

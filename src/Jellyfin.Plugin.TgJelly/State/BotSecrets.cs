@@ -3,7 +3,7 @@ using System.Text;
 namespace Jellyfin.Plugin.TgJelly.State;
 
 /// <summary>
-/// The contents of secrets.json (spec §10.2). Never returned by any API, and never printed: <see cref="object.ToString"/>
+/// The contents of secrets.json. Never returned by any API, and never printed: <see cref="object.ToString"/>
 /// shows only whether each value is set.
 /// </summary>
 public sealed record BotSecrets

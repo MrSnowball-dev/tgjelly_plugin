@@ -4,7 +4,7 @@ using System.Collections.Generic;
 namespace Jellyfin.Plugin.TgJelly.State.Documents;
 
 /// <summary>
-/// Notices for the dashboard's Status section (spec §6.6, §10.3 <c>status</c>).
+/// Notices for the dashboard's Status section.
 /// </summary>
 public sealed class StatusSection
 {
@@ -25,12 +25,12 @@ public sealed class StatusSection
     public StatusCounters Counters { get; set; } = new();
 
     /// <summary>
-    /// Gets or sets the flag set when Telegram rejected a button URL (spec §9.4 row 7).
+    /// Gets or sets the flag set when Telegram rejected a button URL.
     /// </summary>
     public PublicUrlFlag? PublicUrlFlag { get; set; }
 
     /// <summary>
-    /// Gets or sets the problems found in custom templates at send time, by event key (spec §8.5).
+    /// Gets or sets the problems found in custom templates at send time, by event key.
     /// </summary>
     public Dictionary<string, TemplateFlag> TemplateFlags { get; set; } = new(StringComparer.Ordinal);
 

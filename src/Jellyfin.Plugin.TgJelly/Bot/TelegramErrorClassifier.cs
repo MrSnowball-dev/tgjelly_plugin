@@ -5,7 +5,7 @@ using Telegram.Bot.Exceptions;
 namespace Jellyfin.Plugin.TgJelly.Bot;
 
 /// <summary>
-/// Classifies Telegram errors (spec §9.4, Appendix A). Descriptions are matched as case-insensitive substrings, and
+/// Classifies Telegram errors (Appendix A). Descriptions are matched as case-insensitive substrings, and
 /// the first matching row wins, so wording changes on Telegram's side degrade gracefully.
 /// <see cref="OperationCanceledException"/> is never passed here; callers let it propagate.
 /// </summary>

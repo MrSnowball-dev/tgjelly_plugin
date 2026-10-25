@@ -9,7 +9,7 @@ public interface IConfigurationHost
 {
     /// <summary>
     /// Raised when the settings were saved by someone other than <see cref="SettingsStore"/>,
-    /// e.g. a POST to Jellyfin's generic plugin configuration endpoint (spec §10.4).
+    /// e.g. a POST to Jellyfin's generic plugin configuration endpoint.
     /// </summary>
     event EventHandler<ConfigurationSavedEventArgs>? ExternalConfigurationSaved;
 
@@ -20,7 +20,7 @@ public interface IConfigurationHost
 
     /// <summary>
     /// Runs <paramref name="action"/> while holding the host's private save lock. <see cref="SettingsStore"/> saves
-    /// through it, and outside saves take the same lock, so two saves never get the same revision (spec §10.4).
+    /// through it, and outside saves take the same lock, so two saves never get the same revision.
     /// </summary>
     /// <typeparam name="T">The result type.</typeparam>
     /// <param name="action">The work to do under the lock.</param>

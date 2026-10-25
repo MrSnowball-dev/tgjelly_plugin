@@ -7,7 +7,7 @@ using Microsoft.Extensions.Logging;
 namespace Jellyfin.Plugin.TgJelly.State;
 
 /// <summary>
-/// Reads and writes secrets.json: atomic writes, mode 600 on Unix (spec §10.2).
+/// Reads and writes secrets.json: atomic writes, mode 600 on Unix.
 /// </summary>
 public sealed class SecretsStore
 {

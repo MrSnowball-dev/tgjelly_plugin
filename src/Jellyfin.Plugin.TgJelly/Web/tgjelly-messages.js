@@ -1,4 +1,4 @@
-// TgJelly dashboard: the Messages section (design §6.1-6.2). Imported as './configurationpage?name=tgjelly-messages.js'.
+// TgJelly dashboard: the Messages section. Imported as './configurationpage?name=tgjelly-messages.js'.
 //
 // One page per message: the Section and Message pickers, What it shows (the message's own switches, the public URL
 // under Open in Jellyfin, and Announce upgrades for media messages), the message's template with Send test and Reset,
@@ -15,7 +15,7 @@ import { renderTemplateCheck, renderTemplatePreview, previewHtml } from './confi
 
 // The template preview validates this long after the last keystroke.
 const PREVIEW_DEBOUNCE_MS = 500;
-// The template text saves this long after the last keystroke (plan 8, design §6.1).
+// The template text saves this long after the last keystroke.
 const TEMPLATE_SAVE_MS = 1000;
 
 const TEMPLATES_DOCS = 'https://github.com/MrSnowball-dev/tgjelly_plugin/blob/main/docs/templates.md';
@@ -159,7 +159,7 @@ export function messageRequest(message, paths) {
 /**
  * Whether a public URL can be used for the "Open in Jellyfin" buttons: a port of the server's PublicUrlRules.IsValid
  * (an absolute http or https URL whose host contains a dot and is not an IPv6 literal). Empty text is valid: it turns
- * the buttons off. The server saves any string, so the page checks before it saves (plan 8, design §6.3).
+ * the buttons off. The server saves any string, so the page checks before it saves.
  * @param {unknown} value
  * @returns {boolean}
  */
@@ -259,7 +259,7 @@ function publicUrlRows(settings, local, S) {
 }
 
 /**
- * The What it shows card (design §6.2): the switches that change this message, each saved at once with its cue beside
+ * The What it shows card: the switches that change this message, each saved at once with its cue beside
  * it; the public URL under Open in Jellyfin while that is on; and, for media messages, Announce upgrades, which is one
  * setting for all of them. Empty for a message no switch changes (the digest).
  * @param {object} item the selected template item
@@ -282,7 +282,7 @@ export function renderMessageSwitches(item, settings, form, S) {
         const title = text(S, `settings.msg.${name}`);
         rows.push(row({
             label: title,
-            // A Security or Server message's poster is the TgJelly logo (design §6.2).
+            // A Security or Server message's poster is the TgJelly logo.
             hint: name === 'ShowPoster' && !media ? text(S, 'web.messages.logoHint') : '',
             cueKey: switchSaveKey(key, name),
             control: switchControl({
@@ -329,7 +329,7 @@ export function templateTestBlocked(ui) {
 }
 
 /**
- * The Template card (spec §8.5): the message's template text, which saves itself (its cue sits beside the textarea's
+ * The Template card: the message's template text, which saves itself (its cue sits beside the textarea's
  * label), its errors and length under it, the Fields and Formatting tables, the guide, then Send test and, for an edited
  * template, Reset.
  * @param {object} item the selected template item
@@ -355,7 +355,7 @@ export function renderTemplateCard(item, S, ui) {
     parts.push('<div class="tgj-tpl-edit" id="tgj-tpl-edit">'
         + `<div class="tgj-tpl-label"><span class="tgj-row-label" id="tgj-tpl-label">${t(S, 'web.templates.text')}</span>`
         + `<span class="tgj-cue" data-tgj-cue="${esc(saveKey)}" aria-live="polite"></span></div>`
-        // The mirror behind the transparent textarea draws the hover link's highlight (design §6.5); the controller
+        // The mirror behind the transparent textarea draws the hover link's highlight; the controller
         // fills it on hover, from the textarea's current text.
         + '<div class="tgj-tpl-field"><div class="tgj-tpl-mirror" id="tgj-tpl-mirror" aria-hidden="true"></div>'
         + `<textarea class="tgj-field tgj-template-text" data-tgj-input="tplText" data-tgj-key="${esc(item.EventKey)}" data-tgj-save="${esc(saveKey)}"`
@@ -395,7 +395,7 @@ export function renderTemplateCard(item, S, ui) {
 }
 
 /**
- * The Messages section (design §6.1), top to bottom: the pickers, What it shows, the template, and the preview, which
+ * The Messages section, top to bottom: the pickers, What it shows, the template, and the preview, which
  * sits beside the two cards on wide screens (tgjelly.css). The preview pane keeps its id: the controller replaces only
  * the pane while the admin types.
  * @param {{ templates: object | null, settings: object | null, forms?: Record<string, object> }} state the page state:
@@ -441,7 +441,7 @@ export function previewOffset({ headerBottom, cardsTop, cardsHeight, sideHeight,
     return Math.min(max, Math.max(0, headerBottom + gap - cardsTop));
 }
 
-// --- the Fields and Formatting tables (design §6.3) ---
+// --- the Fields and Formatting tables ---
 
 /** What the Formatting table lists: Telegram's tags first, then the template constructs people need. */
 export const FORMATTING = [
@@ -589,7 +589,7 @@ export function formatInsert(format, selected) {
     return { value: open + selected + close, select: null };
 }
 
-// --- the hover link between template and preview (design §6.5) ---
+// --- the hover link between template and preview ---
 
 /**
  * The mirror's markup: the template text, escaped, with each piece of it in a span data-tgj-src="<index>" and the lit
@@ -989,7 +989,7 @@ export function createMessages(page) {
     };
 
     /**
-     * Why an event's typed template can't be saved (plan 8, design §6.3), or null: empty text never saves (the server
+     * Why an event's typed template can't be saved, or null: empty text never saves (the server
      * would take it as "remove the override"; Reset is the way back), nor does text whose latest validation had errors.
      * @param {string} key the event key
      */
@@ -1250,7 +1250,7 @@ export function createMessages(page) {
             }
         },
         // Typing records the edit; after a pause it refreshes the preview pane (only the pane: re-rendering would move the
-        // caret), and after a longer one the text saves itself (plan 8, design §6.1). Typed text acts on input only.
+        // caret), and after a longer one the text saves itself. Typed text acts on input only.
         tplText: (el, event) => {
             const own = el.getAttribute('data-tgj-key');
             const key = itemOf(own) ? own : messageKey();

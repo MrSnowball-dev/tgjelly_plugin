@@ -3,7 +3,7 @@ using System;
 namespace Jellyfin.Plugin.TgJelly.State.Documents;
 
 /// <summary>
-/// A sent message that may be edited or replied to later (spec §10.3 <c>sentMessages</c>).
+/// A sent message that may be edited or replied to later.
 /// </summary>
 public sealed class SentMessage
 {

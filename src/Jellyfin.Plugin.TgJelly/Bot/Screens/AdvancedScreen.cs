@@ -5,7 +5,7 @@ using Telegram.Bot.Types.ReplyMarkups;
 namespace Jellyfin.Plugin.TgJelly.Bot.Screens;
 
 /// <summary>
-/// The "Advanced options" screen (spec §6.5): the manual fallbacks, reached only from the bot's failure messages.
+/// The "Advanced options" screen: the manual fallbacks, reached only from the bot's failure messages.
 /// </summary>
 public sealed class AdvancedScreen
 {

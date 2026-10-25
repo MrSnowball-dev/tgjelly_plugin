@@ -19,7 +19,7 @@ using Telegram.Bot.Types.ReplyMarkups;
 namespace Jellyfin.Plugin.TgJelly.Bot.Screens;
 
 /// <summary>
-/// The destination list, the per-destination screens and their switches (spec §6.3), and the <c>/test</c> picker. Every
+/// The destination list, the per-destination screens and their switches, and the <c>/test</c> picker. Every
 /// change re-reads the settings and applies itself to the destination found by ID at save time, so a change made in the
 /// dashboard while a screen is open is not lost.
 /// </summary>
@@ -173,7 +173,7 @@ public sealed class DestinationScreens
 
         if (offerAdd)
         {
-            // Adding lives with the destinations (owner, 2026-10-25), as the primary action of the screen.
+            // Adding lives with the destinations, as the primary action of the screen.
             var add = Buttons.Callback(_strings, "menu.add", CallbackData.Format("oa"));
             add.Style = KeyboardButtonStyle.Primary;
             rows.Add([add]);
@@ -260,7 +260,7 @@ public sealed class DestinationScreens
     }
 
     /// <summary>
-    /// A forum destination's topics (owner, 2026-10-25): one line per group, and per media event with separate media
+    /// A forum destination's topics: one line per group, and per media event with separate media
     /// topics; a button for each opens its choice.
     /// </summary>
     private Screen Topics(string id, string? note = null)

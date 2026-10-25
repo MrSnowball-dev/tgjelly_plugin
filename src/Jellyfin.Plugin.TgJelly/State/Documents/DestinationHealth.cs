@@ -4,7 +4,7 @@ using System.Collections.Generic;
 namespace Jellyfin.Plugin.TgJelly.State.Documents;
 
 /// <summary>
-/// One destination's entry in <c>state.health</c> (spec §10.3).
+/// One destination's entry in <c>state.health</c>.
 /// </summary>
 public sealed class DestinationHealth
 {
@@ -29,7 +29,7 @@ public sealed class DestinationHealth
     public DateTimeOffset? At { get; set; }
 
     /// <summary>
-    /// Gets or sets a value indicating whether managers were told about the current problem (plan 4).
+    /// Gets or sets a value indicating whether managers were told about the current problem.
     /// </summary>
     public bool Notified { get; set; }
 

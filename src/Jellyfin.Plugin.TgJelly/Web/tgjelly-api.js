@@ -56,7 +56,7 @@ export function sameValue(a, b) {
 }
 
 /**
- * Merges the user's unsaved edits onto fresh server data after a 409 (spec §10.4). All three are flat (see flatten()).
+ * Merges the user's unsaved edits onto fresh server data after a 409. All three are flat (see flatten).
  * @param {Record<string, unknown>} base what the user started editing from
  * @param {Record<string, unknown>} local the form's current values
  * @param {Record<string, unknown>} server the fresh data from the 409
@@ -86,7 +86,7 @@ export function mergeConflict(base, local, server) {
 }
 
 /**
- * A fresh form state for an editor (spec §10.4): base is the server data the edits start from, local the values shown.
+ * A fresh form state for an editor: base is the server data the edits start from, local the values shown.
  * Given an existing dirty form, it keeps the user's edits on top of the fresh data instead (see mergeConflict()); base
  * becomes fresh, and changed collects the paths the server also changed, to highlight. Data is a plain object.
  * @param {{ base: object, local: object, dirty: boolean, changed: string[] } | null} form the current form, if any

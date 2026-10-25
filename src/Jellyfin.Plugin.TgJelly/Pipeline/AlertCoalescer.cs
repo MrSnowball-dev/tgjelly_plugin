@@ -11,7 +11,7 @@ using Jellyfin.Plugin.TgJelly.Strings;
 namespace Jellyfin.Plugin.TgJelly.Pipeline;
 
 /// <summary>
-/// Turns security and server events into messages (spec §7.5): failed logins of a user share one message in a sliding
+/// Turns security and server events into messages: failed logins of a user share one message in a sliding
 /// window, a lockout is held briefly so it can reply to that message, and repeated or redundant events stay quiet.
 /// Windows and markers live in queue.json; held lockouts only in memory, and <see cref="Drain"/> releases them.
 /// </summary>
@@ -179,7 +179,7 @@ public sealed class AlertCoalescer
     }
 
     /// <summary>
-    /// Releases every held lockout now (graceful stop, spec §12).
+    /// Releases every held lockout now (graceful stop).
     /// </summary>
     /// <returns>The lockout messages.</returns>
     public IReadOnlyList<AlertOutput> Drain() => Release(_time.GetUtcNow(), all: true);

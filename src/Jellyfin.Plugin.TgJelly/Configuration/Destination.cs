@@ -8,7 +8,7 @@ using System.Xml.Serialization;
 namespace Jellyfin.Plugin.TgJelly.Configuration;
 
 /// <summary>
-/// A chat (or forum topic) that receives notifications (spec §10.1).
+/// A chat (or forum topic) that receives notifications.
 /// </summary>
 public class Destination
 {

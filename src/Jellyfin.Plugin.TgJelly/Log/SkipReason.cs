@@ -1,7 +1,7 @@
 namespace Jellyfin.Plugin.TgJelly.Log;
 
 /// <summary>
-/// Why a message was not sent to a destination, or to any (design §8.2). Each maps to a <c>web.log.why.*</c> string.
+/// Why a message was not sent to a destination, or to any. Each maps to a <c>web.log.why.*</c> string.
 /// </summary>
 public enum SkipReason
 {

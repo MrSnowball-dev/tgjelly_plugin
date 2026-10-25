@@ -4,7 +4,7 @@ using System.Globalization;
 namespace Jellyfin.Plugin.TgJelly.Updates;
 
 /// <summary>
-/// Reads versions from release tags, leniently (spec §7.6).
+/// Reads versions from release tags, leniently.
 /// </summary>
 public static class ReleaseVersion
 {

@@ -8,7 +8,7 @@ using Microsoft.Extensions.Logging;
 namespace Jellyfin.Plugin.TgJelly.Configuration;
 
 /// <summary>
-/// The only way TgJelly changes its settings (spec §10.4): under the host's save lock, clone, change, normalize, validate, bump the
+/// The only way TgJelly changes its settings: under the host's save lock, clone, change, normalize, validate, bump the
 /// revision, save, back up to settings.bak.json, then raise <see cref="SettingsChanged"/> once.
 /// </summary>
 public sealed class SettingsStore : IDisposable
@@ -127,7 +127,7 @@ public sealed class SettingsStore : IDisposable
     }
 
     /// <summary>
-    /// Restores settings.bak.json when Jellyfin has replaced the settings with defaults after a load error (F9).
+    /// Restores settings.bak.json when Jellyfin has replaced the settings with defaults after a load error.
     /// Requires the state store to be loaded.
     /// </summary>
     /// <returns><c>true</c> when the backup was restored.</returns>

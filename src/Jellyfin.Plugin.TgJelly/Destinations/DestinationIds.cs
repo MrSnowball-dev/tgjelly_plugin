@@ -6,7 +6,7 @@ using System.Security.Cryptography;
 namespace Jellyfin.Plugin.TgJelly.Destinations;
 
 /// <summary>
-/// Creates destination IDs (spec §10.1: 8 characters from <c>a-z0-9</c>).
+/// Creates destination IDs (8 characters from <c>a-z0-9</c>).
 /// </summary>
 public static class DestinationIds
 {

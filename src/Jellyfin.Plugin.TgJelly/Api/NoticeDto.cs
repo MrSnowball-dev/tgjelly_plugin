@@ -1,7 +1,7 @@
 namespace Jellyfin.Plugin.TgJelly.Api;
 
 /// <summary>
-/// One notice in <see cref="StatusDto.Notices"/> (spec §10.3).
+/// One notice in <see cref="StatusDto.Notices"/>.
 /// </summary>
 public sealed class NoticeDto
 {

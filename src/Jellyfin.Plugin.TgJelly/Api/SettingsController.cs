@@ -12,7 +12,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace Jellyfin.Plugin.TgJelly.Api;
 
 /// <summary>
-/// Settings and proxy endpoints (spec §11.2).
+/// Settings and proxy endpoints.
 /// </summary>
 [ApiController]
 [Route("TgJelly")]
@@ -89,7 +89,7 @@ public class SettingsController : ControllerBase
 
         if (result.Status == SettingsUpdateStatus.Saved && !string.Equals(before, publicUrl, StringComparison.Ordinal))
         {
-            // Spec §9.4 row 7: the flag clears when PublicUrl changes.
+            // the flag clears when PublicUrl changes.
             _state.Update(s => s.Status.PublicUrlFlag = null);
         }
 
@@ -126,7 +126,7 @@ public class SettingsController : ControllerBase
 
         if (url.Length > 0 && ProxyUri(mode, url) is { UserInfo.Length: > 0 })
         {
-            // Spec §10.2/§12: credentials live in secrets.json and are never logged; a URL is stored in plain XML
+            // credentials live in secrets.json and are never logged; a URL is stored in plain XML
             // and appears in .NET's proxy error messages.
             return BadRequest(new ErrorsDto { Errors = [new SettingsError("Proxy.Url", "Put the proxy username and password in their own fields, not in the address.")] });
         }

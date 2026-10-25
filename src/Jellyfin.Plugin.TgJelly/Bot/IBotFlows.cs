@@ -5,7 +5,7 @@ using Telegram.Bot.Types;
 namespace Jellyfin.Plugin.TgJelly.Bot;
 
 /// <summary>
-/// The bot's conversations and screens (plan 4). The <see cref="BotWorker"/> calls these one at a time, in order,
+/// The bot's conversations and screens. The <see cref="BotWorker"/> calls these one at a time, in order,
 /// so implementations never run concurrently with each other.
 /// </summary>
 public interface IBotFlows

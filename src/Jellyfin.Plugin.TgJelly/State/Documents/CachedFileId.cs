@@ -3,7 +3,7 @@ using System;
 namespace Jellyfin.Plugin.TgJelly.State.Documents;
 
 /// <summary>
-/// A poster's Telegram file_id, reused for other destinations and resends (spec §8.2).
+/// A poster's Telegram file_id, reused for other destinations and resends.
 /// </summary>
 public sealed class CachedFileId
 {

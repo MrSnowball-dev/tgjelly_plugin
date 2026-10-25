@@ -6,7 +6,7 @@ using Microsoft.Extensions.Logging;
 namespace Jellyfin.Plugin.TgJelly.Intake.Consumers;
 
 /// <summary>
-/// Publishes <c>security.user_deleted</c> (spec §7.1).
+/// Publishes <c>security.user_deleted</c>.
 /// </summary>
 public sealed class UserDeletedConsumer : IEventConsumer<UserDeletedEventArgs>
 {
@@ -14,7 +14,7 @@ public sealed class UserDeletedConsumer : IEventConsumer<UserDeletedEventArgs>
     private readonly ILogger<UserDeletedConsumer> _logger;
 
     /// <summary>
-    /// Initializes a new instance of the <see cref="UserDeletedConsumer"/> class. Takes only the queue and a logger (F6).
+    /// Initializes a new instance of the <see cref="UserDeletedConsumer"/> class. Takes only the queue and a logger.
     /// </summary>
     /// <param name="queues">The intake queues.</param>
     /// <param name="logger">The logger.</param>

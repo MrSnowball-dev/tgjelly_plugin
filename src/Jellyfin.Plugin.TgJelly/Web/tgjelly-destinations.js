@@ -29,7 +29,7 @@ export function destinationFormData(dest) {
 }
 
 /**
- * The body of a destination's PUT: only the fields that differ from base, plus ExpectedRevision (spec §7.2, §10.4).
+ * The body of a destination's PUT: only the fields that differ from base, plus ExpectedRevision.
  * @param {object} base the form data the edit started from
  * @param {object} local the form's current data
  * @param {number} revision
@@ -64,7 +64,7 @@ const libraryKey = id => String(id).replaceAll('-', '').toLowerCase();
 export const sameLibrary = (a, b) => libraryKey(a) === libraryKey(b);
 
 /**
- * The dashboard's health words and colours (design §7). The bot's dest.health.* labels carry emoji by design, so the
+ * The dashboard's health words and colours. The bot's dest.health.* labels carry emoji by design, so the
  * dashboard has its own web.dest.health.* copies and leaves the bot's strings alone.
  */
 const HEALTH = {
@@ -96,7 +96,7 @@ function healthLabels(health, S) {
 export const destSaveKey = (id, what) => `dest:${id}:${what}`;
 
 /**
- * The editor card for one destination (spec §7.2, §7.3; design §6.1): the event switches by group,
+ * The editor card for one destination: the event switches by group,
  * the libraries and the silent groups. Every control saves itself at once (data-tgj-save, with its cue beside it);
  * Send test, Check again and Remove stay actions, and Remove asks inline first.
  * @param {object} dest the DestinationDto
@@ -128,7 +128,7 @@ export function renderEditor(dest, catalog, libraries, S, ui) {
     for (const group of catalog.Groups) {
         const keys = catalog.EventKeys.filter(k => k.startsWith(group + '.'));
         // Each group has one topic; Media can instead have a topic for each event ("Separate topics for each event"),
-        // and only then do the events show their own choice (owner, 2026-10-25).
+        // and only then do the events show their own choice.
         const groupTopic = topic(group);
         parts.push(`<div class="tgj-subcard" data-tgj-group-card="${esc(group)}">`
             + `<div class="tgj-subcard-head"><h3 class="tgj-subcard-title">${t(S, `web.event.group.${group}`)}</h3>${groupTopic}</div>`
@@ -280,9 +280,9 @@ function destinationIds(dest, routes, S, open, separate) {
 const destinationMeta = (dest, S) => text(S, dest.IsForum ? 'dest.kind.Forum' : `dest.kind.${dest.Kind}`);
 
 /**
- * The Destinations section (spec §6.6 item 3; design §5.2): a card with one row per destination (its title, the kind
+ * The Destinations section: a card with one row per destination (its title, the kind
  * muted, the health as coloured words, the Sending switch and Edit), then the open destination's editor card.
- * Add destination, and "Set up manually" once the manual block is unlocked (spec §6.5), close the list, or make its
+ * Add destination, and "Set up manually" once the manual block is unlocked, close the list, or make its
  * empty state.
  * @param {object | null} dto the DestinationsDto
  * @param {{ Id: string, Name: string }[]} libraries
@@ -344,7 +344,7 @@ export function renderDestinations(dto, libraries, links, S, ui) {
 
 
 /**
- * The manual card under Advanced (spec §6.5): "Add chat by ID" and the detected chats. Only when the gate is unlocked.
+ * The manual card under Advanced: "Add chat by ID" and the detected chats. Only when the gate is unlocked.
  * These are actions (Add, Set up, Dismiss), not settings: nothing here auto-saves.
  * @param {object | null} dto the DestinationsDto
  * @param {Record<string, string>} S

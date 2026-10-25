@@ -5,7 +5,7 @@ using Jellyfin.Plugin.TgJelly.Library;
 namespace Jellyfin.Plugin.TgJelly.Pipeline;
 
 /// <summary>
-/// Which group an item joins (spec §7.4 step 4): episodes by season, audiobook parts by folder, everything else alone.
+/// Which group an item joins: episodes by season, audiobook parts by folder, everything else alone.
 /// </summary>
 public static class GroupKeys
 {

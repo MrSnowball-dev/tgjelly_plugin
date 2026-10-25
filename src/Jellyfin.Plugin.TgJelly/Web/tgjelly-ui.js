@@ -1,4 +1,4 @@
-// TgJelly dashboard components (plan 8, design §5.3). Imported as './configurationpage?name=tgjelly-ui.js'.
+// TgJelly dashboard components. Imported as './configurationpage?name=tgjelly-ui.js'.
 //
 // It also holds the string and number helpers (t, text, plural, formatNumber, ...) that every page module shares; the
 // sibling modules import them from here, never from tgjelly.js, so no two modules import each other.
@@ -308,7 +308,7 @@ export function emptyState({ text, actionHtml = '', extraClass = '' }) {
 const LABEL_TONES = ['good', 'progress', 'neutral', 'attention', 'bad', 'accent'];
 
 /**
- * A label (design §3): a state word in an outlined pill, coloured by its tone, with no fill and no symbol. It is the
+ * A label: a state word in an outlined pill, coloured by its tone, with no fill and no symbol. It is the
  * one way the dashboard shows a state: "Saved", "Connected", "Edited", "Lost".
  * - good is success (Saved, Connected); progress is the accent (Saving…, Connecting); neutral is muted (Built-in,
  *   Off); attention is the warning colour (Photos blocked); bad is the error colour (Not saved, Lost); accent marks a

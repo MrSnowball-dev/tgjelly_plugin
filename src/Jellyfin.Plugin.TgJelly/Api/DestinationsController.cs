@@ -22,7 +22,7 @@ using Telegram.Bot.Types;
 namespace Jellyfin.Plugin.TgJelly.Api;
 
 /// <summary>
-/// Destination endpoints (spec §11.2): list, add by chat ID or topic link (checked first, with the automatic test
+/// Destination endpoints: list, add by chat ID or topic link (checked first, with the automatic test
 /// message), edit, remove, test, check, and the bot's links.
 /// </summary>
 [ApiController]

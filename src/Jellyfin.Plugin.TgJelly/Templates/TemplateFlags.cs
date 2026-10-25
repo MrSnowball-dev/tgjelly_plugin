@@ -8,7 +8,7 @@ using Jellyfin.Plugin.TgJelly.State.Documents;
 namespace Jellyfin.Plugin.TgJelly.Templates;
 
 /// <summary>
-/// Remembers which custom templates had a problem at send time (spec §8.5). A flag counts only while the override exists
+/// Remembers which custom templates had a problem at send time. A flag counts only while the override exists
 /// and its text is the one that was flagged.
 /// </summary>
 public sealed class TemplateFlags

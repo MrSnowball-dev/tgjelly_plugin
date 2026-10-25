@@ -11,7 +11,7 @@ using Microsoft.Extensions.Logging;
 namespace Jellyfin.Plugin.TgJelly.Pipeline;
 
 /// <summary>
-/// Runs the notification pipeline while this instance owns the state, and drains it on stop (spec §12): the intake
+/// Runs the notification pipeline while this instance owns the state, and drains it on stop: the intake
 /// queues go into readiness and the aggregator, and held lockouts go to the Outbox, within <see cref="DrainBudget"/>.
 /// </summary>
 public sealed class PipelineService : BackgroundService

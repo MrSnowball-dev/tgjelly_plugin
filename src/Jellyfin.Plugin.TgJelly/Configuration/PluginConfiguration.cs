@@ -5,13 +5,13 @@ using MediaBrowser.Model.Plugins;
 namespace Jellyfin.Plugin.TgJelly.Configuration;
 
 /// <summary>
-/// TgJelly settings, stored by Jellyfin as XML (spec §10.1).
+/// TgJelly settings, stored by Jellyfin as XML.
 /// Fields are only ever added, never renamed or retyped.
 /// </summary>
 public class PluginConfiguration : BasePluginConfiguration
 {
     /// <summary>
-    /// The highest revision an outside save can set (spec §10.4); far below <see cref="long.MaxValue"/>, so later
+    /// The highest revision an outside save can set; far below <see cref="long.MaxValue"/>, so later
     /// increments never wrap around.
     /// </summary>
     public const long MaxOutsideRevision = long.MaxValue / 2;

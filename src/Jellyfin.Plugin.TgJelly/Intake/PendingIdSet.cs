@@ -5,7 +5,7 @@ using System.Collections.Generic;
 namespace Jellyfin.Plugin.TgJelly.Intake;
 
 /// <summary>
-/// The IDs waiting for readiness (spec §7.4 step 2), shared between <c>MediaReadiness</c> (which owns and persists
+/// The IDs waiting for readiness, shared between <c>MediaReadiness</c> (which owns and persists
 /// them) and the ItemUpdated callback (which reads them in O(1)). Thread-safe.
 /// </summary>
 public sealed class PendingIdSet

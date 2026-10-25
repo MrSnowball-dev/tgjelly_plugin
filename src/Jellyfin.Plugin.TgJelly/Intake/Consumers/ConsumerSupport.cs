@@ -5,7 +5,7 @@ using Microsoft.Extensions.Logging;
 namespace Jellyfin.Plugin.TgJelly.Intake.Consumers;
 
 /// <summary>
-/// What every consumer does: build the payload and publish it, never throwing into Jellyfin's publisher (F6, §5.4 rule 3).
+/// What every consumer does: build the payload and publish it, never throwing into Jellyfin's publisher.
 /// </summary>
 internal static class ConsumerSupport
 {

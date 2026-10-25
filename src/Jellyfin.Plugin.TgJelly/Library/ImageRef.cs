@@ -3,7 +3,7 @@ using System;
 namespace Jellyfin.Plugin.TgJelly.Library;
 
 /// <summary>
-/// An item's image as Jellyfin records it (F20).
+/// An item's image as Jellyfin records it.
 /// </summary>
 /// <param name="Path">The file path, or a URL for remote images.</param>
 /// <param name="IsLocal">Whether the image is a local file.</param>

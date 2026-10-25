@@ -1,7 +1,7 @@
 namespace Jellyfin.Plugin.TgJelly.Bot;
 
 /// <summary>
-/// What a failed <c>getMe</c> or <c>getUpdates</c> means (spec §9.2 step 4).
+/// What a failed <c>getMe</c> or <c>getUpdates</c> means.
 /// </summary>
 public enum PollErrorKind
 {

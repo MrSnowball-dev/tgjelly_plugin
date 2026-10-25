@@ -1,15 +1,15 @@
 namespace Jellyfin.Plugin.TgJelly.Intake;
 
 /// <summary>
-/// The value names of <see cref="NotificationEvent.Values"/>: the payload snapshot that layouts and (in plan 5)
-/// templates read. Stable strings.
+/// The value names of <see cref="NotificationEvent.Values"/>: the payload snapshot that layouts and templates
+/// read. Stable strings.
 /// </summary>
 public static class EventFields
 {
     /// <summary>The user name as typed or stored.</summary>
     public const string User = "user";
 
-    /// <summary>The normalized user name (<c>ToUpperInvariant</c>, F15).</summary>
+    /// <summary>The normalized user name (<c>ToUpperInvariant</c>).</summary>
     public const string UserKey = "user_key";
 
     /// <summary>The user ID (Guid <c>N</c>).</summary>

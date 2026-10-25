@@ -3,7 +3,7 @@
 import { esc, label, t, text } from './configurationpage?name=tgjelly-ui.js';
 import { POLL_SECONDS, PROBLEM_STATES } from './configurationpage?name=tgjelly-api.js';
 
-// --- the shell (plan 8, design §5.1-5.2): header, sidebar, one section shown at a time ---
+// --- the shell: header, sidebar, one section shown at a time ---
 
 /** The dashboard's sections, in sidebar order; each label is web.nav.<name>. */
 export const SECTIONS = ['overview', 'destinations', 'messages', 'advanced', 'log'];
@@ -15,16 +15,16 @@ const NAV_LABELS = {
     log: 'web.nav.log',
 };
 
-/** Today's section containers, by the dashboard section that holds them (design §5.2). */
+/** Today's section containers, by the dashboard section that holds them. */
 const SECTION_HOSTS = {
-    // Connect precedes Status: with no bot it leads (design §5.2), and with a bot it is empty, so Status leads.
-    // Status always leads (owner, 2026-10-25); Connect follows it until a bot is connected.
+    // Connect precedes Status: with no bot it leads, and with a bot it is empty, so Status leads.
+    // Status always leads; Connect follows it until a bot is connected.
     overview: ['tgj-status', 'tgj-connect', 'tgj-bot'],
     destinations: ['tgj-destinations'],
-    // Messages holds the templates too (plan 9, design §6.1), and Batching sits in Advanced after Update checks (§7).
+    // Messages holds the templates too, and Batching sits in Advanced after Update checks.
     messages: ['tgj-messages'],
     advanced: ['tgj-token', 'tgj-proxy', 'tgj-updates', 'tgj-batching', 'tgj-manual', 'tgj-diagnostics'],
-    // The Log (plan 9, design §8.1) is last: after Advanced in the sidebar, the last tab on a phone.
+    // The Log is last: after Advanced in the sidebar, the last tab on a phone.
     log: ['tgj-log'],
 };
 
@@ -150,7 +150,7 @@ export function sectionFromHash(hash) {
         name = '';
     }
 
-    // Templates became part of Messages (plan 9): an old link to them opens Messages.
+    // Templates became part of Messages: an old link to them opens Messages.
     const current = name === 'templates' ? 'messages' : name;
     return SECTIONS.includes(current) ? current : 'overview';
 }
@@ -207,7 +207,7 @@ const isField = el => FIELD_TAGS.has(String(el.tagName).toUpperCase())
 const isTyped = el => el.tagName === 'TEXTAREA' || (el.tagName === 'INPUT' && TYPED_INPUTS.has(String(el.type || 'text').toLowerCase()));
 
 /**
- * Runs a write that may replace fields inside rootEl, so that typing is never interrupted (design §4, generalising
+ * Runs a write that may replace fields inside rootEl, so that typing is never interrupted (generalising
  * v0.3's template caret fix):
  * - a focused input, textarea, select or switch inside rootEl is focused again in its new copy, with the same selection and
  *   scroll; a typed field keeps what the admin typed since the last render (its value differs from its defaultValue);

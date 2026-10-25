@@ -7,7 +7,7 @@ using MediaBrowser.Controller.Configuration;
 namespace Jellyfin.Plugin.TgJelly.Library;
 
 /// <summary>
-/// <see cref="IServerInfo"/> over Jellyfin's host and network configuration (F23).
+/// <see cref="IServerInfo"/> over Jellyfin's host and network configuration.
 /// </summary>
 public sealed class JellyfinServerInfo : IServerInfo
 {

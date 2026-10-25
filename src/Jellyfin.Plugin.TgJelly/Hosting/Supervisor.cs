@@ -6,7 +6,7 @@ using Microsoft.Extensions.Logging;
 namespace Jellyfin.Plugin.TgJelly.Hosting;
 
 /// <summary>
-/// Runs a background loop so that an exception can never escape to the host (spec §5.4 rule 2, F3).
+/// Runs a background loop so that an exception can never escape to the host.
 /// A failed body is restarted with backoff 1 s → 60 s; the backoff resets after a run of at least 60 s.
 /// </summary>
 public static class Supervisor

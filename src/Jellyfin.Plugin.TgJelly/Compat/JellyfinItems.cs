@@ -9,7 +9,7 @@ namespace Jellyfin.Plugin.TgJelly.Compat;
 
 /// <summary>
 /// Reads Jellyfin items into <see cref="ItemFacts"/>. Touches stored properties only, so it is O(1) inside the item
-/// callbacks; the one place items differ between 10.11 and 12 (§5.4 rule 6).
+/// callbacks; the one place items differ between 10.11 and 12.
 /// </summary>
 public static class JellyfinItems
 {
@@ -24,7 +24,7 @@ public static class JellyfinItems
         ArgumentNullException.ThrowIfNull(item);
         ArgumentNullException.ThrowIfNull(albumOf);
 
-        // Exact type tests, most-derived first: AudioBook derives from Audio (F21).
+        // Exact type tests, most-derived first: AudioBook derives from Audio.
         var kind = item switch
         {
             AudioBook => MediaKind.AudioBook,

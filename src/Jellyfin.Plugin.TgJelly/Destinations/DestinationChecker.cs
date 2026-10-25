@@ -13,7 +13,7 @@ namespace Jellyfin.Plugin.TgJelly.Destinations;
 
 /// <summary>
 /// Checks whether the bot can post in a chat: <c>getChat</c>, <c>getChatMember(bot)</c>, and for a forum topic a
-/// typing action in that thread (spec §6.2 step 2, §9.4).
+/// typing action in that thread.
 /// </summary>
 public sealed class DestinationChecker
 {

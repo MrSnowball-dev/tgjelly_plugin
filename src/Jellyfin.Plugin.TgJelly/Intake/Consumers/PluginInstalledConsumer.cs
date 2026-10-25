@@ -6,7 +6,7 @@ using Microsoft.Extensions.Logging;
 namespace Jellyfin.Plugin.TgJelly.Intake.Consumers;
 
 /// <summary>
-/// Publishes <c>server.plugin_installed</c> (spec §7.1).
+/// Publishes <c>server.plugin_installed</c>.
 /// </summary>
 public sealed class PluginInstalledConsumer : IEventConsumer<PluginInstalledEventArgs>
 {
@@ -14,7 +14,7 @@ public sealed class PluginInstalledConsumer : IEventConsumer<PluginInstalledEven
     private readonly ILogger<PluginInstalledConsumer> _logger;
 
     /// <summary>
-    /// Initializes a new instance of the <see cref="PluginInstalledConsumer"/> class. Takes only the queue and a logger (F6).
+    /// Initializes a new instance of the <see cref="PluginInstalledConsumer"/> class. Takes only the queue and a logger.
     /// </summary>
     /// <param name="queues">The intake queues.</param>
     /// <param name="logger">The logger.</param>

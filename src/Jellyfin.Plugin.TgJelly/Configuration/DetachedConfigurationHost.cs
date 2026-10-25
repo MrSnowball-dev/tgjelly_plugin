@@ -6,7 +6,7 @@ namespace Jellyfin.Plugin.TgJelly.Configuration;
 /// <summary>
 /// Stands in for <see cref="Plugin"/> when Jellyfin could not create the plugin instance (its constructor threw and
 /// the plugin is marked Malfunctioned) while TgJelly's services are still registered. Resolving services must then
-/// not stop the whole server (F3), so reads return defaults and saves fail inside supervised code.
+/// not stop the whole server, so reads return defaults and saves fail inside supervised code.
 /// </summary>
 public sealed class DetachedConfigurationHost : IConfigurationHost
 {

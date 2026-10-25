@@ -7,7 +7,7 @@ using Jellyfin.Plugin.TgJelly.Library;
 namespace Jellyfin.Plugin.TgJelly.Rendering;
 
 /// <summary>
-/// Picks a poster that can be uploaded as-is (spec §8.2, D8, D13): local, existing, at most 10 MB, and a JPEG, PNG or
+/// Picks a poster that can be uploaded as-is: local, existing, at most 10 MB, and a JPEG, PNG or
 /// WebP file.
 /// </summary>
 public static class PosterPicker

@@ -9,7 +9,7 @@ using Microsoft.Extensions.Logging;
 namespace Jellyfin.Plugin.TgJelly.Destinations;
 
 /// <summary>
-/// Adds a checked chat as a destination (spec §6.2), shared by the API and the bot: the duplicate rule, the save, the
+/// Adds a checked chat as a destination, shared by the API and the bot: the duplicate rule, the save, the
 /// health record and the automatic test message.
 /// </summary>
 public sealed class DestinationCreator
@@ -65,7 +65,7 @@ public sealed class DestinationCreator
         ArgumentNullException.ThrowIfNull(check);
         ArgumentNullException.ThrowIfNull(events);
 
-        // The duplicate rule (spec §6.2): an existing destination for this chat and topic is re-checked, not added.
+        // The duplicate rule: an existing destination for this chat and topic is re-checked, not added.
         if (Find(_settings.Current, check.ChatId, threadId) is { } existing)
         {
             try

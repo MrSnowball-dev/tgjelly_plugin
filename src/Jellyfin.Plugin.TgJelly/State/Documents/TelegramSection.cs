@@ -1,7 +1,7 @@
 namespace Jellyfin.Plugin.TgJelly.State.Documents;
 
 /// <summary>
-/// <c>state.telegram</c> (spec §10.3). The update offset is in memory only (§9.2).
+/// <c>state.telegram</c>. The update offset is in memory only.
 /// </summary>
 public sealed class TelegramSection
 {

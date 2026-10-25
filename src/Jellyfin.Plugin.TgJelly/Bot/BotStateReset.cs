@@ -5,7 +5,7 @@ using Jellyfin.Plugin.TgJelly.State.Documents;
 namespace Jellyfin.Plugin.TgJelly.Bot;
 
 /// <summary>
-/// What a bot switch or a disconnect clears and keeps (spec §10.4). Plan 4 adds its bot-scoped sections here.
+/// What a bot switch or a disconnect clears and keeps.
 /// </summary>
 public static class BotStateReset
 {

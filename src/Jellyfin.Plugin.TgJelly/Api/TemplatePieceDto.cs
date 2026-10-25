@@ -1,7 +1,7 @@
 namespace Jellyfin.Plugin.TgJelly.Api;
 
 /// <summary>
-/// One top-level piece of a template, for the hover link between the template and its preview (design §6.5).
+/// One top-level piece of a template, for the hover link between the template and its preview.
 /// </summary>
 public sealed class TemplatePieceDto
 {

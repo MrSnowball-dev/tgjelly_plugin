@@ -14,7 +14,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace Jellyfin.Plugin.TgJelly.Api;
 
 /// <summary>
-/// Bot token and webhook endpoints (spec §6.1, §11.2).
+/// Bot token and webhook endpoints.
 /// </summary>
 [ApiController]
 [Route("TgJelly")]
@@ -84,7 +84,7 @@ public class BotController : ControllerBase
     }
 
     /// <summary>
-    /// Disconnects the bot (spec §10.4).
+    /// Disconnects the bot.
     /// </summary>
     /// <param name="removeDestinations">Also removes every destination, in the same settings change.</param>
     /// <param name="cancellationToken">Cancels the request.</param>

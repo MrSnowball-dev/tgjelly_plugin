@@ -9,7 +9,7 @@ using Jellyfin.Plugin.TgJelly.Configuration;
 namespace Jellyfin.Plugin.TgJelly.Api;
 
 /// <summary>
-/// The <c>Message</c> part of <see cref="SettingsUpdateRequest"/>. Saves are partial (plan 8): entries merge by event
+/// The <c>Message</c> part of <see cref="SettingsUpdateRequest"/>. Saves are partial: entries merge by event
 /// key, and anything not sent keeps its value.
 /// </summary>
 public sealed class MessageSettingsUpdate

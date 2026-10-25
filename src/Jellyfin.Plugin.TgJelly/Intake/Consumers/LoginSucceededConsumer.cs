@@ -6,7 +6,7 @@ using Microsoft.Extensions.Logging;
 namespace Jellyfin.Plugin.TgJelly.Intake.Consumers;
 
 /// <summary>
-/// Publishes <c>security.login_succeeded</c> (spec §7.1).
+/// Publishes <c>security.login_succeeded</c>.
 /// </summary>
 public sealed class LoginSucceededConsumer : IEventConsumer<AuthenticationResultEventArgs>
 {
@@ -14,7 +14,7 @@ public sealed class LoginSucceededConsumer : IEventConsumer<AuthenticationResult
     private readonly ILogger<LoginSucceededConsumer> _logger;
 
     /// <summary>
-    /// Initializes a new instance of the <see cref="LoginSucceededConsumer"/> class. Takes only the queue and a logger (F6).
+    /// Initializes a new instance of the <see cref="LoginSucceededConsumer"/> class. Takes only the queue and a logger.
     /// </summary>
     /// <param name="queues">The intake queues.</param>
     /// <param name="logger">The logger.</param>

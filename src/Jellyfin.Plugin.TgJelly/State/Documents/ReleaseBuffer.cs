@@ -4,7 +4,7 @@ using System.Collections.Generic;
 namespace Jellyfin.Plugin.TgJelly.State.Documents;
 
 /// <summary>
-/// The closed groups of one destination, released together (spec §7.4 steps 5–6).
+/// The closed groups of one destination, released together.
 /// </summary>
 public sealed class ReleaseBuffer
 {

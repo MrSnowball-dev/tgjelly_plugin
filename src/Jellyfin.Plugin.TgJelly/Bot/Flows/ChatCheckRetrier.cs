@@ -8,7 +8,7 @@ namespace Jellyfin.Plugin.TgJelly.Bot.Flows;
 
 /// <summary>
 /// Checks a chat that was just picked, trying again a few times: the bot's membership or rights may settle after the
-/// update that reported them, so the first <c>getChatMember</c> can still say the bot isn't there (spec §6.2 step 2).
+/// update that reported them, so the first <c>getChatMember</c> can still say the bot isn't there.
 /// </summary>
 public sealed class ChatCheckRetrier
 {

@@ -19,7 +19,7 @@ namespace Jellyfin.Plugin.TgJelly.Bot;
 
 /// <summary>
 /// Tells the recent managers, in private, when a destination turns Lost, NeedsPermissions or TopicMissing, once per
-/// new problem (spec §9.4). Runs on the bot worker only, so calls never overlap.
+/// new problem. Runs on the bot worker only, so calls never overlap.
 /// </summary>
 public sealed class ManagerNotifier
 {

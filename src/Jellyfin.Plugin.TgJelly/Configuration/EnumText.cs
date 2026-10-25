@@ -4,7 +4,7 @@ namespace Jellyfin.Plugin.TgJelly.Configuration;
 
 /// <summary>
 /// Lenient enum parsing for persisted settings and state. After a downgrade, files may contain enum names this
-/// version does not know; they read as a safe fallback instead of failing the whole load (spec F9: a failed XML
+/// version does not know; they read as a safe fallback instead of failing the whole load (a failed XML
 /// load makes Jellyfin replace the config with defaults).
 /// </summary>
 public static class EnumText

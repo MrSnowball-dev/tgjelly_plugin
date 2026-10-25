@@ -1,7 +1,7 @@
 namespace Jellyfin.Plugin.TgJelly.Configuration;
 
 /// <summary>
-/// Update-check settings (spec §7.6; plan 9 design §7): which kinds of newer Jellyfin release are announced.
+/// Update-check settings: which kinds of newer Jellyfin release are announced.
 /// </summary>
 public class UpdateCheckOptions
 {

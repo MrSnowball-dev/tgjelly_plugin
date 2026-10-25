@@ -3,7 +3,7 @@ using System;
 namespace Jellyfin.Plugin.TgJelly.State.Documents;
 
 /// <summary>
-/// What the update checker remembers (spec §7.6).
+/// What the update checker remembers.
 /// </summary>
 public sealed class UpdateCheckState
 {

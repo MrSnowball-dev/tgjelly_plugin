@@ -3,7 +3,7 @@ using System.Collections.Generic;
 namespace Jellyfin.Plugin.TgJelly.Api;
 
 /// <summary>
-/// <c>GET TgJelly/Templates</c> (spec §11.2): every event's custom template with its fields.
+/// <c>GET TgJelly/Templates</c>: every event's custom template with its fields.
 /// </summary>
 public sealed class TemplatesDto
 {

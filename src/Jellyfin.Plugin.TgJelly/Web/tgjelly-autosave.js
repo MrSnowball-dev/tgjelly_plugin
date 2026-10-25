@@ -1,4 +1,4 @@
-// The page-wide auto-save queue and its per-field cues (plan 8, design §6). Pure: no DOM, no string lookups. The controller
+// The page-wide auto-save queue and its per-field cues. Pure: no DOM, no string lookups. The controller
 // owns the clock choice, the text of the cues and the state updates; this module owns ordering, timing and conflict retry.
 //
 // createAutosave({ clock, onCue, onSettled }) -> { change(job), flush(key?), cancel(key) }

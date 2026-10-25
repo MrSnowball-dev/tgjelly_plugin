@@ -11,6 +11,6 @@ public enum MediaOutputKind
     /// <summary>One digest for several groups.</summary>
     Digest,
 
-    /// <summary>An edit of a group already sent or queued (a late arrival, spec §7.4 step 7).</summary>
+    /// <summary>An edit of a group already sent or queued (a late arrival).</summary>
     LateEdit,
 }

@@ -6,7 +6,7 @@ using Microsoft.Extensions.Logging;
 namespace Jellyfin.Plugin.TgJelly.Intake.Consumers;
 
 /// <summary>
-/// Publishes <c>security.user_created</c> (spec §7.1).
+/// Publishes <c>security.user_created</c>.
 /// </summary>
 public sealed class UserCreatedConsumer : IEventConsumer<UserCreatedEventArgs>
 {
@@ -14,7 +14,7 @@ public sealed class UserCreatedConsumer : IEventConsumer<UserCreatedEventArgs>
     private readonly ILogger<UserCreatedConsumer> _logger;
 
     /// <summary>
-    /// Initializes a new instance of the <see cref="UserCreatedConsumer"/> class. Takes only the queue and a logger (F6).
+    /// Initializes a new instance of the <see cref="UserCreatedConsumer"/> class. Takes only the queue and a logger.
     /// </summary>
     /// <param name="queues">The intake queues.</param>
     /// <param name="logger">The logger.</param>

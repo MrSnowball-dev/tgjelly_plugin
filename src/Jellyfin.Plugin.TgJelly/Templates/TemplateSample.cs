@@ -65,7 +65,7 @@ public sealed class TemplateSample
         return new SampleMessage(shown.Html, poster, poster, buttons, length, limit, null, full!.Html, eventKey, Marked(text, shown, config.Language));
     }
 
-    // The shown HTML with each template piece's output marked, for the dashboard's hover link (design §6.5): the fitted
+    // The shown HTML with each template piece's output marked, for the dashboard's hover link: the fitted
     // model variant rendered again with markers, then cut where the fitter cut. Marking never changes what is sent; when
     // the marked render can't give exactly the shown HTML once stripped, the preview gets that HTML without markers.
     private string Marked(string text, FitResult shown, string language)

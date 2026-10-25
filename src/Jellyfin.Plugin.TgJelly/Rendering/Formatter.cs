@@ -6,7 +6,7 @@ using Telegram.Bot.Extensions;
 namespace Jellyfin.Plugin.TgJelly.Rendering;
 
 /// <summary>
-/// Formats values for messages (spec §8.6): escaping, <c>&lt;tg-time&gt;</c>, numbers, ratings, runtimes and versions,
+/// Formats values for messages: escaping, <c>&lt;tg-time&gt;</c>, numbers, ratings, runtimes and versions,
 /// with the text from the string table.
 /// </summary>
 public sealed class Formatter
@@ -86,7 +86,7 @@ public sealed class Formatter
     }
 
     /// <summary>
-    /// The line added to a message that leaves the Outbox late (spec §8.1).
+    /// The line added to a message that leaves the Outbox late.
     /// </summary>
     /// <param name="queuedAt">When the message was queued.</param>
     /// <param name="now">The current time.</param>

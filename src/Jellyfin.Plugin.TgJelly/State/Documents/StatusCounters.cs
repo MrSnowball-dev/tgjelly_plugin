@@ -1,7 +1,7 @@
 namespace Jellyfin.Plugin.TgJelly.State.Documents;
 
 /// <summary>
-/// The counters of <c>status.counters</c> (spec §10.3).
+/// The counters of <c>status.counters</c>.
 /// </summary>
 public sealed class StatusCounters
 {

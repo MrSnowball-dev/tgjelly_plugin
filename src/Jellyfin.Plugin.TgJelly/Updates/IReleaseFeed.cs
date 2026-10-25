@@ -5,7 +5,7 @@ using System.Threading.Tasks;
 namespace Jellyfin.Plugin.TgJelly.Updates;
 
 /// <summary>
-/// Lists Jellyfin's releases (spec §7.6).
+/// Lists Jellyfin's releases.
 /// </summary>
 public interface IReleaseFeed
 {

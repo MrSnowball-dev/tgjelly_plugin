@@ -8,7 +8,7 @@ import { PROBLEM_STATES } from './configurationpage?name=tgjelly-api.js';
 import { connectionLabel } from './configurationpage?name=tgjelly-shell.js';
 
 /**
- * Renders the Status section (spec §6.6 item 1) from GET Status.
+ * Renders the Status section from GET Status.
  * @param {object} status the StatusDto
  * @param {Record<string, string>} S
  * @param {string} [lang]
@@ -91,7 +91,7 @@ export function telegramLink(url, label, { primary = false } = {}) {
 }
 
 /**
- * The proxy card (spec §6.6 item 5, §9.1; design §6.1): under Advanced, and inside the "Can't reach Telegram?" panel.
+ * The proxy card: under Advanced, and inside the "Can't reach Telegram?" panel.
  * Its fields auto-save together, as one save keyed 'proxy', when the focus leaves the card (every proxy save restarts
  * the bot session); so they all carry data-tgj-save="proxy", and the card has one cue, beside the mode.
  * @param {object | null} settings the SettingsDto (null until it loads)
@@ -109,7 +109,7 @@ export function renderProxyForm(settings, S, ui, { nested = false } = {}) {
     const local = ui.form.local;
     const modes = ['System', 'None', 'Http', 'Socks5'].map(value => ({ value, label: text(S, PROXY_MODE_LABELS[value]) }));
     const save = { 'data-tgj-save': 'proxy', autocomplete: 'off' };
-    // Username and password are never written into the HTML (spec §10.2): the controller puts typed text back into the
+    // Username and password are never written into the HTML: the controller puts typed text back into the
     // inputs after a render.
     const field = (input, labelKey, type, value, placeholder = '') => row({
         label: text(S, labelKey),
@@ -124,7 +124,7 @@ export function renderProxyForm(settings, S, ui, { nested = false } = {}) {
         rows.push(field('proxyUrl', 'web.proxy.url', 'text', local.Url ?? ''));
     }
 
-    // Hiding the credentials changes nothing: what was typed or saved stays (design §7).
+    // Hiding the credentials changes nothing: what was typed or saved stays.
     if (local.Mode === 'Http' || local.Mode === 'Socks5') {
         rows.push(field('proxyUsername', 'web.proxy.username', 'text', '', settings.HasProxyUsername ? text(S, 'web.proxy.saved') : ''));
         rows.push(field('proxyPassword', 'web.proxy.password', 'password', '', settings.HasProxyPassword ? text(S, 'web.proxy.saved') : ''));
@@ -139,7 +139,7 @@ export function renderProxyForm(settings, S, ui, { nested = false } = {}) {
 const PROXY_MODE_LABELS = { System: 'web.proxy.modeSystem', None: 'web.proxy.modeNone', Http: 'web.proxy.modeHttp', Socks5: 'web.proxy.modeSocks5' };
 
 /**
- * The token form (spec §6.1): a password input that is never pre-filled, the two notes for an existing bot, and
+ * The token form: a password input that is never pre-filled, the two notes for an existing bot, and
  * Connect. Connecting is an explicit action: nothing here auto-saves.
  */
 function renderTokenForm(ui, S) {
@@ -159,7 +159,7 @@ function renderTokenForm(ui, S) {
 }
 
 /**
- * The connect card (spec §6.1): shown without a token, or while changing it, and the outcome of the last save.
+ * The connect card: shown without a token, or while changing it, and the outcome of the last save.
  * @param {{ hasToken: boolean, changingToken?: boolean, mode?: string | null, saving?: boolean,
  *   result?: object | null, unreachable?: boolean, proxy?: object }} ui hasToken comes from GET Status; result is
  *   { kind: 'Connected' | 'NeedsConfirm' | 'Error', message, username, webhookDeleted }; proxy is the proxy form's ui
@@ -218,7 +218,7 @@ export function renderConnect(ui, S, links, settings = null, { bare = false } = 
 }
 
 /**
- * The Bot card (spec §6.6 item 2, §6.4): the username, the access reminder, Open in Telegram, Change token and
+ * The Bot card: the username, the access reminder, Open in Telegram, Change token and
  * Disconnect bot with its inline confirmation.
  * @param {object} status the StatusDto
  * @param {{ OpenBot?: string } | null} links

@@ -13,7 +13,7 @@ using Telegram.Bot.Types.ReplyMarkups;
 namespace Jellyfin.Plugin.TgJelly.Bot.Screens;
 
 /// <summary>
-/// The settings screens (spec §8.3, §8.4): message style switches, update checks and the public URL. Every change is
+/// The settings screens: message style switches, update checks and the public URL. Every change is
 /// applied to the settings as they are at save time, so a change made in the dashboard meanwhile is not lost.
 /// </summary>
 public sealed class SettingsScreens
@@ -144,7 +144,7 @@ public sealed class SettingsScreens
         return (true, PublicUrl());
     }
 
-    /// <summary>Saves the public URL; a changed one clears the "public URL flagged" notice (spec §9.4 row 7).</summary>
+    /// <summary>Saves the public URL; a changed one clears the "public URL flagged" notice.</summary>
     private void SetPublicUrl(string url)
     {
         var before = _settings.Current.PublicUrl;

@@ -4,7 +4,7 @@ using System.Collections.Generic;
 namespace Jellyfin.Plugin.TgJelly.State.Documents;
 
 /// <summary>
-/// Markers that keep repeated security events quiet (spec §7.5).
+/// Markers that keep repeated security events quiet.
 /// </summary>
 public sealed class DedupeSection
 {

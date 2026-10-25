@@ -3,7 +3,7 @@ using System;
 namespace Jellyfin.Plugin.TgJelly.State.Documents;
 
 /// <summary>
-/// A plugin event kept for 10 minutes as a possible reason for a pending restart (spec §7.5).
+/// A plugin event kept for 10 minutes as a possible reason for a pending restart.
 /// </summary>
 public sealed class RecentPluginEvent
 {

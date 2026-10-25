@@ -4,7 +4,7 @@ using System.IO;
 namespace Jellyfin.Plugin.TgJelly.State;
 
 /// <summary>
-/// Locations of TgJelly's own files: <c>plugins/configurations/TgJelly/</c> (spec §5.1).
+/// Locations of TgJelly's own files: <c>plugins/configurations/TgJelly/</c>.
 /// </summary>
 public sealed class DataPaths
 {

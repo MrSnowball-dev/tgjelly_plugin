@@ -1,7 +1,7 @@
 namespace Jellyfin.Plugin.TgJelly.Compat;
 
 /// <summary>
-/// Compile-time facts about which Jellyfin line this build targets (spec §5.4 rule 6, §13.3).
+/// Compile-time facts about which Jellyfin line this build targets.
 /// </summary>
 public static class BuildInfo
 {

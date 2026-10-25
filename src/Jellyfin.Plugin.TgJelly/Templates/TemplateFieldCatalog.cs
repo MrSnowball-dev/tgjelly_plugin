@@ -5,7 +5,7 @@ using System.Linq;
 namespace Jellyfin.Plugin.TgJelly.Templates;
 
 /// <summary>
-/// The fields a template can use for each event key, with sample values (spec §8.5). The model builder produces
+/// The fields a template can use for each event key, with sample values. The model builder produces
 /// exactly these names; the docs and the dashboard's field list come from here.
 /// </summary>
 public static class TemplateFieldCatalog

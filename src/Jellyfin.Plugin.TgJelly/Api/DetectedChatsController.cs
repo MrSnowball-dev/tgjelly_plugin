@@ -16,7 +16,7 @@ using Microsoft.Extensions.Logging;
 namespace Jellyfin.Plugin.TgJelly.Api;
 
 /// <summary>
-/// Detected-chat endpoints (spec §6.5, §11.2): set up a chat the bot was added to outside setup, or dismiss it. The
+/// Detected-chat endpoints: set up a chat the bot was added to outside setup, or dismiss it. The
 /// list comes with <c>GET Destinations</c>.
 /// </summary>
 [ApiController]
@@ -61,7 +61,7 @@ public class DetectedChatsController : ControllerBase
     }
 
     /// <summary>
-    /// Sets up a detected chat: checks it once, as in the bot (spec §6.2 step 2), then adds it as a destination. It
+    /// Sets up a detected chat: checks it once, as in the bot, then adds it as a destination. It
     /// stops being a detected chat when it is added.
     /// </summary>
     /// <param name="chatId">The detected chat.</param>

@@ -10,8 +10,8 @@ using Telegram.Bot;
 namespace Jellyfin.Plugin.TgJelly.Bot;
 
 /// <summary>
-/// Builds clients over one <see cref="SocketsHttpHandler"/> per proxy configuration (spec §9.1). Not created through
-/// <c>IHttpClientFactory</c>, whose logging handlers would log request URLs, which carry the token (F39).
+/// Builds clients over one <see cref="SocketsHttpHandler"/> per proxy configuration. Not created through
+/// <c>IHttpClientFactory</c>, whose logging handlers would log request URLs, which carry the token.
 /// </summary>
 public sealed class TelegramClientFactory : ITelegramClientFactory, IDisposable
 {
@@ -64,7 +64,7 @@ public sealed class TelegramClientFactory : ITelegramClientFactory, IDisposable
 
     /// <summary>
     /// Builds the client options: the base-URL override only when set, and Telegram.Bot's own 429 retries off,
-    /// because the Outbox and the supervisor handle <c>retry_after</c> themselves (F39).
+    /// because the Outbox and the supervisor handle <c>retry_after</c> themselves.
     /// </summary>
     /// <param name="token">The bot token.</param>
     /// <param name="environment">The base-URL override.</param>

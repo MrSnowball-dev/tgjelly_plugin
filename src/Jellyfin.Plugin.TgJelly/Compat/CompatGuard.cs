@@ -4,7 +4,7 @@ using System.Globalization;
 namespace Jellyfin.Plugin.TgJelly.Compat;
 
 /// <summary>
-/// Decides whether this build may run on the server it was loaded into (spec §5.3, F8).
+/// Decides whether this build may run on the server it was loaded into.
 /// </summary>
 public static class CompatGuard
 {

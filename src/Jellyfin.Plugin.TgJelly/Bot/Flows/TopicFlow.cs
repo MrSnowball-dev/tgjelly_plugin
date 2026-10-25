@@ -16,7 +16,7 @@ using Telegram.Bot.Types.ReplyMarkups;
 namespace Jellyfin.Plugin.TgJelly.Bot.Flows;
 
 /// <summary>
-/// The forum step of onboarding (spec §6.2 step 3, §6.5 "Use an existing topic"): where in the forum to post, all in
+/// The forum step of onboarding: where in the forum to post, all in
 /// the wizard message. Each handler returns the <see cref="TopicChoice"/> once a topic is chosen, and <c>null</c> while
 /// it still waits (for the promotion or for the link) or after it ended with its own message. Steps key off their own
 /// markers in the chat's flow, never off <see cref="FlowState.Screen"/> alone.
@@ -79,7 +79,7 @@ public sealed class TopicFlow
 
     /// <summary>
     /// Whether a flow is on the topic-promotion screen, waiting for the bot to be allowed to manage topics. The screen
-    /// has no expiry (spec §6.2 step 3).
+    /// has no expiry.
     /// </summary>
     /// <param name="flow">The chat's flow.</param>
     /// <returns><c>true</c> when it is on the topic step and waits for the promotion.</returns>
@@ -143,7 +143,7 @@ public sealed class TopicFlow
     }
 
     /// <summary>
-    /// General topic (<c>tg</c>): stored as thread 0 (spec §6.2 step 3).
+    /// General topic (<c>tg</c>): stored as thread 0.
     /// </summary>
     /// <param name="chatId">The private chat.</param>
     /// <param name="flow">The wizard's flow.</param>
@@ -157,7 +157,7 @@ public sealed class TopicFlow
 
     /// <summary>
     /// Create a "Jellyfin" topic (<c>tc</c>): creates it when the bot can manage topics, otherwise edits the wizard to
-    /// the promotion screen and waits (spec §6.2 step 3). A second press while a creation runs does nothing; the
+    /// the promotion screen and waits. A second press while a creation runs does nothing; the
     /// promotion screen has no Create button.
     /// </summary>
     /// <param name="chatId">The private chat.</param>
@@ -277,7 +277,7 @@ public sealed class TopicFlow
 
     /// <summary>
     /// Use an existing topic (<c>te</c>): records <see cref="SetupFailureKind.TopicNotPickable"/> (Telegram has no topic
-    /// picker, F35) and asks for the topic's link.
+    /// picker) and asks for the topic's link.
     /// </summary>
     /// <param name="chatId">The private chat.</param>
     /// <param name="flow">The wizard's flow.</param>
@@ -308,7 +308,7 @@ public sealed class TopicFlow
     }
 
     /// <summary>
-    /// Use an existing topic from the Advanced options screen with no chat picked (spec §6.5): records
+    /// Use an existing topic from the Advanced options screen with no chat picked: records
     /// <see cref="SetupFailureKind.TopicNotPickable"/> and asks for the topic's link, whose chat is then checked
     /// directly.
     /// </summary>
@@ -449,7 +449,7 @@ public sealed class TopicFlow
     }
 
     /// <summary>
-    /// The promotion screen (spec §6.2 step 3), in the wizard message: Allow topic creation opens Telegram's group
+    /// The promotion screen, in the wizard message: Allow topic creation opens Telegram's group
     /// chooser asking for the right to manage topics, then Check again, General topic and Advanced options. A note
     /// (rights still missing, or changed in another chat) goes above the explanation of the buttons.
     /// </summary>
@@ -497,7 +497,7 @@ public sealed class TopicFlow
     }
 
     /// <summary>
-    /// A failed promotion, check or creation (spec §6.2 step 3): records <see cref="SetupFailureKind.TopicFailed"/> and
+    /// A failed promotion, check or creation: records <see cref="SetupFailureKind.TopicFailed"/> and
     /// edits the wizard to <c>[General topic] [Advanced options]</c>, each explained. General still works on the same
     /// wizard.
     /// </summary>

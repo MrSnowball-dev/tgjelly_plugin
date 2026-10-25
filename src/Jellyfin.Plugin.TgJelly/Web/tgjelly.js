@@ -1,4 +1,4 @@
-// TgJelly dashboard page (spec §11.1). Loaded through data-controller="__plugin/tgjelly.js".
+// TgJelly dashboard page. Loaded through data-controller="__plugin/tgjelly.js".
 //
 // Layout of this module:
 // - pure helpers and render functions are named exports, so tests/web can call them without a DOM;
@@ -6,7 +6,7 @@
 // - the default export is the page controller: it owns the state, the loaders, the click actions and the Status poller.
 // The strings table is always called S, so the key check in tests/web can find the key at every t() and plural() call.
 //
-// Sibling modules are imported by the URL Jellyfin serves them under (plan 8); tests/web/jellyfin-resolve.mjs maps it
+// Sibling modules are imported by the URL Jellyfin serves them under; tests/web/jellyfin-resolve.mjs maps it
 // to the file for Node.
 
 import {
@@ -45,7 +45,7 @@ export * from './configurationpage?name=tgjelly-advanced.js';
 export * from './configurationpage?name=tgjelly-shell.js';
 
 /**
- * The page controller (spec §11.1). Listeners are bound once, here; viewshow is idempotent.
+ * The page controller. Listeners are bound once, here; viewshow is idempotent.
  *
  * Extension points for the page sections (Tasks 10-12 add their entries in the marked places below):
  * - sections: name → { id, load, render }. load() fetches into state (forms through syncForm); render() returns the
@@ -73,7 +73,7 @@ export default function TgJellyPage(view, params) {
         ui: {
             errors: {},
             statusFailed: false,
-            // The connect card (§6.1): mode is null | 'new' | 'existing'; result is the last save's outcome.
+            // The connect card: mode is null | 'new' | 'existing'; result is the last save's outcome.
             mode: null,
             changingToken: false,
             saving: false,
@@ -81,7 +81,7 @@ export default function TgJellyPage(view, params) {
             unreachable: false,
             confirmDisconnect: false,
             removeDestinations: false,
-            // The destinations section (§6.6.3): the open editor, the remove confirm, and the last test/check outcome per id.
+            // The destinations section: the open editor, the remove confirm, and the last test/check outcome per id.
             destEditing: null,
             destConfirm: null,
             destLeave: false,
@@ -89,7 +89,7 @@ export default function TgJellyPage(view, params) {
             // A forum topic chosen by link, while its field is open: { id, slot, text }; and which IDs blocks are open.
             topicLink: null,
             destIdsOpen: {},
-            // The manual block (§6.5): the typed chat ID or link, and the last add's outcome (HTML).
+            // The manual block: the typed chat ID or link, and the last add's outcome (HTML).
             manualInput: '',
             manualResult: '',
             // Diagnostics: the text when the clipboard refused it, and whether the last copy worked.
@@ -142,7 +142,7 @@ export default function TgJellyPage(view, params) {
     const connectUi = () => ({ ...state.ui, hasToken: Boolean(state.status && state.status.HasToken), proxy: proxyUi() });
     const proxyUi = () => ({ form: state.forms.proxy });
 
-    // The one Revision every save sends (design §6.4: settings, destinations and templates share it). It is the newest
+    // The one Revision every save sends (settings, destinations and templates share it). It is the newest
     // Revision of any data the page took in: a section load, a save's reply or a 409's Current. So a save queued behind
     // another one sends the Revision that save moved to, not its own section's older copy, which would 409 on the page's
     // own change. The Status poll doesn't move it: a Revision the page holds no data for must still conflict.
@@ -265,7 +265,7 @@ export default function TgJellyPage(view, params) {
         takeDestinations(list.body);
     }
 
-    // The Messages section (design §6.1-6.2) lives in tgjelly-messages.js. It gets the page's state and save machinery;
+    // The Messages section lives in tgjelly-messages.js. It gets the page's state and save machinery;
     // the functions are looked up when called, so ones defined further down are fine.
     const messages = createMessages({
         view,
@@ -297,7 +297,7 @@ export default function TgJellyPage(view, params) {
         fieldSelector,
     });
 
-    // The Log section (design §8.1) lives in tgjelly-log.js. It loads only while it is shown (selectSection, the poll).
+    // The Log section lives in tgjelly-log.js. It loads only while it is shown (selectSection, the poll).
     const logSection = createLog({
         state,
         api,
@@ -470,7 +470,7 @@ export default function TgJellyPage(view, params) {
 
     /**
      * Writes the shell into #tgjelly-root, once. The first section shown is the one in the URL hash, except that
-     * Overview leads until a bot is connected (design §5.2).
+     * Overview leads until a bot is connected.
      */
     const drawShell = () => {
         const root = byId('tgjelly-root');
@@ -635,7 +635,7 @@ export default function TgJellyPage(view, params) {
         return pending;
     };
 
-    // The sections that hold a copy of the one settings Revision (spec §10.4), by the state their load fills. Messages
+    // The sections that hold a copy of the one settings Revision, by the state their load fills. Messages
     // loads both the settings and the templates.
     const REVISION_SECTIONS = { settings: ['proxy', 'messages', 'batching', 'updates'], destinations: ['destinations'], templates: ['messages'] };
     // The newest Revision the page has caught up with: the sections were loaded at it, or reloaded after it.
@@ -685,7 +685,7 @@ export default function TgJellyPage(view, params) {
         renderSection(name);
     };
 
-    /** Takes fresh server data into a form, keeping unsaved edits (spec §10.4). Call it from a section's load. */
+    /** Takes fresh server data into a form, keeping unsaved edits. Call it from a section's load. */
     const syncForm = (name, data) => {
         state.forms[name] = syncFormData(state.forms[name], data);
         return state.forms[name];
@@ -726,7 +726,7 @@ export default function TgJellyPage(view, params) {
         renderSection('bot');
     };
 
-    /** Sends the token (spec §6.1) and acts on the outcome. Returns the API result only when it failed. */
+    /** Sends the token and acts on the outcome. Returns the API result only when it failed. */
     const postToken = async confirmSwitch => {
         const ui = state.ui;
         ui.saving = true;
@@ -776,7 +776,7 @@ export default function TgJellyPage(view, params) {
         }
     };
 
-    // --- auto-save (plan 8, design §6): the one page-wide queue, the cues, and the saves of Messages and Advanced ---
+    // --- auto-save: the one page-wide queue, the cues, and the saves of Messages and Advanced ---
     //
     // The pattern every auto-saved field follows (Tasks 7 and 8 reuse it):
     // - the control carries data-tgj-input (its handler, and how keepFocus finds it again) and data-tgj-save="<key>",
@@ -797,7 +797,7 @@ export default function TgJellyPage(view, params) {
     const heldFields = new Map();
 
     /**
-     * The markup a cue shows (design §3): the state word as a label, Saved good, Saving… progress and Not saved bad, and
+     * The markup a cue shows: the state word as a label, Saved good, Saving… progress and Not saved bad, and
      * after Not saved the reason as plain text, so it can be long. The states come from tgjelly-autosave.js, the words
      * from the strings.
      */
@@ -887,7 +887,7 @@ export default function TgJellyPage(view, params) {
     });
 
     /**
-     * Queues the save of one change (design §6.1): mode 'now' (switches, selects), 'debounce' with delay (typed text and
+     * Queues the save of one change: mode 'now' (switches, selects), 'debounce' with delay (typed text and
      * numbers; flushed on blur too), or 'blur' (fields whose save has side effects: sent only on blur or Enter).
      * validate returns the reason (plain text) the value can't be saved, or null; a debounced value is checked when it is
      * due, so a half-typed number doesn't flash an error. fields are fieldSelector keys: kept as typed across section
@@ -969,7 +969,7 @@ export default function TgJellyPage(view, params) {
 
     /**
      * Sends one auto-save of the settings model: the fields at paths, laid over the saved settings, with the current
-     * Revision (spec §10.4). Edits waiting in other fields stay edits, and so does a value typed while the request ran.
+     * Revision. Edits waiting in other fields stay edits, and so does a value typed while the request ran.
      * @param {string[]} paths
      */
     const sendSettings = async paths => {
@@ -1013,7 +1013,7 @@ export default function TgJellyPage(view, params) {
         send: () => sendSettings([path]),
     });
 
-    /** Typed text and numbers save this long after the last keystroke (design §6.1). */
+    /** Typed text and numbers save this long after the last keystroke. */
     const TYPING_SAVE_MS = 800;
 
     /** A switch's new state on click: the opposite of the form's value at path. */
@@ -1026,7 +1026,7 @@ export default function TgJellyPage(view, params) {
     };
 
     /**
-     * Sends the proxy card as one save (spec §9.1, §10.4): an untouched username/password is omitted, a cleared one is "".
+     * Sends the proxy card as one save: an untouched username/password is omitted, a cleared one is "".
      * Every proxy save restarts the bot session, so it only runs when the focus leaves the card.
      */
     const sendProxy = async () => {
@@ -1080,7 +1080,7 @@ export default function TgJellyPage(view, params) {
     const destKey = id => `dest:${id}`;
     const idOf = el => el.getAttribute('data-tgj-id');
 
-    /** A failed removal's reply (spec §10.4): a 409 shows the fresh data and says so; other failures go to runAction. */
+    /** A failed removal's reply: a 409 shows the fresh data and says so; other failures go to runAction. */
     const removalReply = result => {
         const S = state.strings;
         if (result.status === 409 && result.body && result.body.Current) {
@@ -1093,7 +1093,7 @@ export default function TgJellyPage(view, params) {
     };
 
     /**
-     * Sends one auto-save of a destination (design §6.1): what its form changed since the server data, with the current
+     * Sends one auto-save of a destination: what its form changed since the server data, with the current
      * Revision. Changes still waiting behind it go along, so a later job for this destination may find nothing left to
      * send. On success the form starts over from the reply, keeping a change made while the request ran.
      * @param {string} id
@@ -1175,7 +1175,7 @@ export default function TgJellyPage(view, params) {
         }
     };
 
-    /** The manual block's reply to an add or set-up (spec §6.5): shows the outcome and reloads; other failures go to runAction. */
+    /** The manual block's reply to an add or set-up: shows the outcome and reloads; other failures go to runAction. */
     const manualReply = async result => {
         const S = state.strings;
         const body = result.body;
@@ -1777,7 +1777,7 @@ export default function TgJellyPage(view, params) {
     // queued first.
     const flushSoon = key => Promise.resolve().then(() => autosave.flush(key)).catch(logFailure);
 
-    // Leaving an auto-saved field saves it now (design §6.1). Fields that share a key save when the focus leaves all
+    // Leaving an auto-saved field saves it now. Fields that share a key save when the focus leaves all
     // of them: the proxy card saves once, when the focus leaves the card.
     view.addEventListener('focusout', event => {
         const key = writing > 0 || !state.strings ? null : saveKeyOf(event.target);
@@ -1801,7 +1801,7 @@ export default function TgJellyPage(view, params) {
         }
     });
 
-    // The hover link between the template and its preview (design §6.5) follows the pointer; its mirror follows the
+    // The hover link between the template and its preview follows the pointer; its mirror follows the
     // textarea's scrolling (scroll events don't bubble, so this listens on the way down).
     for (const type of ['mouseover', 'mousemove', 'mouseout']) {
         view.addEventListener(type, messages.hover);

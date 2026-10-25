@@ -1,7 +1,7 @@
 namespace Jellyfin.Plugin.TgJelly.Configuration;
 
 /// <summary>
-/// A custom template for one event key (spec §8.5).
+/// A custom template for one event key.
 /// </summary>
 public class TemplateOverride
 {

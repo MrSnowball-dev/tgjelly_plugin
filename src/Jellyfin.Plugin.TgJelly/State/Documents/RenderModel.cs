@@ -4,9 +4,9 @@ using System.Collections.Generic;
 namespace Jellyfin.Plugin.TgJelly.State.Documents;
 
 /// <summary>
-/// The data a message is rendered from (spec §9.3): item IDs for media, a payload snapshot for security and server
+/// The data a message is rendered from: item IDs for media, a payload snapshot for security and server
 /// events. Kept on Outbox entries and sent messages, so an update renders the whole message again from the merged
-/// model. Plain data only (plan 5 builds template models from it).
+/// model. Plain data only: template models are built from it.
 /// </summary>
 public sealed class RenderModel
 {

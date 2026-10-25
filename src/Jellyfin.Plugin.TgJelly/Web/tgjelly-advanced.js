@@ -6,14 +6,14 @@ import {
 import { isPlainObject } from './configurationpage?name=tgjelly-api.js';
 import { messageFormData, messageRequest } from './configurationpage?name=tgjelly-messages.js';
 
-/** The three update kinds (design §7): the settings path's last part, the switch's input name and its strings. */
+/** The three update kinds: the settings path's last part, the switch's input name and its strings. */
 export const UPDATE_KINDS = [
     { key: 'Fixes', input: 'updFixes', label: 'web.updates.fixes', hint: 'web.updates.fixesHint' },
     { key: 'NewReleases', input: 'updNewReleases', label: 'web.updates.newReleases', hint: 'web.updates.newReleasesHint' },
     { key: 'NewMajor', input: 'updNewMajor', label: 'web.updates.newMajor', hint: 'web.updates.newMajorHint' },
 ];
 
-/** The batching fields with their allowed ranges (spec §10.1) and the strings that label and describe them. */
+/** The batching fields with their allowed ranges and the strings that label and describe them. */
 export const BATCHING_FIELDS = [
     { key: 'QuietWindowSeconds', min: 5, max: 3600, label: 'web.batching.quiet.label', hint: 'web.batching.quiet.hint' },
     { key: 'MaxHoldMinutes', min: 1, max: 240, label: 'web.batching.maxHold.label', hint: 'web.batching.maxHold.hint' },
@@ -122,7 +122,7 @@ export function batchingError(field, batching, S) {
 }
 
 /**
- * The batching card under Advanced (spec §10.1): six whole-number fields, each with its range in the explanation.
+ * The batching card under Advanced: six whole-number fields, each with its range in the explanation.
  * Each saves 800 ms after the last keystroke, or when the field is left.
  * @param {object | null} settings
  * @param {Record<string, string>} S
@@ -153,7 +153,7 @@ export function renderBatching(settings, S, ui) {
 }
 
 /**
- * The update-check card under Advanced (spec §7.6): the Check switch and the three kinds, each saved at once.
+ * The update-check card under Advanced: the Check switch and the three kinds, each saved at once.
  * @param {object | null} settings
  * @param {Record<string, string>} S
  * @param {{ form?: { local: object } }} ui form is state.forms.settings
@@ -223,7 +223,7 @@ export function renderToken(status, S, ui) {
 }
 
 /**
- * The diagnostics block under Advanced (spec §12): Copy diagnostics, and the text itself when the clipboard refused it.
+ * The diagnostics block under Advanced: Copy diagnostics, and the text itself when the clipboard refused it.
  * @param {Record<string, string>} S
  * @param {{ text?: string, copied?: boolean }} ui
  * @returns {string} HTML

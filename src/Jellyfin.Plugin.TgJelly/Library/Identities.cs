@@ -5,7 +5,7 @@ using System.Globalization;
 namespace Jellyfin.Plugin.TgJelly.Library;
 
 /// <summary>
-/// Builds an item's identity set (spec §7.4 step 8): its provider IDs plus, for numbered episodes, the series, season
+/// Builds an item's identity set: its provider IDs plus, for numbered episodes, the series, season
 /// and episode. Used to recognise upgrades of something already in the library or removed recently.
 /// </summary>
 public static class Identities

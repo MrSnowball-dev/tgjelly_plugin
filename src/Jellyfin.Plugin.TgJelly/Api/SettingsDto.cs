@@ -3,7 +3,7 @@ using Jellyfin.Plugin.TgJelly.Configuration;
 namespace Jellyfin.Plugin.TgJelly.Api;
 
 /// <summary>
-/// <c>GET TgJelly/Settings</c> (spec §11.2): the dashboard-editable settings, plus the proxy for display.
+/// <c>GET TgJelly/Settings</c>: the dashboard-editable settings, plus the proxy for display.
 /// </summary>
 public sealed class SettingsDto
 {
@@ -13,10 +13,10 @@ public sealed class SettingsDto
     /// <summary>Gets the public server URL.</summary>
     public string PublicUrl { get; init; } = string.Empty;
 
-    /// <summary>Gets a value indicating whether the public URL can be used for buttons (spec §8.3).</summary>
+    /// <summary>Gets a value indicating whether the public URL can be used for buttons.</summary>
     public bool PublicUrlValid { get; init; }
 
-    /// <summary>Gets the suggested public URL, normalized and valid, or <c>null</c>; the page labels it "verify" (spec §8.3).</summary>
+    /// <summary>Gets the suggested public URL, normalized and valid, or <c>null</c>; the page labels it "verify".</summary>
     public string? PublicUrlSuggestion { get; init; }
 
     /// <summary>Gets every message's switches and whether upgrades are announced.</summary>

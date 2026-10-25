@@ -10,7 +10,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace Jellyfin.Plugin.TgJelly.Api;
 
 /// <summary>
-/// Serves the Log (design §8.2): read-only, filtered and paged.
+/// Serves the Log: read-only, filtered and paged.
 /// </summary>
 [ApiController]
 [Route("TgJelly")]

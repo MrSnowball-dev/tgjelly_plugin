@@ -3,7 +3,7 @@ using System;
 namespace Jellyfin.Plugin.TgJelly.State.Documents;
 
 /// <summary>
-/// One entry of <c>status.lastErrors</c> (spec §10.3), shown on the Status page.
+/// One entry of <c>status.lastErrors</c>, shown on the Status page.
 /// </summary>
 public sealed class StatusError
 {

@@ -15,7 +15,7 @@ using Microsoft.Extensions.Logging;
 namespace Jellyfin.Plugin.TgJelly.Log;
 
 /// <summary>
-/// Writes what the pipeline and Outbox delivery did into the <see cref="EventLog"/>, in plain words (design §8.2):
+/// Writes what the pipeline and Outbox delivery did into the <see cref="EventLog"/>, in plain words:
 /// one row per message per destination, moved from Waiting to its final result in place. Recording never throws, so
 /// it can't stop a message.
 /// </summary>
@@ -430,7 +430,7 @@ public sealed class LogRecorder
             }
 
             var delay = now - entry.QueuedAt;
-            // Ruling R7: late means a try failed or Telegram made it wait; time in the queue (pacing) doesn't count.
+            // late means a try failed or Telegram made it wait; time in the queue (pacing) doesn't count.
             var lastError = NonEmpty(existing?.Telegram);
             if (existing is not null && (existing.Result == LogResult.Failed || IsHeld(existing)))
             {

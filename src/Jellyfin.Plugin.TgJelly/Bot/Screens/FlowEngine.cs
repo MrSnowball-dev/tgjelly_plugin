@@ -299,7 +299,7 @@ public sealed class FlowEngine : IBotFlows, IDisposable
     }
 
     /// <summary>
-    /// Whether a <c>/start</c> begins onboarding (spec §6.2): the <c>setup</c> and <c>add</c> payloads, or no payload
+    /// Whether a <c>/start</c> begins onboarding: the <c>setup</c> and <c>add</c> payloads, or no payload
     /// while there are no destinations yet.
     /// </summary>
     private bool StartsOnboarding(string? text)

@@ -14,7 +14,7 @@ using Jellyfin.Plugin.TgJelly.State;
 namespace Jellyfin.Plugin.TgJelly.Updates;
 
 /// <summary>
-/// Reads Jellyfin's releases from the GitHub API (spec §7.6), through the bot's proxy settings.
+/// Reads Jellyfin's releases from the GitHub API, through the bot's proxy settings.
 /// </summary>
 public sealed class GitHubReleaseFeed : IReleaseFeed
 {

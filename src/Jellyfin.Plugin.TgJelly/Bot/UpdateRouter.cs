@@ -11,7 +11,7 @@ using Telegram.Bot.Types.Enums;
 namespace Jellyfin.Plugin.TgJelly.Bot;
 
 /// <summary>
-/// Sorts incoming updates for the poll loop (plan 4): button presses are answered at once, and everything that needs
+/// Sorts incoming updates for the poll loop: button presses are answered at once, and everything that needs
 /// screens or storage is queued for the <see cref="BotWorker"/>. In groups, only migrations, topic renames,
 /// and a person's <c>/start@bot …</c> are taken. Never throws.
 /// </summary>
@@ -131,7 +131,7 @@ public sealed class UpdateRouter : IUpdateHandler
     }
 
     /// <summary>
-    /// Whether a group message is <c>/start@bot …</c> for this bot (spec §6.2, F43); without the <c>@bot</c> suffix it
+    /// Whether a group message is <c>/start@bot …</c> for this bot; without the <c>@bot</c> suffix it
     /// may be meant for another bot in the group.
     /// </summary>
     private bool IsStartForThisBot(string? text)

@@ -11,7 +11,7 @@ using Microsoft.Extensions.Logging;
 namespace Jellyfin.Plugin.TgJelly.Intake;
 
 /// <summary>
-/// Watches <c>HasPendingRestartChanged</c> (F18) and publishes <c>server.restart_pending</c> when a restart becomes
+/// Watches <c>HasPendingRestartChanged</c> and publishes <c>server.restart_pending</c> when a restart becomes
 /// pending; the pipeline adds the reasons.
 /// </summary>
 public sealed class RestartWatcher : BackgroundService

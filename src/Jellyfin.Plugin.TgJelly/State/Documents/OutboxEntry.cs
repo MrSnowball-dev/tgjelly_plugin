@@ -3,7 +3,7 @@ using System;
 namespace Jellyfin.Plugin.TgJelly.State.Documents;
 
 /// <summary>
-/// One queued message for one destination (spec §9.3).
+/// One queued message for one destination.
 /// </summary>
 public sealed class OutboxEntry
 {

@@ -11,7 +11,7 @@ using Microsoft.Extensions.Logging;
 namespace Jellyfin.Plugin.TgJelly.State;
 
 /// <summary>
-/// Holds state.json and queue.json in memory and writes them on schedule (spec §10.3, §10.4).
+/// Holds state.json and queue.json in memory and writes them on schedule.
 /// Call <see cref="Load"/> once, after <see cref="InstanceGate"/> owns the data folder.
 /// </summary>
 public sealed class StateStore

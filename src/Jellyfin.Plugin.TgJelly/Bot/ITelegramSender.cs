@@ -5,7 +5,7 @@ using Telegram.Bot.Types;
 namespace Jellyfin.Plugin.TgJelly.Bot;
 
 /// <summary>
-/// The only door to the Bot API besides the supervisor's GetUpdates loop (spec §5.4 rule 1): one thin method per
+/// The only door to the Bot API besides the supervisor's GetUpdates loop: one thin method per
 /// call. Exceptions are not caught here; callers classify them with <c>TelegramErrorClassifier</c>.
 /// </summary>
 public interface ITelegramSender

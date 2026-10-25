@@ -16,16 +16,16 @@ namespace Jellyfin.Plugin.TgJelly;
 public class Plugin : BasePlugin<PluginConfiguration>, IConfigurationHost, IHasWebPages
 {
     /// <summary>
-    /// The plugin name. Fixed forever (spec §5.1).
+    /// The plugin name. Fixed forever.
     /// </summary>
     public const string PluginName = "TgJelly";
 
     /// <summary>
-    /// The plugin GUID. Fixed forever (spec §5.1).
+    /// The plugin GUID. Fixed forever.
     /// </summary>
     public static readonly Guid PluginId = new("e547b901-0dc4-42ae-8999-3871dd141270");
 
-    // True only while SettingsStore is saving, so outside saves can be told apart (spec §10.4).
+    // True only while SettingsStore is saving, so outside saves can be told apart.
     private static readonly AsyncLocal<bool> SavingFromStore = new();
 
     private readonly Lock _saveGate = new();
@@ -68,7 +68,7 @@ public class Plugin : BasePlugin<PluginConfiguration>, IConfigurationHost, IHasW
     ];
 
     /// <summary>
-    /// Lists the dashboard pages (spec §11.1). The HTML page must come first: the plugin's Settings button
+    /// Lists the dashboard pages. The HTML page must come first: the plugin's Settings button
     /// opens the first page, and a JS page there would crash the view.
     /// </summary>
     /// <returns>The page descriptors.</returns>

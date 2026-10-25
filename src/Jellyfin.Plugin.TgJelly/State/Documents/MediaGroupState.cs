@@ -3,7 +3,7 @@ using System;
 namespace Jellyfin.Plugin.TgJelly.State.Documents;
 
 /// <summary>
-/// A media group of one destination (spec §7.4 step 4): the items announced together in one message.
+/// A media group of one destination: the items announced together in one message.
 /// </summary>
 public sealed class MediaGroupState
 {

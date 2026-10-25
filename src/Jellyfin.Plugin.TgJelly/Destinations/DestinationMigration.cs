@@ -7,7 +7,7 @@ using Jellyfin.Plugin.TgJelly.Delivery;
 namespace Jellyfin.Plugin.TgJelly.Destinations;
 
 /// <summary>
-/// Moves a group's destinations to its supergroup chat ID (spec §9.4 row 5), shared by delivery and the update router.
+/// Moves a group's destinations to its supergroup chat ID, shared by delivery and the update router.
 /// </summary>
 public sealed class DestinationMigration
 {

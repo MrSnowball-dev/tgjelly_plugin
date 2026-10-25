@@ -7,9 +7,9 @@ using Jellyfin.Plugin.TgJelly.Templates;
 namespace Jellyfin.Plugin.TgJelly.Rendering;
 
 /// <summary>
-/// Renders a model for one destination (spec §8): the caption and text come from the message's template
+/// Renders a model for one destination: the caption and text come from the message's template
 /// (<see cref="TemplateRenderer"/>), the poster and buttons from the layout picked by <see cref="RenderModel.Kind"/>,
-/// and the destination's silent groups (§8.4) decide the notification sound. A digest is text only.
+/// and the destination's silent groups decide the notification sound. A digest is text only.
 /// </summary>
 public sealed class NotificationRenderer
 {
