@@ -231,7 +231,7 @@ public class DestinationsController : ControllerBase
             d.SeparateMediaTopics = request.SeparateMediaTopics ?? d.SeparateMediaTopics;
             if (request.TopicRoutes is { } routes)
             {
-                d.TopicRoutes = WithRoutes(d.TopicRoutes, routes.Select(r => (r.Slot, r.ThreadId)));
+                d.SetRoutes(routes.Select(r => (r.Slot, r.ThreadId)));
             }
 
             if (request.Events is not null)
@@ -510,8 +510,7 @@ public class DestinationsController : ControllerBase
             }
 
             d.RememberTopic(thread, name);
-
-            d.TopicRoutes = WithRoutes(d.TopicRoutes, [(request.Slot, (int?)thread)]);
+            d.SetRoutes([(request.Slot, thread)]);
             if (request.Slot == "media")
             {
                 // One topic for all media ends separate topics, as choosing a known topic does.
@@ -528,25 +527,6 @@ public class DestinationsController : ControllerBase
             SettingsUpdateStatus.Unchanged => NotFound(),
             _ => ToDto(result.Configuration.Destinations.First(d => d.Id == id), result.Configuration.Revision),
         };
-    }
-
-    /// <summary>The routes with the changes applied: a thread id sets a slot's route, <c>null</c> removes it.</summary>
-    private static TopicRoute[] WithRoutes(TopicRoute[] current, IEnumerable<(string Slot, int? ThreadId)> changes)
-    {
-        var routes = current.ToDictionary(r => r.Slot, r => r.ThreadId, StringComparer.Ordinal);
-        foreach (var (slot, thread) in changes)
-        {
-            if (thread is { } t)
-            {
-                routes[slot] = t;
-            }
-            else
-            {
-                routes.Remove(slot);
-            }
-        }
-
-        return [.. TopicSlots.All.Where(routes.ContainsKey).Select(slot => new TopicRoute { Slot = slot, ThreadId = routes[slot] })];
     }
 
     private BadRequestObjectResult Error(string field, string message)

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.ComponentModel;
 using System.Linq;
 using System.Text.Json.Serialization;
@@ -135,5 +136,28 @@ public class Destination
         var known = Array.Find(KnownTopics, t => t.ThreadId == thread);
         var topic = new KnownTopic { ThreadId = thread, Name = name.Length > 0 ? name : known?.Name ?? string.Empty };
         KnownTopics = known is null ? [.. KnownTopics, topic] : [.. KnownTopics.Select(t => t == known ? topic : t)];
+    }
+
+    /// <summary>
+    /// Points slots at topics: a thread ID sets the slot's route, <c>null</c> removes it. Routes stay in slot order.
+    /// </summary>
+    /// <param name="changes">The slots and their new threads.</param>
+    public void SetRoutes(IEnumerable<(string Slot, int? ThreadId)> changes)
+    {
+        ArgumentNullException.ThrowIfNull(changes);
+        var routes = TopicRoutes.ToDictionary(r => r.Slot, r => r.ThreadId, StringComparer.Ordinal);
+        foreach (var (slot, thread) in changes)
+        {
+            if (thread is { } t)
+            {
+                routes[slot] = t;
+            }
+            else
+            {
+                routes.Remove(slot);
+            }
+        }
+
+        TopicRoutes = [.. TopicSlots.All.Where(routes.ContainsKey).Select(slot => new TopicRoute { Slot = slot, ThreadId = routes[slot] })];
     }
 }

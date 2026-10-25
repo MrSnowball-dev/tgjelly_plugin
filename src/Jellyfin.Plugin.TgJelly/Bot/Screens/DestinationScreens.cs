@@ -392,13 +392,7 @@ public sealed class DestinationScreens
                 x.RememberTopic(t, name);
             }
 
-            var routes = x.TopicRoutes.Where(r => !string.Equals(r.Slot, slot, StringComparison.Ordinal)).ToList();
-            if (created is { } th)
-            {
-                routes.Add(new TopicRoute { Slot = slot, ThreadId = th });
-            }
-
-            x.TopicRoutes = [.. TopicSlots.All.SelectMany(s => routes.Where(r => r.Slot == s))];
+            x.SetRoutes([(slot, created)]);
             if (slot == "media")
             {
                 // One topic for all media again ends separate topics; the events' own choices are kept for next time.

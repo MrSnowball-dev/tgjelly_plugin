@@ -18,4 +18,14 @@ public class DestinationTests
 
         Assert.Equal([(7, "Movies"), (8, string.Empty)], d.KnownTopics.Select(t => (t.ThreadId, t.Name)));
     }
+
+    [Fact]
+    public void SetRoutes_ReplacesAndRemoves_InSlotOrder()
+    {
+        var d = new Destination { TopicRoutes = [new TopicRoute { Slot = "server", ThreadId = 9 }, new TopicRoute { Slot = "media", ThreadId = 5 }] };
+
+        d.SetRoutes([("security", 8), ("media", null), ("server", 4)]);
+
+        Assert.Equal([("security", 8), ("server", 4)], d.TopicRoutes.Select(r => (r.Slot, r.ThreadId)));
+    }
 }
