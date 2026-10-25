@@ -90,6 +90,17 @@ public class PluginConfiguration : BasePluginConfiguration
             d.Events ??= Array.Empty<string>();
             d.LibraryIds ??= Array.Empty<string>();
             d.SilentGroups ??= Array.Empty<string>();
+            d.TopicRoutes = [.. (d.TopicRoutes ?? []).Where(r => r is not null)];
+            d.KnownTopics = [.. (d.KnownTopics ?? []).Where(t => t is not null)];
+            foreach (var r in d.TopicRoutes)
+            {
+                r.Slot ??= string.Empty;
+            }
+
+            foreach (var t in d.KnownTopics)
+            {
+                t.Name ??= string.Empty;
+            }
         }
 
         for (var i = 0; i < Templates.Length; i++)

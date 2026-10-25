@@ -123,6 +123,32 @@ public sealed class HealthService : BackgroundService
     }
 
     /// <summary>
+    /// Remembers that a routed topic is gone (Telegram: "message thread not found"), so its messages go to the
+    /// destination's own topic until the next check passes.
+    /// </summary>
+    /// <param name="destinationId">The destination.</param>
+    /// <param name="threadId">The topic.</param>
+    public void SetTopicMissing(string destinationId, int threadId)
+    {
+        _state.Update(s =>
+        {
+            var h = Entry(s, destinationId);
+            if (!h.MissingTopics.Contains(threadId))
+            {
+                h.MissingTopics.Add(threadId);
+            }
+        });
+    }
+
+    /// <summary>
+    /// Whether a routed topic of a destination is known to be gone.
+    /// </summary>
+    /// <param name="destinationId">The destination.</param>
+    /// <param name="threadId">The topic.</param>
+    /// <returns>Whether it is gone.</returns>
+    public bool IsTopicMissing(string destinationId, int threadId) => Get(destinationId).MissingTopics.Contains(threadId);
+
+    /// <summary>
     /// Records that photos are blocked at a destination; posters are skipped until a re-check allows them.
     /// </summary>
     /// <param name="destinationId">The destination.</param>
@@ -163,6 +189,8 @@ public sealed class HealthService : BackgroundService
             h.At = now;
             h.Notified = false;
             h.NextCheckAt = result.PhotosBlocked ? now + RecheckInterval : null;
+            // A passing check tries the routed topics again: one that is still gone is found on the next send.
+            h.MissingTopics.Clear();
         });
 
         if (recovered)

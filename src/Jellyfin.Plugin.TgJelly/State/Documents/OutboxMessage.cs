@@ -37,6 +37,9 @@ public sealed class OutboxMessage
     /// </summary>
     public string? NoPhoto { get; set; }
 
+    /// <summary>Gets or sets the slot whose own topic was gone, so it went to the destination's topic, for the Log.</summary>
+    public string? TopicFallback { get; set; }
+
     /// <summary>Gets or sets the error of the edited template when the built-in one was used instead, for the Log.</summary>
     public string? TemplateFallback { get; set; }
 
