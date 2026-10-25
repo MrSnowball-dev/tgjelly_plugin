@@ -3,6 +3,14 @@
     "guid": "e547b901-0dc4-42ae-8999-3871dd141270",
     "versions": [
       {
+        "version": "2.0.8.0",
+        "changelog": "Topics by group, topic names, and Topics in the bot\n\n- In a forum, each group (Media, Security, Server) picks one topic. Media can choose \"Separate topics for each event\", and only then does each media event get its own topic picker.\n- A topic created during setup shows by its name, and so does any topic TgJelly posts to, instead of \"Topic #id\".\n- The bot's destination screen has a Topics button: pick, create or reset the topic for each group or media event, right from Telegram.\n- The bot names events the same way the dashboard does, with no \"Media:\" in front.\n- Settings from v0.7 that sent media events to their own topics keep them: \"Separate topics for each event\" is turned on for you.",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://github.com/MrSnowball-dev/tgjelly_plugin/releases/download/v0.8/tgjelly_2.0.8.0.zip",
+        "checksum": "e368433ce6e1dad2b7a1fd34c5a12b28",
+        "timestamp": "2026-10-25T18:53:02Z"
+      },
+      {
         "version": "2.0.7.0",
         "changelog": "Topics per event in forums, and the bot is yours to set up\n\n- In a forum, each media event (movies, episodes, albums, music videos, books), and Security and Server, can post to a topic of its own: pick one beside the event, let TgJelly create one, or paste a link to an existing topic. Everything else stays in the destination's topic, as before.\n- If a chosen topic is deleted, its messages go to the destination's own topic instead of waiting, and the editor shows \"Topic gone\".\n- A forum destination shows which topic it posts to, and every destination has a folded Advanced block with its chat ID and topic IDs.\n- TgJelly no longer changes the bot's description, command menu or admin rights; set them in BotFather as you like.\n- Advanced shows the bot token, hidden until you press Show.\n- Overview: Status comes first and no longer repeats itself, and a token you're typing isn't wiped.",
         "targetAbi": "12.0.0.0",
@@ -57,6 +65,14 @@
         "sourceUrl": "https://github.com/MrSnowball-dev/tgjelly_plugin/releases/download/v0.1/tgjelly_2.0.1.0.zip",
         "checksum": "cb0feb4d6ee44d02cc6cc3be21287301",
         "timestamp": "2026-10-20T21:57:13Z"
+      },
+      {
+        "version": "1.0.8.0",
+        "changelog": "Topics by group, topic names, and Topics in the bot\n\n- In a forum, each group (Media, Security, Server) picks one topic. Media can choose \"Separate topics for each event\", and only then does each media event get its own topic picker.\n- A topic created during setup shows by its name, and so does any topic TgJelly posts to, instead of \"Topic #id\".\n- The bot's destination screen has a Topics button: pick, create or reset the topic for each group or media event, right from Telegram.\n- The bot names events the same way the dashboard does, with no \"Media:\" in front.\n- Settings from v0.7 that sent media events to their own topics keep them: \"Separate topics for each event\" is turned on for you.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/MrSnowball-dev/tgjelly_plugin/releases/download/v0.8/tgjelly_1.0.8.0.zip",
+        "checksum": "fb3d1c5419f76546edb34ceb201d6508",
+        "timestamp": "2026-10-25T18:53:02Z"
       },
       {
         "version": "1.0.7.0",
