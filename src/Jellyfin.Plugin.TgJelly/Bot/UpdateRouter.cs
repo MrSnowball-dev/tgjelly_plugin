@@ -1,6 +1,7 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
+using Jellyfin.Plugin.TgJelly.Configuration;
 using Jellyfin.Plugin.TgJelly.Destinations;
 using Microsoft.Extensions.Logging;
 using Telegram.Bot.Exceptions;
@@ -11,8 +12,8 @@ namespace Jellyfin.Plugin.TgJelly.Bot;
 
 /// <summary>
 /// Sorts incoming updates for the poll loop (plan 4): button presses are answered at once, and everything that needs
-/// screens or storage is queued for the <see cref="BotWorker"/>. In groups, only migrations and a person's
-/// <c>/start@bot …</c> are taken. Never throws.
+/// screens or storage is queued for the <see cref="BotWorker"/>. In groups, only migrations, topic renames,
+/// and a person's <c>/start@bot …</c> are taken. Never throws.
 /// </summary>
 public sealed class UpdateRouter : IUpdateHandler
 {
@@ -22,6 +23,7 @@ public sealed class UpdateRouter : IUpdateHandler
     private readonly HealthService _health;
     private readonly DestinationMigration _migration;
     private readonly BotMemory _memory;
+    private readonly SettingsStore _settings;
     private readonly ILogger<UpdateRouter> _logger;
 
     /// <summary>
@@ -33,8 +35,9 @@ public sealed class UpdateRouter : IUpdateHandler
     /// <param name="health">The health service.</param>
     /// <param name="migration">Moves destinations when a group becomes a supergroup.</param>
     /// <param name="memory">The bot's memory, whose detected chats and flows follow the migration.</param>
+    /// <param name="settings">The settings, whose topic names follow the forums.</param>
     /// <param name="logger">The logger.</param>
-    public UpdateRouter(BotWorkQueue queue, IBotFlows flows, BotConnection connection, HealthService health, DestinationMigration migration, BotMemory memory, ILogger<UpdateRouter> logger)
+    public UpdateRouter(BotWorkQueue queue, IBotFlows flows, BotConnection connection, HealthService health, DestinationMigration migration, BotMemory memory, SettingsStore settings, ILogger<UpdateRouter> logger)
     {
         _queue = queue;
         _flows = flows;
@@ -42,6 +45,7 @@ public sealed class UpdateRouter : IUpdateHandler
         _health = health;
         _migration = migration;
         _memory = memory;
+        _settings = settings;
         _logger = logger;
     }
 
@@ -110,6 +114,13 @@ public sealed class UpdateRouter : IUpdateHandler
                     _migration.Migrate(oldId, newId);
                     _memory.MigrateChat(oldId, newId);
                     _health.RequestCheckForChat(newId);
+                    return Task.CompletedTask;
+                });
+                break;
+            case ChatType.Supergroup when message.ForumTopicEdited is not null:
+                _queue.Enqueue("topic-name", _ =>
+                {
+                    TopicNames.FollowRename(_settings, message);
                     return Task.CompletedTask;
                 });
                 break;

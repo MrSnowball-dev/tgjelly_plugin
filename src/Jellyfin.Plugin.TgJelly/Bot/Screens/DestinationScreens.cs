@@ -195,13 +195,9 @@ public sealed class DestinationScreens
 
     private string TopicName(Destination d, int thread)
     {
-        if (thread == 0)
-        {
-            return _strings.Get("web.topics.general");
-        }
-
         var known = Array.Find(d.KnownTopics, k => k.ThreadId == thread);
-        return known is { Name.Length: > 0 } ? known.Name : _strings.Get("web.topics.number", ("id", thread));
+        return known is { Name.Length: > 0 } ? known.Name
+            : thread == 0 ? _strings.Get("web.topics.general") : _strings.Get("web.topics.number", ("id", thread));
     }
 
     private Screen Detail(string id, string? note = null)

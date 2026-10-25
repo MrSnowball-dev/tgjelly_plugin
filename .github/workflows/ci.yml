@@ -31,11 +31,18 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: actions/setup-dotnet@v6
-        with:
-          dotnet-version: |
-            9.0.x
-            10.0.x
+      # Not actions/setup-dotnet: it resolves "9.0.x" through aka.ms links, whose storage refused public access on
+      # 2026-10-25. The install script skips aka.ms when given an exact version, so each channel's latest version is
+      # read from builds.dotnet.microsoft.com and installed from there.
+      - name: Install .NET 9 and 10
+        run: |
+          curl -sSfL https://builds.dotnet.microsoft.com/dotnet/scripts/v1/dotnet-install.sh -o "$RUNNER_TEMP/dotnet-install.sh"
+          for channel in 9.0 10.0; do
+            version=$(curl -sSfL "https://builds.dotnet.microsoft.com/dotnet/Sdk/$channel/latest.version" | tail -n1 | tr -d '\r')
+            bash "$RUNNER_TEMP/dotnet-install.sh" --version "$version" --install-dir "$HOME/.dotnet"
+          done
+          echo "DOTNET_ROOT=$HOME/.dotnet" >> "$GITHUB_ENV"
+          echo "$HOME/.dotnet" >> "$GITHUB_PATH"
 
       - name: Build (net9.0 + net10.0, warnings are errors)
         run: dotnet build Jellyfin.Plugin.TgJelly.slnx -c Release

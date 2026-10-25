@@ -61,7 +61,7 @@ public sealed class BotRig
         Notifier = new ManagerNotifier(Memory, Health, h.Settings, h.Connection, h.State, h.Strings, NullLogger<ManagerNotifier>.Instance);
         Flow = new FlowEngine(h.Connection, Memory, screens, h.Settings, h.Strings, menus, Status, advanced, destinations, settingsScreens, Onboarding, detected, Health, Notifier, Queue, NullLogger<FlowEngine>.Instance);
         h.Track(Flow);
-        _router = new UpdateRouter(Queue, Flow, h.Connection, Health, new DestinationMigration(h.Settings, Outbox, Health), Memory, NullLogger<UpdateRouter>.Instance);
+        _router = new UpdateRouter(Queue, Flow, h.Connection, Health, new DestinationMigration(h.Settings, Outbox, Health), Memory, h.Settings, NullLogger<UpdateRouter>.Instance);
     }
 
     /// <summary>Connects the harness and builds the rig over an owned instance gate.</summary>

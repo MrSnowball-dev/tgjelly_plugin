@@ -23,6 +23,7 @@ public class TelegramFixturesTests
     [InlineData("group_command_start")]
     [InlineData("group_migrate_to")]
     [InlineData("group_migrate_from")]
+    [InlineData("forum_topic_edited")]
     public void UpdateFixtures_Parse(string name)
         => Assert.True(TelegramFixtures.Update(name).Id > 0);
 

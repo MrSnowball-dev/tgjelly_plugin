@@ -698,14 +698,14 @@ export function renderEditor(dest, catalog, libraries, S, ui) {
     return card({ title: dest.Title, description: destinationMeta(dest, S), body: parts.join(''), extraClass: 'tgj-dest-editor' });
 }
 
-/** A topic's name for the editor: General, the name TgJelly knows, or "Topic #123". */
+/** A topic's name for the editor: the name TgJelly knows, else General or "Topic #123". */
 export function topicName(dest, thread, S) {
-    if (thread === 0) {
-        return text(S, 'web.topics.general');
+    const known = (dest.KnownTopics ?? []).find(k => k.ThreadId === thread);
+    if (known && known.Name) {
+        return known.Name;
     }
 
-    const known = (dest.KnownTopics ?? []).find(k => k.ThreadId === thread);
-    return known && known.Name ? known.Name : text(S, 'web.topics.number', { id: thread });
+    return thread === 0 ? text(S, 'web.topics.general') : text(S, 'web.topics.number', { id: thread });
 }
 
 /** A slot's label: a media event's name, or the group's. */

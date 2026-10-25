@@ -6,14 +6,14 @@ using Telegram.Bot.Types;
 namespace Jellyfin.Plugin.TgJelly.Destinations;
 
 /// <summary>
-/// Learns forum topic names. The Bot API can't look a topic up, but a message sent into a topic comes back with the
-/// topic's creation message as <c>reply_to_message</c>, and that carries the name.
+/// Learns forum topic names. The Bot API can't look a topic up, but the forum tells the bot when a topic is renamed,
+/// and a message sent into a topic comes back with the topic's creation message as <c>reply_to_message</c>.
 /// </summary>
 public static class TopicNames
 {
     /// <summary>
-    /// Remembers the name of the topic a sent message went to, when Telegram's reply names it and TgJelly didn't
-    /// know it yet. Changes the settings only then.
+    /// Remembers the name of the topic a sent message went to, when TgJelly doesn't know it yet. The reply carries the
+    /// name the topic was created with, so a name TgJelly already knows (perhaps from a rename) is kept.
     /// </summary>
     /// <param name="settings">The settings.</param>
     /// <param name="destinationId">The destination the message went to.</param>
@@ -26,24 +26,54 @@ public static class TopicNames
             return;
         }
 
-        bool Known(Destination d) => d.KnownTopics.Any(t => t.ThreadId == thread && string.Equals(t.Name, name, StringComparison.Ordinal));
-        if (settings.Current.Destinations.FirstOrDefault(d => d.Id == destinationId) is not { } current || Known(current))
+        bool Unnamed(Destination d) => d.Id == destinationId && !d.KnownTopics.Any(t => t.ThreadId == thread && t.Name.Length > 0);
+        Remember(settings, Unnamed, thread, name);
+    }
+
+    /// <summary>
+    /// Follows a topic renamed in a forum: each destination in that chat that knows the topic or posts to it, and
+    /// every one for General, takes the new name, in the dashboard and in the bot alike. Other topics aren't added:
+    /// Telegram never says when a topic is deleted, so the pickers would fill with topics that are gone.
+    /// </summary>
+    /// <param name="settings">The settings.</param>
+    /// <param name="message">A message from a supergroup; any message but a topic renamed is ignored.</param>
+    public static void FollowRename(SettingsStore settings, Message message)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        ArgumentNullException.ThrowIfNull(message);
+        if (message.ForumTopicEdited?.Name is not { Length: > 0 } name)
+        {
+            return;
+        }
+
+        // The General topic has no thread ID, and TgJelly calls it thread 0.
+        var thread = message.IsTopicMessage ? message.MessageThreadId ?? 0 : 0;
+        var chatId = message.Chat.Id;
+        bool Stale(Destination d) => d.ChatId == chatId
+            && (thread == 0 || d.ThreadId == thread || d.TopicRoutes.Any(r => r.ThreadId == thread) || d.KnownTopics.Any(t => t.ThreadId == thread))
+            && !d.KnownTopics.Any(t => t.ThreadId == thread && string.Equals(t.Name, name, StringComparison.Ordinal));
+        Remember(settings, Stale, thread, name);
+    }
+
+    private static void Remember(SettingsStore settings, Func<Destination, bool> needs, int thread, string name)
+    {
+        if (!settings.Current.Destinations.Any(needs))
         {
             return;
         }
 
         settings.UpdateIf(null, c =>
         {
-            var d = c.Destinations.FirstOrDefault(x => x.Id == destinationId);
-            if (d is null || Known(d))
+            var changed = false;
+            foreach (var d in c.Destinations.Where(needs))
             {
-                return false;
+                d.KnownTopics = Array.Exists(d.KnownTopics, t => t.ThreadId == thread)
+                    ? [.. d.KnownTopics.Select(t => t.ThreadId == thread ? new KnownTopic { ThreadId = thread, Name = name } : t)]
+                    : [.. d.KnownTopics, new KnownTopic { ThreadId = thread, Name = name }];
+                changed = true;
             }
 
-            d.KnownTopics = Array.Find(d.KnownTopics, t => t.ThreadId == thread) is { } known
-                ? [.. d.KnownTopics.Select(t => t == known ? new KnownTopic { ThreadId = thread, Name = name } : t)]
-                : [.. d.KnownTopics, new KnownTopic { ThreadId = thread, Name = name }];
-            return true;
+            return changed;
         });
     }
 }
