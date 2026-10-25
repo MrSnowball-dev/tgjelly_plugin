@@ -3,6 +3,14 @@
     "guid": "e547b901-0dc4-42ae-8999-3871dd141270",
     "versions": [
       {
+        "version": "2.0.9.0",
+        "changelog": "Topic names follow renames in Telegram\n\n- Rename a topic in Telegram, General included, and the new name shows in the dashboard and in the bot. This applies to topics a destination posts to or already knows.\n- Sending into a renamed topic no longer brings back its old name.",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://github.com/MrSnowball-dev/tgjelly_plugin/releases/download/v0.9/tgjelly_2.0.9.0.zip",
+        "checksum": "a641e4c12960a38d4ae60ff53fd14280",
+        "timestamp": "2026-10-25T19:46:00Z"
+      },
+      {
         "version": "2.0.8.0",
         "changelog": "Topics by group, topic names, and Topics in the bot\n\n- In a forum, each group (Media, Security, Server) picks one topic. Media can choose \"Separate topics for each event\", and only then does each media event get its own topic picker.\n- A topic created during setup shows by its name, and so does any topic TgJelly posts to, instead of \"Topic #id\".\n- The bot's destination screen has a Topics button: pick, create or reset the topic for each group or media event, right from Telegram.\n- The bot names events the same way the dashboard does, with no \"Media:\" in front.\n- Settings from v0.7 that sent media events to their own topics keep them: \"Separate topics for each event\" is turned on for you.",
         "targetAbi": "12.0.0.0",
@@ -65,6 +73,14 @@
         "sourceUrl": "https://github.com/MrSnowball-dev/tgjelly_plugin/releases/download/v0.1/tgjelly_2.0.1.0.zip",
         "checksum": "cb0feb4d6ee44d02cc6cc3be21287301",
         "timestamp": "2026-10-20T21:57:13Z"
+      },
+      {
+        "version": "1.0.9.0",
+        "changelog": "Topic names follow renames in Telegram\n\n- Rename a topic in Telegram, General included, and the new name shows in the dashboard and in the bot. This applies to topics a destination posts to or already knows.\n- Sending into a renamed topic no longer brings back its old name.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/MrSnowball-dev/tgjelly_plugin/releases/download/v0.9/tgjelly_1.0.9.0.zip",
+        "checksum": "440226afe60a9934acae563b5de278e7",
+        "timestamp": "2026-10-25T19:46:00Z"
       },
       {
         "version": "1.0.8.0",
