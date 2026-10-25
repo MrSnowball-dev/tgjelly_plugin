@@ -709,15 +709,13 @@ test('a removed webhook is mentioned after Connected', async () => {
     assert.ok(el('tgj-connect').innerHTML.includes(m.t(EN, 'web.connect.webhookRemoved')));
 });
 
-test('the typed token survives re-renders, such as toggling the profile checkbox', async () => {
+test('the typed token survives re-renders of the connect card', async () => {
     const { view, timers } = mount({ 'GET TgJelly/Status': noToken() });
     await show(view);
     await click(view, 'connectExisting');
     const field = { name: 'token', value: '' };
     view.fields.push(field);
     input(view, 'token', '1:a');
-    dispatchOn(view, 'change', { 'data-tgj-input': 'setProfile' }, { checked: false });
-    dispatchOn(view, 'change', { 'data-tgj-input': 'setProfile' }, { checked: true });
     // A re-render empties the input; the controller puts the typed token back.
     field.value = '';
     await click(view, 'connectExisting');
@@ -1361,6 +1359,9 @@ test('a forum chooses a topic beside each media event and each other group; Crea
     assert.deepEqual(putBodies(api), [{ ExpectedRevision: 5, TopicRoutes: [{ Slot: 'server', ThreadId: 9 }] }]);
 
     await destInput(view, 'destTopic', { 'data-tgj-id': 'd1', 'data-tgj-key': 'media.movie', 'data-tgj-save': 'dest:d1:topic:media.movie' }, { value: 'create' });
+    assert.ok(!api.calls.some(c => c.type === 'POST' && c.url.includes('/Topics')), 'choosing Create only asks');
+    assert.ok(destEl(el).includes('Create a topic named “Movies”'));
+    await destAct(view, 'topicCreateYes', { 'data-tgj-id': 'd1', 'data-tgj-key': 'media.movie' });
     const topic = api.calls.find(c => c.type === 'POST' && c.url.includes('Destinations/d1/Topics'));
     assert.deepEqual(JSON.parse(topic.data), { ExpectedRevision: 7, Slot: 'media.movie', Create: true });
     assert.ok(destEl(el).includes('>Movies<'), 'the new topic is offered by name');

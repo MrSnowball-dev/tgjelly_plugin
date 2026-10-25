@@ -421,7 +421,7 @@ public sealed class LogRecorder
 
             if (entry.Message.TopicFallback is { } slot)
             {
-                details.Add((LogResult.Sent, _strings.Get("web.log.why.topicFallback", ("topic", SlotLabel(slot))), _strings.Get("web.log.advice.topicFallback", ("destination", destination.Title))));
+                details.Add((LogResult.Sent, _strings.Get("web.log.why.topicFallback", ("topic", SlotLabel(slot))), _strings.Get("web.log.advice.topicFallback", ("topic", SlotLabel(slot)), ("destination", destination.Title))));
             }
 
             if (noPhoto is not null)

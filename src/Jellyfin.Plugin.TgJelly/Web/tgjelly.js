@@ -392,8 +392,8 @@ export function renderProxyForm(settings, S, ui, { nested = false } = {}) {
 const PROXY_MODE_LABELS = { System: 'web.proxy.modeSystem', None: 'web.proxy.modeNone', Http: 'web.proxy.modeHttp', Socks5: 'web.proxy.modeSocks5' };
 
 /**
- * The token form (spec §6.1): a password input that is never pre-filled, the two notes for an existing bot, the
- * profile checkbox and Connect. Connecting is an explicit action: nothing here auto-saves.
+ * The token form (spec §6.1): a password input that is never pre-filled, the two notes for an existing bot, and
+ * Connect. Connecting is an explicit action: nothing here auto-saves.
  */
 function renderTokenForm(ui, S) {
     const busy = Boolean(ui.saving);
@@ -732,18 +732,26 @@ function topicChoice(dest, slot, routes, S, ui) {
         extraClass: 'tgj-topic-select',
         attrs: { 'data-tgj-id': id, 'data-tgj-key': slot, 'data-tgj-save': key, 'aria-label': text(S, 'web.topics.choose', { what: slotLabel(slot, S) }) },
     });
-    const linking = ui.topicLink && ui.topicLink.id === id && ui.topicLink.slot === slot
-        ? `<span class="tgj-topic-link">${textField({ input: 'destTopicLink', value: ui.topicLink.text ?? '', attrs: { 'data-tgj-id': id, 'data-tgj-key': slot, autocomplete: 'off', spellcheck: 'false', 'aria-label': text(S, 'web.topics.linkLabel') } })}`
-            + actionButton({ label: text(S, 'web.topics.linkUse'), act: 'topicLinkUse', kind: 'primary', id })
-            + actionButton({ label: text(S, 'web.topics.linkCancel'), act: 'topicLinkCancel', id })
+    const asking = ui.topicLink && ui.topicLink.id === id && ui.topicLink.slot === slot ? ui.topicLink : null;
+    // Creating a topic is asked first: a keyboard user moving through the list passes Create a topic… on the way.
+    const creating = asking && asking.create
+        ? `<span class="tgj-topic-link"><span class="tgj-row-hint">${t(S, 'web.topics.createAsk', { name: slotLabel(slot, S) })}</span>`
+            + actionButton({ label: text(S, 'web.topics.createYes'), act: 'topicCreateYes', kind: 'primary', id, attrs: { 'data-tgj-key': slot } })
+            + actionButton({ label: text(S, 'web.topics.linkCancel'), act: 'topicLinkCancel', id, attrs: { 'data-tgj-instant': '' } })
             + '</span>'
         : '';
-    return `<span class="tgj-topic">${select}${gone}<span class="tgj-cue" data-tgj-cue="${esc(key)}" aria-live="polite"></span>${linking}</span>`;
+    const linking = asking && !asking.create
+        ? `<span class="tgj-topic-link">${textField({ input: 'destTopicLink', value: ui.topicLink.text ?? '', attrs: { 'data-tgj-id': id, 'data-tgj-key': slot, autocomplete: 'off', spellcheck: 'false', 'aria-label': text(S, 'web.topics.linkLabel') } })}`
+            + actionButton({ label: text(S, 'web.topics.linkUse'), act: 'topicLinkUse', kind: 'primary', id })
+            + actionButton({ label: text(S, 'web.topics.linkCancel'), act: 'topicLinkCancel', id, attrs: { 'data-tgj-instant': '' } })
+            + '</span>'
+        : '';
+    return `<span class="tgj-topic">${select}${gone}<span class="tgj-cue" data-tgj-cue="${esc(key)}" aria-live="polite"></span>${creating}${linking}</span>`;
 }
 
 /** A destination's IDs, folded away until opened: the chat, its topic, and each routed slot's topic. */
 function destinationIds(dest, routes, S, open) {
-    const toggleButton = `<button type="button" class="tgj-ref-toggle" data-tgj-act="destIds" data-tgj-id="${esc(dest.Id)}" aria-expanded="${open}">${t(S, 'web.dest.ids')}</button>`;
+    const toggleButton = `<button type="button" class="tgj-ref-toggle" data-tgj-act="destIds" data-tgj-id="${esc(dest.Id)}" data-tgj-instant aria-expanded="${open}">${t(S, 'web.dest.ids')}</button>`;
     if (!open) {
         return `<div class="tgj-dest-ids">${toggleButton}</div>`;
     }
@@ -1937,7 +1945,7 @@ export default function TgJellyPage(view, params) {
             return;
         }
 
-        // The token too: a re-render (a poll, or the profile checkbox changing the card) must not empty it.
+        // The token too: a re-render (a poll, or another control in the card) must not empty it.
         for (const field of ['token', 'proxyUsername', 'proxyPassword']) {
             for (const el of view.querySelectorAll(`[data-tgj-input="${field}"]`)) {
                 el.value = typed[field] ?? '';
@@ -2636,7 +2644,7 @@ export default function TgJellyPage(view, params) {
             }
         }),
         // A topic for a slot: TgJelly creates one named after it, or uses the one a pasted link points to.
-        topicCreate: el => topicPost(idOf(el), el.getAttribute('data-tgj-key'), { Create: true }),
+        topicCreateYes: el => topicPost(idOf(el), el.getAttribute('data-tgj-key'), { Create: true }),
         topicLinkUse: el => {
             const ask = state.ui.topicLink;
             return ask && ask.id === idOf(el) ? topicPost(ask.id, ask.slot, { Link: ask.text }) : undefined;
@@ -2857,8 +2865,8 @@ export default function TgJellyPage(view, params) {
 
             const value = String(el.value ?? '');
             if (value === 'create') {
-                state.ui.topicLink = null;
-                actions.topicCreate(el);
+                state.ui.topicLink = { id, slot, create: true };
+                renderSection('destinations');
                 return;
             }
 
@@ -3067,6 +3075,10 @@ export default function TgJellyPage(view, params) {
     const hide = () => {
         visible = false;
         revealedToken = '';
+        // Jellyfin keeps the page around: the shown token mustn't stay in it.
+        if (state.strings) {
+            renderSection('token');
+        }
         scrollDoc?.removeEventListener?.('scroll', onPageScroll, { capture: true });
         scrollWin?.removeEventListener?.('resize', onPageScroll);
         stopPolling();

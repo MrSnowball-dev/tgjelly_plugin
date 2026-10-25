@@ -14,6 +14,9 @@ public sealed class TopicRequest
     /// <summary>Gets or sets a link to an existing topic of the chat (<c>https://t.me/c/…/123</c>), when not creating.</summary>
     public string? Link { get; set; }
 
-    /// <summary>Gets or sets the revision the change is based on.</summary>
+    /// <summary>
+    /// Gets or sets the revision the page knew. Not checked: once Telegram has the topic, it is recorded on the current
+    /// settings.
+    /// </summary>
     public long? ExpectedRevision { get; set; }
 }

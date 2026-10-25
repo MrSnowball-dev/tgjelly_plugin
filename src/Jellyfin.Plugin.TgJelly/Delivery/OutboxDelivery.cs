@@ -168,6 +168,12 @@ public sealed class OutboxDelivery
 
     private Attempt Prepare(OutboxEntry entry, Destination destination)
     {
+        // Every message whose slot's topic is known to be gone says so in the Log, not only the first one.
+        if (destination.ThreadFor(entry.EventKey) != ThreadOf(entry, destination))
+        {
+            entry.Message.TopicFallback = TopicSlots.For(entry.EventKey);
+        }
+
         SentMessage? target = null;
         if (entry.Op == OutboxOp.Edit && (entry.TargetKey is null || !_outbox.TryGetSent(destination.Id, entry.TargetKey, out target)))
         {

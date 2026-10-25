@@ -229,7 +229,7 @@ def checks(base: str, meta: dict, expect_compatible: bool = True) -> str:
 
 def telegram_checks(base: str, token: str, stub) -> None:
     """Connect a bot, add a NewMedia chat by ID, receive the automatic test message (plan 2's deliverable)."""
-    status, _, text = http("POST", f"{base}/TgJelly/Token", {"Token": SMOKE_TOKEN, "SetProfile": True}, token=token, timeout=60)
+    status, _, text = http("POST", f"{base}/TgJelly/Token", {"Token": SMOKE_TOKEN}, token=token, timeout=60)
     check(status == 200 and json.loads(text).get("Outcome") == "Connected", f"POST /TgJelly/Token connects (got {status} {text[:200]})")
 
     def connected():

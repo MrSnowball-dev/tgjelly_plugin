@@ -82,24 +82,6 @@ public interface ITelegramSender
     /// <returns>A task.</returns>
     Task AnswerCallbackAsync(string callbackQueryId, CancellationToken ct);
 
-    /// <summary>Sets the commands for all private chats and clears the default scope (spec §6.1).</summary>
-    /// <param name="commands">The commands.</param>
-    /// <param name="ct">Cancels the call.</param>
-    /// <returns>A task.</returns>
-    Task SetCommandsAsync(IReadOnlyList<BotCommand> commands, CancellationToken ct);
-
-    /// <summary>Calls <c>setMyDescription</c> and <c>setMyShortDescription</c>.</summary>
-    /// <param name="description">The description.</param>
-    /// <param name="shortDescription">The short description.</param>
-    /// <param name="ct">Cancels the call.</param>
-    /// <returns>A task.</returns>
-    Task SetDescriptionsAsync(string description, string shortDescription, CancellationToken ct);
-
-    /// <summary>Sets the default channel admin rights to post and edit messages.</summary>
-    /// <param name="ct">Cancels the call.</param>
-    /// <returns>A task.</returns>
-    Task SetChannelAdminRightsAsync(CancellationToken ct);
-
     /// <summary>Calls <c>sendMessage</c> in HTML with reply-area markup (only <c>ReplyKeyboardRemove</c>, for stale v0.1 keyboards).</summary>
     /// <param name="prompt">The prompt.</param>
     /// <param name="ct">Cancels the call.</param>

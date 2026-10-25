@@ -17,7 +17,6 @@ public static class StringKeys
         "destination.duplicate", "destination.notConnected", "destination.badLink",
         "test.message", "groups.media", "groups.security", "groups.server", "groups.none", "groups.separator",
         "outbox.summary.one", "outbox.summary.other",
-        "command.menu", "command.status", "command.test", "command.help",
         "destination.notForum",
         "time.utc", "delivery.delayed", "media.runtime.hours", "media.runtime.minutes",
         "button.open", "button.imdb", "button.tmdb",

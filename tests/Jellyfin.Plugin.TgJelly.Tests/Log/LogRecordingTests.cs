@@ -477,11 +477,13 @@ public sealed class LogRecordingTests : IDisposable
         var row = Assert.Single(Rows());
         Assert.Equal(LogResult.Sent, row.Result);
         Assert.Contains("Security topic is gone", row.Details.Single(), StringComparison.Ordinal);
+        Assert.DoesNotContain("{", row.Advice, StringComparison.Ordinal);
 
         // The next security alert goes straight to the destination's own topic.
         LoginFailed("bob");
         await _rig.DeliverAllAsync();
         Assert.Null(_h.Api.CallsTo("sendMessage").Last().Body["message_thread_id"]);
+        Assert.Contains(Rows(), r => r.Title.Contains("bob", StringComparison.OrdinalIgnoreCase) && r.Details.Any(x => x.Contains("topic is gone", StringComparison.Ordinal)));
     }
 
     [Fact]

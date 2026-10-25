@@ -746,7 +746,7 @@ Templates: TemplateOverride[] = []
 - `PUT Settings` returns 400 with per-field errors for values outside the ranges.
 
 ### 10.2 Secrets: `secrets.json`
-`{ "botToken": "", "proxyUsername": "", "proxyPassword": "" }`. Written to a temp file and moved into place, mode 600 on Unix. **No API ever returns these values.** The dashboard sees `hasToken`, `botUsername` and `hasProxyPassword`.
+`{ "botToken": "", "proxyUsername": "", "proxyPassword": "" }`. Written to a temp file and moved into place, mode 600 on Unix. **No API returns these values, except GET Token, which shows the bot token to an administrator who presses Show (amended 2026-10-25).** The dashboard sees `hasToken`, `botUsername` and `hasProxyPassword`.
 
 ### 10.3 Runtime state
 **`state.json`** (small; saved within 1 s of a change):

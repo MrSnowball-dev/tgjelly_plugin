@@ -469,6 +469,12 @@ public class DestinationsController : ControllerBase
                 }
 
                 var check = await _checker.CheckAsync(link.Chat, link.ThreadId, cancellationToken).ConfigureAwait(false);
+                // A chat that couldn't be read at all (ChatId 0) says why, rather than "another chat".
+                if (!check.Passed && check.ChatId == 0)
+                {
+                    return Error("Link", check.Message ?? _strings.Get("web.topics.badLink"));
+                }
+
                 if (check.ChatId != destination.ChatId)
                 {
                     return Error("Link", _strings.Get("web.topics.otherChat"));
@@ -493,7 +499,9 @@ public class DestinationsController : ControllerBase
             return Error(request.Create ? "Create" : "Link", _strings.Get(request.Create ? "web.topics.createFailed" : "web.topics.linkFailed", ("error", error.Description)));
         }
 
-        var result = _settings.UpdateIf(request.ExpectedRevision, c =>
+        // The topic exists in Telegram now, so it is recorded on the current settings whatever the page's revision: a
+        // conflict here would leave a topic nobody can pick, and a retry would create another.
+        var result = _settings.UpdateIf(null, c =>
         {
             var d = c.Destinations.FirstOrDefault(x => x.Id == id);
             if (d is null)

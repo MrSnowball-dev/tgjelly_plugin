@@ -27,7 +27,8 @@ public static class TopicSlots
             return eventKey;
         }
 
+        // The rolling alert summary (server.summary) mixes security and server events, so it isn't a slot.
         var group = EventCatalog.GroupOf(eventKey);
-        return group is "security" or "server" ? group : null;
+        return group is "security" or "server" && EventCatalog.IsKnown(eventKey) ? group : null;
     }
 }
