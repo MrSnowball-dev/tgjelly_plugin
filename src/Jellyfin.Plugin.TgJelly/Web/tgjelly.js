@@ -514,10 +514,20 @@ export function proxyFormData(settings) {
     return { Mode: settings.ProxyMode, Url: settings.ProxyUrl };
 }
 
+/** A destination's topic routes as sorted "slot=thread" strings, so the form compares and stores them as one value. */
+const routeList = routes => (routes ?? []).map(r => `${r.Slot}=${r.ThreadId}`).sort();
+
+/** The routes of a routeList as a map from slot to thread id. */
+const routeMap = list => new Map((list ?? []).map(entry => {
+    const at = entry.lastIndexOf('=');
+    return [entry.slice(0, at), Number(entry.slice(at + 1))];
+}));
+
 /** The editor's data for one destination from the DestinationDto: the fields its auto-saves can send. */
 export function destinationFormData(dest) {
     return {
         Enabled: Boolean(dest.Enabled),
+        Routes: routeList(dest.TopicRoutes),
         Events: [...(dest.Events ?? [])],
         LibraryIds: [...(dest.LibraryIds ?? [])],
         SilentGroups: [...(dest.SilentGroups ?? [])],
@@ -538,6 +548,15 @@ export function destinationChanges(base, local, revision) {
         if (differs(key)) {
             body[key] = local[key];
         }
+    }
+
+    // Only the slots whose topic changed; null sends a slot back to the destination's own topic.
+    if (differs('Routes')) {
+        const before = routeMap(base.Routes);
+        const after = routeMap(local.Routes);
+        body.TopicRoutes = [...new Set([...before.keys(), ...after.keys()])]
+            .filter(slot => before.get(slot) !== after.get(slot))
+            .map(slot => ({ Slot: slot, ThreadId: after.has(slot) ? after.get(slot) : null }));
     }
 
     return Object.keys(body).length > 1 ? body : null;
@@ -593,18 +612,29 @@ const destSaveKey = (id, what) => `dest:${id}:${what}`;
 export function renderEditor(dest, catalog, libraries, S, ui) {
     const local = (ui.form && ui.form.local) || destinationFormData(dest);
     const id = dest.Id;
-    const toggle = (input, what, checked, label, attrs) => {
-        const key = destSaveKey(id, what);
-        return row({ label, control: switchControl({ input, checked, label, attrs: { 'data-tgj-id': id, ...attrs, 'data-tgj-save': key } }), cueKey: key });
-    };
+    const switchFor = (input, what, checked, label, attrs) => switchControl({ input, checked, label, attrs: { 'data-tgj-id': id, ...attrs, 'data-tgj-save': destSaveKey(id, what) } });
+    const toggle = (input, what, checked, label, attrs) => row({ label, control: switchFor(input, what, checked, label, attrs), cueKey: destSaveKey(id, what) });
     const parts = [];
+
+    // A forum: where the destination posts, and a topic choice beside each media event and each other group.
+    const forum = Boolean(dest.IsForum);
+    const routes = routeMap(local.Routes);
+    const topic = slot => (forum ? topicChoice(dest, slot, routes, S, ui) : '');
+    if (forum) {
+        parts.push(row({ label: text(S, 'web.topics.postsTo'), control: `<span class="tgj-topic-name">${esc(topicName(dest, dest.ThreadId, S))}</span>` }));
+    }
 
     const events = new Set(local.Events);
     parts.push(`<h3 class="tgj-subtitle">${t(S, 'dest.events.title')}</h3>`);
     for (const group of catalog.Groups) {
         const keys = catalog.EventKeys.filter(k => k.startsWith(group + '.'));
-        parts.push(`<div class="tgj-subcard" data-tgj-group-card="${esc(group)}"><h3 class="tgj-subcard-title">${t(S, `web.event.group.${group}`)}</h3>`
-            + keys.map(k => toggle('destEvent', `event:${k}`, events.has(k), text(S, `web.event.${k}`), { 'data-tgj-key': k })).join('')
+        // Media events each have their own topic; Security and Server have one for the whole group.
+        const groupTopic = group === 'media' ? '' : topic(group);
+        parts.push(`<div class="tgj-subcard" data-tgj-group-card="${esc(group)}">`
+            + `<div class="tgj-subcard-head"><h3 class="tgj-subcard-title">${t(S, `web.event.group.${group}`)}</h3>${groupTopic}</div>`
+            + keys.map(k => (group === 'media' && forum
+                ? row({ label: text(S, `web.event.${k}`), control: switchFor('destEvent', `event:${k}`, events.has(k), text(S, `web.event.${k}`), { 'data-tgj-key': k }) + topic(k), cueKey: destSaveKey(id, `event:${k}`) })
+                : toggle('destEvent', `event:${k}`, events.has(k), text(S, `web.event.${k}`), { 'data-tgj-key': k }))).join('')
             + '</div>');
     }
 
@@ -630,6 +660,8 @@ export function renderEditor(dest, catalog, libraries, S, ui) {
     parts.push(`<h3 class="tgj-subtitle">${t(S, 'dest.silent.title')}</h3>`
         + catalog.Groups.map(g => toggle('destSilent', `silent:${g}`, silent.has(g), text(S, `groups.${g}`), { 'data-tgj-group': g })).join('')
         + `<p class="tgj-row-hint">${t(S, 'dest.silent.hint')}</p>`);
+
+    parts.push(destinationIds(dest, routes, S, Boolean(ui.idsOpen)));
 
     parts.push('<div class="tgj-actions">'
         + actionButton({ label: text(S, 'dest.btn.test'), act: 'testDest', id })
@@ -657,6 +689,77 @@ export function renderEditor(dest, catalog, libraries, S, ui) {
     }
 
     return card({ title: dest.Title, description: destinationMeta(dest, S), body: parts.join(''), extraClass: 'tgj-dest-editor' });
+}
+
+/** A topic's name for the editor: General, the name TgJelly knows, or "Topic #123". */
+export function topicName(dest, thread, S) {
+    if (thread === 0) {
+        return text(S, 'web.topics.general');
+    }
+
+    const known = (dest.KnownTopics ?? []).find(k => k.ThreadId === thread);
+    return known && known.Name ? known.Name : text(S, 'web.topics.number', { id: thread });
+}
+
+/** A slot's label: a media event's name, or the group's. */
+const slotLabel = (slot, S) => text(S, slot.includes('.') ? `web.event.${slot}` : `web.event.group.${slot}`);
+
+/**
+ * The topic choice beside a media event or a group's title (forums only): the destination's own topic, General, the
+ * topics TgJelly knows, Create a topic…, or Use a topic link…; a cue beside it, "Topic gone" when Telegram says so, and
+ * the link field while a link is being entered.
+ */
+function topicChoice(dest, slot, routes, S, ui) {
+    const id = dest.Id;
+    const key = destSaveKey(id, `topic:${slot}`);
+    const value = routes.has(slot) ? String(routes.get(slot)) : '';
+    const threads = [0, ...(dest.KnownTopics ?? []).map(k => k.ThreadId)].filter((t, i, all) => t !== dest.ThreadId && all.indexOf(t) === i);
+    if (routes.has(slot) && !threads.includes(routes.get(slot)) && routes.get(slot) !== dest.ThreadId) {
+        threads.push(routes.get(slot));
+    }
+
+    const options = [
+        { value: '', label: text(S, 'web.topics.default', { topic: topicName(dest, dest.ThreadId, S) }) },
+        ...threads.map(t => ({ value: String(t), label: topicName(dest, t, S) })),
+        { value: 'create', label: text(S, 'web.topics.create') },
+        { value: 'link', label: text(S, 'web.topics.link') },
+    ];
+    const gone = routes.has(slot) && (dest.MissingTopics ?? []).includes(routes.get(slot)) ? label(text(S, 'web.topics.gone'), 'attention') : '';
+    const select = selectField({
+        input: 'destTopic',
+        value,
+        options,
+        extraClass: 'tgj-topic-select',
+        attrs: { 'data-tgj-id': id, 'data-tgj-key': slot, 'data-tgj-save': key, 'aria-label': text(S, 'web.topics.choose', { what: slotLabel(slot, S) }) },
+    });
+    const linking = ui.topicLink && ui.topicLink.id === id && ui.topicLink.slot === slot
+        ? `<span class="tgj-topic-link">${textField({ input: 'destTopicLink', value: ui.topicLink.text ?? '', attrs: { 'data-tgj-id': id, 'data-tgj-key': slot, autocomplete: 'off', spellcheck: 'false', 'aria-label': text(S, 'web.topics.linkLabel') } })}`
+            + actionButton({ label: text(S, 'web.topics.linkUse'), act: 'topicLinkUse', kind: 'primary', id })
+            + actionButton({ label: text(S, 'web.topics.linkCancel'), act: 'topicLinkCancel', id })
+            + '</span>'
+        : '';
+    return `<span class="tgj-topic">${select}${gone}<span class="tgj-cue" data-tgj-cue="${esc(key)}" aria-live="polite"></span>${linking}</span>`;
+}
+
+/** A destination's IDs, folded away until opened: the chat, its topic, and each routed slot's topic. */
+function destinationIds(dest, routes, S, open) {
+    const toggleButton = `<button type="button" class="tgj-ref-toggle" data-tgj-act="destIds" data-tgj-id="${esc(dest.Id)}" aria-expanded="${open}">${t(S, 'web.dest.ids')}</button>`;
+    if (!open) {
+        return `<div class="tgj-dest-ids">${toggleButton}</div>`;
+    }
+
+    const lines = [[text(S, 'web.dest.ids.chat'), dest.ChatId]];
+    if (dest.IsForum || dest.ThreadId) {
+        lines.push([text(S, 'web.dest.ids.topic'), dest.ThreadId]);
+    }
+
+    for (const [slot, thread] of routes) {
+        lines.push([text(S, 'web.dest.ids.slot', { what: slotLabel(slot, S) }), thread]);
+    }
+
+    return `<div class="tgj-dest-ids">${toggleButton}<dl class="tgj-dest-ids-list">`
+        + lines.map(([name, value]) => `<dt>${esc(name)}</dt><dd><code>${esc(value)}</code></dd>`).join('')
+        + '</dl></div>';
 }
 
 /** A destination's kind as plain text: "Channel", or "Forum" for a supergroup with topics. */
@@ -717,6 +820,8 @@ export function renderDestinations(dto, libraries, links, S, ui) {
             confirmRemove: ui.confirmRemove === editing.Id,
             leave: ui.leave,
             result: (ui.results ?? {})[editing.Id],
+            topicLink: ui.topicLink ?? null,
+            idsOpen: Boolean((ui.idsOpen ?? {})[editing.Id]),
         }));
     }
 
@@ -1357,6 +1462,9 @@ export default function TgJellyPage(view, params) {
             destConfirm: null,
             destLeave: false,
             destResults: {},
+            // A forum topic chosen by link, while its field is open: { id, slot, text }; and which IDs blocks are open.
+            topicLink: null,
+            destIdsOpen: {},
             // The manual block (§6.5): the typed chat ID or link, and the last add's outcome (HTML).
             manualInput: '',
             manualResult: '',
@@ -1633,6 +1741,8 @@ export default function TgJellyPage(view, params) {
                 confirmRemove: state.ui.destConfirm,
                 leave: state.ui.destLeave,
                 results: state.ui.destResults,
+                topicLink: state.ui.topicLink,
+                idsOpen: state.ui.destIdsOpen,
             }),
         },
         // Reads the destinations state (same data as the Destinations section), so it has nothing to load itself.
@@ -2401,6 +2511,27 @@ export default function TgJellyPage(view, params) {
         send: () => sendDestination(id),
     });
 
+    /** Posts a topic for a slot and takes the destination it returns; the link field closes once it worked. */
+    const topicPost = (id, slot, choice) => runAction('destinations', async () => {
+        if (!slot || !destination(id)) {
+            return undefined;
+        }
+
+        await autosave.flush();
+        const result = await api.post(`Destinations/${encodeURIComponent(id)}/Topics`, { ExpectedRevision: pageRevision(), Slot: slot, ...choice });
+        if (result.status === 200 && result.body) {
+            state.ui.topicLink = null;
+            const form = state.forms[destKey(id)];
+            if (form) {
+                state.forms[destKey(id)] = syncFormData(form, destinationFormData(result.body));
+            }
+
+            takeDestination(result.body);
+        }
+
+        return result;
+    });
+
     const destinationOutcome = (id, html) => {
         state.ui.destResults[id] = html;
     };
@@ -2504,6 +2635,21 @@ export default function TgJellyPage(view, params) {
                 state.ui.saving = false;
             }
         }),
+        // A topic for a slot: TgJelly creates one named after it, or uses the one a pasted link points to.
+        topicCreate: el => topicPost(idOf(el), el.getAttribute('data-tgj-key'), { Create: true }),
+        topicLinkUse: el => {
+            const ask = state.ui.topicLink;
+            return ask && ask.id === idOf(el) ? topicPost(ask.id, ask.slot, { Link: ask.text }) : undefined;
+        },
+        topicLinkCancel: () => {
+            state.ui.topicLink = null;
+            renderSection('destinations');
+        },
+        destIds: el => {
+            const id = idOf(el);
+            state.ui.destIdsOpen[id] = !state.ui.destIdsOpen[id];
+            renderSection('destinations');
+        },
         edit: el => {
             const id = idOf(el);
             state.ui.destEditing = state.ui.destEditing === id ? null : id;
@@ -2699,6 +2845,44 @@ export default function TgJellyPage(view, params) {
             editDestination(id, { Events: keys.filter(k => chosen.includes(k)) });
             renderSection('destinations');
             saveDestination(id, `event:${key}`, fieldSelector(el));
+        },
+        // A topic choice beside a media event or a group: another topic saves at once; Create and Use a link act.
+        destTopic: (el, event) => {
+            const id = idOf(el);
+            const slot = el.getAttribute('data-tgj-key');
+            const form = state.forms[destKey(id)];
+            if (event.type !== 'change' || !form || !slot) {
+                return;
+            }
+
+            const value = String(el.value ?? '');
+            if (value === 'create') {
+                state.ui.topicLink = null;
+                actions.topicCreate(el);
+                return;
+            }
+
+            if (value === 'link') {
+                state.ui.topicLink = { id, slot, text: '' };
+                renderSection('destinations');
+                return;
+            }
+
+            const routes = routeMap(form.local.Routes);
+            if (value === '') {
+                routes.delete(slot);
+            } else {
+                routes.set(slot, Number(value));
+            }
+
+            editDestination(id, { Routes: [...routes].map(([k, v]) => `${k}=${v}`).sort() });
+            renderSection('destinations');
+            saveDestination(id, `topic:${slot}`, fieldSelector(el));
+        },
+        destTopicLink: el => {
+            if (state.ui.topicLink) {
+                state.ui.topicLink.text = String(el.value ?? '').trim();
+            }
         },
         destLibrary: (el, event) => {
             const id = idOf(el);

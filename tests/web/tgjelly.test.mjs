@@ -1340,6 +1340,43 @@ test('destList_rowsWithStateLabels_noSymbols', async () => {
     assert.match(none, /class="tgj-empty-actions">[\s\S]*https:\/\/t\.me\/jf_bot\?start=add[\s\S]*data-tgj-act="open-manual"/, 'the add actions in the empty state');
 });
 
+test('a forum chooses a topic beside each media event and each other group; Create and Advanced IDs', async () => {
+    const forum = dest({ IsForum: true, ThreadId: 3, KnownTopics: [{ ThreadId: 3, Name: 'Jellyfin' }, { ThreadId: 9, Name: '' }], TopicRoutes: [], MissingTopics: [] });
+    const created = { ...forum, Revision: 6, KnownTopics: [...forum.KnownTopics, { ThreadId: 12, Name: 'Movies' }], TopicRoutes: [{ Slot: 'media.movie', ThreadId: 12 }] };
+    const { view, api, el } = mount({
+        'GET TgJelly/Destinations': destinations({ Items: [forum] }),
+        'PUT TgJelly/Destinations/d1': request => ({ ...forum, Revision: 7, TopicRoutes: JSON.parse(request.data).TopicRoutes.filter(r => r.ThreadId !== null) }),
+        'POST TgJelly/Destinations/d1/Topics': created,
+    });
+    await show(view);
+    await destAct(view, 'edit', { 'data-tgj-id': 'd1' });
+    const html = destEl(el);
+    assert.ok(html.includes('Posts to') && html.includes('>Jellyfin<'), 'the topic it posts to');
+    assert.ok(html.includes('data-tgj-key="media.movie" data-tgj-save="dest:d1:topic:media.movie"'), 'beside a media event');
+    assert.ok(html.includes('data-tgj-key="security" data-tgj-save="dest:d1:topic:security"'), 'beside the Security group');
+    assert.ok(!html.includes('data-tgj-key="security.lockout" data-tgj-save="dest:d1:topic:'), 'not per security event');
+    assert.ok(html.includes('Topic #9') && html.includes('Default topic (Jellyfin)'));
+
+    await destInput(view, 'destTopic', { 'data-tgj-id': 'd1', 'data-tgj-key': 'server', 'data-tgj-save': 'dest:d1:topic:server' }, { value: '9' });
+    assert.deepEqual(putBodies(api), [{ ExpectedRevision: 5, TopicRoutes: [{ Slot: 'server', ThreadId: 9 }] }]);
+
+    await destInput(view, 'destTopic', { 'data-tgj-id': 'd1', 'data-tgj-key': 'media.movie', 'data-tgj-save': 'dest:d1:topic:media.movie' }, { value: 'create' });
+    const topic = api.calls.find(c => c.type === 'POST' && c.url.includes('Destinations/d1/Topics'));
+    assert.deepEqual(JSON.parse(topic.data), { ExpectedRevision: 7, Slot: 'media.movie', Create: true });
+    assert.ok(destEl(el).includes('>Movies<'), 'the new topic is offered by name');
+
+    assert.ok(!destEl(el).includes('Chat ID'), 'the IDs are folded away');
+    await destAct(view, 'destIds', { 'data-tgj-id': 'd1' });
+    assert.ok(destEl(el).includes('Chat ID') && destEl(el).includes('<code>-100123</code>') && destEl(el).includes('<code>12</code>'));
+});
+
+test('a destination without topics has no topic choices', async () => {
+    const { view, el } = mount();
+    await show(view);
+    await destAct(view, 'edit', { 'data-tgj-id': 'd1' });
+    assert.ok(!destEl(el).includes('destTopic') && !destEl(el).includes('Posts to'));
+});
+
 test('eventSwitch_savesImmediately', async () => {
     const { view, api, el, hooks, timers } = mount({ 'PUT TgJelly/Destinations/d1': echoDest() });
     await show(view);
@@ -2548,8 +2585,8 @@ test('every t(…) key used in tgjelly.js exists in en.json', () => {
 
 // Sent by TgJellyController as the Connected status message, not rendered by the page itself.
 const SERVER_SIDE_KEY = 'web.status.connected';
-// Sent by the server in its own replies (GET Token without a bot).
-const SERVER_SIDE_KEYS = new Set(['web.token.none']);
+// Sent by the server in its own replies (GET Token without a bot; the topic set-up's errors).
+const SERVER_SIDE_KEYS = new Set(['web.token.none', 'web.topics.notForum', 'web.topics.badLink', 'web.topics.otherChat', 'web.topics.createFailed', 'web.topics.linkFailed']);
 
 // Filled in by the server's LogRecorder: the Log rows arrive with these texts already in them.
 const SERVER_SIDE_PREFIXES = ['web.log.why.', 'web.log.advice.', 'web.log.right.', 'web.log.duration.', 'web.log.title.', 'web.log.noDetails'];
