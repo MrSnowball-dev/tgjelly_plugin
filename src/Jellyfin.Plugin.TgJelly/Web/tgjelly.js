@@ -283,8 +283,11 @@ export function renderStatus(status, S, lang = 'en') {
             ? actionButton({ label: text(S, 'web.status.takeOver'), act: 'takeover', kind: 'primary' })
             : '';
         // The label holds the state word; the server's message (long when something is wrong) is plain text beside it.
+        // Not connected and Connected say it all in the label ("No bot connected" and "Connected as @bot" would only
+        // repeat it; the Bot card names the bot), so they carry no message.
         const word = status.ConnectionState === 'Connected' ? text(S, 'web.status.connected') : connectionLabel(status, S).text;
-        const message = status.ConnectionMessage && status.ConnectionMessage !== word
+        const repeats = status.ConnectionState === 'NoToken' || status.ConnectionState === 'Connected';
+        const message = status.ConnectionMessage && status.ConnectionMessage !== word && !repeats
             ? `<span class="tgj-conn-message">${esc(status.ConnectionMessage)}</span>` : '';
         parts.push(row({
             label: text(S, 'web.status.connection'),
@@ -293,7 +296,7 @@ export function renderStatus(status, S, lang = 'en') {
     }
 
     if (!status.HasToken) {
-        // Before a bot is connected the card is just the connection line, below the Connect card.
+        // Before a bot is connected the card is just the connection line, above the Connect card.
         return card({ title: text(S, 'web.status.title'), body: parts.join('') });
     }
 
@@ -989,7 +992,8 @@ const NAV_LABELS = {
 /** Today's section containers, by the dashboard section that holds them (design §5.2). */
 const SECTION_HOSTS = {
     // Connect precedes Status: with no bot it leads (design §5.2), and with a bot it is empty, so Status leads.
-    overview: ['tgj-connect', 'tgj-status', 'tgj-bot'],
+    // Status always leads (owner, 2026-10-25); Connect follows it until a bot is connected.
+    overview: ['tgj-status', 'tgj-connect', 'tgj-bot'],
     destinations: ['tgj-destinations'],
     // Messages holds the templates too (plan 9, design §6.1), and Batching sits in Advanced after Update checks (§7).
     messages: ['tgj-messages'],
@@ -1780,13 +1784,14 @@ export default function TgJellyPage(view, params) {
         }
     };
 
-    /** Puts the typed proxy username and password back into the inputs after a render (never through HTML). */
+    /** Puts the typed token, proxy username and password back into the inputs after a render (never through HTML). */
     const restoreSecrets = () => {
         if (typeof view.querySelectorAll !== 'function') {
             return;
         }
 
-        for (const field of ['proxyUsername', 'proxyPassword']) {
+        // The token too: a re-render (a poll, or the profile checkbox changing the card) must not empty it.
+        for (const field of ['token', 'proxyUsername', 'proxyPassword']) {
             for (const el of view.querySelectorAll(`[data-tgj-input="${field}"]`)) {
                 el.value = typed[field] ?? '';
             }

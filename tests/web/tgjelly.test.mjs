@@ -265,7 +265,12 @@ test('renderStatus shows the compat banner when incompatible', () => {
 });
 
 test('renderStatus shows the connection message, counts and last errors, escaped', () => {
+    const connected = m.renderStatus(status({ ConnectionMessage: 'Connected as @a<b' }), EN);
+    assert.ok(!connected.includes('Connected as @a'), 'Connected says it all in its label');
+    assert.ok(!m.renderStatus(status({ ConnectionState: 'NoToken', HasToken: false, ConnectionMessage: 'No bot connected' }), EN).includes('No bot connected'),
+        'nor does Not connected repeat itself');
     const html = m.renderStatus(status({
+        ConnectionState: 'Connecting',
         ConnectionMessage: 'Connected as @a<b',
         PendingMedia: 4,
         OutboxCount: 7,
@@ -347,14 +352,14 @@ test('polling stops on viewhide and when hidden', async () => {
 });
 
 test('a poll re-renders only the status', async () => {
-    const { view, timers, el, hooks, api } = mount({ 'GET TgJelly/Status': status({ ConnectionMessage: 'first' }) });
+    const { view, timers, el, hooks, api } = mount({ 'GET TgJelly/Status': status({ ConnectionState: 'Connecting', ConnectionMessage: 'first' }) });
     let loads = 0;
     let renders = 0;
     hooks.sections.demo = { id: 'tgj-demo', load: async () => { loads++; }, render: () => `demo ${++renders}` };
     await show(view);
     assert.equal(el('tgj-demo').innerHTML, 'demo 1');
 
-    api.fetch = makeApiClient({ 'GET TgJelly/Status': status({ ConnectionMessage: 'second' }) }).fetch;
+    api.fetch = makeApiClient({ 'GET TgJelly/Status': status({ ConnectionState: 'Connecting', ConnectionMessage: 'second' }) }).fetch;
     timers.tick();
     await flush();
 
@@ -716,6 +721,23 @@ test('the profile checkbox is sent as chosen', async () => {
     dispatchOn(view, 'change', { 'data-tgj-input': 'setProfile' }, { checked: false });
     await click(view, 'saveToken');
     assert.equal(posted(api, 'Token')[0].SetProfile, false);
+});
+
+test('the typed token survives re-renders, such as toggling the profile checkbox', async () => {
+    const { view, timers } = mount({ 'GET TgJelly/Status': noToken() });
+    await show(view);
+    await click(view, 'connectExisting');
+    const field = { name: 'token', value: '' };
+    view.fields.push(field);
+    input(view, 'token', '1:a');
+    dispatchOn(view, 'change', { 'data-tgj-input': 'setProfile' }, { checked: false });
+    dispatchOn(view, 'change', { 'data-tgj-input': 'setProfile' }, { checked: true });
+    // A re-render empties the input; the controller puts the typed token back.
+    field.value = '';
+    await click(view, 'connectExisting');
+    timers.tick();
+    await flush();
+    assert.equal(field.value, '1:a');
 });
 
 test('buttons are disabled while a save is in flight', async () => {
@@ -1136,7 +1158,7 @@ test('a failed token request does not leave the token to be resent', async () =>
 
 test('a poll with a new message leaves the typed token and the open disconnect confirm alone', async () => {
     let message = 'first';
-    const { view, timers, el } = mount({ 'GET TgJelly/Status': () => status({ ConnectionMessage: message }) });
+    const { view, timers, el } = mount({ 'GET TgJelly/Status': () => status({ ConnectionState: 'Connecting', ConnectionMessage: message }) });
     await show(view);
     await click(view, 'changeToken');
     input(view, 'token', '1:a');
@@ -2693,7 +2715,7 @@ function shownSection(el) {
 }
 
 const HOSTS = {
-    overview: ['tgj-connect', 'tgj-status', 'tgj-bot'],
+    overview: ['tgj-status', 'tgj-connect', 'tgj-bot'],
     destinations: ['tgj-destinations'],
     messages: ['tgj-messages'],
     advanced: ['tgj-proxy', 'tgj-updates', 'tgj-batching', 'tgj-manual', 'tgj-diagnostics'],
@@ -3025,12 +3047,12 @@ test('overview_cards_statusBotSummary', async () => {
     assert.equal(el('tgj-connect').innerHTML, '', 'no connect form while a bot is connected');
 });
 
-test('overview_noBot_leadsWithConnectCard_noSave', async () => {
+test('overview_noBot_statusFirstThenConnect_noSave', async () => {
     const { view, el } = mount({ 'GET TgJelly/Status': noToken() });
     await show(view);
     assert.ok(el('tgj-connect').innerHTML.includes('class="tgj-card"'));
     const order = id => el('tgjelly-root').innerHTML.indexOf(`id="${id}"`);
-    assert.ok(order('tgj-connect') > -1 && order('tgj-connect') < order('tgj-status'), 'Connect leads without a bot');
+    assert.ok(order('tgj-status') > -1 && order('tgj-status') < order('tgj-connect'), 'Status always leads; Connect follows it');
     assert.ok(!el('tgj-status').innerHTML.includes('Waiting for metadata'), 'Status is only the connection line');
     assert.equal(el('tgj-bot').innerHTML, '');
     await click(view, 'connectExisting');
