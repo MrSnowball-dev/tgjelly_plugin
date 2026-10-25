@@ -1,5 +1,6 @@
 using System;
 using System.ComponentModel;
+using System.Linq;
 using System.Text.Json.Serialization;
 using System.Xml.Serialization;
 
@@ -122,5 +123,17 @@ public class Destination
             "security" or "server" => group,
             _ => null,
         };
+    }
+
+    /// <summary>
+    /// Adds a topic TgJelly knows, or renames it; an empty name keeps the one already known.
+    /// </summary>
+    /// <param name="thread">The topic's thread ID.</param>
+    /// <param name="name">Its name, or empty when unknown.</param>
+    public void RememberTopic(int thread, string name)
+    {
+        var known = Array.Find(KnownTopics, t => t.ThreadId == thread);
+        var topic = new KnownTopic { ThreadId = thread, Name = name.Length > 0 ? name : known?.Name ?? string.Empty };
+        KnownTopics = known is null ? [.. KnownTopics, topic] : [.. KnownTopics.Select(t => t == known ? topic : t)];
     }
 }

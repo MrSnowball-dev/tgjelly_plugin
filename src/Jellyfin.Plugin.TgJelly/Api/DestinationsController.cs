@@ -509,14 +509,7 @@ public class DestinationsController : ControllerBase
                 return false;
             }
 
-            if (Array.Find(d.KnownTopics, t => t.ThreadId == thread) is { } known)
-            {
-                known.Name = name.Length > 0 ? name : known.Name;
-            }
-            else
-            {
-                d.KnownTopics = [.. d.KnownTopics, new KnownTopic { ThreadId = thread, Name = name }];
-            }
+            d.RememberTopic(thread, name);
 
             d.TopicRoutes = WithRoutes(d.TopicRoutes, [(request.Slot, (int?)thread)]);
             if (request.Slot == "media")

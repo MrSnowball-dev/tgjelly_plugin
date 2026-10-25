@@ -67,9 +67,7 @@ public static class TopicNames
             var changed = false;
             foreach (var d in c.Destinations.Where(needs))
             {
-                d.KnownTopics = Array.Exists(d.KnownTopics, t => t.ThreadId == thread)
-                    ? [.. d.KnownTopics.Select(t => t.ThreadId == thread ? new KnownTopic { ThreadId = thread, Name = name } : t)]
-                    : [.. d.KnownTopics, new KnownTopic { ThreadId = thread, Name = name }];
+                d.RememberTopic(thread, name);
                 changed = true;
             }
 

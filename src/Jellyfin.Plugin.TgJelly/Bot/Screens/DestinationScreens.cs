@@ -387,9 +387,9 @@ public sealed class DestinationScreens
         var created = thread;
         Change(id, x =>
         {
-            if (choice == "n" && created is { } t && !x.KnownTopics.Any(k => k.ThreadId == t))
+            if (choice == "n" && created is { } t)
             {
-                x.KnownTopics = [.. x.KnownTopics, new KnownTopic { ThreadId = t, Name = name }];
+                x.RememberTopic(t, name);
             }
 
             var routes = x.TopicRoutes.Where(r => !string.Equals(r.Slot, slot, StringComparison.Ordinal)).ToList();
