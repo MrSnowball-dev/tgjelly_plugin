@@ -33,6 +33,8 @@ The repository has one build for Jellyfin 10.11 and one for Jellyfin 12. Jellyfi
 
 <!-- screenshot: the Telegram page after the token is accepted -->
 
+TgJelly doesn't change the bot's name, description, photo or command menu: set them in BotFather as you like. The commands (/menu, /status, /test, /help) work whether or not they are in the menu.
+
 You never type a chat ID. The Advanced section of the dashboard has manual options for the rare case where the main way fails.
 
 The custom icons on the bot's buttons and headings show only when the bot owner's Telegram account has Premium; otherwise the bot shows plain labels.
@@ -52,7 +54,7 @@ The **Telegram** page in the Jellyfin Dashboard has a sidebar of sections. On a 
 - **Overview:** the connection state, notices, and the bot. With no bot connected, it starts with Connect. A notice reminds you to restrict the bot's access in BotFather.
 - **Destinations:** the chats that get messages, with their events, libraries, silent groups, pause, and test.
 - **Messages:** one page per message: what it shows, its template, a preview, and the fields you can use.
-- **Advanced:** proxy, batching, update checks, adding a chat by ID, and diagnostics.
+- **Advanced:** the bot token (hidden until you press Show), proxy, batching, update checks, adding a chat by ID, and diagnostics.
 - **Log:** what happened to every message TgJelly sent or held back, and to every test message.
 
 There are no Save buttons. Every setting saves itself, and a short label beside it says what happened. "Saved" fades after two seconds. "Not saved" stays, with the reason, until you fix the value. A value that is not valid is never saved. Buttons are only for actions, like Remove, Send test and Reset.
@@ -62,6 +64,8 @@ When something goes wrong, the message says what happened and what to do next, i
 ### Destinations
 
 A destination shows a status only when something is wrong: Photos blocked, Needs permissions, Topic missing or Lost. A healthy one shows nothing. Under its name you see the kind of chat: Channel, Group, Supergroup, or Forum for a group with topics. In the editor, the events are grouped into Media, Security and Server.
+
+In a forum (a group with topics), the editor says which topic the destination posts to, and each media event, plus Security and Server, can go to a topic of its own: pick one from the list beside it, let TgJelly create one, or paste a link to an existing topic. Anything left on the default topic goes where it does today. If a chosen topic is deleted, its messages go to the default topic and the editor shows "Topic gone". The **Advanced** block at the bottom of the editor, folded until you open it, shows the chat ID and the topic IDs.
 
 Disconnecting the bot keeps your destinations, so they work again when you connect the same bot. The confirmation has a switch, "Also remove all destinations", that is off by default.
 

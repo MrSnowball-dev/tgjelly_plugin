@@ -186,6 +186,17 @@ public sealed class DestinationScreens
         return new Screen(html.ToString(), new InlineKeyboardMarkup(rows));
     }
 
+    private string TopicName(Destination d, int thread)
+    {
+        if (thread == 0)
+        {
+            return _strings.Get("web.topics.general");
+        }
+
+        var known = Array.Find(d.KnownTopics, k => k.ThreadId == thread);
+        return known is { Name.Length: > 0 } ? known.Name : _strings.Get("web.topics.number", ("id", thread));
+    }
+
     private Screen Detail(string id, string? note = null)
     {
         if (Find(id) is not { } d)
@@ -197,6 +208,17 @@ public sealed class DestinationScreens
         var sends = DestinationTester.GroupsText(_strings, d.Events);
         var html = new StringBuilder("<b>").Append(_formatter.Escape(d.Title)).Append("</b>\n");
         html.Append(_formatter.Escape(_strings.Get("dest.line.kind", ("kind", _strings.Get(d.KindKey))))).Append('\n');
+        if (d.KindKey == "dest.kind.Forum")
+        {
+            // Which topic it posts to, and the slots that have their own (set in the dashboard).
+            html.Append(_formatter.Escape(_strings.Get("dest.line.topic", ("topic", TopicName(d, d.ThreadId))))).Append('\n');
+            foreach (var route in d.TopicRoutes)
+            {
+                var what = _strings.Get(route.Slot.Contains('.', StringComparison.Ordinal) ? "web.event." + route.Slot : "web.event.group." + route.Slot);
+                html.Append(_formatter.Escape(_strings.Get("dest.line.route", ("what", what), ("topic", TopicName(d, route.ThreadId))))).Append('\n');
+            }
+        }
+
         html.Append(_formatter.Escape(_strings.Get("dest.line.status", ("status", HealthText(health))))).Append('\n');
         html.Append(_formatter.Escape(_strings.Get("dest.line.groups", ("groups", sends)))).Append('\n');
         html.Append(_formatter.Escape(_strings.Get("dest.line.enabled", ("state", _strings.Get(d.Enabled ? "dest.enabled.yes" : "dest.enabled.no")))));

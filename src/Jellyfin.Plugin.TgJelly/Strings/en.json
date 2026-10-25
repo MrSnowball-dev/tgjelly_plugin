@@ -122,6 +122,8 @@
   "dest.kind.Forum": "Forum",
   "dest.line.kind": "Type: {kind}",
   "dest.line.status": "Status: {status}",
+  "dest.line.topic": "Topic: {topic}",
+  "dest.line.route": "{what}: {topic}",
   "dest.line.groups": "Sends: {groups}",
   "dest.line.enabled": "Enabled: {state}",
   "dest.enabled.yes": "Yes",
