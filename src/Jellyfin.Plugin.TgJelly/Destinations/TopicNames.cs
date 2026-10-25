@@ -6,8 +6,8 @@ using Telegram.Bot.Types;
 namespace Jellyfin.Plugin.TgJelly.Destinations;
 
 /// <summary>
-/// Learns forum topic names. The Bot API can't look a topic up, but the forum tells the bot when a topic is created or
-/// renamed, and a message sent into a topic comes back with the topic's creation message as <c>reply_to_message</c>.
+/// Learns forum topic names. The Bot API can't look a topic up, but the forum tells the bot when a topic is renamed,
+/// and a message sent into a topic comes back with the topic's creation message as <c>reply_to_message</c>.
 /// </summary>
 public static class TopicNames
 {
@@ -31,16 +31,17 @@ public static class TopicNames
     }
 
     /// <summary>
-    /// Follows a topic created or renamed in a forum: every destination in that chat knows the topic by its new name,
-    /// in the dashboard and in the bot alike.
+    /// Follows a topic renamed in a forum: each destination in that chat that knows the topic or posts to it, and
+    /// every one for General, takes the new name, in the dashboard and in the bot alike. Other topics aren't added:
+    /// Telegram never says when a topic is deleted, so the pickers would fill with topics that are gone.
     /// </summary>
     /// <param name="settings">The settings.</param>
-    /// <param name="message">A message from a supergroup; any message but a topic created or renamed is ignored.</param>
+    /// <param name="message">A message from a supergroup; any message but a topic renamed is ignored.</param>
     public static void FollowRename(SettingsStore settings, Message message)
     {
         ArgumentNullException.ThrowIfNull(settings);
         ArgumentNullException.ThrowIfNull(message);
-        if ((message.ForumTopicCreated?.Name ?? message.ForumTopicEdited?.Name) is not { Length: > 0 } name)
+        if (message.ForumTopicEdited?.Name is not { Length: > 0 } name)
         {
             return;
         }
@@ -48,7 +49,9 @@ public static class TopicNames
         // The General topic has no thread ID, and TgJelly calls it thread 0.
         var thread = message.IsTopicMessage ? message.MessageThreadId ?? 0 : 0;
         var chatId = message.Chat.Id;
-        bool Stale(Destination d) => d.ChatId == chatId && !d.KnownTopics.Any(t => t.ThreadId == thread && string.Equals(t.Name, name, StringComparison.Ordinal));
+        bool Stale(Destination d) => d.ChatId == chatId
+            && (thread == 0 || d.ThreadId == thread || d.TopicRoutes.Any(r => r.ThreadId == thread) || d.KnownTopics.Any(t => t.ThreadId == thread))
+            && !d.KnownTopics.Any(t => t.ThreadId == thread && string.Equals(t.Name, name, StringComparison.Ordinal));
         Remember(settings, Stale, thread, name);
     }
 

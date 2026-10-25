@@ -33,25 +33,28 @@ public sealed class TopicNamesTests : System.IDisposable
     }
 
     [Fact]
-    public void ARenameOrNewTopic_IsFollowed_GeneralIncluded()
+    public void ARename_IsFollowed_ForTopicsInUseAndGeneral()
     {
         _h.AddDestination(-1001, threadId: 7);
-        static Message InForum(int? thread) => new() { Chat = new Chat { Id = -1001 }, MessageThreadId = thread, IsTopicMessage = thread is not null };
+        _h.Settings.UpdateIf(null, c =>
+        {
+            c.Destinations[0].TopicRoutes = [new TopicRoute { Slot = "security", ThreadId = 8 }];
+            return true;
+        });
+        static Message Renamed(int? thread, string? name) => new()
+        {
+            Chat = new Chat { Id = -1001 },
+            MessageThreadId = thread,
+            IsTopicMessage = thread is not null,
+            ForumTopicEdited = new ForumTopicEdited { Name = name, IconCustomEmojiId = name is null ? "1" : null },
+        };
 
-        var renamed = InForum(7);
-        renamed.ForumTopicEdited = new ForumTopicEdited { Name = "Films" };
-        var created = InForum(9);
-        created.ForumTopicCreated = new ForumTopicCreated { Name = "Music" };
-        var general = InForum(null);
-        general.ForumTopicEdited = new ForumTopicEdited { Name = "Lobby" };
-        var iconOnly = InForum(7);
-        iconOnly.ForumTopicEdited = new ForumTopicEdited { IconCustomEmojiId = "1" };
-
-        foreach (var m in new[] { renamed, created, general, iconOnly })
+        // 9 is a topic no destination uses; null is General; a new icon alone changes no name.
+        foreach (var m in new[] { Renamed(7, "Films"), Renamed(8, "Alerts"), Renamed(9, "Chat"), Renamed(null, "Lobby"), Renamed(7, null) })
         {
             TopicNames.FollowRename(_h.Settings, m);
         }
 
-        Assert.Equal([(7, "Films"), (9, "Music"), (0, "Lobby")], Known.Select(t => (t.ThreadId, t.Name)));
+        Assert.Equal([(7, "Films"), (8, "Alerts"), (0, "Lobby")], Known.Select(t => (t.ThreadId, t.Name)));
     }
 }

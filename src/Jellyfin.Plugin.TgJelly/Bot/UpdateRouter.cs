@@ -12,7 +12,7 @@ namespace Jellyfin.Plugin.TgJelly.Bot;
 
 /// <summary>
 /// Sorts incoming updates for the poll loop (plan 4): button presses are answered at once, and everything that needs
-/// screens or storage is queued for the <see cref="BotWorker"/>. In groups, only migrations, topics created or renamed,
+/// screens or storage is queued for the <see cref="BotWorker"/>. In groups, only migrations, topic renames,
 /// and a person's <c>/start@bot …</c> are taken. Never throws.
 /// </summary>
 public sealed class UpdateRouter : IUpdateHandler
@@ -117,7 +117,7 @@ public sealed class UpdateRouter : IUpdateHandler
                     return Task.CompletedTask;
                 });
                 break;
-            case ChatType.Supergroup when message.ForumTopicCreated is not null || message.ForumTopicEdited is not null:
+            case ChatType.Supergroup when message.ForumTopicEdited is not null:
                 _queue.Enqueue("topic-name", _ =>
                 {
                     TopicNames.FollowRename(_settings, message);
