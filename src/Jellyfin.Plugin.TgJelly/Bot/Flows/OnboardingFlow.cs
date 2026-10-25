@@ -44,12 +44,6 @@ public sealed class OnboardingFlow
     /// <summary>Marks a spent flow whose check failed; its <see cref="ChatIdKey"/> is the chat Try again re-checks.</summary>
     private const string FailedKey = "failed";
 
-    /// <summary>
-    /// The texts a stale v0.1 reply keyboard sends when tapped. Only English shipped in v0.1, so they are fixed here
-    /// rather than read from the string table.
-    /// </summary>
-    internal static readonly string[] LegacyReplyTexts = ["📢 Choose a channel", "👥 Choose a group", "💬 Right here", "Cancel"];
-
     private readonly BotConnection _connection;
     private readonly BotMemory _memory;
     private readonly ScreenSender _screens;
@@ -324,22 +318,6 @@ public sealed class OnboardingFlow
         }
 
         await StartAsync(chatId, message.MessageId, ct).ConfigureAwait(false);
-    }
-
-    /// <summary>
-    /// Handles stale input from a v0.1 client: a tap on its reply keyboard or its chat picker. "That menu
-    /// expired" removes the keyboard the client still shows, then the menu follows.
-    /// </summary>
-    /// <param name="message">The private message.</param>
-    /// <param name="ct">Cancels the work.</param>
-    /// <returns>A task.</returns>
-    public async Task OnLegacyReplyAsync(Message message, CancellationToken ct)
-    {
-        ArgumentNullException.ThrowIfNull(message);
-        var chatId = message.Chat.Id;
-        var expired = new OutgoingPrompt(chatId, _formatter.Escape(_strings.Get("menu.expired")), new ReplyKeyboardRemove());
-        await _connection.RequireSender().SendPromptAsync(expired, ct).ConfigureAwait(false);
-        await _screens.ShowAsync(chatId, MainMenu(), null, ct).ConfigureAwait(false);
     }
 
     /// <summary>

@@ -26,8 +26,6 @@ public sealed class TopicFlow
     private const string TopicKey = "topic";
     private const string PromotionKey = "promotion";
 
-    /// <summary>v0.1's marker of a pending promotion through the chat picker, which also left <c>creating</c> set.</summary>
-    private const string LegacyPromotionKey = "promotionRequest";
     private const string InputKey = "input";
     private const string LinkInput = "topicLink";
     private const string AnyChatKey = "anyChat";
@@ -167,13 +165,6 @@ public sealed class TopicFlow
     public async Task<TopicChoice?> OnCreateAsync(long chatId, FlowState flow, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(flow);
-
-        // A v0.1 flow caught mid-promotion at the upgrade: its creating marker belongs to the old chat-picker
-        // promotion, which can no longer finish, so it is dropped and Create starts afresh.
-        if (flow.Params.Remove(LegacyPromotionKey))
-        {
-            flow.Params.Remove(OnboardingFlow.CreatingKey);
-        }
 
         if (flow.Params.ContainsKey(OnboardingFlow.CreatingKey))
         {

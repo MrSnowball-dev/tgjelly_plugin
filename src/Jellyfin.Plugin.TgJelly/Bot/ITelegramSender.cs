@@ -81,12 +81,6 @@ public interface ITelegramSender
     /// <returns>A task.</returns>
     Task AnswerCallbackAsync(string callbackQueryId, CancellationToken ct);
 
-    /// <summary>Calls <c>sendMessage</c> in HTML with reply-area markup (only <c>ReplyKeyboardRemove</c>, for stale v0.1 keyboards).</summary>
-    /// <param name="prompt">The prompt.</param>
-    /// <param name="ct">Cancels the call.</param>
-    /// <returns>The sent message.</returns>
-    Task<Message> SendPromptAsync(OutgoingPrompt prompt, CancellationToken ct);
-
     /// <summary>Calls <c>deleteMessage</c>.</summary>
     /// <param name="chatId">The chat.</param>
     /// <param name="messageId">The message.</param>

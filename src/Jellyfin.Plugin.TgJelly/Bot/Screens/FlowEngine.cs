@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
-using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.TgJelly.Bot.Flows;
@@ -93,11 +92,6 @@ public sealed class FlowEngine : IBotFlows, IDisposable
         ArgumentNullException.ThrowIfNull(message);
         var chatId = message.Chat.Id;
         _memory.TouchManager(chatId);
-        if (await OnLegacyReplyAsync(message, ct).ConfigureAwait(false))
-        {
-            return;
-        }
-
         var command = ParseCommand(message.Text);
         if (command.Length > 0)
         {
@@ -273,29 +267,6 @@ public sealed class FlowEngine : IBotFlows, IDisposable
         var word = text.Split([' ', '\n'], 2)[0];
         var at = word.IndexOf('@', StringComparison.Ordinal);
         return (at < 0 ? word : word[..at]).ToLowerInvariant();
-    }
-
-    /// <summary>
-    /// Stale input from a v0.1 client goes to onboarding before any other text: a chat picked in its native picker
-    /// (<c>chat_shared</c>) and the texts of its reply keyboard. The bot sends no reply keyboards any more.
-    /// </summary>
-    /// <returns>True when the message was one of them.</returns>
-    private async Task<bool> OnLegacyReplyAsync(Message message, CancellationToken ct)
-    {
-        Func<Message, CancellationToken, Task>? handler = message switch
-        {
-            { ChatShared: not null } => _onboarding.OnLegacyReplyAsync,
-            { Text: { } text } when OnboardingFlow.LegacyReplyTexts.Contains(text, StringComparer.Ordinal) => _onboarding.OnLegacyReplyAsync,
-            _ => null,
-        };
-        if (handler is null)
-        {
-            return false;
-        }
-
-        _settingsScreens.CancelInput(message.Chat.Id);
-        await handler(message, ct).ConfigureAwait(false);
-        return true;
     }
 
     /// <summary>

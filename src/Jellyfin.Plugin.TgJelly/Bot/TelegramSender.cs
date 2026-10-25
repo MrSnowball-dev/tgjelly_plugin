@@ -134,19 +134,6 @@ public sealed class TelegramSender : ITelegramSender
         => _client.AnswerCallbackQuery(callbackQueryId: callbackQueryId, cancellationToken: ct);
 
     /// <inheritdoc />
-    public Task<Message> SendPromptAsync(OutgoingPrompt prompt, CancellationToken ct)
-    {
-        ArgumentNullException.ThrowIfNull(prompt);
-        return _client.SendMessage(
-            chatId: prompt.ChatId,
-            text: prompt.Html,
-            parseMode: ParseMode.Html,
-            replyMarkup: prompt.Markup,
-            linkPreviewOptions: NoPreview,
-            cancellationToken: ct);
-    }
-
-    /// <inheritdoc />
     public async Task<bool> DeleteMessageAsync(long chatId, int messageId, CancellationToken ct)
     {
         try
