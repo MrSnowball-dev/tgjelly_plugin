@@ -57,6 +57,9 @@ public class CallbackDataTests
             rows["dlt"] = [Id, LibraryId];
             rows["dsgt"] = [Id, "security"];
             rows["drx"] = [Id, "1"];
+            rows["dtp"] = [Id];
+            rows["dts"] = [Id, "media.musicvideo"];
+            rows["dtc"] = [Id, "media.musicvideo", "2147483647"];
             rows["smt"] = ["ShowRatingGenres"];
             rows["xs"] = [ChatId];
             rows["xd"] = [ChatId];
