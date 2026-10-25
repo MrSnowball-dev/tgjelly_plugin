@@ -1530,9 +1530,11 @@ test('editor_eventLabels_haveNoGroupPrefix', () => {
     }
 });
 
-test('botEventStrings_unchanged', () => {
-    assert.equal(EN['dest.event.media.movie'], 'Media: Movies');
-    assert.equal(EN['dest.event.server.started'], 'Server: Started');
+test('botEventStrings_matchTheDashboard', () => {
+    // The bot shows events inside their group's screen too, so its names match the dashboard's (owner, 2026-10-25).
+    for (const key of Object.keys(EN).filter(k => k.startsWith('dest.event.'))) {
+        assert.equal(EN[key], EN[`web.event.${key.slice('dest.event.'.length)}`], key);
+    }
 });
 
 test('the all-libraries line follows the library switches', async () => {
