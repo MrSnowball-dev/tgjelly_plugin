@@ -162,7 +162,7 @@ public class TemplatesController : ControllerBase
             }
             else if (existing is null)
             {
-                list.Add(new TemplateOverride { EventKey = eventKey, Enabled = true, Text = text });
+                list.Add(new TemplateOverride { EventKey = eventKey, Text = text });
             }
             else
             {

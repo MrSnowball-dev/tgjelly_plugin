@@ -157,7 +157,7 @@ public sealed class TemplatePiecesTests : IDisposable
     public void SentMessage_NeverHasMarkers()
     {
         const string text = "<b>{{ title }}</b> ({{ year }}) {{ if overview }}{{ overview }}{{ end }}";
-        _h.Settings.Update(null, c => c.Templates = [new TemplateOverride { EventKey = "media.movie", Enabled = true, Text = text }]);
+        _h.Settings.Update(null, c => c.Templates = [new TemplateOverride { EventKey = "media.movie", Text = text }]);
         var item = _library.Add(new MediaItem { Id = Guid.NewGuid(), Kind = MediaKind.Movie, Name = "Arrival", Year = 2016, Overview = "Aliens." });
         var model = new RenderModel { Kind = RenderKind.Media, EventKey = "media.movie", At = _h.Time.GetUtcNow(), ItemIds = [item.Id.ToString("N")] };
 

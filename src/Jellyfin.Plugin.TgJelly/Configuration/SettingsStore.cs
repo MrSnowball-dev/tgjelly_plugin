@@ -167,17 +167,7 @@ public sealed class SettingsStore : IDisposable
     public void Dispose() => _host.ExternalConfigurationSaved -= OnExternalConfigurationSaved;
 
     private static PluginConfiguration Clone(PluginConfiguration configuration)
-    {
-        var copy = JsonSerializer.Deserialize<PluginConfiguration>(JsonSerializer.Serialize(configuration, JsonDefaults.Options), JsonDefaults.Options)!;
-
-        // Settings read from an older file: a switched-off or empty override is gone (design §5.1), and v0.4's message
-        // switches are each message's (plan 9, design §6.2).
-        copy.MigrateTemplates();
-        copy.MigrateMessageOptions();
-        copy.UpdateCheck?.MigrateMode();
-        copy.MigrateTopics();
-        return copy;
-    }
+        => JsonSerializer.Deserialize<PluginConfiguration>(JsonSerializer.Serialize(configuration, JsonDefaults.Options), JsonDefaults.Options)!;
 
     // The backup is a safety net: failing to write it must not turn a successful save into an error.
     private void TryWriteBackup(PluginConfiguration configuration)

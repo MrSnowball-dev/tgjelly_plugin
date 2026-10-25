@@ -573,7 +573,7 @@ public sealed class LogRecordingTests : IDisposable
     public async Task Log_TemplateFallback_SentWithBuiltIn()
     {
         _h.AddDestination(-1001, preset: PresetKind.NewMedia);
-        _h.Settings.Update(null, c => c.Templates = [new TemplateOverride { EventKey = "media.movie", Enabled = true, Text = "<b>{{ title }}" }]);
+        _h.Settings.Update(null, c => c.Templates = [new TemplateOverride { EventKey = "media.movie", Text = "<b>{{ title }}" }]);
 
         Ready(Movie("Arrival", Movies));
         _rig.RunFor(150);

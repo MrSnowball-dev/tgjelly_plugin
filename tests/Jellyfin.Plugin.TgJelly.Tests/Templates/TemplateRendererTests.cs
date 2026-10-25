@@ -312,10 +312,10 @@ public sealed class TemplateRendererTests : IDisposable
     private TemplateFlag? StoredFlag()
         => _h.State.Read(s => s.Status.TemplateFlags.TryGetValue(Key, out var f) ? f : null);
 
-    private void Set(string text, bool enabled = true)
+    private void Set(string text)
         => Assert.Equal(
             SettingsUpdateStatus.Saved,
-            _h.Settings.Update(null, c => c.Templates = [new TemplateOverride { EventKey = Key, Enabled = enabled, Text = text }]).Status);
+            _h.Settings.Update(null, c => c.Templates = [new TemplateOverride { EventKey = Key, Text = text }]).Status);
 
     // A clock that moves on each time it is read, so a fit that renders many times runs out of time deterministically.
     private sealed class SteppingTime(TimeSpan step) : TimeProvider

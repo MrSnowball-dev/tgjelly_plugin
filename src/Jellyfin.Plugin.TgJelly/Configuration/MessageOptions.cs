@@ -1,8 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.ComponentModel;
-using System.Text.Json.Serialization;
-using System.Xml.Serialization;
 
 namespace Jellyfin.Plugin.TgJelly.Configuration;
 
@@ -14,8 +11,6 @@ public class MessageOptions
 {
     /// <summary>The key of the media digest, the one message that is not an event.</summary>
     public const string DigestKey = "media.digest";
-
-    private const string LegacyNote = "v0.4's one set of switches, read once by PluginConfiguration.MigrateMessageOptions. Use For and Change.";
 
     /// <summary>
     /// Gets every message key: <see cref="EventCatalog.AllKeys"/> followed by <see cref="DigestKey"/>.
@@ -33,96 +28,6 @@ public class MessageOptions
     /// MediaReadiness decides whether an upgrade is an event before any message is picked.
     /// </summary>
     public bool AnnounceUpgrades { get; set; }
-
-    /// <summary>Gets or sets v0.4's poster switch (migration source only).</summary>
-    [Obsolete(LegacyNote)]
-    [EditorBrowsable(EditorBrowsableState.Never)]
-    [XmlIgnore]
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public bool? ShowPoster { get; set; }
-
-    /// <summary>Gets or sets v0.4's overview switch (migration source only).</summary>
-    [Obsolete(LegacyNote)]
-    [EditorBrowsable(EditorBrowsableState.Never)]
-    [XmlIgnore]
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public bool? ShowOverview { get; set; }
-
-    /// <summary>Gets or sets v0.4's rating and genres switch (migration source only).</summary>
-    [Obsolete(LegacyNote)]
-    [EditorBrowsable(EditorBrowsableState.Never)]
-    [XmlIgnore]
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public bool? ShowRatingGenres { get; set; }
-
-    /// <summary>Gets or sets v0.4's "Open in Jellyfin" switch (migration source only).</summary>
-    [Obsolete(LegacyNote)]
-    [EditorBrowsable(EditorBrowsableState.Never)]
-    [XmlIgnore]
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public bool? ShowOpenInJellyfin { get; set; }
-
-    /// <summary>Gets or sets v0.4's IMDb/TMDb switch (migration source only).</summary>
-    [Obsolete(LegacyNote)]
-    [EditorBrowsable(EditorBrowsableState.Never)]
-    [XmlIgnore]
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public bool? ShowProviderLinks { get; set; }
-
-    // XML: .NET 9's XmlSerializer skips [Obsolete] members, so each v0.4 switch is read through a twin under its old
-    // element name, and written back only while it is set (the ShouldSerialize methods), i.e. never once the
-    // migration has run.
-#pragma warning disable CS0618 // migration source
-    /// <summary>Gets or sets <see cref="ShowPoster"/> as XML.</summary>
-    [XmlElement(nameof(ShowPoster))]
-    [JsonIgnore]
-    [EditorBrowsable(EditorBrowsableState.Never)]
-    public bool? ShowPosterXml
-    {
-        get => ShowPoster;
-        set => ShowPoster = value;
-    }
-
-    /// <summary>Gets or sets <see cref="ShowOverview"/> as XML.</summary>
-    [XmlElement(nameof(ShowOverview))]
-    [JsonIgnore]
-    [EditorBrowsable(EditorBrowsableState.Never)]
-    public bool? ShowOverviewXml
-    {
-        get => ShowOverview;
-        set => ShowOverview = value;
-    }
-
-    /// <summary>Gets or sets <see cref="ShowRatingGenres"/> as XML.</summary>
-    [XmlElement(nameof(ShowRatingGenres))]
-    [JsonIgnore]
-    [EditorBrowsable(EditorBrowsableState.Never)]
-    public bool? ShowRatingGenresXml
-    {
-        get => ShowRatingGenres;
-        set => ShowRatingGenres = value;
-    }
-
-    /// <summary>Gets or sets <see cref="ShowOpenInJellyfin"/> as XML.</summary>
-    [XmlElement(nameof(ShowOpenInJellyfin))]
-    [JsonIgnore]
-    [EditorBrowsable(EditorBrowsableState.Never)]
-    public bool? ShowOpenInJellyfinXml
-    {
-        get => ShowOpenInJellyfin;
-        set => ShowOpenInJellyfin = value;
-    }
-
-    /// <summary>Gets or sets <see cref="ShowProviderLinks"/> as XML.</summary>
-    [XmlElement(nameof(ShowProviderLinks))]
-    [JsonIgnore]
-    [EditorBrowsable(EditorBrowsableState.Never)]
-    public bool? ShowProviderLinksXml
-    {
-        get => ShowProviderLinks;
-        set => ShowProviderLinks = value;
-    }
-#pragma warning restore CS0618
 
     /// <summary>
     /// Returns whether a key names a message TgJelly sends.
@@ -162,33 +67,6 @@ public class MessageOptions
             PerMessage = [.. PerMessage ?? [], new MessageSwitchesEntry { EventKey = eventKey, Switches = switches }];
         }
     }
-
-#pragma warning disable CS0618 // migration source
-    /// <summary>Tells the XML serializer whether to write <see cref="ShowPosterXml"/>.</summary>
-    /// <returns><c>true</c> while it is set.</returns>
-    [EditorBrowsable(EditorBrowsableState.Never)]
-    public bool ShouldSerializeShowPosterXml() => ShowPoster.HasValue;
-
-    /// <summary>Tells the XML serializer whether to write <see cref="ShowOverviewXml"/>.</summary>
-    /// <returns><c>true</c> while it is set.</returns>
-    [EditorBrowsable(EditorBrowsableState.Never)]
-    public bool ShouldSerializeShowOverviewXml() => ShowOverview.HasValue;
-
-    /// <summary>Tells the XML serializer whether to write <see cref="ShowRatingGenresXml"/>.</summary>
-    /// <returns><c>true</c> while it is set.</returns>
-    [EditorBrowsable(EditorBrowsableState.Never)]
-    public bool ShouldSerializeShowRatingGenresXml() => ShowRatingGenres.HasValue;
-
-    /// <summary>Tells the XML serializer whether to write <see cref="ShowOpenInJellyfinXml"/>.</summary>
-    /// <returns><c>true</c> while it is set.</returns>
-    [EditorBrowsable(EditorBrowsableState.Never)]
-    public bool ShouldSerializeShowOpenInJellyfinXml() => ShowOpenInJellyfin.HasValue;
-
-    /// <summary>Tells the XML serializer whether to write <see cref="ShowProviderLinksXml"/>.</summary>
-    /// <returns><c>true</c> while it is set.</returns>
-    [EditorBrowsable(EditorBrowsableState.Never)]
-    public bool ShouldSerializeShowProviderLinksXml() => ShowProviderLinks.HasValue;
-#pragma warning restore CS0618
 
     private MessageSwitchesEntry? Find(string eventKey)
     {
