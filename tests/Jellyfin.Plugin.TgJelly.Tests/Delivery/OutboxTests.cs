@@ -19,7 +19,7 @@ public sealed class OutboxTests : IDisposable
     public OutboxTests()
     {
         _outbox = new Outbox(_h.State, _h.Strings, _h.Time);
-        _pacing = new PacingGate(_h.Time);
+        _pacing = new PacingGate();
     }
 
     private DateTimeOffset Now => _h.Time.GetUtcNow();

@@ -28,7 +28,7 @@ public sealed class OutboxDeliveryTests : IDisposable
     {
         _h.Connect();
         _outbox = new Outbox(_h.State, _h.Strings, _h.Time);
-        _pacing = new PacingGate(_h.Time);
+        _pacing = new PacingGate();
         var gate = new InstanceGate(_h.Paths, _h.Time, NullLogger<InstanceGate>.Instance);
         _h.Track(gate);
         _health = new HealthService(gate, _h.Connection, new DestinationChecker(_h.Connection, _h.Strings), _h.Settings, _h.State, _h.Time, NullLogger<HealthService>.Instance);

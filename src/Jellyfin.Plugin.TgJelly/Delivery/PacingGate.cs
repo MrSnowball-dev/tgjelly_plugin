@@ -26,15 +26,6 @@ public sealed class PacingGate
     private readonly Queue<DateTimeOffset> _recent = new();
 
     /// <summary>
-    /// Initializes a new instance of the <see cref="PacingGate"/> class.
-    /// </summary>
-    /// <param name="time">The clock (kept for symmetry with the other services; callers pass <c>now</c>).</param>
-    public PacingGate(TimeProvider time)
-    {
-        ArgumentNullException.ThrowIfNull(time);
-    }
-
-    /// <summary>
     /// Returns the earliest time a message may be sent to a chat.
     /// </summary>
     /// <param name="chatId">The chat.</param>
