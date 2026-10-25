@@ -407,15 +407,13 @@ function renderTokenForm(ui, S) {
             control: textField({ input: 'token', value: '', type: 'password', attrs: { autocomplete: 'off', 'aria-label': text(S, 'web.connect.tokenLabel'), disabled: busy } }),
         })
         + notes
-        + '<label class="tgj-check"><input type="checkbox" data-tgj-input="setProfile"'
-        + `${ui.setProfile ? ' checked' : ''}${busy ? ' disabled' : ''} /><span>${t(S, 'web.connect.setProfile')}</span></label>`
         + `<div class="tgj-actions">${actionButton({ label: text(S, 'web.connect.save'), act: 'saveToken', kind: 'primary', disabled: busy })}`
         + `${ui.hasToken ? actionButton({ label: text(S, 'web.connect.cancel'), act: 'cancelToken', disabled: busy }) : ''}</div></div>`;
 }
 
 /**
  * The connect card (spec §6.1): shown without a token, or while changing it, and the outcome of the last save.
- * @param {{ hasToken: boolean, changingToken?: boolean, mode?: string | null, saving?: boolean, setProfile?: boolean,
+ * @param {{ hasToken: boolean, changingToken?: boolean, mode?: string | null, saving?: boolean,
  *   result?: object | null, unreachable?: boolean, proxy?: object }} ui hasToken comes from GET Status; result is
  *   { kind: 'Connected' | 'NeedsConfirm' | 'Error', message, username, webhookDeleted }; proxy is the proxy form's ui
  * @param {Record<string, string>} S
@@ -957,6 +955,35 @@ export function renderUpdates(settings, S, ui) {
 }
 
 /**
+ * The Bot token card under Advanced: the token masked (TokenHint), and in full after Show until Hide or leaving the
+ * page. The full token is only in the page's memory, never in the state the page keeps or in a log.
+ * @param {object | null} status the StatusDto
+ * @param {Record<string, string>} S
+ * @param {{ token?: string }} ui token is the revealed token, or '' while masked
+ * @returns {string} HTML, or '' without a bot
+ */
+export function renderToken(status, S, ui) {
+    if (!status || !status.HasToken) {
+        return '';
+    }
+
+    const shown = typeof ui.token === 'string' && ui.token !== '';
+    const value = shown ? ui.token : (status.TokenHint ?? '');
+    const button = shown
+        ? actionButton({ label: text(S, 'web.token.hide'), act: 'hideToken' })
+        : actionButton({ label: text(S, 'web.token.show'), act: 'showToken' });
+    return card({
+        title: text(S, 'web.token.title'),
+        body: `<p class="tgj-row-hint">${t(S, 'web.token.hint')}</p>`
+            + row({
+                label: text(S, 'web.token.title'),
+                extraClass: 'tgj-row--stack',
+                control: `<code class="tgj-token" aria-label="${esc(text(S, 'web.token.title'))}">${esc(value)}</code>${button}`,
+            }),
+    });
+}
+
+/**
  * The diagnostics block under Advanced (spec §12): Copy diagnostics, and the text itself when the clipboard refused it.
  * @param {Record<string, string>} S
  * @param {{ text?: string, copied?: boolean }} ui
@@ -997,7 +1024,7 @@ const SECTION_HOSTS = {
     destinations: ['tgj-destinations'],
     // Messages holds the templates too (plan 9, design §6.1), and Batching sits in Advanced after Update checks (§7).
     messages: ['tgj-messages'],
-    advanced: ['tgj-proxy', 'tgj-updates', 'tgj-batching', 'tgj-manual', 'tgj-diagnostics'],
+    advanced: ['tgj-token', 'tgj-proxy', 'tgj-updates', 'tgj-batching', 'tgj-manual', 'tgj-diagnostics'],
     // The Log (plan 9, design §8.1) is last: after Advanced in the sidebar, the last tab on a phone.
     log: ['tgj-log'],
 };
@@ -1321,7 +1348,6 @@ export default function TgJellyPage(view, params) {
             mode: null,
             changingToken: false,
             saving: false,
-            setProfile: true,
             result: null,
             unreachable: false,
             confirmDisconnect: false,
@@ -1349,6 +1375,9 @@ export default function TgJellyPage(view, params) {
     let stringsLoad = null;
     // The token lives only here until it is sent: never in state, never rendered back into the page.
     const typed = { token: '', proxyUsername: undefined, proxyPassword: undefined };
+    // The token shown after Show, and the masked hint it belongs to: a different bot, or none, masks it again.
+    let revealedToken = '';
+    let revealedFor = '';
     // Section load errors (set by reloadSection), so a later good load can clear them without touching action errors.
     const loadErrors = new Set();
     const loggedLoadFailures = new Map();
@@ -1626,6 +1655,14 @@ export default function TgJellyPage(view, params) {
             id: 'tgj-updates',
             load: loadSettings,
             render: () => renderUpdates(state.settings, state.strings, settingsUi()),
+        },
+        token: {
+            id: 'tgj-token',
+            dependsOnStatus: true,
+            load: async () => {},
+            render: () => renderToken(state.status, state.strings, {
+                token: state.status && state.status.TokenHint === revealedFor ? revealedToken : '',
+            }),
         },
         diagnostics: {
             id: 'tgj-diagnostics',
@@ -1965,7 +2002,7 @@ export default function TgJellyPage(view, params) {
         try {
             let result;
             try {
-                result = await api.post('Token', { Token: typed.token, SetProfile: ui.setProfile, ConfirmSwitch: confirmSwitch });
+                result = await api.post('Token', { Token: typed.token, ConfirmSwitch: confirmSwitch });
             } finally {
                 ui.saving = false;
             }
@@ -2574,6 +2611,20 @@ export default function TgJellyPage(view, params) {
             await reloadSection('destinations', { fresh: true });
             return undefined;
         }),
+        showToken: () => runAction('token', async () => {
+            const result = await api.get('Token');
+            if (result.status !== 200 || !result.body) {
+                return result;
+            }
+
+            revealedToken = String(result.body.Token ?? '');
+            revealedFor = state.status ? state.status.TokenHint : '';
+            return result;
+        }),
+        hideToken: () => {
+            revealedToken = '';
+            renderSection('token');
+        },
         copyDiagnostics: () => runAction('diagnostics', async () => {
             Object.assign(state.ui, { diagText: '', diagCopied: false });
             const result = await api.get('Diagnostics');
@@ -2596,9 +2647,6 @@ export default function TgJellyPage(view, params) {
     const inputs = {
         token: el => {
             typed.token = String(el.value ?? '').trim();
-        },
-        setProfile: el => {
-            state.ui.setProfile = Boolean(el.checked);
         },
         // The proxy fields save together when the focus leaves the card (see the focusout listener).
         proxyMode: (el, event) => {
@@ -2834,6 +2882,7 @@ export default function TgJellyPage(view, params) {
 
     const hide = () => {
         visible = false;
+        revealedToken = '';
         scrollDoc?.removeEventListener?.('scroll', onPageScroll, { capture: true });
         scrollWin?.removeEventListener?.('resize', onPageScroll);
         stopPolling();

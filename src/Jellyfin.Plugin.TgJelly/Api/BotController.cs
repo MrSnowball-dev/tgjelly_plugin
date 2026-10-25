@@ -27,6 +27,7 @@ public class BotController : ControllerBase
     private readonly InstanceGate _gate;
     private readonly StateStore _state;
     private readonly CompatResult _compat;
+    private readonly SecretsStore? _secrets;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="BotController"/> class.
@@ -36,13 +37,30 @@ public class BotController : ControllerBase
     /// <param name="gate">The instance gate; changes wait until this instance owns the data folder.</param>
     /// <param name="state">The state store.</param>
     /// <param name="compat">The compatibility result; an incompatible build never talks to Telegram.</param>
-    public BotController(BotTokenService tokens, StringTable strings, InstanceGate gate, StateStore state, CompatResult compat)
+    /// <param name="secrets">The secrets, for showing the token to an administrator.</param>
+    public BotController(BotTokenService tokens, StringTable strings, InstanceGate gate, StateStore state, CompatResult compat, SecretsStore? secrets = null)
     {
         _tokens = tokens;
         _strings = strings;
         _gate = gate;
         _state = state;
         _compat = compat;
+        _secrets = secrets;
+    }
+
+    /// <summary>
+    /// Shows the bot token to an administrator who asked for it (the Bot token card's Show). Never logged.
+    /// </summary>
+    /// <returns>The token, or 404 when no bot is connected.</returns>
+    [HttpGet("Token")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public ActionResult<TokenDto> GetToken()
+    {
+        var token = _secrets?.Load().BotToken;
+        return string.IsNullOrEmpty(token)
+            ? NotFound(new MessageDto { Message = _strings.Get("web.token.none") })
+            : new TokenDto { Token = token };
     }
 
     /// <summary>
@@ -61,7 +79,7 @@ public class BotController : ControllerBase
             return blocked;
         }
 
-        var result = await _tokens.SaveAsync(request.Token, request.SetProfile, request.ConfirmSwitch, cancellationToken).ConfigureAwait(false);
+        var result = await _tokens.SaveAsync(request.Token, request.ConfirmSwitch, cancellationToken).ConfigureAwait(false);
         return new TokenResponse { Outcome = result.Outcome.ToString(), Message = result.Message, BotUsername = result.BotUsername, WebhookDeleted = result.WebhookDeleted };
     }
 

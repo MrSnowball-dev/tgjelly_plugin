@@ -248,7 +248,7 @@ def telegram_checks(base: str, token: str, stub) -> None:
     check(added["Destination"]["ChatId"] == SMOKE_CHAT, "the destination has the chat's ID")
     keep_only_media(base, token, added["Destination"]["Id"])
     check(any("TgJelly test" in m.get("text", "") for m in stub.messages(SMOKE_CHAT)), "the chat received the automatic test message")
-    wait_until(lambda: any(c["method"] == "setMyCommands" for c in stub.calls()), "the bot profile was set up", 30)
+    check(not any(c["method"].startswith("setMy") for c in stub.calls()), "TgJelly leaves the bot's profile alone")
 
 
 def get_settings(base: str, token: str) -> dict:

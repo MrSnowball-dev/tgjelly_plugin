@@ -59,11 +59,10 @@ public sealed class BotTokenService : IDisposable
     /// Checks and saves a token (spec §6.1 steps 1–5).
     /// </summary>
     /// <param name="token">The token as pasted.</param>
-    /// <param name="setProfile">Whether TgJelly may set the bot's profile.</param>
     /// <param name="confirmSwitch">Whether the user confirmed switching to a different bot.</param>
     /// <param name="ct">Cancels the save.</param>
     /// <returns>The result.</returns>
-    public async Task<TokenSaveResult> SaveAsync(string token, bool setProfile, bool confirmSwitch, CancellationToken ct)
+    public async Task<TokenSaveResult> SaveAsync(string token, bool confirmSwitch, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(token);
         token = token.Trim();
@@ -139,7 +138,8 @@ public sealed class BotTokenService : IDisposable
             {
                 s.Telegram.BotId = me.Id;
                 s.Telegram.BotUsername = username;
-                s.Telegram.Profile = new ProfileState { SetProfile = setProfile, PendingCalls = setProfile ? [.. ProfileCalls.AllCalls] : [] };
+                // TgJelly leaves the bot's profile (description, commands, admin rights) to the owner (2026-10-25).
+                s.Telegram.Profile = new ProfileState();
             });
             _supervisor.Restart();
             _logger.LogInformation("TgJelly connected bot @{Bot}", username);

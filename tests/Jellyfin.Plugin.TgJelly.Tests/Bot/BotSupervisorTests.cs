@@ -211,17 +211,15 @@ public sealed class BotSupervisorTests : IDisposable
     }
 
     [Fact]
-    public async Task SessionStart_RequestsHealthChecks_AndRunsPendingProfileCalls()
+    public async Task SessionStart_RequestsHealthChecks_AndLeavesTheProfileAlone()
     {
         _h.AddDestination(-1001);
         _h.AddDestination(-1002);
-        _h.State.Update(s => s.Telegram.Profile = new ProfileState { SetProfile = true, PendingCalls = [.. ProfileCalls.AllCalls] });
         using var supervisor = await StartAsync(startHealth: true);
 
         await Eventually.TrueAsync(() => _h.Api.CallsTo("getChat").Count() == 2, "both destinations re-checked");
-        await Eventually.TrueAsync(() => _h.State.Read(s => s.Telegram.Profile.PendingCalls.Count) == 0, "profile calls done");
-        Assert.Equal(2, _h.Api.CallsTo("setMyCommands").Count());
-        Assert.Single(_h.Api.CallsTo("setMyDefaultAdministratorRights"));
+        Assert.Empty(_h.Api.CallsTo("setMyCommands"));
+        Assert.Empty(_h.Api.CallsTo("setMyDefaultAdministratorRights"));
         Assert.Equal((FakeBotApi.BotId, FakeBotApi.BotUsername), (_h.State.Read(s => s.Telegram.BotId)!.Value, _h.State.Read(s => s.Telegram.BotUsername)));
         await supervisor.StopAsync(CancellationToken.None);
     }
@@ -327,11 +325,8 @@ public sealed class BotSupervisorTests : IDisposable
             await _health.StartAsync(CancellationToken.None);
         }
 
-        var host = Substitute.For<IServerApplicationHost>();
-        host.FriendlyName.Returns("Home");
-        var profile = new ProfileCalls(_h.State, _h.Strings, host, NullLogger<ProfileCalls>.Instance);
         var compat = CompatGuard.Evaluate(new Version(BuildInfo.TargetJellyfinMajor + (compatible ? 0 : 1), 0, 0, 0));
-        var supervisor = new BotSupervisor(gate, compat, _startup, _h.Secrets, _h.State, _factory, _h.Connection, _health, _handler, profile, _h.Strings, _h.Time, NullLogger<BotSupervisor>.Instance);
+        var supervisor = new BotSupervisor(gate, compat, _startup, _h.Secrets, _h.State, _factory, _h.Connection, _health, _handler, _h.Strings, _h.Time, NullLogger<BotSupervisor>.Instance);
         _h.Track(supervisor);
         await supervisor.StartAsync(CancellationToken.None);
         return supervisor;

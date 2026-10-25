@@ -16,7 +16,7 @@ const EN = JSON.parse(readFileSync(new URL('../../src/Jellyfin.Plugin.TgJelly/St
 // The section hosts are listed too, so a test can hold an element before the shell is written.
 const IDS = [
     'tgjelly-root', 'tgj-status', 'tgj-connect', 'tgj-bot', 'tgj-destinations', 'tgj-messages', 'tgj-demo',
-    'tgj-proxy', 'tgj-batching', 'tgj-updates', 'tgj-tpl-preview', 'tgj-tpl-check', 'tgj-manual', 'tgj-diagnostics',
+    'tgj-proxy', 'tgj-batching', 'tgj-updates', 'tgj-tpl-preview', 'tgj-tpl-check', 'tgj-manual', 'tgj-diagnostics', 'tgj-token',
 ];
 
 function status(overrides = {}) {
@@ -669,8 +669,7 @@ test('token input is type=password and never pre-filled', async () => {
     assert.ok(!/data-tgj-input="token"[^>]*value="[^"]/.test(html) && !/value="[^"][^>]*data-tgj-input="token"/.test(html), 'value stays empty');
     assert.ok(html.includes("Restrict access in BotFather if you haven't, because anyone who can open the bot can manage notifications."));
     assert.ok(html.includes("Don't use this bot in another program at the same time."));
-    assert.match(html, /data-tgj-input="setProfile"[^>]*checked/);
-    assert.ok(html.includes("Let TgJelly set up this bot's profile: description, command menu and default admin rights (replaces the current ones)"));
+    assert.ok(!html.includes('setProfile'), 'TgJelly no longer sets up the bot\'s profile');
 });
 
 test('Connected closes the connect card; the Bot section names the bot once', async () => {
@@ -684,7 +683,7 @@ test('Connected closes the connect card; the Bot section names the bot once', as
     input(view, 'token', '123:secret');
     await click(view, 'saveToken');
 
-    assert.deepEqual(posted(api, 'Token'), [{ Token: '123:secret', SetProfile: true, ConfirmSwitch: false }]);
+    assert.deepEqual(posted(api, 'Token'), [{ Token: '123:secret', ConfirmSwitch: false }]);
     assert.equal(el('tgj-connect').innerHTML, '');
     const html = el('tgj-bot').innerHTML;
     assert.equal(html.split('@jf_bot').length, 2);
@@ -710,19 +709,6 @@ test('a removed webhook is mentioned after Connected', async () => {
     assert.ok(el('tgj-connect').innerHTML.includes(m.t(EN, 'web.connect.webhookRemoved')));
 });
 
-test('the profile checkbox is sent as chosen', async () => {
-    const { view, api } = mount({
-        'GET TgJelly/Status': noToken(),
-        'POST TgJelly/Token': { Outcome: 'Connected', Message: '', BotUsername: 'jf_bot', WebhookDeleted: false },
-    });
-    await show(view);
-    await click(view, 'connectExisting');
-    input(view, 'token', '1:a');
-    dispatchOn(view, 'change', { 'data-tgj-input': 'setProfile' }, { checked: false });
-    await click(view, 'saveToken');
-    assert.equal(posted(api, 'Token')[0].SetProfile, false);
-});
-
 test('the typed token survives re-renders, such as toggling the profile checkbox', async () => {
     const { view, timers } = mount({ 'GET TgJelly/Status': noToken() });
     await show(view);
@@ -738,6 +724,21 @@ test('the typed token survives re-renders, such as toggling the profile checkbox
     timers.tick();
     await flush();
     assert.equal(field.value, '1:a');
+});
+
+test('the Bot token card shows the token masked, and in full only after Show', async () => {
+    const { view, el, hooks } = mount({
+        'GET TgJelly/Status': status({ TokenHint: '123:••••••cret' }),
+        'GET TgJelly/Token': { Token: '123:secret' },
+    });
+    await show(view);
+    assert.ok(el('tgj-token').innerHTML.includes('123:••••••cret'));
+    assert.ok(!el('tgj-token').innerHTML.includes('123:secret'));
+    await click(view, 'showToken');
+    assert.ok(el('tgj-token').innerHTML.includes('123:secret'));
+    assert.ok(!JSON.stringify(hooks.state).includes('123:secret'), 'not kept in the page state');
+    await click(view, 'hideToken');
+    assert.ok(!el('tgj-token').innerHTML.includes('123:secret'));
 });
 
 test('buttons are disabled while a save is in flight', async () => {
@@ -785,8 +786,8 @@ test('NeedsConfirm then Switch sends ConfirmSwitch', async () => {
 
     await click(view, 'switchBot');
     assert.deepEqual(posted(api, 'Token'), [
-        { Token: '9:z', SetProfile: true, ConfirmSwitch: false },
-        { Token: '9:z', SetProfile: true, ConfirmSwitch: true },
+        { Token: '9:z', ConfirmSwitch: false },
+        { Token: '9:z', ConfirmSwitch: true },
     ]);
     assert.equal(el('tgj-connect').innerHTML, '');
 });
@@ -2547,13 +2548,15 @@ test('every t(…) key used in tgjelly.js exists in en.json', () => {
 
 // Sent by TgJellyController as the Connected status message, not rendered by the page itself.
 const SERVER_SIDE_KEY = 'web.status.connected';
+// Sent by the server in its own replies (GET Token without a bot).
+const SERVER_SIDE_KEYS = new Set(['web.token.none']);
 
 // Filled in by the server's LogRecorder: the Log rows arrive with these texts already in them.
 const SERVER_SIDE_PREFIXES = ['web.log.why.', 'web.log.advice.', 'web.log.right.', 'web.log.duration.', 'web.log.title.', 'web.log.noDetails'];
 
 test('every web.* key in en.json is used by tgjelly.js', () => {
     // web.event.* keys are built from the catalog's event keys (editor_eventLabels_haveNoGroupPrefix covers them).
-    const serverSide = k => k === SERVER_SIDE_KEY || SERVER_SIDE_PREFIXES.some(p => k.startsWith(p));
+    const serverSide = k => k === SERVER_SIDE_KEY || SERVER_SIDE_KEYS.has(k) || SERVER_SIDE_PREFIXES.some(p => k.startsWith(p));
     for (const key of Object.keys(EN).filter(k => k.startsWith('web.') && !k.startsWith('web.event.') && !serverSide(k))) {
         const base = key.replace(/\.(one|other)$/, '');
         assert.ok(SOURCE.includes(`'${base}'`), key);
@@ -2718,7 +2721,7 @@ const HOSTS = {
     overview: ['tgj-status', 'tgj-connect', 'tgj-bot'],
     destinations: ['tgj-destinations'],
     messages: ['tgj-messages'],
-    advanced: ['tgj-proxy', 'tgj-updates', 'tgj-batching', 'tgj-manual', 'tgj-diagnostics'],
+    advanced: ['tgj-token', 'tgj-proxy', 'tgj-updates', 'tgj-batching', 'tgj-manual', 'tgj-diagnostics'],
     log: ['tgj-log'],
 };
 

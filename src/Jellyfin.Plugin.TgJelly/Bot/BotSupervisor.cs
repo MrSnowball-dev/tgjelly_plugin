@@ -40,7 +40,6 @@ public sealed class BotSupervisor : BackgroundService, ISupervisorControl
     private readonly BotConnection _connection;
     private readonly HealthService _health;
     private readonly IUpdateHandler _handler;
-    private readonly ProfileCalls _profile;
     private readonly StringTable _strings;
     private readonly TimeProvider _time;
     private readonly ILogger<BotSupervisor> _logger;
@@ -62,7 +61,6 @@ public sealed class BotSupervisor : BackgroundService, ISupervisorControl
     /// <param name="connection">The bot connection this supervisor maintains.</param>
     /// <param name="health">The health service, for the startup re-check.</param>
     /// <param name="handler">The update handler.</param>
-    /// <param name="profile">The pending profile calls.</param>
     /// <param name="strings">The string table.</param>
     /// <param name="time">The clock.</param>
     /// <param name="logger">The logger.</param>
@@ -76,7 +74,6 @@ public sealed class BotSupervisor : BackgroundService, ISupervisorControl
         BotConnection connection,
         HealthService health,
         IUpdateHandler handler,
-        ProfileCalls profile,
         StringTable strings,
         TimeProvider time,
         ILogger<BotSupervisor> logger)
@@ -90,7 +87,6 @@ public sealed class BotSupervisor : BackgroundService, ISupervisorControl
         _connection = connection;
         _health = health;
         _handler = handler;
-        _profile = profile;
         _strings = strings;
         _time = time;
         _logger = logger;
@@ -296,7 +292,6 @@ public sealed class BotSupervisor : BackgroundService, ISupervisorControl
         // neither Status nor the Outbox should wait for it.
         _connection.SetState(ConnectionState.Connected);
         _health.RequestCheckAll();
-        _ = RunProfileCallsAsync(sender, ct);
         await PollAsync(client, backoff, ct).ConfigureAwait(false);
     }
 
@@ -400,22 +395,6 @@ public sealed class BotSupervisor : BackgroundService, ISupervisorControl
                 s.Telegram.BotId = me.Id;
                 s.Telegram.BotUsername = username;
             });
-        }
-    }
-
-    private async Task RunProfileCallsAsync(ITelegramSender sender, CancellationToken ct)
-    {
-        try
-        {
-            await _profile.RunPendingAsync(sender, ct).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException)
-        {
-            // The session ended; pending calls run at the next start.
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "TgJelly profile calls failed");
         }
     }
 

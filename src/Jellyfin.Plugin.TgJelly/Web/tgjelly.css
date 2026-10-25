@@ -163,6 +163,13 @@
     font-weight: 600;
 }
 
+#tgjelly-root .tgj-token {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    overflow-wrap: anywhere;
+    user-select: all;
+    margin-inline-end: var(--tgj-space-2);
+}
+
 #tgjelly-root .tgj-version-link {
     color: inherit;
     text-decoration: none;

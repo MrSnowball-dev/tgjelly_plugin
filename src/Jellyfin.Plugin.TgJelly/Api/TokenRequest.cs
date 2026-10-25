@@ -11,9 +11,6 @@ public sealed class TokenRequest
     [Required]
     public string Token { get; set; } = string.Empty;
 
-    /// <summary>Gets or sets a value indicating whether TgJelly may set the bot's profile.</summary>
-    public bool SetProfile { get; set; } = true;
-
     /// <summary>Gets or sets a value indicating whether the user confirmed switching to a different bot.</summary>
     public bool ConfirmSwitch { get; set; }
 }

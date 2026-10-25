@@ -62,6 +62,9 @@ public sealed class StatusDto
     /// </summary>
     public bool HasToken { get; init; }
 
+    /// <summary>Gets the token masked for display, e.g. <c>123456789:••••••ab12</c>; empty without a token.</summary>
+    public string TokenHint { get; init; } = string.Empty;
+
     /// <summary>
     /// Gets the drop and eviction counters.
     /// </summary>

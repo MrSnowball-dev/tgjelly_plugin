@@ -34,7 +34,7 @@ public sealed class BotTokenServiceTests : IDisposable
     {
         _factory.Throw = _ => new ArgumentException("Bot token invalid", "token");
 
-        var result = await _service.SaveAsync("nope", true, false, Ct);
+        var result = await _service.SaveAsync("nope", false, Ct);
 
         Assert.Equal((TokenSaveOutcome.FormatInvalid, _h.Strings.Get("token.format")), (result.Outcome, result.Message));
         AssertNothingStored();
@@ -45,7 +45,7 @@ public sealed class BotTokenServiceTests : IDisposable
     {
         _h.Api.On("getMe", _ => FakeBotApi.Error(401, "Unauthorized"));
 
-        var result = await _service.SaveAsync(FakeBotApi.Token, true, false, Ct);
+        var result = await _service.SaveAsync(FakeBotApi.Token, false, Ct);
 
         Assert.Equal((TokenSaveOutcome.Rejected, _h.Strings.Get("token.rejected")), (result.Outcome, result.Message));
         AssertNothingStored();
@@ -56,32 +56,22 @@ public sealed class BotTokenServiceTests : IDisposable
     {
         _h.Api.On("getMe", _ => throw new HttpRequestException("Connection refused"));
 
-        var result = await _service.SaveAsync(FakeBotApi.Token, true, false, Ct);
+        var result = await _service.SaveAsync(FakeBotApi.Token, false, Ct);
 
         Assert.Equal((TokenSaveOutcome.Unreachable, _h.Strings.Get("token.unreachable")), (result.Outcome, result.Message));
         AssertNothingStored();
     }
 
     [Fact]
-    public async Task FirstToken_StoresTokenAndBot_QueuesProfileCalls_AndRestartsTheSupervisor()
+    public async Task FirstToken_StoresTokenAndBot_LeavesTheProfileAlone_AndRestartsTheSupervisor()
     {
-        var result = await _service.SaveAsync("  " + FakeBotApi.Token + " ", true, false, Ct);
+        var result = await _service.SaveAsync("  " + FakeBotApi.Token + " ", false, Ct);
 
         Assert.Equal((TokenSaveOutcome.Connected, FakeBotApi.BotUsername, false), (result.Outcome, result.BotUsername, result.WebhookDeleted));
         Assert.Equal(FakeBotApi.Token, _h.Secrets.Load().BotToken);
         Assert.Equal((FakeBotApi.BotId, FakeBotApi.BotUsername), (_h.State.Read(s => s.Telegram.BotId)!.Value, _h.State.Read(s => s.Telegram.BotUsername)));
-        Assert.True(_h.State.Read(s => s.Telegram.Profile.SetProfile));
-        Assert.Equal(ProfileCalls.AllCalls, _h.State.Read(s => s.Telegram.Profile.PendingCalls.ToArray()));
-        Assert.Equal(1, _supervisor.Restarts);
-    }
-
-    [Fact]
-    public async Task SetProfileOff_QueuesNoProfileCalls()
-    {
-        await _service.SaveAsync(FakeBotApi.Token, false, false, Ct);
-
-        Assert.False(_h.State.Read(s => s.Telegram.Profile.SetProfile));
         Assert.Empty(_h.State.Read(s => s.Telegram.Profile.PendingCalls));
+        Assert.Equal(1, _supervisor.Restarts);
     }
 
     [Fact]
@@ -90,7 +80,7 @@ public sealed class BotTokenServiceTests : IDisposable
         var d = _h.AddDestination(-1001);
         SeedBotScopedState(FakeBotApi.BotId, d.Id);
 
-        var result = await _service.SaveAsync(FakeBotApi.Token, true, false, Ct);
+        var result = await _service.SaveAsync(FakeBotApi.Token, false, Ct);
 
         Assert.Equal(TokenSaveOutcome.Connected, result.Outcome);
         Assert.Equal(HealthStatus.NeedsPermissions, _h.State.Read(s => s.Health[d.Id].Status));
@@ -106,7 +96,7 @@ public sealed class BotTokenServiceTests : IDisposable
         _h.AddDestination(-1002);
         SeedBotScopedState(999, a.Id);
 
-        var result = await _service.SaveAsync(FakeBotApi.Token, true, false, Ct);
+        var result = await _service.SaveAsync(FakeBotApi.Token, false, Ct);
 
         Assert.Equal(TokenSaveOutcome.NeedsConfirm, result.Outcome);
         Assert.Equal("@tgjelly_test_bot is a different bot. It isn't in your 2 destinations, so they will need to be added again.", result.Message);
@@ -124,7 +114,7 @@ public sealed class BotTokenServiceTests : IDisposable
         SeedBotScopedState(999, a.Id);
         var revision = _h.Settings.Current.Revision;
 
-        var result = await _service.SaveAsync(FakeBotApi.Token, true, true, Ct);
+        var result = await _service.SaveAsync(FakeBotApi.Token, true, Ct);
 
         Assert.Equal(TokenSaveOutcome.Connected, result.Outcome);
         Assert.Empty(_h.State.ReadQueue(q => q.SentMessages));
@@ -145,7 +135,7 @@ public sealed class BotTokenServiceTests : IDisposable
     {
         _h.State.Update(s => s.Telegram.BotId = 999);
 
-        var result = await _service.SaveAsync(FakeBotApi.Token, true, false, Ct);
+        var result = await _service.SaveAsync(FakeBotApi.Token, false, Ct);
 
         Assert.Equal(TokenSaveOutcome.Connected, result.Outcome);
         Assert.Equal(FakeBotApi.BotId, _h.State.Read(s => s.Telegram.BotId));
@@ -156,7 +146,7 @@ public sealed class BotTokenServiceTests : IDisposable
     {
         _h.Api.On("getWebhookInfo", _ => FakeBotApi.Ok("""{"url":"https://other.example.com/hook","has_custom_certificate":false,"pending_update_count":0}"""));
 
-        var result = await _service.SaveAsync(FakeBotApi.Token, true, false, Ct);
+        var result = await _service.SaveAsync(FakeBotApi.Token, false, Ct);
 
         Assert.True(result.WebhookDeleted);
         Assert.Single(_h.Api.CallsTo("deleteWebhook"));
@@ -166,7 +156,7 @@ public sealed class BotTokenServiceTests : IDisposable
     public async Task Disconnect_ClearsTheTokenAndBotScopedState_KeepsTheBotIdentityAndProxyCredentials()
     {
         var d = _h.AddDestination(-1001);
-        await _service.SaveAsync(FakeBotApi.Token, true, false, Ct);
+        await _service.SaveAsync(FakeBotApi.Token, false, Ct);
         _h.Secrets.Update(s => s with { ProxyUsername = "u", ProxyPassword = "p" });
         SeedBotScopedState(FakeBotApi.BotId, d.Id);
         var identity = (_h.State.Read(s => s.Telegram.BotId)!.Value, _h.State.Read(s => s.Telegram.BotUsername));
@@ -227,10 +217,10 @@ public sealed class BotTokenServiceTests : IDisposable
     public async Task ReconnectingTheSameBotAfterDisconnect_IsNotASwitch()
     {
         _h.AddDestination(-1001);
-        await _service.SaveAsync(FakeBotApi.Token, true, false, Ct);
+        await _service.SaveAsync(FakeBotApi.Token, false, Ct);
         await _service.DisconnectAsync(false, Ct);
 
-        var result = await _service.SaveAsync(FakeBotApi.Token, true, false, Ct);
+        var result = await _service.SaveAsync(FakeBotApi.Token, false, Ct);
 
         Assert.Equal(TokenSaveOutcome.Connected, result.Outcome);
     }
@@ -260,7 +250,7 @@ public sealed class BotTokenServiceTests : IDisposable
             return FakeBotApi.Ok("""{"id":123456789,"is_bot":true,"first_name":"b","username":"tgjelly_test_bot"}""");
         });
 
-        var save = _service.SaveAsync(FakeBotApi.Token, true, false, Ct);
+        var save = _service.SaveAsync(FakeBotApi.Token, false, Ct);
         await entered.Task.WaitAsync(Ct);
         var disconnect = _service.DisconnectAsync(false, Ct);
         await Task.Delay(100, Ct);
@@ -288,7 +278,7 @@ public sealed class BotTokenServiceTests : IDisposable
             return FakeBotApi.Ok("""{"id":123456789,"is_bot":true,"first_name":"b","username":"tgjelly_test_bot"}""");
         });
 
-        await Task.WhenAll(_service.SaveAsync(FakeBotApi.Token, true, false, Ct), _service.SaveAsync(FakeBotApi.Token, true, false, Ct));
+        await Task.WhenAll(_service.SaveAsync(FakeBotApi.Token, false, Ct), _service.SaveAsync(FakeBotApi.Token, false, Ct));
 
         Assert.Equal(1, max);
     }
@@ -301,7 +291,7 @@ public sealed class BotTokenServiceTests : IDisposable
         var service = NewService(new RedactingLogger<BotTokenService>(factory));
         _h.Api.On("getMe", _ => FakeBotApi.Error(500, "Internal error for bot" + FakeBotApi.Token));
 
-        var result = await service.SaveAsync(FakeBotApi.Token, true, false, Ct);
+        var result = await service.SaveAsync(FakeBotApi.Token, false, Ct);
 
         Assert.Equal(TokenSaveOutcome.Failed, result.Outcome);
         Assert.DoesNotContain(FakeBotApi.Token, result.Message, StringComparison.Ordinal);
