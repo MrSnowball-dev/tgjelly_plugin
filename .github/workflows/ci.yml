@@ -62,6 +62,11 @@ jobs:
           node --check src/Jellyfin.Plugin.TgJelly/Web/tgjelly-messages.js
           node --check src/Jellyfin.Plugin.TgJelly/Web/tgjelly-preview.js
           node --check src/Jellyfin.Plugin.TgJelly/Web/tgjelly-log.js
+          node --check src/Jellyfin.Plugin.TgJelly/Web/tgjelly-api.js
+          node --check src/Jellyfin.Plugin.TgJelly/Web/tgjelly-shell.js
+          node --check src/Jellyfin.Plugin.TgJelly/Web/tgjelly-overview.js
+          node --check src/Jellyfin.Plugin.TgJelly/Web/tgjelly-destinations.js
+          node --check src/Jellyfin.Plugin.TgJelly/Web/tgjelly-advanced.js
           node --import ./tests/web/jellyfin-resolve.mjs --test 'tests/web/*.test.mjs'
 
       - name: Script tests

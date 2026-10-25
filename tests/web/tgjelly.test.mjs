@@ -7,8 +7,9 @@ import * as ui from '../../src/Jellyfin.Plugin.TgJelly/Web/tgjelly-ui.js';
 import * as msg from '../../src/Jellyfin.Plugin.TgJelly/Web/tgjelly-messages.js';
 import { makeView, makeApiClient, makeResponse, fakeTimers, flush, clickOn, dispatchOn, fakeTarget, liveFields } from './fake-view.mjs';
 
-// The page's own modules: the controller, and the Messages section, the preview and the Log it was split into (plan 9).
-const SOURCE = ['tgjelly.js', 'tgjelly-messages.js', 'tgjelly-preview.js', 'tgjelly-log.js']
+// The page's own modules: the controller and the sections it is split into.
+const SOURCE = ['tgjelly.js', 'tgjelly-api.js', 'tgjelly-shell.js', 'tgjelly-overview.js', 'tgjelly-destinations.js', 'tgjelly-advanced.js',
+    'tgjelly-messages.js', 'tgjelly-preview.js', 'tgjelly-log.js']
     .map(file => readFileSync(new URL(`../../src/Jellyfin.Plugin.TgJelly/Web/${file}`, import.meta.url), 'utf8')).join('\n');
 const EN = JSON.parse(readFileSync(new URL('../../src/Jellyfin.Plugin.TgJelly/Strings/en.json', import.meta.url), 'utf8'));
 

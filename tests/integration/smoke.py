@@ -50,6 +50,11 @@ WEB_ASSETS = (
     ("tgjelly-messages.js", "javascript"),
     ("tgjelly-preview.js", "javascript"),
     ("tgjelly-log.js", "javascript"),
+    ("tgjelly-api.js", "javascript"),
+    ("tgjelly-shell.js", "javascript"),
+    ("tgjelly-overview.js", "javascript"),
+    ("tgjelly-destinations.js", "javascript"),
+    ("tgjelly-advanced.js", "javascript"),
     ("tgjelly.css", "css"),
 )
 

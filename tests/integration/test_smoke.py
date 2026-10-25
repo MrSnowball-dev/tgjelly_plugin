@@ -1,6 +1,5 @@
 """Tests for the smoke-test helpers. Run: python3 -m unittest discover -s tests/integration -p 'test_*.py' -v"""
 
-import re
 import sys
 import tempfile
 import unittest
@@ -55,13 +54,14 @@ class HelperTests(unittest.TestCase):
 
 
 class WebAssetTests(unittest.TestCase):
-    def test_every_registered_asset_is_checked(self):
-        plugin = (Path(__file__).resolve().parent.parent.parent / "src" / "Jellyfin.Plugin.TgJelly" / "Plugin.cs").read_text()
-        registered = re.findall(r'Name = "([^"]+\.(?:js|css))"', plugin)
-        self.assertEqual(sorted(registered), sorted(name for name, _ in smoke.WEB_ASSETS))
+    def test_every_web_asset_is_checked(self):
+        web = Path(__file__).resolve().parent.parent.parent / "src" / "Jellyfin.Plugin.TgJelly" / "Web"
+        files = [p.name for p in web.iterdir() if p.suffix in (".js", ".css")]
+        self.assertEqual(sorted(files), sorted(name for name, _ in smoke.WEB_ASSETS))
 
     def test_scripts_need_javascript_and_the_stylesheet_css(self):
-        self.assertEqual(dict(smoke.WEB_ASSETS), {"tgjelly.js": "javascript", "tgjelly-ui.js": "javascript", "tgjelly-autosave.js": "javascript", "tgjelly-messages.js": "javascript", "tgjelly-preview.js": "javascript", "tgjelly-log.js": "javascript", "tgjelly.css": "css"})
+        for name, kind in smoke.WEB_ASSETS:
+            self.assertEqual("css" if name.endswith(".css") else "javascript", kind, name)
 
     def test_asset_served_checks_status_and_type(self):
         self.assertTrue(smoke.asset_served(200, "text/css; charset=utf-8", "css"))
