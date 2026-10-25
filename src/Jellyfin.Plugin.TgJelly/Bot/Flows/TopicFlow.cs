@@ -147,9 +147,8 @@ public sealed class TopicFlow
     /// </summary>
     /// <param name="chatId">The private chat.</param>
     /// <param name="flow">The wizard's flow.</param>
-    /// <param name="ct">Cancels the work.</param>
     /// <returns>The choice.</returns>
-    public Task<TopicChoice?> OnGeneralAsync(long chatId, FlowState flow, CancellationToken ct)
+    public Task<TopicChoice?> OnGeneralAsync(long chatId, FlowState flow)
     {
         ArgumentNullException.ThrowIfNull(flow);
         Spend(chatId, flow);

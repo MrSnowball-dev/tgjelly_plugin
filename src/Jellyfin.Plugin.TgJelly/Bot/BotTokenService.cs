@@ -6,7 +6,6 @@ using System.Threading.Tasks;
 using Jellyfin.Plugin.TgJelly.Configuration;
 using Jellyfin.Plugin.TgJelly.Logging;
 using Jellyfin.Plugin.TgJelly.State;
-using Jellyfin.Plugin.TgJelly.State.Documents;
 using Jellyfin.Plugin.TgJelly.Strings;
 using Microsoft.Extensions.Logging;
 using Telegram.Bot.Types;
@@ -138,8 +137,6 @@ public sealed class BotTokenService : IDisposable
             {
                 s.Telegram.BotId = me.Id;
                 s.Telegram.BotUsername = username;
-                // TgJelly leaves the bot's profile (description, commands, admin rights) to the owner (2026-10-25).
-                s.Telegram.Profile = new ProfileState();
             });
             _supervisor.Restart();
             _logger.LogInformation("TgJelly connected bot @{Bot}", username);

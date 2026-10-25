@@ -4,7 +4,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.TgJelly.Bot;
 using Jellyfin.Plugin.TgJelly.Configuration;
-using Jellyfin.Plugin.TgJelly.State.Documents;
 using Microsoft.Extensions.Logging;
 
 namespace Jellyfin.Plugin.TgJelly.Destinations;

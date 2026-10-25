@@ -26,7 +26,6 @@ public sealed class NoticeBuilder
     private readonly SettingsStore _settings;
     private readonly ILibraryAccess _library;
     private readonly StringTable _strings;
-    private readonly TimeProvider _time;
     private readonly TemplateFlags _templates;
 
     /// <summary>
@@ -37,9 +36,8 @@ public sealed class NoticeBuilder
     /// <param name="settings">The settings store.</param>
     /// <param name="library">The library, for removed-library filters.</param>
     /// <param name="strings">The string table.</param>
-    /// <param name="time">The clock.</param>
     /// <param name="templates">The template flags.</param>
-    public NoticeBuilder(StateStore state, SecretsStore secrets, SettingsStore settings, ILibraryAccess library, StringTable strings, TimeProvider time, TemplateFlags templates)
+    public NoticeBuilder(StateStore state, SecretsStore secrets, SettingsStore settings, ILibraryAccess library, StringTable strings, TemplateFlags templates)
     {
         _templates = templates;
         _state = state;
@@ -47,7 +45,6 @@ public sealed class NoticeBuilder
         _settings = settings;
         _library = library;
         _strings = strings;
-        _time = time;
     }
 
     /// <summary>

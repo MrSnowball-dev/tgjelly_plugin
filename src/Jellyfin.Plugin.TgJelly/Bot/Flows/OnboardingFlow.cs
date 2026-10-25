@@ -56,7 +56,6 @@ public sealed class OnboardingFlow
     private readonly SettingsStore _settings;
     private readonly ChatCheckRetrier _retrier;
     private readonly TopicFlow _topics;
-    private readonly DestinationChecker _checker;
     private readonly DestinationCreator _creator;
     private readonly HealthService _health;
     private readonly DestinationScreens _destinations;
@@ -75,7 +74,6 @@ public sealed class OnboardingFlow
     /// <param name="settings">The settings store.</param>
     /// <param name="retrier">Checks a chosen chat, trying again while the bot's membership settles.</param>
     /// <param name="topics">The forum topic step.</param>
-    /// <param name="checker">Re-checks the chat, with its topic, right before creating.</param>
     /// <param name="creator">Adds the destination.</param>
     /// <param name="health">The health service, to re-check an existing destination.</param>
     /// <param name="destinations">The destination screens, to open an existing destination.</param>
@@ -84,7 +82,7 @@ public sealed class OnboardingFlow
     /// <param name="formatter">The formatter, for escaping.</param>
     /// <param name="time">The clock.</param>
     /// <param name="logger">The logger.</param>
-    public OnboardingFlow(BotConnection connection, BotMemory memory, ScreenSender screens, SettingsStore settings, ChatCheckRetrier retrier, TopicFlow topics, DestinationChecker checker, DestinationCreator creator, HealthService health, DestinationScreens destinations, MenuScreens menus, StringTable strings, Formatter formatter, TimeProvider time, ILogger<OnboardingFlow> logger)
+    public OnboardingFlow(BotConnection connection, BotMemory memory, ScreenSender screens, SettingsStore settings, ChatCheckRetrier retrier, TopicFlow topics, DestinationCreator creator, HealthService health, DestinationScreens destinations, MenuScreens menus, StringTable strings, Formatter formatter, TimeProvider time, ILogger<OnboardingFlow> logger)
     {
         _connection = connection;
         _memory = memory;
@@ -92,7 +90,6 @@ public sealed class OnboardingFlow
         _settings = settings;
         _retrier = retrier;
         _topics = topics;
-        _checker = checker;
         _creator = creator;
         _health = health;
         _destinations = destinations;
@@ -366,7 +363,7 @@ public sealed class OnboardingFlow
         var chatId = query.Message!.Chat.Id;
         var choice = action switch
         {
-            "tg" => await _topics.OnGeneralAsync(chatId, flow, ct).ConfigureAwait(false),
+            "tg" => await _topics.OnGeneralAsync(chatId, flow).ConfigureAwait(false),
             "tc" => await _topics.OnCreateAsync(chatId, flow, ct).ConfigureAwait(false),
             "tk" => await _topics.OnPromotedAsync(chatId, flow, ct).ConfigureAwait(false),
             "tb" => await _topics.OnBackAsync(chatId, flow, ct).ConfigureAwait(false),
@@ -719,27 +716,6 @@ public sealed class OnboardingFlow
            && AwaitsChat(flow)
             ? flow
             : null;
-
-    /// <summary>
-    /// The wizard's flow, when the pressed message is the live wizard and it isn't creating already. A failed flow is
-    /// spent, even though it keeps the chat and topic for Try again.
-    /// </summary>
-    private FlowState? Wizard(CallbackQuery query)
-    {
-        if (query.Message is not { } message
-            || _memory.GetFlow(message.Chat.Id) is not { } flow
-            || flow.WizardMessageId != message.MessageId
-            || flow.Params.ContainsKey(CreatingKey)
-            || flow.Params.ContainsKey(FailedKey)
-            || !flow.Params.TryGetValue(ChatIdKey, out var chat) || !long.TryParse(chat, NumberStyles.Integer, CultureInfo.InvariantCulture, out _)
-            || !flow.Params.TryGetValue(ThreadIdKey, out var thread) || !int.TryParse(thread, NumberStyles.Integer, CultureInfo.InvariantCulture, out _)
-            || !flow.Params.ContainsKey(TitleKey))
-        {
-            return null;
-        }
-
-        return flow;
-    }
 
     /// <summary>A stale wizard button: "That menu expired", then the menu.</summary>
     private async Task MenuExpiredAsync(CallbackQuery query, CancellationToken ct)

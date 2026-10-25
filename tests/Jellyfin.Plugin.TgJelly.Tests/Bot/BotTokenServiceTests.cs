@@ -70,7 +70,6 @@ public sealed class BotTokenServiceTests : IDisposable
         Assert.Equal((TokenSaveOutcome.Connected, FakeBotApi.BotUsername, false), (result.Outcome, result.BotUsername, result.WebhookDeleted));
         Assert.Equal(FakeBotApi.Token, _h.Secrets.Load().BotToken);
         Assert.Equal((FakeBotApi.BotId, FakeBotApi.BotUsername), (_h.State.Read(s => s.Telegram.BotId)!.Value, _h.State.Read(s => s.Telegram.BotUsername)));
-        Assert.Empty(_h.State.Read(s => s.Telegram.Profile.PendingCalls));
         Assert.Equal(1, _supervisor.Restarts);
     }
 
@@ -169,7 +168,6 @@ public sealed class BotTokenServiceTests : IDisposable
         Assert.Empty(_h.State.ReadQueue(q => q.SentMessages));
         Assert.Empty(_h.State.ReadQueue(q => q.Outbox));
         Assert.Empty(_h.State.ReadQueue(q => q.FileIdCache));
-        Assert.Empty(_h.State.Read(s => s.Telegram.Profile.PendingCalls));
         Assert.Equal(identity, (_h.State.Read(s => s.Telegram.BotId)!.Value, _h.State.Read(s => s.Telegram.BotUsername)));
         Assert.Single(_h.Settings.Current.Destinations);
         Assert.Equal(2, _supervisor.Restarts);
@@ -322,7 +320,6 @@ public sealed class BotTokenServiceTests : IDisposable
         {
             s.Telegram.BotId = botId;
             s.Telegram.BotUsername = "old_bot";
-            s.Telegram.Profile = new ProfileState { SetProfile = true, PendingCalls = ["commands"] };
             s.Health[destinationId] = new DestinationHealth { Status = HealthStatus.NeedsPermissions, LastError = "rights" };
         });
         _h.State.UpdateQueue(q =>

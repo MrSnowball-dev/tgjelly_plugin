@@ -10,7 +10,4 @@ public sealed class TelegramSection
 
     /// <summary>Gets or sets the connected bot's username.</summary>
     public string BotUsername { get; set; } = string.Empty;
-
-    /// <summary>Gets or sets the profile setup state.</summary>
-    public ProfileState Profile { get; set; } = new();
 }

@@ -1,5 +1,3 @@
-using System;
-
 namespace Jellyfin.Plugin.TgJelly.Log;
 
 /// <summary>

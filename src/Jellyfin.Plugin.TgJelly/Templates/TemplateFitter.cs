@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
-using Jellyfin.Plugin.TgJelly.Rendering;
 using Telegram.Bot.Extensions;
 
 namespace Jellyfin.Plugin.TgJelly.Templates;
@@ -42,7 +41,7 @@ public static class TemplateFitter
         var fullList = Math.Min(model.ListCount, MaxListItems);
         TemplateError? error = null;
         TemplateError? tooLong = null;
-        IReadOnlyDictionary<string, object?>? last = null;
+        IReadOnlyDictionary<string, object?>? last;
 
         // Output or a value over the engine's limits is far over any message limit: it does not fit, and a shorter model may.
         string? Render(string? text, int kept)

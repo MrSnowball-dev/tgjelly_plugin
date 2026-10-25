@@ -441,7 +441,7 @@ public sealed class EventLog : IDisposable
             MoveAside(ex.Message);
         }
 
-        var dirty = false;
+        bool dirty;
         lock (_gate)
         {
             foreach (var row in rows ?? [])

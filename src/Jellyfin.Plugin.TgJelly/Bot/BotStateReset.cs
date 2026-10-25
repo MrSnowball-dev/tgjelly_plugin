@@ -25,7 +25,6 @@ public static class BotStateReset
         ArgumentNullException.ThrowIfNull(destinationIds);
         queue.SentMessages.Clear();
         queue.FileIdCache.Clear();
-        state.Telegram.Profile = new ProfileState();
         ClearBotSections(state);
         foreach (var id in destinationIds)
         {
@@ -47,7 +46,6 @@ public static class BotStateReset
         queue.SentMessages.Clear();
         queue.Outbox.Clear();
         queue.FileIdCache.Clear();
-        state.Telegram.Profile = new ProfileState();
         ClearBotSections(state);
     }
 

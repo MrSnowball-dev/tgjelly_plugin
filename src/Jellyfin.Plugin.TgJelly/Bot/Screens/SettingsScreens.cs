@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
-using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.TgJelly.Configuration;
 using Jellyfin.Plugin.TgJelly.Rendering;
@@ -57,9 +56,8 @@ public sealed class SettingsScreens
     /// <param name="action">The callback action.</param>
     /// <param name="args">The callback arguments.</param>
     /// <param name="chatId">The private chat.</param>
-    /// <param name="ct">Cancels the work.</param>
     /// <returns>The screen, or <c>null</c> when <paramref name="action"/> is not a settings action.</returns>
-    public async Task<Screen?> HandleAsync(string action, IReadOnlyList<string> args, long chatId, CancellationToken ct)
+    public async Task<Screen?> HandleAsync(string action, IReadOnlyList<string> args, long chatId)
     {
         ArgumentNullException.ThrowIfNull(action);
         ArgumentNullException.ThrowIfNull(args);
@@ -126,10 +124,9 @@ public sealed class SettingsScreens
     /// </summary>
     /// <param name="chatId">The private chat.</param>
     /// <param name="text">The text.</param>
-    /// <param name="ct">Cancels the work.</param>
     /// <returns><c>Handled</c> is false when no URL was awaited (the text is ordinary). Otherwise a valid URL is saved
     /// and <c>Screen</c> is the public URL screen to send; an invalid one is explained and asked for again: <c>Screen</c> is the prompt, to send as a new message.</returns>
-    public async Task<(bool Handled, Screen? Screen)> OnTextAsync(long chatId, string text, CancellationToken ct)
+    public async Task<(bool Handled, Screen? Screen)> OnTextAsync(long chatId, string text)
     {
         ArgumentNullException.ThrowIfNull(text);
         if (!AwaitsUrl(chatId))

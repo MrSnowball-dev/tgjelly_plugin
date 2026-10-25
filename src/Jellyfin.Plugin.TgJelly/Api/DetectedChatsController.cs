@@ -25,7 +25,6 @@ namespace Jellyfin.Plugin.TgJelly.Api;
 [Produces(MediaTypeNames.Application.Json)]
 public class DetectedChatsController : ControllerBase
 {
-    private readonly SettingsStore _settings;
     private readonly BotConnection _connection;
     private readonly DestinationChecker _checker;
     private readonly DestinationCreator _creator;
@@ -39,7 +38,6 @@ public class DetectedChatsController : ControllerBase
     /// <summary>
     /// Initializes a new instance of the <see cref="DetectedChatsController"/> class.
     /// </summary>
-    /// <param name="settings">The settings store.</param>
     /// <param name="connection">The bot connection.</param>
     /// <param name="checker">The chat checker.</param>
     /// <param name="creator">The destination creator.</param>
@@ -49,9 +47,8 @@ public class DetectedChatsController : ControllerBase
     /// <param name="gate">The instance gate; changes wait until this instance owns the data folder.</param>
     /// <param name="state">The state store.</param>
     /// <param name="logger">The logger.</param>
-    public DetectedChatsController(SettingsStore settings, BotConnection connection, DestinationChecker checker, DestinationCreator creator, BotMemory memory, DestinationDtoMapper mapper, StringTable strings, InstanceGate gate, StateStore state, ILogger<DetectedChatsController> logger)
+    public DetectedChatsController(BotConnection connection, DestinationChecker checker, DestinationCreator creator, BotMemory memory, DestinationDtoMapper mapper, StringTable strings, InstanceGate gate, StateStore state, ILogger<DetectedChatsController> logger)
     {
-        _settings = settings;
         _connection = connection;
         _checker = checker;
         _creator = creator;

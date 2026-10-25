@@ -8,7 +8,6 @@ using Jellyfin.Plugin.TgJelly.Bot.Screens;
 using Jellyfin.Plugin.TgJelly.Configuration;
 using Jellyfin.Plugin.TgJelly.Destinations;
 using Jellyfin.Plugin.TgJelly.Rendering;
-using Jellyfin.Plugin.TgJelly.State.Documents;
 using Jellyfin.Plugin.TgJelly.Strings;
 using Microsoft.Extensions.Logging;
 using Telegram.Bot.Types;

@@ -18,8 +18,6 @@ public class BotStateResetTests
 
         Assert.Empty(queue.SentMessages);
         Assert.Empty(queue.FileIdCache);
-        Assert.Empty(state.Telegram.Profile.PendingCalls);
-        Assert.False(state.Telegram.Profile.SetProfile);
         Assert.Single(queue.Outbox);
         Assert.Equal(999, state.Telegram.BotId);
         foreach (var id in new[] { "d1", "d2" })
@@ -40,7 +38,6 @@ public class BotStateResetTests
         Assert.Empty(queue.SentMessages);
         Assert.Empty(queue.Outbox);
         Assert.Empty(queue.FileIdCache);
-        Assert.Empty(state.Telegram.Profile.PendingCalls);
         Assert.Equal((999L, "old_bot"), (state.Telegram.BotId!.Value, state.Telegram.BotUsername));
     }
 
@@ -68,7 +65,6 @@ public class BotStateResetTests
         var state = new StateDocument();
         state.Telegram.BotId = 999;
         state.Telegram.BotUsername = "old_bot";
-        state.Telegram.Profile = new ProfileState { SetProfile = true, PendingCalls = ["commands"] };
         state.Flows["1"] = new FlowState { Screen = "home" };
         state.Managers["1"] = Now;
         state.DetectedChats.Add(new DetectedChat { ChatId = -1, Title = "t" });

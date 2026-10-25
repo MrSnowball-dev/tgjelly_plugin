@@ -51,7 +51,7 @@ public sealed class DetectedChatsControllerTests : IAsyncLifetime
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
     private DetectedChatsController Controller(InstanceGate? gate = null)
-        => new(_h.Settings, _h.Connection, _checker, _creator, _memory, _mapper, _h.Strings, gate ?? _gate, _h.State, NullLogger<DetectedChatsController>.Instance);
+        => new(_h.Connection, _checker, _creator, _memory, _mapper, _h.Strings, gate ?? _gate, _h.State, NullLogger<DetectedChatsController>.Instance);
 
     private void Detect()
     {

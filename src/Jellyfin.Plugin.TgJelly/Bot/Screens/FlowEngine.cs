@@ -105,7 +105,7 @@ public sealed class FlowEngine : IBotFlows, IDisposable
         }
         else if (message.Text is { Length: > 0 } text)
         {
-            if (await _settingsScreens.OnTextAsync(chatId, text, ct).ConfigureAwait(false) is { Handled: true } typed)
+            if (await _settingsScreens.OnTextAsync(chatId, text).ConfigureAwait(false) is { Handled: true } typed)
             {
                 if (typed.Screen is { } done)
                 {
@@ -219,7 +219,7 @@ public sealed class FlowEngine : IBotFlows, IDisposable
                 break;
             default:
                 var screen = await _destinations.HandleAsync(action, args, ct).ConfigureAwait(false)
-                    ?? await _settingsScreens.HandleAsync(action, args, chatId, ct).ConfigureAwait(false);
+                    ?? await _settingsScreens.HandleAsync(action, args, chatId).ConfigureAwait(false);
                 if (screen is not null)
                 {
                     await ShowAsync(chatId, screen, message.MessageId, ct).ConfigureAwait(false);

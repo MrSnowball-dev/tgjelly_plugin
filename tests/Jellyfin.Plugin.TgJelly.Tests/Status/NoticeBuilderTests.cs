@@ -178,7 +178,7 @@ public class NoticeBuilderTests
     }
 
     private static NoticeBuilder NewBuilder(BotTestHarness h, FakeLibrary? library = null) =>
-        new(h.State, h.Secrets, h.Settings, library ?? new FakeLibrary(), h.Strings, h.Time, new TemplateFlags(h.State, h.Settings, h.Time));
+        new(h.State, h.Secrets, h.Settings, library ?? new FakeLibrary(), h.Strings, new TemplateFlags(h.State, h.Settings, h.Time));
 
     private static void Raise(BotTestHarness h, string kind)
     {

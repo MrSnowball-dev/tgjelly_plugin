@@ -8,6 +8,7 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <Nullable>enable</Nullable>
     <AnalysisMode>AllEnabledByDefault</AnalysisMode>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
     <!-- XmlSerializer-friendly config uses arrays (spec §10.1), like jellyfin-plugin-webhook. -->
     <NoWarn>$(NoWarn);CA1819</NoWarn>
   </PropertyGroup>

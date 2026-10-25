@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Linq;
 using Jellyfin.Plugin.TgJelly.Configuration;
 using Jellyfin.Plugin.TgJelly.Delivery;
-using Jellyfin.Plugin.TgJelly.State.Documents;
 
 namespace Jellyfin.Plugin.TgJelly.Destinations;
 

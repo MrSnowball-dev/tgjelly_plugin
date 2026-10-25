@@ -177,7 +177,7 @@ public class DiagnosticsReportTests
             compat, gate, h.Settings, h.State, h.Secrets, h.Connection, BotApiEnvironment.FromValue(baseUrl),
             new Outbox(h.State, h.Strings, h.Time), readiness, health, new FakeServerInfo(),
             new Jellyfin.Plugin.TgJelly.Templates.TemplateFlags(h.State, h.Settings, h.Time),
-            new NoticeBuilder(h.State, h.Secrets, h.Settings, library, h.Strings, h.Time, new Jellyfin.Plugin.TgJelly.Templates.TemplateFlags(h.State, h.Settings, h.Time)));
+            new NoticeBuilder(h.State, h.Secrets, h.Settings, library, h.Strings, new Jellyfin.Plugin.TgJelly.Templates.TemplateFlags(h.State, h.Settings, h.Time)));
         return (report, health);
     }
 }
