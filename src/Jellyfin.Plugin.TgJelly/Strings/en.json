@@ -490,6 +490,7 @@
   "web.topics.default": "Default topic ({topic})",
   "web.topics.create": "Create a topic…",
   "web.topics.link": "Use a topic link…",
+  "web.topics.separate": "Separate topics for each event",
   "web.topics.createAsk": "Create a topic named “{name}” in this group?",
   "web.topics.createYes": "Create topic",
   "web.topics.choose": "Topic for {what}",

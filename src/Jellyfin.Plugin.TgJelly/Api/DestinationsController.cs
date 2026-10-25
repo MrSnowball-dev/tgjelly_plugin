@@ -229,6 +229,7 @@ public class DestinationsController : ControllerBase
                 return false;
             }
 
+            d.SeparateMediaTopics = request.SeparateMediaTopics ?? d.SeparateMediaTopics;
             if (request.TopicRoutes is { } routes)
             {
                 d.TopicRoutes = WithRoutes(d.TopicRoutes, routes.Select(r => (r.Slot, r.ThreadId)));

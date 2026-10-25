@@ -18,6 +18,9 @@ public sealed class UpdateDestinationRequest
     /// </summary>
     public IReadOnlyList<TopicRouteRequest>? TopicRoutes { get; set; }
 
+    /// <summary>Gets or sets whether each media event has its own topic choice; <c>null</c> keeps it.</summary>
+    public bool? SeparateMediaTopics { get; set; }
+
     /// <summary>Gets or sets the events; whether every event is on is worked out from them.</summary>
     public string[]? Events { get; set; }
 

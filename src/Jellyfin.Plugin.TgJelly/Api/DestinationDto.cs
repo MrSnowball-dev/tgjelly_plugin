@@ -29,6 +29,9 @@ public sealed class DestinationDto
     /// <summary>Gets, for a forum, the slots that post to their own topic.</summary>
     public IReadOnlyList<TopicRoute> TopicRoutes { get; init; } = [];
 
+    /// <summary>Gets a value indicating whether each media event has its own topic choice.</summary>
+    public bool SeparateMediaTopics { get; init; }
+
     /// <summary>Gets the forum topics TgJelly knows for the chat.</summary>
     public IReadOnlyList<KnownTopic> KnownTopics { get; init; } = [];
 

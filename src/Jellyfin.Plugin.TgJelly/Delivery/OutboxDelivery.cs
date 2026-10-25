@@ -171,7 +171,7 @@ public sealed class OutboxDelivery
         // Every message whose slot's topic is known to be gone says so in the Log, not only the first one.
         if (destination.ThreadFor(entry.EventKey) != ThreadOf(entry, destination))
         {
-            entry.Message.TopicFallback = TopicSlots.For(entry.EventKey);
+            entry.Message.TopicFallback = destination.RouteSlotFor(entry.EventKey);
         }
 
         SentMessage? target = null;
@@ -323,7 +323,7 @@ public sealed class OutboxDelivery
                 // A routed topic is gone: remember it, and send this one (and its slot's next ones) to the destination's
                 // own topic instead of holding everything (owner, 2026-10-25).
                 _health.SetTopicMissing(destination.Id, ThreadOf(entry, destination));
-                message.TopicFallback = TopicSlots.For(entry.EventKey);
+                message.TopicFallback = destination.RouteSlotFor(entry.EventKey);
                 return (entry, destination);
             case DeliveryErrorKind.TopicMissing:
                 _health.MarkProblem(destination.Id, HealthStatus.TopicMissing, error.Description);
