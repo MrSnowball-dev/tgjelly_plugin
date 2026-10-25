@@ -47,7 +47,7 @@
 
 The branch already holds the design commit (`1fab050`).
 
-### Task A1: Remove pre-release settings support
+### Task 1 (A1): Remove pre-release settings support
 
 **Files:**
 - Modify:
@@ -81,7 +81,7 @@ The branch already holds the design commit (`1fab050`).
 - [ ] **Step 4: Verify.** Run all three verification commands. `AV09File_LoadsWithEveryValue` still passes.
 - [ ] **Step 5: Commit** `refactor: drop pre-release settings conversions and legacy fields`.
 
-### Task A2: Presets become "follows new events"
+### Task 2 (A2): Presets become "follows new events"
 
 **Files:**
 - Modify:
@@ -115,7 +115,7 @@ The branch already holds the design commit (`1fab050`).
 - [ ] **Step 3: Verify.** Run all three suites. A1's fixture test still passes, with its expectations changed from `Preset` to the flag.
 - [ ] **Step 4: Commit** `refactor: presets become one "follows new events" flag`.
 
-### Task A3: Settings are read once
+### Task 3 (A3): Settings are read once
 
 **Files:**
 - Modify: `Configuration/SettingsStore.cs`.
@@ -138,7 +138,7 @@ The branch already holds the design commit (`1fab050`).
 - [ ] **Step 4: Verify.** Run all three suites.
 - [ ] **Step 5: Commit** `perf: settings are copied once per change, not on every read`.
 
-### Task A4: Dead code and analyzers
+### Task 4 (A4): Dead code and analyzers
 
 **Files:** whatever the analyzers flag in `src/`, plus `Strings/en.json`, plus `src/Jellyfin.Plugin.TgJelly/Jellyfin.Plugin.TgJelly.csproj` (or `.editorconfig`).
 
@@ -151,7 +151,7 @@ The branch already holds the design commit (`1fab050`).
 - [ ] **Step 4: Verify.** Run all three suites.
 - [ ] **Step 5: Commit** `refactor: remove dead code and unused strings`.
 
-### Task A5: Threading
+### Task 5 (A5): Threading
 
 **Files:** read these:
 - `State/StateStore.cs`, `State/SecretsStore.cs` and `State/InstanceGate.cs`;
@@ -174,7 +174,7 @@ The tests for these live under `tests/…`, mirroring the source folders.
 - [ ] **Step 3:** suspicions that can't be shown go in a "Suspected, not shown" list kept for the PR description. They get no code change.
 - [ ] **Step 4: Verify.** Run all three suites.
 
-### Task A6: Compact code and the dashboard split
+### Task 6 (A6): Compact code and the dashboard split
 
 **Files:**
 - Modify: `src/Jellyfin.Plugin.TgJelly/Web/tgjelly.js` and the C# files with the topic-name repeat (below).
@@ -203,7 +203,7 @@ The tests for these live under `tests/…`, mirroring the source folders.
 - [ ] **Step 5: Verify.** Run all three suites.
 - [ ] **Step 6: Commit,** by area: `refactor: one way to remember a topic name`, `refactor: split the dashboard script into modules`, and so on.
 
-### Task A7: Comments
+### Task 7 (A7): Comments
 
 **Files:** every file in `src/`. In tests, only comments that cite the spec or plans.
 
@@ -217,7 +217,7 @@ The tests for these live under `tests/…`, mirroring the source folders.
 - [ ] **Step 2: Verify.** Run all three suites. The documentation file must still build: CS1591 is an error.
 - [ ] **Step 3: Commit** by area, `docs: comments say why, not history`.
 
-### Task A8: Tests sweep, docs, PR
+### Task 8 (A8): Tests sweep, docs, PR
 
 - [ ] **Step 1: Sweep the tests.** Delete tests that duplicate another test's assertions for the same input, and tests that only check a constant or a plain getter. Keep a list of the deleted test names, with one reason each.
 - [ ] **Step 2: Docs.**
@@ -235,7 +235,7 @@ The tests for these live under `tests/…`, mirroring the source folders.
 
 ## Part B — One build (v1.0), branch `feat/v1-single-build` from `main` after `v0.10`
 
-### Task B1: One net9.0 build, no CompatGuard
+### Task 9 (B1): One net9.0 build, no CompatGuard
 
 **Files:**
 - Modify:
@@ -272,7 +272,7 @@ The tests for these live under `tests/…`, mirroring the source folders.
 - [ ] **Step 3: Verify.** Run all three suites, which now build only net9.0.
 - [ ] **Step 4: Commit** `feat: one build for Jellyfin 10.11 and 12`.
 
-### Task B2: Packaging, version scheme, manifest
+### Task 10 (B2): Packaging, version scheme, manifest
 
 **Files:**
 - Modify: `build/package.py`, `build/publish_pages.py` and `Web/tgjelly-shell.js` (or wherever `releaseName`/`releaseUrl` sit after A6).
@@ -295,7 +295,7 @@ The tests for these live under `tests/…`, mirroring the source folders.
 - [ ] **Step 3: Verify.** Run all three suites.
 - [ ] **Step 4: Commit** `build: one zip per release, version X.Y.Z.0, pre-release entries leave the manifest`.
 
-### Task B3: CI and smoke
+### Task 11 (B3): CI and smoke
 
 **Files:**
 - Modify:
@@ -314,7 +314,7 @@ The tests for these live under `tests/…`, mirroring the source folders.
 - [ ] **Step 4: Verify** with the Python suite. CI on the PR is the real check: the smoke tests run in Docker there.
 - [ ] **Step 5: Commit** `ci: one zip, smoke-tested on 10.11 and 12`.
 
-### Task B4: Docs, PR, v1.0
+### Task 12 (B4): Docs, PR, v1.0
 
 - [ ] **Step 1: Docs.**
   - v1 spec §13.2–13.5: one build, the version scheme and the matrix.
