@@ -3,6 +3,14 @@
     "guid": "e547b901-0dc4-42ae-8999-3871dd141270",
     "versions": [
       {
+        "version": "2.0.7.0",
+        "changelog": "Topics per event in forums, and the bot is yours to set up\n\n- In a forum, each media event (movies, episodes, albums, music videos, books), and Security and Server, can post to a topic of its own: pick one beside the event, let TgJelly create one, or paste a link to an existing topic. Everything else stays in the destination's topic, as before.\n- If a chosen topic is deleted, its messages go to the destination's own topic instead of waiting, and the editor shows \"Topic gone\".\n- A forum destination shows which topic it posts to, and every destination has a folded Advanced block with its chat ID and topic IDs.\n- TgJelly no longer changes the bot's description, command menu or admin rights; set them in BotFather as you like.\n- Advanced shows the bot token, hidden until you press Show.\n- Overview: Status comes first and no longer repeats itself, and a token you're typing isn't wiped.",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://github.com/MrSnowball-dev/tgjelly_plugin/releases/download/v0.7/tgjelly_2.0.7.0.zip",
+        "checksum": "cd40c5dfa5a98b5729d52d80cbae4806",
+        "timestamp": "2026-10-25T16:12:57Z"
+      },
+      {
         "version": "2.0.6.0",
         "changelog": "No presets, a preview that stays in view, and test messages in the Log\n\n- Presets are gone. A new chat starts with every event on; switch off what you don't want. New kinds of event in later versions are added only to destinations that still have every event on. Upgrading keeps every destination's events as they are.\n- In the bot, Add destination now sits in the Destinations screen as a blue button.\n- Open in Telegram just opens the chat with the bot.\n- The message preview stays in view under Jellyfin's header while you scroll.\n- The Fields and Formatting tables keep their columns; long tags wrap instead of stretching the table.\n- Test messages appear in the Log, labelled Test or Test failed.\n- A group with topics is shown as a Forum.\n- The sidebar counts are labels, the version in the header opens its release page, and Change token opens right where you pressed it.\n- TgJelly sends at most two messages a second, to stay clear of Telegram's flood limits.",
         "targetAbi": "12.0.0.0",
@@ -49,6 +57,14 @@
         "sourceUrl": "https://github.com/MrSnowball-dev/tgjelly_plugin/releases/download/v0.1/tgjelly_2.0.1.0.zip",
         "checksum": "cb0feb4d6ee44d02cc6cc3be21287301",
         "timestamp": "2026-10-20T21:57:13Z"
+      },
+      {
+        "version": "1.0.7.0",
+        "changelog": "Topics per event in forums, and the bot is yours to set up\n\n- In a forum, each media event (movies, episodes, albums, music videos, books), and Security and Server, can post to a topic of its own: pick one beside the event, let TgJelly create one, or paste a link to an existing topic. Everything else stays in the destination's topic, as before.\n- If a chosen topic is deleted, its messages go to the destination's own topic instead of waiting, and the editor shows \"Topic gone\".\n- A forum destination shows which topic it posts to, and every destination has a folded Advanced block with its chat ID and topic IDs.\n- TgJelly no longer changes the bot's description, command menu or admin rights; set them in BotFather as you like.\n- Advanced shows the bot token, hidden until you press Show.\n- Overview: Status comes first and no longer repeats itself, and a token you're typing isn't wiped.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/MrSnowball-dev/tgjelly_plugin/releases/download/v0.7/tgjelly_1.0.7.0.zip",
+        "checksum": "7fede7aa0af3e48e89bbf5b7666e46ce",
+        "timestamp": "2026-10-25T16:12:57Z"
       },
       {
         "version": "1.0.6.0",
