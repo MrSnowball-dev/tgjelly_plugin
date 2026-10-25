@@ -20,6 +20,9 @@ public sealed class SettingsStore : IDisposable
     private readonly ILogger<SettingsStore> _logger;
     private readonly Lock _notifyGate = new();
     private long _lastNotifiedRevision = long.MinValue;
+    private PluginConfiguration? _snapshot;
+    private PluginConfiguration? _snapshotSource;
+    private string? _snapshotJson;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="SettingsStore"/> class.
@@ -48,9 +51,16 @@ public sealed class SettingsStore : IDisposable
     public event EventHandler<SettingsChangedEventArgs>? SettingsChanged;
 
     /// <summary>
-    /// Gets a copy of the current settings.
+    /// Gets or sets a value indicating whether each read of <see cref="Current"/> first checks that no caller changed
+    /// the shared copy. Tests turn it on; it costs a serialization per read.
     /// </summary>
-    public PluginConfiguration Current => _host.RunExclusive(() => Clone(_host.Configuration));
+    internal static bool VerifySnapshots { get; set; }
+
+    /// <summary>
+    /// Gets the current settings: one copy shared by every reader until the settings change. Read-only: a change goes
+    /// through <see cref="Update"/> or <see cref="UpdateIf"/>.
+    /// </summary>
+    public PluginConfiguration Current => _host.RunExclusive(Snapshot);
 
     /// <summary>
     /// Applies a change to a copy of the settings and saves it.
@@ -168,6 +178,27 @@ public sealed class SettingsStore : IDisposable
 
     private static PluginConfiguration Clone(PluginConfiguration configuration)
         => JsonSerializer.Deserialize<PluginConfiguration>(JsonSerializer.Serialize(configuration, JsonDefaults.Options), JsonDefaults.Options)!;
+
+    // Jellyfin replaces its configuration object on every save, ours or an outside one, so a new object (or a new
+    // revision on the same one) means the copy is stale.
+    private PluginConfiguration Snapshot()
+    {
+        var live = _host.Configuration;
+        if (_snapshot is not null && ReferenceEquals(live, _snapshotSource) && live.Revision == _snapshot.Revision)
+        {
+            if (VerifySnapshots && JsonSerializer.Serialize(_snapshot, JsonDefaults.Options) != _snapshotJson)
+            {
+                throw new InvalidOperationException("A caller changed SettingsStore.Current in place.");
+            }
+
+            return _snapshot;
+        }
+
+        _snapshot = Clone(live);
+        _snapshotSource = live;
+        _snapshotJson = VerifySnapshots ? JsonSerializer.Serialize(_snapshot, JsonDefaults.Options) : null;
+        return _snapshot;
+    }
 
     // The backup is a safety net: failing to write it must not turn a successful save into an error.
     private void TryWriteBackup(PluginConfiguration configuration)
