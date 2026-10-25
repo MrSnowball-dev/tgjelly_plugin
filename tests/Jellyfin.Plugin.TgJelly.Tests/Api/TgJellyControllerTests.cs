@@ -131,7 +131,7 @@ public class TgJellyControllerTests
         using var settings = new SettingsStore(new FakeConfigurationHost(), paths, state, time, NullLogger<SettingsStore>.Instance);
         using var gate = new InstanceGate(paths, time, NullLogger<InstanceGate>.Instance);
         var id = DestinationIds.New([]);
-        var saved = settings.Update(null, c => c.Destinations = [new Destination { Id = id, ChatId = -100111, Title = "Family", Kind = ChatKind.Supergroup, Events = EventCatalog.Expand(PresetKind.Everything) }]);
+        var saved = settings.Update(null, c => c.Destinations = [new Destination { Id = id, ChatId = -100111, Title = "Family", Kind = ChatKind.Supergroup, Events = [.. EventCatalog.AllKeys] }]);
         Assert.Equal(SettingsUpdateStatus.Saved, saved.Status);
         state.RecordError("outbox", "<dest:" + id + ">: Forbidden");
         state.RecordError("outbox", "<dest:gone>: Forbidden");

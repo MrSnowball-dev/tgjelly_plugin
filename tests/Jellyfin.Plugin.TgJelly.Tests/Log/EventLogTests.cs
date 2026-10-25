@@ -86,7 +86,7 @@ public sealed class EventLogTests : IDisposable
         using var h = new BotTestHarness();
         using var log = new EventLog(new DataPaths(_dir.Path), h.Time, NullLogger<EventLog>.Instance);
         var rig = new LogRig(h, log);
-        var d = h.AddDestination(-1001, preset: Jellyfin.Plugin.TgJelly.Configuration.PresetKind.AdminAlerts);
+        var d = h.AddDestination(-1001, events: BotTestHarness.AdminEvents);
         await log.Loaded;
 
         rig.Pipeline.Queues.Publish("security.login_failed", new System.Collections.Generic.Dictionary<string, string> { ["user"] = "alice", ["user_key"] = "ALICE", ["ip"] = "1.1.1.1" });

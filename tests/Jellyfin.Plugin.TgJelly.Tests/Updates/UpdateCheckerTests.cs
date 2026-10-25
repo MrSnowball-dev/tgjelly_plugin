@@ -26,8 +26,8 @@ public sealed class UpdateCheckerTests : IDisposable
     [Fact]
     public async Task NotSubscribed_NeverCalls()
     {
-        _h.AddDestination(-1001, preset: PresetKind.NewMedia);
-        _h.AddDestination(-1002, preset: PresetKind.AdminAlerts);
+        _h.AddDestination(-1001, events: BotTestHarness.MediaEvents);
+        _h.AddDestination(-1002, events: BotTestHarness.AdminEvents);
         Assert.Equal(SettingsUpdateStatus.Saved, _h.Settings.Update(null, c => c.Destinations[1].Enabled = false).Status);
         using var checker = await NewAsync();
 
@@ -39,7 +39,7 @@ public sealed class UpdateCheckerTests : IDisposable
     [Fact]
     public async Task UpdateCheckDisabled_NeverCalls()
     {
-        _h.AddDestination(-1001, preset: PresetKind.AdminAlerts);
+        _h.AddDestination(-1001, events: BotTestHarness.AdminEvents);
         Assert.Equal(SettingsUpdateStatus.Saved, _h.Settings.Update(null, c => c.UpdateCheck.Enabled = false).Status);
         using var checker = await NewAsync();
 
@@ -53,7 +53,7 @@ public sealed class UpdateCheckerTests : IDisposable
     {
         using var checker = await NewAsync();
         await RunMinutesAsync(checker, 60);
-        _h.AddDestination(-1001, preset: PresetKind.AdminAlerts);
+        _h.AddDestination(-1001, events: BotTestHarness.AdminEvents);
         await checker.StepAsync(CancellationToken.None);
 
         await RunMinutesAsync(checker, 4);
@@ -70,7 +70,7 @@ public sealed class UpdateCheckerTests : IDisposable
     [Fact]
     public async Task Resubscribing_WaitsForTheInterval_SinceTheLastCheck()
     {
-        _h.AddDestination(-1001, preset: PresetKind.AdminAlerts);
+        _h.AddDestination(-1001, events: BotTestHarness.AdminEvents);
         using var checker = await NewAsync();
         await RunMinutesAsync(checker, 5);
         Assert.Equal(1, _feed.Calls);
@@ -88,7 +88,7 @@ public sealed class UpdateCheckerTests : IDisposable
     [Fact]
     public async Task WaitsForServerStartup()
     {
-        _h.AddDestination(-1001, preset: PresetKind.AdminAlerts);
+        _h.AddDestination(-1001, events: BotTestHarness.AdminEvents);
         _startup.HasCompleted = false;
         using var checker = await NewAsync();
 
@@ -277,7 +277,7 @@ public sealed class UpdateCheckerTests : IDisposable
     [Fact]
     public async Task Incompatible_NeverRuns()
     {
-        _h.AddDestination(-1001, preset: PresetKind.AdminAlerts);
+        _h.AddDestination(-1001, events: BotTestHarness.AdminEvents);
         var gate = await _h.StartOwnedGateAsync();
         using var checker = new UpdateChecker(
             gate, new CompatResult(false, "test", new Version(11, 0), "no"), _startup, _h.Settings, _h.State, _server, _feed, _queues,

@@ -65,16 +65,16 @@ public sealed class PersistenceServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task Start_UpgradesPresets_Once()
+    public async Task Start_AddsNewEvents_Once()
     {
-        var stored = Jellyfin.Plugin.TgJelly.Tests.Pipeline.PresetUpgraderTests.Config(PresetKind.Everything, [.. EventCatalog.Expand(PresetKind.Everything).Where(k => k != "media.book")]);
+        var stored = new PluginConfiguration { Destinations = [new Destination { Id = "abcd1234", Events = [.. EventCatalog.AllKeys.Where(k => k != "media.book")] }] };
         stored.Revision = 4;
         _host.SaveFromStore(stored);
         using var service = new PersistenceService(_gate, _state, _settings, _secrets, _time, NullLogger<PersistenceService>.Instance);
 
         await _gate.StartAsync(CancellationToken.None);
         await service.StartAsync(CancellationToken.None);
-        await Eventually.TrueAsync(() => _host.Configuration.Revision == 5, "presets upgraded");
+        await Eventually.TrueAsync(() => _host.Configuration.Revision == 5, "new events added");
         await Eventually.SettleAsync();
 
         Assert.Contains("media.book", _host.Configuration.Destinations[0].Events);

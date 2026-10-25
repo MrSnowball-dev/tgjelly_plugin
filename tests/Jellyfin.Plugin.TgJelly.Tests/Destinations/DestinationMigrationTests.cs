@@ -58,8 +58,8 @@ public sealed class DestinationMigrationTests : System.IDisposable
     [Fact]
     public void Collision_MergesEventsSilentGroupsAndLibraries_RepointsTheOutbox()
     {
-        var old = _h.AddDestination(-1001, ChatKind.Group, preset: PresetKind.NewMedia);
-        var existing = _h.AddDestination(-1009, preset: PresetKind.AdminAlerts);
+        var old = _h.AddDestination(-1001, ChatKind.Group, events: BotTestHarness.MediaEvents);
+        var existing = _h.AddDestination(-1009, events: BotTestHarness.AdminEvents);
         var a = System.Guid.NewGuid().ToString("N");
         var b = System.Guid.NewGuid().ToString("N");
         _h.Settings.Update(null, c =>
@@ -75,7 +75,7 @@ public sealed class DestinationMigrationTests : System.IDisposable
 
         Assert.Equal(existing.Id, result!.Id);
         var remaining = Assert.Single(_h.Settings.Current.Destinations);
-        Assert.Equal(PresetKind.Custom, remaining.Preset);
+        Assert.False(remaining.FollowsNewEvents);
         Assert.Contains("media.movie", remaining.Events);
         Assert.Contains("server.started", remaining.Events);
         Assert.Equal(["media"], remaining.SilentGroups);

@@ -576,7 +576,7 @@ public sealed class OnboardingFlow
             return;
         }
 
-        var result = await _creator.CreateAsync(check, threadId, EventCatalog.Expand(PresetKind.Everything), PresetKind.Everything, null, ct, topicName).ConfigureAwait(false);
+        var result = await _creator.CreateAsync(check, threadId, [.. EventCatalog.AllKeys], null, ct, topicName).ConfigureAwait(false);
         switch (result.Outcome)
         {
             case CreateOutcome.Added:

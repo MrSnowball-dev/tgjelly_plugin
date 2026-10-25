@@ -183,7 +183,7 @@ public sealed class DestinationScreensTests : IDisposable, IAsyncLifetime
         Assert.StartsWith("✅ ", Labels(edit)[Data(edit).ToList().IndexOf("1|det|" + d.Id + "|server.task_failed")], StringComparison.Ordinal);
         var saved = _h.Settings.Current.Destinations.Single();
         Assert.Contains("server.task_failed", saved.Events);
-        Assert.Equal(PresetKind.Custom, saved.Preset);
+        Assert.False(saved.FollowsNewEvents);
     }
 
     [Fact]
@@ -219,7 +219,7 @@ public sealed class DestinationScreensTests : IDisposable, IAsyncLifetime
         var saved = _h.Settings.Current.Destinations.Single();
         Assert.Equal(["security"], saved.SilentGroups);
         Assert.DoesNotContain("media.movie", saved.Events);
-        Assert.Equal(PresetKind.Custom, saved.Preset);
+        Assert.False(saved.FollowsNewEvents);
         Assert.Contains("▫️", Labels(LastEdit()).First(l => l.Contains("Movies", StringComparison.Ordinal)), StringComparison.Ordinal);
     }
 
@@ -229,10 +229,10 @@ public sealed class DestinationScreensTests : IDisposable, IAsyncLifetime
         var d = _h.AddDestination(-1001);
 
         await Click("1|det|" + d.Id + "|server.started");
-        Assert.Equal(PresetKind.Custom, _h.Settings.Current.Destinations.Single().Preset);
+        Assert.False(_h.Settings.Current.Destinations.Single().FollowsNewEvents);
         await Click("1|det|" + d.Id + "|server.started");
 
-        Assert.Equal(PresetKind.Everything, _h.Settings.Current.Destinations.Single().Preset);
+        Assert.True(_h.Settings.Current.Destinations.Single().FollowsNewEvents);
     }
 
     [Fact]

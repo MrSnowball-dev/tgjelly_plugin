@@ -581,7 +581,7 @@ public sealed class DestinationScreens
         {
             var on = d.Events.Contains(key, StringComparer.Ordinal);
             d.Events = [.. EventCatalog.AllKeys.Where(k => k == key ? !on : d.Events.Contains(k, StringComparer.Ordinal))];
-            d.Preset = EventCatalog.PresetFor(d.Events);
+            d.FollowsNewEvents = EventCatalog.HasAll(d.Events);
         });
     }
 

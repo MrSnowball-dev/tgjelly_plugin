@@ -53,7 +53,7 @@ public class PluginConfigurationXmlTests
                     ThreadId = 42,
                     Title = "Movie Club",
                     Kind = ChatKind.Supergroup,
-                    Preset = PresetKind.Custom,
+                    FollowsNewEvents = false,
                     Events = ["media.movie", "server.started"],
                     LibraryIds = ["0123456789abcdef0123456789abcdef"],
                     SilentGroups = ["media"],
@@ -70,7 +70,7 @@ public class PluginConfigurationXmlTests
         Assert.Equal(-1001234567890123, d.ChatId);
         Assert.Equal(42, d.ThreadId);
         Assert.Equal(ChatKind.Supergroup, d.Kind);
-        Assert.Equal(PresetKind.Custom, d.Preset);
+        Assert.False(d.FollowsNewEvents);
         Assert.Equal(["media.movie", "server.started"], d.Events);
         Assert.Equal(["media"], d.SilentGroups);
         Assert.Equal("{{ title }}", Assert.Single(copy.Templates).Text);
@@ -130,7 +130,7 @@ public class PluginConfigurationXmlTests
         Assert.Equal((true, true, false), (c.UpdateCheck.Fixes, c.UpdateCheck.NewReleases, c.UpdateCheck.NewMajor));
         var d = Assert.Single(c.Destinations);
         Assert.Equal(ChatKind.Private, d.Kind);
-        Assert.Equal(PresetKind.Custom, d.Preset); // never silently "Everything"
+        Assert.False(d.FollowsNewEvents); // never silently "Everything"
     }
 
     [Fact]
@@ -153,7 +153,7 @@ public class PluginConfigurationXmlTests
         Assert.Equal(2, c.Destinations.Length);
         var forum = c.Destinations[0];
         Assert.Equal(("forum001", -1003514547050L, 5, "Family", ChatKind.Supergroup, true, true), (forum.Id, forum.ChatId, forum.ThreadId, forum.Title, forum.Kind, forum.Enabled, forum.IsForum));
-        Assert.Equal(PresetKind.Custom, forum.Preset);
+        Assert.False(forum.FollowsNewEvents);
         Assert.Equal(["media.movie", "media.episodes", "security.login_failed"], forum.Events);
         Assert.Equal(["0123456789abcdef0123456789abcdef"], forum.LibraryIds);
         Assert.Equal(["security"], forum.SilentGroups);
@@ -163,7 +163,7 @@ public class PluginConfigurationXmlTests
 
         var channel = c.Destinations[1];
         Assert.Equal(("chan0002", ChatKind.Channel, false), (channel.Id, channel.Kind, channel.Enabled));
-        Assert.Equal(PresetKind.Everything, channel.Preset);
+        Assert.True(channel.FollowsNewEvents);
         Assert.Equal(EventCatalog.AllKeys, channel.Events);
     }
 

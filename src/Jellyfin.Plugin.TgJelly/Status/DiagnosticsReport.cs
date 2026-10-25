@@ -141,7 +141,7 @@ public sealed class DiagnosticsReport
         foreach (var d in settings.Destinations)
         {
             var health = _health.Get(d.Id);
-            sb.Append(CultureInfo.InvariantCulture, $"{d.Id}: kind {d.Kind}, all events: {YesNo(d.Preset == PresetKind.Everything)}, enabled: {YesNo(d.Enabled)}, health: {health.Status}, photos blocked: {YesNo(health.PhotosBlocked)}, topic set: {YesNo(d.ThreadId != 0)}, events: {d.Events.Length}, libraries: {d.LibraryIds.Length}\n");
+            sb.Append(CultureInfo.InvariantCulture, $"{d.Id}: kind {d.Kind}, all events: {YesNo(d.FollowsNewEvents)}, enabled: {YesNo(d.Enabled)}, health: {health.Status}, photos blocked: {YesNo(health.PhotosBlocked)}, topic set: {YesNo(d.ThreadId != 0)}, events: {d.Events.Length}, libraries: {d.LibraryIds.Length}\n");
         }
 
         Section(sb, "Templates");

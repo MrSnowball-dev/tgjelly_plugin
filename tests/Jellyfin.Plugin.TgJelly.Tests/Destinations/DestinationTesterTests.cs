@@ -31,7 +31,7 @@ public sealed class DestinationTesterTests : IDisposable
     [Fact]
     public async Task Test_SendsTheGroupsAsItalicText()
     {
-        var d = _h.AddDestination(-1001, preset: PresetKind.AdminAlerts);
+        var d = _h.AddDestination(-1001, events: BotTestHarness.AdminEvents);
 
         var result = await _tester.SendTestAsync(d, TestContext.Current.CancellationToken);
 
@@ -44,7 +44,7 @@ public sealed class DestinationTesterTests : IDisposable
     [Fact]
     public async Task Test_WithNoEvents_SaysNothingYet()
     {
-        var d = _h.AddDestination(-1001, preset: PresetKind.Custom);
+        var d = _h.AddDestination(-1001, events: []);
 
         await _tester.SendTestAsync(d, TestContext.Current.CancellationToken);
 

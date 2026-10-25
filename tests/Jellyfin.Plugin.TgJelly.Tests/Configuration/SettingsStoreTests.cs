@@ -217,7 +217,7 @@ public sealed class SettingsStoreTests : IDisposable
 
         Assert.Equal(ProxyMode.System, _host.Configuration.Proxy.Mode);
         var d = Assert.Single(_host.Configuration.Destinations);
-        Assert.Equal(PresetKind.Custom, d.Preset);
+        Assert.False(d.FollowsNewEvents);
         Assert.Equal(ChatKind.Private, d.Kind);
     }
 

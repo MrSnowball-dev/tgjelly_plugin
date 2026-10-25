@@ -122,7 +122,7 @@ public class DetectedChatsController : ControllerBase
         }
 
         // A new destination starts with every event on; the admin trims it afterwards.
-        var created = await _creator.CreateAsync(check, threadId, EventCatalog.Expand(PresetKind.Everything), PresetKind.Everything, request.ExpectedRevision, cancellationToken).ConfigureAwait(false);
+        var created = await _creator.CreateAsync(check, threadId, [.. EventCatalog.AllKeys], request.ExpectedRevision, cancellationToken).ConfigureAwait(false);
         switch (created.Outcome)
         {
             case CreateOutcome.Conflict:

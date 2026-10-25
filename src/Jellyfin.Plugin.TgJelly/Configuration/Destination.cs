@@ -51,20 +51,21 @@ public class Destination
     public string KindKey => Kind == ChatKind.Supergroup && (IsForum || ThreadId != 0) ? "dest.kind.Forum" : "dest.kind." + Kind;
 
     /// <summary>
-    /// Gets or sets the internal preset: Everything while every event is on (so later versions' events are added),
-    /// Custom otherwise (spec §7.2). Not shown anywhere.
+    /// Gets or sets a value indicating whether events a later version adds are switched on here too: true while
+    /// every event is on.
     /// </summary>
     [XmlIgnore]
-    public PresetKind Preset { get; set; } = PresetKind.Everything;
-
-    /// <summary>Gets or sets <see cref="Preset"/> as XML text; an unknown name (from a newer version) reads as <see cref="EnumText.Fallback{T}"/>.</summary>
-    [XmlElement(nameof(Preset))]
     [JsonIgnore]
+    public bool FollowsNewEvents { get; set; } = true;
+
+    /// <summary>Gets or sets <see cref="FollowsNewEvents"/> as stored: "Everything" or "Custom".</summary>
+    [XmlElement("Preset")]
+    [JsonPropertyName("preset")]
     [EditorBrowsable(EditorBrowsableState.Never)]
-    public string PresetXml
+    public string PresetText
     {
-        get => Preset.ToString();
-        set => Preset = EnumText.Parse<PresetKind>(value);
+        get => FollowsNewEvents ? "Everything" : "Custom";
+        set => FollowsNewEvents = string.Equals(value, "Everything", StringComparison.Ordinal);
     }
 
     /// <summary>Gets or sets, for a forum, the slots that post to their own topic (<see cref="TopicSlots"/>).</summary>

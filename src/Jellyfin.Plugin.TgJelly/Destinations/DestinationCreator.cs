@@ -57,12 +57,11 @@ public sealed class DestinationCreator
     /// <param name="check">The passed check.</param>
     /// <param name="threadId">The topic, or 0.</param>
     /// <param name="events">The events to subscribe to.</param>
-    /// <param name="preset">The preset.</param>
     /// <param name="expectedRevision">The settings revision the caller saw, or null to skip the check.</param>
     /// <param name="ct">Cancels the call.</param>
     /// <param name="topicName">The topic's name when TgJelly created it, remembered for the dashboard.</param>
     /// <returns>What happened.</returns>
-    public async Task<CreateResult> CreateAsync(ChatCheckResult check, int threadId, string[] events, PresetKind preset, long? expectedRevision, CancellationToken ct, string? topicName = null)
+    public async Task<CreateResult> CreateAsync(ChatCheckResult check, int threadId, string[] events, long? expectedRevision, CancellationToken ct, string? topicName = null)
     {
         ArgumentNullException.ThrowIfNull(check);
         ArgumentNullException.ThrowIfNull(events);
@@ -104,7 +103,7 @@ public sealed class DestinationCreator
                     Kind = check.Kind,
                     IsForum = check.IsForum,
                     KnownTopics = threadId > 0 && !string.IsNullOrEmpty(topicName) ? [new KnownTopic { ThreadId = threadId, Name = topicName }] : [],
-                    Preset = preset,
+                    FollowsNewEvents = EventCatalog.HasAll(events),
                     Events = events,
                 },
             ];

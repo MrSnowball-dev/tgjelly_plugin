@@ -100,7 +100,7 @@ public sealed class PersistenceService : BackgroundService
         // Spec §7.2: keys a later version added are switched on, when the config loads, for destinations with every event.
         if (!_presetsUpgraded)
         {
-            _settings.UpdateIf(null, PresetUpgrader.Apply);
+            _settings.UpdateIf(null, NewEventsUpgrader.Apply);
             _presetsUpgraded = true;
         }
 

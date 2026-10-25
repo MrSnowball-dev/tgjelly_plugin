@@ -50,27 +50,13 @@ public static class EventCatalog
     public static bool IsKnown(string key) => KeySet.Contains(key);
 
     /// <summary>
-    /// The internal preset for a set of events: <see cref="PresetKind.Everything"/> when it has every event, so an event a
-    /// later version adds is switched on too; <see cref="PresetKind.Custom"/> otherwise. Presets aren't shown anywhere.
+    /// Returns whether a set of events has every event in the catalog.
     /// </summary>
-    /// <param name="events">The destination's events.</param>
-    /// <returns>The preset.</returns>
-    public static PresetKind PresetFor(IReadOnlyCollection<string> events)
+    /// <param name="events">The events.</param>
+    /// <returns><c>true</c> when none is missing.</returns>
+    public static bool HasAll(IReadOnlyCollection<string> events)
     {
         ArgumentNullException.ThrowIfNull(events);
-        return Keys.All(k => events.Contains(k, StringComparer.Ordinal)) ? PresetKind.Everything : PresetKind.Custom;
+        return Keys.All(k => events.Contains(k, StringComparer.Ordinal));
     }
-
-    /// <summary>
-    /// Expands a preset to its concrete keys; <see cref="PresetKind.Custom"/> expands to none.
-    /// </summary>
-    /// <param name="preset">The preset.</param>
-    /// <returns>The keys, in catalog order.</returns>
-    public static string[] Expand(PresetKind preset) => preset switch
-    {
-        PresetKind.Everything => [.. Keys],
-        PresetKind.NewMedia => [.. Keys.Where(k => GroupOf(k) == "media")],
-        PresetKind.AdminAlerts => [.. Keys.Where(k => GroupOf(k) == "server" || (GroupOf(k) == "security" && k != "security.login_succeeded"))],
-        _ => [],
-    };
 }

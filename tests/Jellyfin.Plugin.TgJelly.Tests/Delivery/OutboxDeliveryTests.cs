@@ -171,8 +171,8 @@ public sealed class OutboxDeliveryTests : IDisposable
     [Fact]
     public async Task Migration_IntoAnExistingDestination_MergesAndRepoints()
     {
-        var old = _h.AddDestination(-1001, ChatKind.Group, preset: PresetKind.NewMedia);
-        var existing = _h.AddDestination(-1009, preset: PresetKind.AdminAlerts);
+        var old = _h.AddDestination(-1001, ChatKind.Group, events: BotTestHarness.MediaEvents);
+        var existing = _h.AddDestination(-1009, events: BotTestHarness.AdminEvents);
         _health.MarkProblem(old.Id, HealthStatus.Ok, string.Empty);
         _h.Api.OnSequence(
             "sendMessage",
@@ -184,7 +184,7 @@ public sealed class OutboxDeliveryTests : IDisposable
 
         var remaining = Assert.Single(_h.Settings.Current.Destinations);
         Assert.Equal(existing.Id, remaining.Id);
-        Assert.Equal(PresetKind.Custom, remaining.Preset);
+        Assert.False(remaining.FollowsNewEvents);
         Assert.Contains("media.movie", remaining.Events);
         Assert.Contains("server.started", remaining.Events);
         Assert.Equal(existing.Id, Assert.Single(_outbox.Snapshot()).DestinationId);

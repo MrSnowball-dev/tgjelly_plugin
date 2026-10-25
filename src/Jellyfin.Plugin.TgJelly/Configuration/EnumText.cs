@@ -20,12 +20,11 @@ public static class EnumText
         => Enum.TryParse<T>(text, ignoreCase: false, out var value) && Enum.IsDefined(value) ? value : Fallback<T>();
 
     /// <summary>
-    /// The value an unknown name reads as: <see cref="PresetKind.Custom"/> for presets (so a destination never
-    /// silently gains every event key), otherwise the enum's default (first) member.
+    /// The value an unknown name reads as: the enum's default (first) member.
     /// </summary>
     /// <typeparam name="T">The enum type.</typeparam>
     /// <returns>The fallback value.</returns>
     public static T Fallback<T>()
         where T : struct, Enum
-        => typeof(T) == typeof(PresetKind) ? (T)(object)PresetKind.Custom : default;
+        => default;
 }

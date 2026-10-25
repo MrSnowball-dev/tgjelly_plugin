@@ -68,7 +68,7 @@ public sealed class DestinationMigration
                 other.Events = [.. other.Events.Union(d.Events, StringComparer.Ordinal)];
                 other.SilentGroups = [.. other.SilentGroups.Union(d.SilentGroups, StringComparer.Ordinal)];
                 other.LibraryIds = other.LibraryIds.Length == 0 || d.LibraryIds.Length == 0 ? [] : [.. other.LibraryIds.Union(d.LibraryIds, StringComparer.Ordinal)];
-                other.Preset = EventCatalog.PresetFor(other.Events);
+                other.FollowsNewEvents = EventCatalog.HasAll(other.Events);
 
                 c.Destinations = [.. c.Destinations.Where(x => x.Id != d.Id)];
                 map[d.Id] = other.Id;

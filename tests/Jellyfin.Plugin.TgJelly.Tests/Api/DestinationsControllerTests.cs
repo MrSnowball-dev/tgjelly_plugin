@@ -113,7 +113,7 @@ public sealed class DestinationsControllerTests : IAsyncLifetime
 
         Assert.Equal(("Added", true), (response.Outcome, response.TestSent));
         var saved = Assert.Single(_h.Settings.Current.Destinations);
-        Assert.Equal((-1001234567890L, "Movie night", ChatKind.Supergroup, PresetKind.Everything), (saved.ChatId, saved.Title, saved.Kind, saved.Preset));
+        Assert.Equal((-1001234567890L, "Movie night", ChatKind.Supergroup, true), (saved.ChatId, saved.Title, saved.Kind, saved.FollowsNewEvents));
         Assert.Equal(EventCatalog.AllKeys, saved.Events);
         Assert.True(SettingsValidator.IsValidId(saved.Id));
         Assert.StartsWith("✅ TgJelly test: this chat will receive", (string)Assert.Single(_h.Api.CallsTo("sendMessage")).Body["text"]!, System.StringComparison.Ordinal);
@@ -269,11 +269,11 @@ public sealed class DestinationsControllerTests : IAsyncLifetime
     [Fact]
     public void Put_EveryEventOn_MeansNewEventsAreAddedLater()
     {
-        var d = _h.AddDestination(-1001, preset: PresetKind.Custom);
+        var d = _h.AddDestination(-1001, events: []);
 
         _controller.Update(d.Id, new UpdateDestinationRequest { ExpectedRevision = _h.Settings.Current.Revision, Events = [.. EventCatalog.AllKeys] });
 
-        Assert.Equal(PresetKind.Everything, _h.Settings.Current.Destinations.Single().Preset);
+        Assert.True(_h.Settings.Current.Destinations.Single().FollowsNewEvents);
     }
 
     [Fact]
@@ -284,7 +284,7 @@ public sealed class DestinationsControllerTests : IAsyncLifetime
         var dto = _controller.Update(d.Id, new UpdateDestinationRequest { ExpectedRevision = _h.Settings.Current.Revision, Events = ["media.movie"], SilentGroups = ["media"], LibraryIds = ["F137A2DD-21BB-C1B9-9AA5-C0F6BF02A805"] }).Value!;
 
         var saved = _h.Settings.Current.Destinations.Single();
-        Assert.Equal(PresetKind.Custom, saved.Preset);
+        Assert.False(saved.FollowsNewEvents);
         Assert.Equal(["media.movie"], saved.Events);
         Assert.Equal(["media"], saved.SilentGroups);
         Assert.Equal(["f137a2dd21bbc1b99aa5c0f6bf02a805"], saved.LibraryIds);

@@ -34,7 +34,7 @@ public sealed class NotificationPipelineTests : IDisposable
     [Fact]
     public void MovieAdded_Ready_Released_IsOneOutboxEntryWithPoster()
     {
-        _h.AddDestination(-1001, preset: PresetKind.NewMedia);
+        _h.AddDestination(-1001, events: BotTestHarness.MediaEvents);
         var poster = Path.Combine(_h.Dir.Path, "poster.jpg");
         File.WriteAllBytes(poster, [1, 2, 3]);
         var movie = _library.Add(new MediaItem { Id = Guid.NewGuid(), Kind = MediaKind.Movie, Name = "Arrival", Primary = new ImageRef(poster, true, DateTime.UnixEpoch) }, Movies);
@@ -54,7 +54,7 @@ public sealed class NotificationPipelineTests : IDisposable
     [Fact]
     public void LibraryFilter_SkipsOtherLibraries()
     {
-        var d = _h.AddDestination(-1001, preset: PresetKind.NewMedia);
+        var d = _h.AddDestination(-1001, events: BotTestHarness.MediaEvents);
         Assert.Equal(SettingsUpdateStatus.Saved, _h.Settings.Update(null, c => c.Destinations[0].LibraryIds = [Movies.Id.ToString("N")]).Status);
         var movie = _library.Add(new MediaItem { Id = Guid.NewGuid(), Kind = MediaKind.Movie, Name = "In" }, Movies);
         var other = _library.Add(new MediaItem { Id = Guid.NewGuid(), Kind = MediaKind.Movie, Name = "Out" }, Shows);
@@ -69,7 +69,7 @@ public sealed class NotificationPipelineTests : IDisposable
     [Fact]
     public void LoginFailedTwice_IsSendThenEditMergedIntoTheQueuedSend()
     {
-        _h.AddDestination(-1001, preset: PresetKind.AdminAlerts);
+        _h.AddDestination(-1001, events: BotTestHarness.AdminEvents);
 
         _rig.Queues.Publish("security.login_failed", Failed("1.1.1.1"));
         _rig.Queues.Publish("security.login_failed", Failed("1.1.1.2"));
@@ -84,8 +84,8 @@ public sealed class NotificationPipelineTests : IDisposable
     [Fact]
     public void ServerStarted_GoesOnlyToSubscribers()
     {
-        _h.AddDestination(-1001, preset: PresetKind.NewMedia);
-        var admin = _h.AddDestination(-1002, preset: PresetKind.AdminAlerts);
+        _h.AddDestination(-1001, events: BotTestHarness.MediaEvents);
+        var admin = _h.AddDestination(-1002, events: BotTestHarness.AdminEvents);
 
         _rig.Queues.Publish("server.started", new Dictionary<string, string> { [EventFields.Version] = "12.2.0", [EventFields.Server] = "Home" });
         _rig.Pipeline.RunOnce();
@@ -98,7 +98,7 @@ public sealed class NotificationPipelineTests : IDisposable
     [Fact]
     public void RenderFailure_IsRecorded_AndOtherOutputsStillGo()
     {
-        _h.AddDestination(-1001, preset: PresetKind.NewMedia);
+        _h.AddDestination(-1001, events: BotTestHarness.MediaEvents);
         var good = _library.Add(new MediaItem { Id = Guid.NewGuid(), Kind = MediaKind.Movie, Name = "Good" }, Movies);
         var bad = _library.Add(new MediaItem { Id = Guid.NewGuid(), Kind = MediaKind.Movie, Name = "Bad" }, Movies);
         Ready(_rig, good, bad);
@@ -130,7 +130,7 @@ public sealed class NotificationPipelineTests : IDisposable
     [InlineData(false)]
     public void BufferedMedia_IsDropped_WhenTheDestinationNoLongerWantsIt(bool disable)
     {
-        _h.AddDestination(-1001, preset: PresetKind.NewMedia);
+        _h.AddDestination(-1001, events: BotTestHarness.MediaEvents);
         _scan.IsScanRunning = true;
         var movie = _library.Add(new MediaItem { Id = Guid.NewGuid(), Kind = MediaKind.Movie, Name = "Arrival" }, Movies);
         var series = Guid.NewGuid();
@@ -144,7 +144,7 @@ public sealed class NotificationPipelineTests : IDisposable
             }
             else
             {
-                c.Destinations[0].Events = EventCatalog.Expand(PresetKind.AdminAlerts);
+                c.Destinations[0].Events = BotTestHarness.AdminEvents;
             }
         }).Status);
 
@@ -157,7 +157,7 @@ public sealed class NotificationPipelineTests : IDisposable
     [Fact]
     public void Digest_KeepsOnlyTheGroupsTheDestinationStillWants()
     {
-        _h.AddDestination(-1001, preset: PresetKind.NewMedia);
+        _h.AddDestination(-1001, events: BotTestHarness.MediaEvents);
         _scan.IsScanRunning = true;
         var series = Guid.NewGuid();
         var movies = Enumerable.Range(1, 3).Select(i => _library.Add(new MediaItem { Id = Guid.NewGuid(), Kind = MediaKind.Movie, Name = $"M{i}" }, Movies));
@@ -176,7 +176,7 @@ public sealed class NotificationPipelineTests : IDisposable
     [Fact]
     public void ScanFinished_ReleasesAtOnce()
     {
-        _h.AddDestination(-1001, preset: PresetKind.NewMedia);
+        _h.AddDestination(-1001, events: BotTestHarness.MediaEvents);
         _scan.IsScanRunning = true;
         var movie = _library.Add(new MediaItem { Id = Guid.NewGuid(), Kind = MediaKind.Movie, Name = "Arrival" }, Movies);
         Ready(_rig, movie);
@@ -192,7 +192,7 @@ public sealed class NotificationPipelineTests : IDisposable
     [Fact]
     public void RestartMidBatch_AnnouncesEachGroupOnce()
     {
-        _h.AddDestination(-1001, preset: PresetKind.NewMedia);
+        _h.AddDestination(-1001, events: BotTestHarness.MediaEvents);
         var movie = _library.Add(new MediaItem { Id = Guid.NewGuid(), Kind = MediaKind.Movie, Name = "Buffered" }, Movies);
         Ready(_rig, movie);
         _h.Time.Advance(TimeSpan.FromSeconds(121));
