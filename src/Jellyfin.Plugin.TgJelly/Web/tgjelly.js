@@ -283,8 +283,11 @@ export function renderStatus(status, S, lang = 'en') {
             ? actionButton({ label: text(S, 'web.status.takeOver'), act: 'takeover', kind: 'primary' })
             : '';
         // The label holds the state word; the server's message (long when something is wrong) is plain text beside it.
+        // Not connected and Connected say it all in the label ("No bot connected" and "Connected as @bot" would only
+        // repeat it; the Bot card names the bot), so they carry no message.
         const word = status.ConnectionState === 'Connected' ? text(S, 'web.status.connected') : connectionLabel(status, S).text;
-        const message = status.ConnectionMessage && status.ConnectionMessage !== word
+        const repeats = status.ConnectionState === 'NoToken' || status.ConnectionState === 'Connected';
+        const message = status.ConnectionMessage && status.ConnectionMessage !== word && !repeats
             ? `<span class="tgj-conn-message">${esc(status.ConnectionMessage)}</span>` : '';
         parts.push(row({
             label: text(S, 'web.status.connection'),
@@ -293,7 +296,7 @@ export function renderStatus(status, S, lang = 'en') {
     }
 
     if (!status.HasToken) {
-        // Before a bot is connected the card is just the connection line, below the Connect card.
+        // Before a bot is connected the card is just the connection line, above the Connect card.
         return card({ title: text(S, 'web.status.title'), body: parts.join('') });
     }
 
@@ -389,8 +392,8 @@ export function renderProxyForm(settings, S, ui, { nested = false } = {}) {
 const PROXY_MODE_LABELS = { System: 'web.proxy.modeSystem', None: 'web.proxy.modeNone', Http: 'web.proxy.modeHttp', Socks5: 'web.proxy.modeSocks5' };
 
 /**
- * The token form (spec §6.1): a password input that is never pre-filled, the two notes for an existing bot, the
- * profile checkbox and Connect. Connecting is an explicit action: nothing here auto-saves.
+ * The token form (spec §6.1): a password input that is never pre-filled, the two notes for an existing bot, and
+ * Connect. Connecting is an explicit action: nothing here auto-saves.
  */
 function renderTokenForm(ui, S) {
     const busy = Boolean(ui.saving);
@@ -404,15 +407,13 @@ function renderTokenForm(ui, S) {
             control: textField({ input: 'token', value: '', type: 'password', attrs: { autocomplete: 'off', 'aria-label': text(S, 'web.connect.tokenLabel'), disabled: busy } }),
         })
         + notes
-        + '<label class="tgj-check"><input type="checkbox" data-tgj-input="setProfile"'
-        + `${ui.setProfile ? ' checked' : ''}${busy ? ' disabled' : ''} /><span>${t(S, 'web.connect.setProfile')}</span></label>`
         + `<div class="tgj-actions">${actionButton({ label: text(S, 'web.connect.save'), act: 'saveToken', kind: 'primary', disabled: busy })}`
         + `${ui.hasToken ? actionButton({ label: text(S, 'web.connect.cancel'), act: 'cancelToken', disabled: busy }) : ''}</div></div>`;
 }
 
 /**
  * The connect card (spec §6.1): shown without a token, or while changing it, and the outcome of the last save.
- * @param {{ hasToken: boolean, changingToken?: boolean, mode?: string | null, saving?: boolean, setProfile?: boolean,
+ * @param {{ hasToken: boolean, changingToken?: boolean, mode?: string | null, saving?: boolean,
  *   result?: object | null, unreachable?: boolean, proxy?: object }} ui hasToken comes from GET Status; result is
  *   { kind: 'Connected' | 'NeedsConfirm' | 'Error', message, username, webhookDeleted }; proxy is the proxy form's ui
  * @param {Record<string, string>} S
@@ -513,10 +514,20 @@ export function proxyFormData(settings) {
     return { Mode: settings.ProxyMode, Url: settings.ProxyUrl };
 }
 
+/** A destination's topic routes as sorted "slot=thread" strings, so the form compares and stores them as one value. */
+const routeList = routes => (routes ?? []).map(r => `${r.Slot}=${r.ThreadId}`).sort();
+
+/** The routes of a routeList as a map from slot to thread id. */
+const routeMap = list => new Map((list ?? []).map(entry => {
+    const at = entry.lastIndexOf('=');
+    return [entry.slice(0, at), Number(entry.slice(at + 1))];
+}));
+
 /** The editor's data for one destination from the DestinationDto: the fields its auto-saves can send. */
 export function destinationFormData(dest) {
     return {
         Enabled: Boolean(dest.Enabled),
+        Routes: routeList(dest.TopicRoutes),
         Events: [...(dest.Events ?? [])],
         LibraryIds: [...(dest.LibraryIds ?? [])],
         SilentGroups: [...(dest.SilentGroups ?? [])],
@@ -537,6 +548,15 @@ export function destinationChanges(base, local, revision) {
         if (differs(key)) {
             body[key] = local[key];
         }
+    }
+
+    // Only the slots whose topic changed; null sends a slot back to the destination's own topic.
+    if (differs('Routes')) {
+        const before = routeMap(base.Routes);
+        const after = routeMap(local.Routes);
+        body.TopicRoutes = [...new Set([...before.keys(), ...after.keys()])]
+            .filter(slot => before.get(slot) !== after.get(slot))
+            .map(slot => ({ Slot: slot, ThreadId: after.has(slot) ? after.get(slot) : null }));
     }
 
     return Object.keys(body).length > 1 ? body : null;
@@ -592,18 +612,29 @@ const destSaveKey = (id, what) => `dest:${id}:${what}`;
 export function renderEditor(dest, catalog, libraries, S, ui) {
     const local = (ui.form && ui.form.local) || destinationFormData(dest);
     const id = dest.Id;
-    const toggle = (input, what, checked, label, attrs) => {
-        const key = destSaveKey(id, what);
-        return row({ label, control: switchControl({ input, checked, label, attrs: { 'data-tgj-id': id, ...attrs, 'data-tgj-save': key } }), cueKey: key });
-    };
+    const switchFor = (input, what, checked, label, attrs) => switchControl({ input, checked, label, attrs: { 'data-tgj-id': id, ...attrs, 'data-tgj-save': destSaveKey(id, what) } });
+    const toggle = (input, what, checked, label, attrs) => row({ label, control: switchFor(input, what, checked, label, attrs), cueKey: destSaveKey(id, what) });
     const parts = [];
+
+    // A forum: where the destination posts, and a topic choice beside each media event and each other group.
+    const forum = Boolean(dest.IsForum);
+    const routes = routeMap(local.Routes);
+    const topic = slot => (forum ? topicChoice(dest, slot, routes, S, ui) : '');
+    if (forum) {
+        parts.push(row({ label: text(S, 'web.topics.postsTo'), control: `<span class="tgj-topic-name">${esc(topicName(dest, dest.ThreadId, S))}</span>` }));
+    }
 
     const events = new Set(local.Events);
     parts.push(`<h3 class="tgj-subtitle">${t(S, 'dest.events.title')}</h3>`);
     for (const group of catalog.Groups) {
         const keys = catalog.EventKeys.filter(k => k.startsWith(group + '.'));
-        parts.push(`<div class="tgj-subcard" data-tgj-group-card="${esc(group)}"><h3 class="tgj-subcard-title">${t(S, `web.event.group.${group}`)}</h3>`
-            + keys.map(k => toggle('destEvent', `event:${k}`, events.has(k), text(S, `web.event.${k}`), { 'data-tgj-key': k })).join('')
+        // Media events each have their own topic; Security and Server have one for the whole group.
+        const groupTopic = group === 'media' ? '' : topic(group);
+        parts.push(`<div class="tgj-subcard" data-tgj-group-card="${esc(group)}">`
+            + `<div class="tgj-subcard-head"><h3 class="tgj-subcard-title">${t(S, `web.event.group.${group}`)}</h3>${groupTopic}</div>`
+            + keys.map(k => (group === 'media' && forum
+                ? row({ label: text(S, `web.event.${k}`), control: switchFor('destEvent', `event:${k}`, events.has(k), text(S, `web.event.${k}`), { 'data-tgj-key': k }) + topic(k), cueKey: destSaveKey(id, `event:${k}`) })
+                : toggle('destEvent', `event:${k}`, events.has(k), text(S, `web.event.${k}`), { 'data-tgj-key': k }))).join('')
             + '</div>');
     }
 
@@ -629,6 +660,8 @@ export function renderEditor(dest, catalog, libraries, S, ui) {
     parts.push(`<h3 class="tgj-subtitle">${t(S, 'dest.silent.title')}</h3>`
         + catalog.Groups.map(g => toggle('destSilent', `silent:${g}`, silent.has(g), text(S, `groups.${g}`), { 'data-tgj-group': g })).join('')
         + `<p class="tgj-row-hint">${t(S, 'dest.silent.hint')}</p>`);
+
+    parts.push(destinationIds(dest, routes, S, Boolean(ui.idsOpen)));
 
     parts.push('<div class="tgj-actions">'
         + actionButton({ label: text(S, 'dest.btn.test'), act: 'testDest', id })
@@ -656,6 +689,85 @@ export function renderEditor(dest, catalog, libraries, S, ui) {
     }
 
     return card({ title: dest.Title, description: destinationMeta(dest, S), body: parts.join(''), extraClass: 'tgj-dest-editor' });
+}
+
+/** A topic's name for the editor: General, the name TgJelly knows, or "Topic #123". */
+export function topicName(dest, thread, S) {
+    if (thread === 0) {
+        return text(S, 'web.topics.general');
+    }
+
+    const known = (dest.KnownTopics ?? []).find(k => k.ThreadId === thread);
+    return known && known.Name ? known.Name : text(S, 'web.topics.number', { id: thread });
+}
+
+/** A slot's label: a media event's name, or the group's. */
+const slotLabel = (slot, S) => text(S, slot.includes('.') ? `web.event.${slot}` : `web.event.group.${slot}`);
+
+/**
+ * The topic choice beside a media event or a group's title (forums only): the destination's own topic, General, the
+ * topics TgJelly knows, Create a topic…, or Use a topic link…; a cue beside it, "Topic gone" when Telegram says so, and
+ * the link field while a link is being entered.
+ */
+function topicChoice(dest, slot, routes, S, ui) {
+    const id = dest.Id;
+    const key = destSaveKey(id, `topic:${slot}`);
+    const value = routes.has(slot) ? String(routes.get(slot)) : '';
+    const threads = [0, ...(dest.KnownTopics ?? []).map(k => k.ThreadId)].filter((t, i, all) => t !== dest.ThreadId && all.indexOf(t) === i);
+    if (routes.has(slot) && !threads.includes(routes.get(slot)) && routes.get(slot) !== dest.ThreadId) {
+        threads.push(routes.get(slot));
+    }
+
+    const options = [
+        { value: '', label: text(S, 'web.topics.default', { topic: topicName(dest, dest.ThreadId, S) }) },
+        ...threads.map(t => ({ value: String(t), label: topicName(dest, t, S) })),
+        { value: 'create', label: text(S, 'web.topics.create') },
+        { value: 'link', label: text(S, 'web.topics.link') },
+    ];
+    const gone = routes.has(slot) && (dest.MissingTopics ?? []).includes(routes.get(slot)) ? label(text(S, 'web.topics.gone'), 'attention') : '';
+    const select = selectField({
+        input: 'destTopic',
+        value,
+        options,
+        extraClass: 'tgj-topic-select',
+        attrs: { 'data-tgj-id': id, 'data-tgj-key': slot, 'data-tgj-save': key, 'aria-label': text(S, 'web.topics.choose', { what: slotLabel(slot, S) }) },
+    });
+    const asking = ui.topicLink && ui.topicLink.id === id && ui.topicLink.slot === slot ? ui.topicLink : null;
+    // Creating a topic is asked first: a keyboard user moving through the list passes Create a topic… on the way.
+    const creating = asking && asking.create
+        ? `<span class="tgj-topic-link"><span class="tgj-row-hint">${t(S, 'web.topics.createAsk', { name: slotLabel(slot, S) })}</span>`
+            + actionButton({ label: text(S, 'web.topics.createYes'), act: 'topicCreateYes', kind: 'primary', id, attrs: { 'data-tgj-key': slot } })
+            + actionButton({ label: text(S, 'web.topics.linkCancel'), act: 'topicLinkCancel', id, attrs: { 'data-tgj-instant': '' } })
+            + '</span>'
+        : '';
+    const linking = asking && !asking.create
+        ? `<span class="tgj-topic-link">${textField({ input: 'destTopicLink', value: ui.topicLink.text ?? '', attrs: { 'data-tgj-id': id, 'data-tgj-key': slot, autocomplete: 'off', spellcheck: 'false', 'aria-label': text(S, 'web.topics.linkLabel') } })}`
+            + actionButton({ label: text(S, 'web.topics.linkUse'), act: 'topicLinkUse', kind: 'primary', id })
+            + actionButton({ label: text(S, 'web.topics.linkCancel'), act: 'topicLinkCancel', id, attrs: { 'data-tgj-instant': '' } })
+            + '</span>'
+        : '';
+    return `<span class="tgj-topic">${select}${gone}<span class="tgj-cue" data-tgj-cue="${esc(key)}" aria-live="polite"></span>${creating}${linking}</span>`;
+}
+
+/** A destination's IDs, folded away until opened: the chat, its topic, and each routed slot's topic. */
+function destinationIds(dest, routes, S, open) {
+    const toggleButton = `<button type="button" class="tgj-ref-toggle" data-tgj-act="destIds" data-tgj-id="${esc(dest.Id)}" data-tgj-instant aria-expanded="${open}">${t(S, 'web.dest.ids')}</button>`;
+    if (!open) {
+        return `<div class="tgj-dest-ids">${toggleButton}</div>`;
+    }
+
+    const lines = [[text(S, 'web.dest.ids.chat'), dest.ChatId]];
+    if (dest.IsForum || dest.ThreadId) {
+        lines.push([text(S, 'web.dest.ids.topic'), dest.ThreadId]);
+    }
+
+    for (const [slot, thread] of routes) {
+        lines.push([text(S, 'web.dest.ids.slot', { what: slotLabel(slot, S) }), thread]);
+    }
+
+    return `<div class="tgj-dest-ids">${toggleButton}<dl class="tgj-dest-ids-list">`
+        + lines.map(([name, value]) => `<dt>${esc(name)}</dt><dd><code>${esc(value)}</code></dd>`).join('')
+        + '</dl></div>';
 }
 
 /** A destination's kind as plain text: "Channel", or "Forum" for a supergroup with topics. */
@@ -716,6 +828,8 @@ export function renderDestinations(dto, libraries, links, S, ui) {
             confirmRemove: ui.confirmRemove === editing.Id,
             leave: ui.leave,
             result: (ui.results ?? {})[editing.Id],
+            topicLink: ui.topicLink ?? null,
+            idsOpen: Boolean((ui.idsOpen ?? {})[editing.Id]),
         }));
     }
 
@@ -954,6 +1068,35 @@ export function renderUpdates(settings, S, ui) {
 }
 
 /**
+ * The Bot token card under Advanced: the token masked (TokenHint), and in full after Show until Hide or leaving the
+ * page. The full token is only in the page's memory, never in the state the page keeps or in a log.
+ * @param {object | null} status the StatusDto
+ * @param {Record<string, string>} S
+ * @param {{ token?: string }} ui token is the revealed token, or '' while masked
+ * @returns {string} HTML, or '' without a bot
+ */
+export function renderToken(status, S, ui) {
+    if (!status || !status.HasToken) {
+        return '';
+    }
+
+    const shown = typeof ui.token === 'string' && ui.token !== '';
+    const value = shown ? ui.token : (status.TokenHint ?? '');
+    const button = shown
+        ? actionButton({ label: text(S, 'web.token.hide'), act: 'hideToken' })
+        : actionButton({ label: text(S, 'web.token.show'), act: 'showToken' });
+    return card({
+        title: text(S, 'web.token.title'),
+        body: `<p class="tgj-row-hint">${t(S, 'web.token.hint')}</p>`
+            + row({
+                label: text(S, 'web.token.title'),
+                extraClass: 'tgj-row--stack',
+                control: `<code class="tgj-token" aria-label="${esc(text(S, 'web.token.title'))}">${esc(value)}</code>${button}`,
+            }),
+    });
+}
+
+/**
  * The diagnostics block under Advanced (spec §12): Copy diagnostics, and the text itself when the clipboard refused it.
  * @param {Record<string, string>} S
  * @param {{ text?: string, copied?: boolean }} ui
@@ -989,11 +1132,12 @@ const NAV_LABELS = {
 /** Today's section containers, by the dashboard section that holds them (design §5.2). */
 const SECTION_HOSTS = {
     // Connect precedes Status: with no bot it leads (design §5.2), and with a bot it is empty, so Status leads.
-    overview: ['tgj-connect', 'tgj-status', 'tgj-bot'],
+    // Status always leads (owner, 2026-10-25); Connect follows it until a bot is connected.
+    overview: ['tgj-status', 'tgj-connect', 'tgj-bot'],
     destinations: ['tgj-destinations'],
     // Messages holds the templates too (plan 9, design §6.1), and Batching sits in Advanced after Update checks (§7).
     messages: ['tgj-messages'],
-    advanced: ['tgj-proxy', 'tgj-updates', 'tgj-batching', 'tgj-manual', 'tgj-diagnostics'],
+    advanced: ['tgj-token', 'tgj-proxy', 'tgj-updates', 'tgj-batching', 'tgj-manual', 'tgj-diagnostics'],
     // The Log (plan 9, design §8.1) is last: after Advanced in the sidebar, the last tab on a phone.
     log: ['tgj-log'],
 };
@@ -1317,7 +1461,6 @@ export default function TgJellyPage(view, params) {
             mode: null,
             changingToken: false,
             saving: false,
-            setProfile: true,
             result: null,
             unreachable: false,
             confirmDisconnect: false,
@@ -1327,6 +1470,9 @@ export default function TgJellyPage(view, params) {
             destConfirm: null,
             destLeave: false,
             destResults: {},
+            // A forum topic chosen by link, while its field is open: { id, slot, text }; and which IDs blocks are open.
+            topicLink: null,
+            destIdsOpen: {},
             // The manual block (§6.5): the typed chat ID or link, and the last add's outcome (HTML).
             manualInput: '',
             manualResult: '',
@@ -1345,6 +1491,9 @@ export default function TgJellyPage(view, params) {
     let stringsLoad = null;
     // The token lives only here until it is sent: never in state, never rendered back into the page.
     const typed = { token: '', proxyUsername: undefined, proxyPassword: undefined };
+    // The token shown after Show, and the masked hint it belongs to: a different bot, or none, masks it again.
+    let revealedToken = '';
+    let revealedFor = '';
     // Section load errors (set by reloadSection), so a later good load can clear them without touching action errors.
     const loadErrors = new Set();
     const loggedLoadFailures = new Map();
@@ -1600,6 +1749,8 @@ export default function TgJellyPage(view, params) {
                 confirmRemove: state.ui.destConfirm,
                 leave: state.ui.destLeave,
                 results: state.ui.destResults,
+                topicLink: state.ui.topicLink,
+                idsOpen: state.ui.destIdsOpen,
             }),
         },
         // Reads the destinations state (same data as the Destinations section), so it has nothing to load itself.
@@ -1622,6 +1773,14 @@ export default function TgJellyPage(view, params) {
             id: 'tgj-updates',
             load: loadSettings,
             render: () => renderUpdates(state.settings, state.strings, settingsUi()),
+        },
+        token: {
+            id: 'tgj-token',
+            dependsOnStatus: true,
+            load: async () => {},
+            render: () => renderToken(state.status, state.strings, {
+                token: state.status && state.status.TokenHint === revealedFor ? revealedToken : '',
+            }),
         },
         diagnostics: {
             id: 'tgj-diagnostics',
@@ -1780,13 +1939,14 @@ export default function TgJellyPage(view, params) {
         }
     };
 
-    /** Puts the typed proxy username and password back into the inputs after a render (never through HTML). */
+    /** Puts the typed token, proxy username and password back into the inputs after a render (never through HTML). */
     const restoreSecrets = () => {
         if (typeof view.querySelectorAll !== 'function') {
             return;
         }
 
-        for (const field of ['proxyUsername', 'proxyPassword']) {
+        // The token too: a re-render (a poll, or another control in the card) must not empty it.
+        for (const field of ['token', 'proxyUsername', 'proxyPassword']) {
             for (const el of view.querySelectorAll(`[data-tgj-input="${field}"]`)) {
                 el.value = typed[field] ?? '';
             }
@@ -1960,7 +2120,7 @@ export default function TgJellyPage(view, params) {
         try {
             let result;
             try {
-                result = await api.post('Token', { Token: typed.token, SetProfile: ui.setProfile, ConfirmSwitch: confirmSwitch });
+                result = await api.post('Token', { Token: typed.token, ConfirmSwitch: confirmSwitch });
             } finally {
                 ui.saving = false;
             }
@@ -2359,6 +2519,27 @@ export default function TgJellyPage(view, params) {
         send: () => sendDestination(id),
     });
 
+    /** Posts a topic for a slot and takes the destination it returns; the link field closes once it worked. */
+    const topicPost = (id, slot, choice) => runAction('destinations', async () => {
+        if (!slot || !destination(id)) {
+            return undefined;
+        }
+
+        await autosave.flush();
+        const result = await api.post(`Destinations/${encodeURIComponent(id)}/Topics`, { ExpectedRevision: pageRevision(), Slot: slot, ...choice });
+        if (result.status === 200 && result.body) {
+            state.ui.topicLink = null;
+            const form = state.forms[destKey(id)];
+            if (form) {
+                state.forms[destKey(id)] = syncFormData(form, destinationFormData(result.body));
+            }
+
+            takeDestination(result.body);
+        }
+
+        return result;
+    });
+
     const destinationOutcome = (id, html) => {
         state.ui.destResults[id] = html;
     };
@@ -2462,6 +2643,21 @@ export default function TgJellyPage(view, params) {
                 state.ui.saving = false;
             }
         }),
+        // A topic for a slot: TgJelly creates one named after it, or uses the one a pasted link points to.
+        topicCreateYes: el => topicPost(idOf(el), el.getAttribute('data-tgj-key'), { Create: true }),
+        topicLinkUse: el => {
+            const ask = state.ui.topicLink;
+            return ask && ask.id === idOf(el) ? topicPost(ask.id, ask.slot, { Link: ask.text }) : undefined;
+        },
+        topicLinkCancel: () => {
+            state.ui.topicLink = null;
+            renderSection('destinations');
+        },
+        destIds: el => {
+            const id = idOf(el);
+            state.ui.destIdsOpen[id] = !state.ui.destIdsOpen[id];
+            renderSection('destinations');
+        },
         edit: el => {
             const id = idOf(el);
             state.ui.destEditing = state.ui.destEditing === id ? null : id;
@@ -2569,6 +2765,20 @@ export default function TgJellyPage(view, params) {
             await reloadSection('destinations', { fresh: true });
             return undefined;
         }),
+        showToken: () => runAction('token', async () => {
+            const result = await api.get('Token');
+            if (result.status !== 200 || !result.body) {
+                return result;
+            }
+
+            revealedToken = String(result.body.Token ?? '');
+            revealedFor = state.status ? state.status.TokenHint : '';
+            return result;
+        }),
+        hideToken: () => {
+            revealedToken = '';
+            renderSection('token');
+        },
         copyDiagnostics: () => runAction('diagnostics', async () => {
             Object.assign(state.ui, { diagText: '', diagCopied: false });
             const result = await api.get('Diagnostics');
@@ -2591,9 +2801,6 @@ export default function TgJellyPage(view, params) {
     const inputs = {
         token: el => {
             typed.token = String(el.value ?? '').trim();
-        },
-        setProfile: el => {
-            state.ui.setProfile = Boolean(el.checked);
         },
         // The proxy fields save together when the focus leaves the card (see the focusout listener).
         proxyMode: (el, event) => {
@@ -2646,6 +2853,44 @@ export default function TgJellyPage(view, params) {
             editDestination(id, { Events: keys.filter(k => chosen.includes(k)) });
             renderSection('destinations');
             saveDestination(id, `event:${key}`, fieldSelector(el));
+        },
+        // A topic choice beside a media event or a group: another topic saves at once; Create and Use a link act.
+        destTopic: (el, event) => {
+            const id = idOf(el);
+            const slot = el.getAttribute('data-tgj-key');
+            const form = state.forms[destKey(id)];
+            if (event.type !== 'change' || !form || !slot) {
+                return;
+            }
+
+            const value = String(el.value ?? '');
+            if (value === 'create') {
+                state.ui.topicLink = { id, slot, create: true };
+                renderSection('destinations');
+                return;
+            }
+
+            if (value === 'link') {
+                state.ui.topicLink = { id, slot, text: '' };
+                renderSection('destinations');
+                return;
+            }
+
+            const routes = routeMap(form.local.Routes);
+            if (value === '') {
+                routes.delete(slot);
+            } else {
+                routes.set(slot, Number(value));
+            }
+
+            editDestination(id, { Routes: [...routes].map(([k, v]) => `${k}=${v}`).sort() });
+            renderSection('destinations');
+            saveDestination(id, `topic:${slot}`, fieldSelector(el));
+        },
+        destTopicLink: el => {
+            if (state.ui.topicLink) {
+                state.ui.topicLink.text = String(el.value ?? '').trim();
+            }
         },
         destLibrary: (el, event) => {
             const id = idOf(el);
@@ -2829,6 +3074,11 @@ export default function TgJellyPage(view, params) {
 
     const hide = () => {
         visible = false;
+        revealedToken = '';
+        // Jellyfin keeps the page around: the shown token mustn't stay in it.
+        if (state.strings) {
+            renderSection('token');
+        }
         scrollDoc?.removeEventListener?.('scroll', onPageScroll, { capture: true });
         scrollWin?.removeEventListener?.('resize', onPageScroll);
         stopPolling();

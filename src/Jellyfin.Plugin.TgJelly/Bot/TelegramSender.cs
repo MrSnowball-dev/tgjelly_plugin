@@ -135,27 +135,6 @@ public sealed class TelegramSender : ITelegramSender
         => _client.AnswerCallbackQuery(callbackQueryId: callbackQueryId, cancellationToken: ct);
 
     /// <inheritdoc />
-    public async Task SetCommandsAsync(IReadOnlyList<BotCommand> commands, CancellationToken ct)
-    {
-        await _client.SetMyCommands(commands: commands, scope: new BotCommandScopeAllPrivateChats(), cancellationToken: ct).ConfigureAwait(false);
-        await _client.SetMyCommands(commands: [], scope: new BotCommandScopeDefault(), cancellationToken: ct).ConfigureAwait(false);
-    }
-
-    /// <inheritdoc />
-    public async Task SetDescriptionsAsync(string description, string shortDescription, CancellationToken ct)
-    {
-        await _client.SetMyDescription(description: description, cancellationToken: ct).ConfigureAwait(false);
-        await _client.SetMyShortDescription(shortDescription: shortDescription, cancellationToken: ct).ConfigureAwait(false);
-    }
-
-    /// <inheritdoc />
-    public Task SetChannelAdminRightsAsync(CancellationToken ct)
-        => _client.SetMyDefaultAdministratorRights(
-            rights: new ChatAdministratorRights { CanPostMessages = true, CanEditMessages = true },
-            forChannels: true,
-            cancellationToken: ct);
-
-    /// <inheritdoc />
     public Task<Message> SendPromptAsync(OutgoingPrompt prompt, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(prompt);

@@ -57,7 +57,6 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddRedactedLogger<Bot.Screens.DestinationScreens>();
         serviceCollection.AddRedactedLogger<BotWorkQueue>();
         serviceCollection.AddRedactedLogger<BotWorker>();
-        serviceCollection.AddRedactedLogger<ProfileCalls>();
         serviceCollection.AddRedactedLogger<BotSupervisor>();
         serviceCollection.AddRedactedLogger<BotTokenService>();
         serviceCollection.AddRedactedLogger<DestinationTester>();
@@ -119,7 +118,6 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<IBotFlows, Bot.Screens.FlowEngine>();
         serviceCollection.AddSingleton<IUpdateHandler, UpdateRouter>();
         serviceCollection.AddSingleton<BotWorker>();
-        serviceCollection.AddSingleton<ProfileCalls>();
         serviceCollection.AddSingleton<BotSupervisor>();
         serviceCollection.AddSingleton<ISupervisorControl>(sp => sp.GetRequiredService<BotSupervisor>());
         serviceCollection.AddSingleton<BotMemory>();

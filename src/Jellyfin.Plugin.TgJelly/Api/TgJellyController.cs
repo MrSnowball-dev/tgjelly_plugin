@@ -1,3 +1,4 @@
+using System;
 using System.ComponentModel.DataAnnotations;
 using System.Linq;
 using System.Net.Mime;
@@ -109,6 +110,7 @@ public class TgJellyController : ControllerBase
             ConnectionMessage = message,
             BotUsername = username,
             HasToken = !string.IsNullOrEmpty(_secrets.Load().BotToken),
+            TokenHint = MaskToken(_secrets.Load().BotToken),
             Counters = _state.Read(s => new StatusCounters { DroppedIntake = s.Status.Counters.DroppedIntake, DroppedOutbox = s.Status.Counters.DroppedOutbox, Evictions = s.Status.Counters.Evictions }),
             OutboxCount = _outbox.Count,
             UnhealthyDestinations = settings.Destinations.Count(d => !_health.IsDeliverable(d.Id)),
@@ -135,5 +137,22 @@ public class TgJellyController : ControllerBase
 
         _notices.Dismiss(request.NoticeId);
         return NoContent();
+    }
+
+    /// <summary>
+    /// The token masked for display: the bot's number, then dots, then the last four characters.
+    /// </summary>
+    /// <param name="token">The token, or empty.</param>
+    /// <returns>The masked token, or empty.</returns>
+    internal static string MaskToken(string? token)
+    {
+        if (string.IsNullOrEmpty(token))
+        {
+            return string.Empty;
+        }
+
+        var colon = token.IndexOf(':', StringComparison.Ordinal);
+        var tail = token.Length > 4 ? token[^4..] : string.Empty;
+        return (colon > 0 ? token[..(colon + 1)] : string.Empty) + "••••••" + tail;
     }
 }

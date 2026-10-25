@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using Jellyfin.Plugin.TgJelly.Configuration;
 
 namespace Jellyfin.Plugin.TgJelly.Api;
 
@@ -24,6 +25,15 @@ public sealed class DestinationDto
 
     /// <summary>Gets a value indicating whether the chat is a forum (a supergroup with topics), shown as Forum.</summary>
     public bool IsForum { get; init; }
+
+    /// <summary>Gets, for a forum, the slots that post to their own topic.</summary>
+    public IReadOnlyList<TopicRoute> TopicRoutes { get; init; } = [];
+
+    /// <summary>Gets the forum topics TgJelly knows for the chat.</summary>
+    public IReadOnlyList<KnownTopic> KnownTopics { get; init; } = [];
+
+    /// <summary>Gets the routed topics Telegram said are gone (their messages go to the destination's topic).</summary>
+    public IReadOnlyList<int> MissingTopics { get; init; } = [];
 
     /// <summary>Gets a value indicating whether it's enabled (not paused).</summary>
     public bool Enabled { get; init; }

@@ -229,7 +229,7 @@ def checks(base: str, meta: dict, expect_compatible: bool = True) -> str:
 
 def telegram_checks(base: str, token: str, stub) -> None:
     """Connect a bot, add a NewMedia chat by ID, receive the automatic test message (plan 2's deliverable)."""
-    status, _, text = http("POST", f"{base}/TgJelly/Token", {"Token": SMOKE_TOKEN, "SetProfile": True}, token=token, timeout=60)
+    status, _, text = http("POST", f"{base}/TgJelly/Token", {"Token": SMOKE_TOKEN}, token=token, timeout=60)
     check(status == 200 and json.loads(text).get("Outcome") == "Connected", f"POST /TgJelly/Token connects (got {status} {text[:200]})")
 
     def connected():
@@ -248,7 +248,7 @@ def telegram_checks(base: str, token: str, stub) -> None:
     check(added["Destination"]["ChatId"] == SMOKE_CHAT, "the destination has the chat's ID")
     keep_only_media(base, token, added["Destination"]["Id"])
     check(any("TgJelly test" in m.get("text", "") for m in stub.messages(SMOKE_CHAT)), "the chat received the automatic test message")
-    wait_until(lambda: any(c["method"] == "setMyCommands" for c in stub.calls()), "the bot profile was set up", 30)
+    check(not any(c["method"].startswith("setMy") for c in stub.calls()), "TgJelly leaves the bot's profile alone")
 
 
 def get_settings(base: str, token: str) -> dict:

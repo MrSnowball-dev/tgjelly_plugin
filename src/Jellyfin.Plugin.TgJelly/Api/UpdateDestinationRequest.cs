@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 
 namespace Jellyfin.Plugin.TgJelly.Api;
@@ -10,6 +11,12 @@ public sealed class UpdateDestinationRequest
 {
     /// <summary>Gets or sets the revision the change is based on.</summary>
     public long ExpectedRevision { get; set; }
+
+    /// <summary>
+    /// Gets or sets topic routes to change, by slot: a thread id, or <c>null</c> to send that slot to the destination's
+    /// own topic again. Slots not listed keep their route.
+    /// </summary>
+    public IReadOnlyList<TopicRouteRequest>? TopicRoutes { get; set; }
 
     /// <summary>Gets or sets the events; whether every event is on is worked out from them.</summary>
     public string[]? Events { get; set; }

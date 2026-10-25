@@ -163,6 +163,60 @@
     font-weight: 600;
 }
 
+#tgjelly-root .tgj-subcard-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--tgj-space-2);
+    flex-wrap: wrap;
+}
+
+#tgjelly-root .tgj-topic {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--tgj-space-2);
+    flex-wrap: wrap;
+    margin-inline-start: var(--tgj-space-2);
+}
+
+#tgjelly-root .tgj-topic-select {
+    max-width: 14rem;
+}
+
+#tgjelly-root .tgj-topic-link {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--tgj-space-2);
+    flex-wrap: wrap;
+}
+
+#tgjelly-root .tgj-dest-ids {
+    margin-top: var(--tgj-space-3);
+}
+
+#tgjelly-root .tgj-dest-ids-list {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: var(--tgj-space-1) var(--tgj-space-3);
+    margin: var(--tgj-space-2) 0 0;
+}
+
+#tgjelly-root .tgj-dest-ids-list dt {
+    color: var(--tgj-fg-2);
+}
+
+#tgjelly-root .tgj-dest-ids-list dd {
+    margin: 0;
+    user-select: all;
+}
+
+#tgjelly-root .tgj-token {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    overflow-wrap: anywhere;
+    user-select: all;
+    margin-inline-end: var(--tgj-space-2);
+}
+
 #tgjelly-root .tgj-version-link {
     color: inherit;
     text-decoration: none;

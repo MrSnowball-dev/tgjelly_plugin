@@ -168,6 +168,12 @@ public sealed class OutboxDelivery
 
     private Attempt Prepare(OutboxEntry entry, Destination destination)
     {
+        // Every message whose slot's topic is known to be gone says so in the Log, not only the first one.
+        if (destination.ThreadFor(entry.EventKey) != ThreadOf(entry, destination))
+        {
+            entry.Message.TopicFallback = TopicSlots.For(entry.EventKey);
+        }
+
         SentMessage? target = null;
         if (entry.Op == OutboxOp.Edit && (entry.TargetKey is null || !_outbox.TryGetSent(destination.Id, entry.TargetKey, out target)))
         {
@@ -223,14 +229,14 @@ public sealed class OutboxDelivery
         if (!attempt.Photo)
         {
             return await sender.SendTextAsync(
-                new OutgoingText(destination.ChatId, destination.ThreadId, Body(message, message.Text + delayed), parseMode, buttons, attempt.ReplyTo, message.Silent),
+                new OutgoingText(destination.ChatId, ThreadOf(entry, destination), Body(message, message.Text + delayed), parseMode, buttons, attempt.ReplyTo, message.Silent),
                 ct).ConfigureAwait(false);
         }
 
         if (attempt.FileId is { } fileId)
         {
             return await sender.SendPhotoAsync(
-                new OutgoingPhoto(destination.ChatId, destination.ThreadId, InputFile.FromFileId(fileId), Body(message, message.Caption + delayed), parseMode, buttons, attempt.ReplyTo, message.Silent),
+                new OutgoingPhoto(destination.ChatId, ThreadOf(entry, destination), InputFile.FromFileId(fileId), Body(message, message.Caption + delayed), parseMode, buttons, attempt.ReplyTo, message.Silent),
                 ct).ConfigureAwait(false);
         }
 
@@ -239,7 +245,7 @@ public sealed class OutboxDelivery
         {
             var photo = InputFile.FromStream(stream, "poster" + Path.GetExtension(attempt.UploadPath));
             return await sender.SendPhotoAsync(
-                new OutgoingPhoto(destination.ChatId, destination.ThreadId, photo, Body(message, message.Caption + delayed), parseMode, buttons, attempt.ReplyTo, message.Silent),
+                new OutgoingPhoto(destination.ChatId, ThreadOf(entry, destination), photo, Body(message, message.Caption + delayed), parseMode, buttons, attempt.ReplyTo, message.Silent),
                 ct).ConfigureAwait(false);
         }
     }
@@ -313,6 +319,12 @@ public sealed class OutboxDelivery
                 _health.MarkProblem(destination.Id, HealthStatus.NeedsPermissions, error.Description);
                 _log?.Failed(entry, destination, error, telegram, heldUntil: entry.QueuedAt + Outbox.Ttl);
                 return null;
+            case DeliveryErrorKind.TopicMissing when ThreadOf(entry, destination) != destination.ThreadId:
+                // A routed topic is gone: remember it, and send this one (and its slot's next ones) to the destination's
+                // own topic instead of holding everything (owner, 2026-10-25).
+                _health.SetTopicMissing(destination.Id, ThreadOf(entry, destination));
+                message.TopicFallback = TopicSlots.For(entry.EventKey);
+                return (entry, destination);
             case DeliveryErrorKind.TopicMissing:
                 _health.MarkProblem(destination.Id, HealthStatus.TopicMissing, error.Description);
                 _log?.Failed(entry, destination, error, telegram, heldUntil: entry.QueuedAt + Outbox.Ttl);
@@ -407,6 +419,16 @@ public sealed class OutboxDelivery
         // The ID, not the title: last errors outlive the destination, and diagnostics must never show its title (§12).
         _state.RecordError("outbox", DestinationRef.Of(destination) + ": " + reason);
         _log?.Failed(entry, destination, error, telegram, afterFallbacks, fromTelegram);
+    }
+
+    /// <summary>
+    /// The topic a message goes to: its slot's routed topic, unless that one is known to be gone, then the
+    /// destination's own topic.
+    /// </summary>
+    private int ThreadOf(OutboxEntry entry, Destination destination)
+    {
+        var thread = destination.ThreadFor(entry.EventKey);
+        return thread != destination.ThreadId && _health.IsTopicMissing(destination.Id, thread) ? destination.ThreadId : thread;
     }
 
     private sealed record Attempt(SentMessage? EditTarget, int? ReplyTo, bool Photo, string? FileId, string? UploadPath);

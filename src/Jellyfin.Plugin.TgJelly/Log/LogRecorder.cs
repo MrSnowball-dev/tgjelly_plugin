@@ -419,6 +419,11 @@ public sealed class LogRecorder
                 details.Add((LogResult.SentWithBuiltIn, _strings.Get("web.log.why.builtIn", ("error", error)), _strings.Get("web.log.advice.builtIn")));
             }
 
+            if (entry.Message.TopicFallback is { } slot)
+            {
+                details.Add((LogResult.Sent, _strings.Get("web.log.why.topicFallback", ("topic", SlotLabel(slot))), _strings.Get("web.log.advice.topicFallback", ("topic", SlotLabel(slot)), ("destination", destination.Title))));
+            }
+
             if (noPhoto is not null)
             {
                 details.Add((LogResult.SentWithoutPhoto, _strings.Get("web.log.why.noPhoto." + noPhoto), _strings.Get("web.log.advice.noPhoto." + noPhoto, ("destination", destination.Title))));
@@ -674,6 +679,8 @@ public sealed class LogRecorder
     }
 
     private string EventLabel(string eventKey) => _strings.Get("web.event." + eventKey);
+
+    private string SlotLabel(string slot) => _strings.Get(slot.Contains('.', StringComparison.Ordinal) ? "web.event." + slot : "web.event.group." + slot);
 
     private string TitleOfIds(IEnumerable<string> itemIds, string eventKey)
     {

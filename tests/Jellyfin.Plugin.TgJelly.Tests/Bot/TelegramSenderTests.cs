@@ -43,30 +43,6 @@ public sealed class TelegramSenderTests : System.IDisposable
     }
 
     [Fact]
-    public async Task SetCommands_SetsPrivateScope_AndClearsTheDefaultScope()
-    {
-        await Sender.SetCommandsAsync([new BotCommand("menu", "Open the menu")], TestContext.Current.CancellationToken);
-
-        var calls = _api.CallsTo("setMyCommands").ToArray();
-        Assert.Equal(2, calls.Length);
-        Assert.Equal("all_private_chats", (string)calls[0].Body["scope"]!["type"]!);
-        Assert.Equal("menu", (string)calls[0].Body["commands"]![0]!["command"]!);
-        Assert.Equal("default", (string)calls[1].Body["scope"]!["type"]!);
-        Assert.Empty(calls[1].Body["commands"]!.AsArray());
-    }
-
-    [Fact]
-    public async Task SetChannelAdminRights_RequestsPostAndEdit()
-    {
-        await Sender.SetChannelAdminRightsAsync(TestContext.Current.CancellationToken);
-
-        var body = Assert.Single(_api.CallsTo("setMyDefaultAdministratorRights")).Body;
-        Assert.True((bool)body["for_channels"]!);
-        Assert.True((bool)body["rights"]!["can_post_messages"]!);
-        Assert.True((bool)body["rights"]!["can_edit_messages"]!);
-    }
-
-    [Fact]
     public async Task SendPhoto_UploadsTheStream_WithItsFileName()
     {
         using var stream = new MemoryStream([1, 2, 3]);

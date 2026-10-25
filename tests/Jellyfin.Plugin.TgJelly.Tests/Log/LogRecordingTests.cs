@@ -6,6 +6,7 @@ using Jellyfin.Plugin.TgJelly.Configuration;
 using Jellyfin.Plugin.TgJelly.Destinations;
 using Jellyfin.Plugin.TgJelly.Library;
 using Jellyfin.Plugin.TgJelly.Log;
+using Jellyfin.Plugin.TgJelly.State.Documents;
 using Jellyfin.Plugin.TgJelly.Tests.Fakes;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -455,6 +456,42 @@ public sealed class LogRecordingTests : IDisposable
 
         var held = Assert.Single(Rows());
         Assert.Equal((LogResult.Waiting, d.Id), (held.Result, held.DestinationId));
+    }
+
+    [Fact]
+    public async Task RoutedTopicGone_SendsToTheDestinationsTopic_RemembersIt_AndLogsWhy()
+    {
+        var d = _h.AddDestination(-1001);
+        _h.Settings.Update(null, c => c.Destinations[0].TopicRoutes = [new TopicRoute { Slot = "security", ThreadId = 55 }]);
+        _h.Api.On("sendMessage", call => call.Body["message_thread_id"]?.GetValue<int>() == 55
+            ? FakeBotApi.Error(400, "Bad Request: message thread not found")
+            : FakeBotApi.Ok("{\"message_id\":7,\"date\":0,\"chat\":{\"id\":-1001,\"type\":\"supergroup\"}}"));
+
+        LoginFailed();
+        await _rig.DeliverAllAsync();
+
+        var threads = _h.Api.CallsTo("sendMessage").Select(c => c.Body["message_thread_id"]?.GetValue<int>()).ToList();
+        Assert.Equal([55, null], threads);
+        Assert.Contains(55, _rig.Health.Get(d.Id).MissingTopics);
+        Assert.Equal(HealthStatus.Ok, _rig.Health.Get(d.Id).Status);
+        var row = Assert.Single(Rows());
+        Assert.Equal(LogResult.Sent, row.Result);
+        Assert.Contains("Security topic is gone", row.Details.Single(), StringComparison.Ordinal);
+        Assert.DoesNotContain("{", row.Advice, StringComparison.Ordinal);
+
+        // The next security alert goes straight to the destination's own topic.
+        LoginFailed("bob");
+        await _rig.DeliverAllAsync();
+        Assert.Null(_h.Api.CallsTo("sendMessage").Last().Body["message_thread_id"]);
+        Assert.Contains(Rows(), r => r.Title.Contains("bob", StringComparison.OrdinalIgnoreCase) && r.Details.Any(x => x.Contains("topic is gone", StringComparison.Ordinal)));
+    }
+
+    [Fact]
+    public void ThreadFor_RoutesMediaEventsAndGroups_TheDigestFollowsTheDestination()
+    {
+        var d = new Destination { ThreadId = 3, TopicRoutes = [new TopicRoute { Slot = "media.movie", ThreadId = 10 }, new TopicRoute { Slot = "server", ThreadId = 20 }] };
+
+        Assert.Equal((10, 3, 20, 3, 3), (d.ThreadFor("media.movie"), d.ThreadFor("media.episodes"), d.ThreadFor("server.started"), d.ThreadFor("security.lockout"), d.ThreadFor("media.digest")));
     }
 
     [Fact]

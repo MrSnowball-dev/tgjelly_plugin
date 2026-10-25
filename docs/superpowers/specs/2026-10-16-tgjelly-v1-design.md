@@ -224,19 +224,14 @@ A single card: **"Connect a Telegram bot"** with `[Create a new bot]` `[I alread
   - "Restrict access in BotFather if you haven't, because anyone who can open the bot can manage notifications."
   - "Don't use this bot in another program at the same time."
 
-  The page also shows a checkbox, **on** by default: "Let TgJelly set up this bot's profile: description, command menu and default admin rights (replaces the current ones)". When it is off, TgJelly changes nothing about the bot's profile. The commands still work when typed; they just don't appear in Telegram's command menu.
+  (Amended 2026-10-25: the "Let TgJelly set up this bot's profile" checkbox was removed. TgJelly never changes the bot's description, command menu or default admin rights; the owner sets them in BotFather. The commands work when typed.)
 - **Save** → `POST /TgJelly/Token`:
   1. **Format check.** Build the client. An `ArgumentException` with `ParamName == "token"` means "This doesn't look like a bot token" (F39).
   2. **`getMe`.** A 401 means "Telegram rejected this token".
   3. **Same bot or a different one?** If a bot ID is stored and `getMe.id` differs from it, the §10.4 different-bot reset **always** runs. If destinations exist, the API first replies `needsConfirm` with this text: "@new is a different bot. It isn't in your N destinations, so they will need to be added again." `[Switch bot] [Cancel]`. The reset then runs only after confirmation.
   4. **Webhook.** `getWebhookInfo`; if a URL is set, `deleteWebhook(drop_pending_updates=false)` and show a warning. This is the only automatic webhook deletion (§9.2).
   5. **Store** the token in `secrets.json` and start the supervisor.
-  6. **Profile calls.** Only if the checkbox is on, which it always is for new bots. They run best-effort, in the background:
-     - `setMyCommands` for the all-private-chats scope (`/menu`, `/status`, `/test`, `/help`), plus an empty default command scope,
-     - `setMyDescription` ("Jellyfin notifications from *server name*") and `setMyShortDescription`,
-     - `setMyDefaultAdministratorRights`: for channels post + edit messages.
-
-     The choice and any calls still pending are stored in `state.telegram.profile` and retried when the supervisor next starts, until each one succeeds. Failures are shown in Status and never fail the save.
+  6. (Profile calls removed 2026-10-25; see above.)
 - Result: the connect card closes. The Bot section (§6.6) shows @MyJellyBot with **[Open in Telegram]** (`https://t.me/<username>`: it just opens the chat with the bot, amended 2026-10-25).
 - If `getMe` fails with a network error, a **"Can't reach Telegram?"** panel opens with the proxy settings (§9.1). Otherwise proxy settings stay under Advanced.
 
@@ -405,6 +400,12 @@ Groups: `media.*` = **media**, `security.*` = **security**, `server.*` = **serve
 - `Destination.Events` stores the concrete keys; the Router matches by exact string equality.
 - `Destination.Preset` stays only as an internal flag: `Everything` while the destination has every event, `Custom` otherwise. It is set from the events on every change and is never shown. When the config loads, keys a later version adds are switched on for `Everything` destinations only, so nothing new appears in a chat the admin trimmed.
 - Upgrade: a destination saved with the old New media or Admin alerts preset keeps its events and becomes `Custom`.
+
+### 7.2a Topics in a forum (amended 2026-10-25)
+- A forum destination posts to its own topic (`ThreadId`; 0 is General). `TopicRoutes` can send each **media event** (`media.movie` … `media.book`) and the **Security** and **Server** groups to topics of their own; the digest and the alert summary follow the destination's topic.
+- The dashboard's editor has a topic choice beside each media event and on the Security and Server titles: the default topic, General, topics TgJelly knows (`KnownTopics`), **Create a topic…** (`createForumTopic`, named after the slot; the bot needs Manage topics) or **Use a topic link…** (checked to be in the same chat). The bot's destination screen lists the topics but doesn't edit them.
+- When Telegram says a routed topic is gone (`message thread not found`), that message and the slot's next ones go to the destination's own topic instead of holding everything; the Log notes it, and the editor shows "Topic gone" until a check passes.
+- Every destination's editor has a folded **Advanced** block with the chat ID and the topic IDs.
 
 ### 7.3 Library filter
 - Each destination has `LibraryIds` (Guid strings, `N` format; empty means all).
@@ -745,14 +746,14 @@ Templates: TemplateOverride[] = []
 - `PUT Settings` returns 400 with per-field errors for values outside the ranges.
 
 ### 10.2 Secrets: `secrets.json`
-`{ "botToken": "", "proxyUsername": "", "proxyPassword": "" }`. Written to a temp file and moved into place, mode 600 on Unix. **No API ever returns these values.** The dashboard sees `hasToken`, `botUsername` and `hasProxyPassword`.
+`{ "botToken": "", "proxyUsername": "", "proxyPassword": "" }`. Written to a temp file and moved into place, mode 600 on Unix. **No API returns these values, except GET Token, which shows the bot token to an administrator who presses Show (amended 2026-10-25).** The dashboard sees `hasToken`, `botUsername` and `hasProxyPassword`.
 
 ### 10.3 Runtime state
 **`state.json`** (small; saved within 1 s of a change):
 
 | Section | Contents | Cap → on overflow |
 |---|---|---|
-| `telegram` | `botId`, `botUsername`, `profile` {`setProfile`, `pendingCalls[]`} (the update offset is in memory only, §9.2) | — |
+| `telegram` | `botId`, `botUsername`, `profile` (unused since 2026-10-25) (the update offset is in memory only, §9.2) | — |
 | `flows` | per private chat: screen, params (incl. `targetChatId`), `wizardMessageId`, `promptSentAt`, `params.await` (chat), `updatedAt` (expires 24 h) | 200 → evict least recently updated |
 | `managers` | private chat ID → `lastUsedAt` (90 days) | 50 → evict oldest |
 | `detectedChats` | chat ID, title, kind, `detectedAt` | 50 → evict oldest |
@@ -835,7 +836,7 @@ Every eviction increments `status.counters.evictions`.
 |---|---|
 | `GET Status` | connection state, bot username, compat, revision, counts, last errors, notices |
 | `POST Status/Dismiss` `{noticeId}` | dismiss a notice |
-| `POST Token` `{token, setProfile, confirmSwitch?}` | §6.1 → Status, or `{needsConfirm, message}` |
+| `POST Token` `{token, confirmSwitch?}` · `GET Token` (the token, for Advanced's Show) | §6.1 → Status, or `{needsConfirm, message}` |
 | `DELETE Token` | Disconnect (§10.4) |
 | `POST Webhook/TakeOver` | `deleteWebhook`, then restart the supervisor |
 | `GET Settings` / `PUT Settings` | public URL (with suggestion), message toggles, batching, update check; GET also returns proxy mode and URL for display, PUT ignores proxy fields |

@@ -67,6 +67,12 @@ public class Destination
         set => Preset = EnumText.Parse<PresetKind>(value);
     }
 
+    /// <summary>Gets or sets, for a forum, the slots that post to their own topic (<see cref="TopicSlots"/>).</summary>
+    public TopicRoute[] TopicRoutes { get; set; } = Array.Empty<TopicRoute>();
+
+    /// <summary>Gets or sets the forum topics TgJelly knows for this chat, with their names when it knows them.</summary>
+    public KnownTopic[] KnownTopics { get; set; } = Array.Empty<KnownTopic>();
+
     /// <summary>Gets or sets the concrete event keys.</summary>
     public string[] Events { get; set; } = Array.Empty<string>();
 
@@ -75,4 +81,16 @@ public class Destination
 
     /// <summary>Gets or sets the groups sent without sound (media, security, server).</summary>
     public string[] SilentGroups { get; set; } = Array.Empty<string>();
+
+    /// <summary>
+    /// The topic a message for this event key goes to: its slot's route, or the destination's own topic.
+    /// </summary>
+    /// <param name="eventKey">The event key.</param>
+    /// <returns>The thread id; 0 is General.</returns>
+    public int ThreadFor(string eventKey)
+    {
+        var slot = TopicSlots.For(eventKey);
+        var route = slot is null ? null : Array.Find(TopicRoutes, r => string.Equals(r.Slot, slot, StringComparison.Ordinal));
+        return route?.ThreadId ?? ThreadId;
+    }
 }

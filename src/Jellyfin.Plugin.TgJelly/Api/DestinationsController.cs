@@ -211,12 +211,27 @@ public class DestinationsController : ControllerBase
             libraries = [.. parsed.Distinct(StringComparer.Ordinal)];
         }
 
+        if (request.TopicRoutes?.FirstOrDefault(r => !TopicSlots.All.Contains(r.Slot, StringComparer.Ordinal)) is { } badSlot)
+        {
+            return Error("TopicRoutes", $"Unknown topic slot: {badSlot.Slot}. Reload the page and pick the topic again.");
+        }
+
+        if (request.TopicRoutes?.FirstOrDefault(r => r.ThreadId is < 0) is not null)
+        {
+            return Error("TopicRoutes", "A topic ID can't be negative. Reload the page and pick the topic again.");
+        }
+
         var result = _settings.UpdateIf(request.ExpectedRevision, c =>
         {
             var d = c.Destinations.FirstOrDefault(x => x.Id == id);
             if (d is null)
             {
                 return false;
+            }
+
+            if (request.TopicRoutes is { } routes)
+            {
+                d.TopicRoutes = WithRoutes(d.TopicRoutes, routes.Select(r => (r.Slot, r.ThreadId)));
             }
 
             if (request.Events is not null)
@@ -395,6 +410,145 @@ public class DestinationsController : ControllerBase
         ApiRequestException => strings.Get("token.failed", ("error", TelegramErrorClassifier.ClassifyDelivery(ex).Description)),
         _ => strings.Get("token.unreachable"),
     };
+
+    /// <summary>
+    /// Gives a slot of a forum destination its own topic: TgJelly creates one named after the slot (the bot needs
+    /// Manage topics), or an existing topic of the same chat is used by its link. The topic is remembered for the chat.
+    /// </summary>
+    /// <param name="id">The destination.</param>
+    /// <param name="request">The slot, and Create or a link.</param>
+    /// <param name="cancellationToken">Cancels the request.</param>
+    /// <returns>The destination with the new route, 400 with what to do, 404 or 409.</returns>
+    [HttpPost("Destinations/{id}/Topics")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<DestinationDto>> AddTopic([FromRoute] string id, [FromBody] TopicRequest request, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        if (ApiGuard.Block(_gate, _state) is { } blocked)
+        {
+            return blocked;
+        }
+
+        if (_settings.Current.Destinations.FirstOrDefault(d => d.Id == id) is not { } destination)
+        {
+            return NotFound();
+        }
+
+        if (!TopicSlots.All.Contains(request.Slot, StringComparer.Ordinal))
+        {
+            return Error("Slot", $"Unknown topic slot: {request.Slot}. Reload the page and pick the topic again.");
+        }
+
+        if (destination.KindKey != "dest.kind.Forum")
+        {
+            return Error("Slot", _strings.Get("web.topics.notForum"));
+        }
+
+        if (_connection.Sender is not { } sender)
+        {
+            return Error("Bot", _strings.Get("destination.notConnected"));
+        }
+
+        int thread;
+        var name = string.Empty;
+        try
+        {
+            if (request.Create)
+            {
+                name = _strings.Get(request.Slot.Contains('.', StringComparison.Ordinal) ? "web.event." + request.Slot : "web.event.group." + request.Slot);
+                thread = await sender.CreateForumTopicAsync(destination.ChatId, name, cancellationToken).ConfigureAwait(false);
+            }
+            else
+            {
+                if (!TopicLink.TryParse(request.Link, out var link) || link.ThreadId <= 0)
+                {
+                    return Error("Link", _strings.Get("web.topics.badLink"));
+                }
+
+                var check = await _checker.CheckAsync(link.Chat, link.ThreadId, cancellationToken).ConfigureAwait(false);
+                // A chat that couldn't be read at all (ChatId 0) says why, rather than "another chat".
+                if (!check.Passed && check.ChatId == 0)
+                {
+                    return Error("Link", check.Message ?? _strings.Get("web.topics.badLink"));
+                }
+
+                if (check.ChatId != destination.ChatId)
+                {
+                    return Error("Link", _strings.Get("web.topics.otherChat"));
+                }
+
+                if (!check.Passed)
+                {
+                    return Error("Link", check.Message ?? _strings.Get("web.topics.badLink"));
+                }
+
+                thread = link.ThreadId;
+            }
+        }
+        catch (BotNotConnectedException)
+        {
+            return Error("Bot", _strings.Get("destination.notConnected"));
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            var error = TelegramErrorClassifier.ClassifyDelivery(ex);
+            _logger.LogWarning("TgJelly could not set up a topic for {Destination}: {Error}", destination.Title, error.Description);
+            return Error(request.Create ? "Create" : "Link", _strings.Get(request.Create ? "web.topics.createFailed" : "web.topics.linkFailed", ("error", error.Description)));
+        }
+
+        // The topic exists in Telegram now, so it is recorded on the current settings whatever the page's revision: a
+        // conflict here would leave a topic nobody can pick, and a retry would create another.
+        var result = _settings.UpdateIf(null, c =>
+        {
+            var d = c.Destinations.FirstOrDefault(x => x.Id == id);
+            if (d is null)
+            {
+                return false;
+            }
+
+            if (Array.Find(d.KnownTopics, t => t.ThreadId == thread) is { } known)
+            {
+                known.Name = name.Length > 0 ? name : known.Name;
+            }
+            else
+            {
+                d.KnownTopics = [.. d.KnownTopics, new KnownTopic { ThreadId = thread, Name = name }];
+            }
+
+            d.TopicRoutes = WithRoutes(d.TopicRoutes, [(request.Slot, (int?)thread)]);
+            return true;
+        });
+
+        return result.Status switch
+        {
+            SettingsUpdateStatus.Conflict => Conflict(new ConflictDto<DestinationsDto> { Current = List(result.Configuration) }),
+            SettingsUpdateStatus.Invalid => BadRequest(new ErrorsDto { Errors = result.Errors }),
+            SettingsUpdateStatus.Unchanged => NotFound(),
+            _ => ToDto(result.Configuration.Destinations.First(d => d.Id == id), result.Configuration.Revision),
+        };
+    }
+
+    /// <summary>The routes with the changes applied: a thread id sets a slot's route, <c>null</c> removes it.</summary>
+    private static TopicRoute[] WithRoutes(TopicRoute[] current, IEnumerable<(string Slot, int? ThreadId)> changes)
+    {
+        var routes = current.ToDictionary(r => r.Slot, r => r.ThreadId, StringComparer.Ordinal);
+        foreach (var (slot, thread) in changes)
+        {
+            if (thread is { } t)
+            {
+                routes[slot] = t;
+            }
+            else
+            {
+                routes.Remove(slot);
+            }
+        }
+
+        return [.. TopicSlots.All.Where(routes.ContainsKey).Select(slot => new TopicRoute { Slot = slot, ThreadId = routes[slot] })];
+    }
 
     private BadRequestObjectResult Error(string field, string message)
         => BadRequest(new ErrorsDto { Errors = [new SettingsError(field, message)] });

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 namespace Jellyfin.Plugin.TgJelly.State.Documents;
 
@@ -38,8 +39,19 @@ public sealed class DestinationHealth
     public DateTimeOffset? NextCheckAt { get; set; }
 
     /// <summary>
+    /// Gets or sets the routed topics Telegram said are gone; their messages go to the destination's own topic until
+    /// the next check passes.
+    /// </summary>
+    public List<int> MissingTopics { get; set; } = [];
+
+    /// <summary>
     /// Returns a copy.
     /// </summary>
     /// <returns>The copy.</returns>
-    public DestinationHealth Copy() => (DestinationHealth)MemberwiseClone();
+    public DestinationHealth Copy()
+    {
+        var copy = (DestinationHealth)MemberwiseClone();
+        copy.MissingTopics = [.. MissingTopics];
+        return copy;
+    }
 }
