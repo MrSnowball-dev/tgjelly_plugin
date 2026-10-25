@@ -479,6 +479,34 @@ public sealed class DestinationScreensTests : IDisposable, IAsyncLifetime
         Assert.Contains("Tap a group to switch it between 🔔 with sound and 🔕 silent.", (string)LastEdit().Body["text"]!, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task Topics_InAForum_PickPerGroup_SeparateMedia_EveryButtonExplained()
+    {
+        var d = _h.AddDestination(-1001, threadId: 3);
+        _h.Settings.Update(null, c => c.Destinations[0].KnownTopics = [new KnownTopic { ThreadId = 3, Name = "Jellyfin" }, new KnownTopic { ThreadId = 9, Name = "Alerts" }]);
+
+        Assert.Contains("1|dtp|" + d.Id, Data(await ClickData("1|d|" + d.Id)));
+        var topics = await ClickText("1|dtp|" + d.Id);
+        Assert.Contains("Media: Jellyfin", topics, StringComparison.Ordinal);
+        Assert.Equal(["Media", "Security", "Server", "Back"], Labels(LastEdit()));
+        Assert.Equal(Labels(LastEdit()).Length, topics.Split('\n').Count(l => l.StartsWith("<b>", StringComparison.Ordinal) && l.Contains(" — ", StringComparison.Ordinal)));
+
+        await Click("1|dts|" + d.Id + "|server");
+        Assert.Equal(["Default topic (Jellyfin)", "General", "Alerts", "Create a topic “Server”", "Back"], Labels(LastEdit()));
+        await Click("1|dtc|" + d.Id + "|server|9");
+        Assert.Equal(9, _h.Settings.Current.Destinations[0].ThreadFor("server.started"));
+
+        await Click("1|dtc|" + d.Id + "|media|s");
+        Assert.True(_h.Settings.Current.Destinations[0].SeparateMediaTopics);
+        Assert.Contains("Movies", Labels(LastEdit()));
+    }
+
+    private async Task<BotApiCall> ClickData(string data)
+    {
+        await Click(data);
+        return LastEdit();
+    }
+
     private async Task Click(string data) => await _rig.Deliver(TelegramFixtures.Update("callback_query", ("data", data), ("message_id", "55")));
 
     private async Task<string> ClickText(string data)

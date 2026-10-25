@@ -1338,25 +1338,42 @@ test('destList_rowsWithStateLabels_noSymbols', async () => {
     assert.match(none, /class="tgj-empty-actions">[\s\S]*https:\/\/t\.me\/jf_bot\?start=add[\s\S]*data-tgj-act="open-manual"/, 'the add actions in the empty state');
 });
 
-test('a forum chooses a topic beside each media event and each other group; Create and Advanced IDs', async () => {
-    const forum = dest({ IsForum: true, ThreadId: 3, KnownTopics: [{ ThreadId: 3, Name: 'Jellyfin' }, { ThreadId: 9, Name: '' }], TopicRoutes: [], MissingTopics: [] });
-    const created = { ...forum, Revision: 6, KnownTopics: [...forum.KnownTopics, { ThreadId: 12, Name: 'Movies' }], TopicRoutes: [{ Slot: 'media.movie', ThreadId: 12 }] };
+test('a forum chooses a topic per group, and per media event only with separate topics; Create and Advanced IDs', async () => {
+    const forum = dest({ IsForum: true, ThreadId: 3, KnownTopics: [{ ThreadId: 3, Name: 'Jellyfin' }, { ThreadId: 9, Name: '' }], TopicRoutes: [], MissingTopics: [], SeparateMediaTopics: false });
+    const created = { ...forum, Revision: 8, SeparateMediaTopics: true, KnownTopics: [...forum.KnownTopics, { ThreadId: 12, Name: 'Movies' }], TopicRoutes: [{ Slot: 'media.movie', ThreadId: 12 }, { Slot: 'server', ThreadId: 9 }] };
+    let revision = 5;
+    let current = forum;
     const { view, api, el } = mount({
         'GET TgJelly/Destinations': destinations({ Items: [forum] }),
-        'PUT TgJelly/Destinations/d1': request => ({ ...forum, Revision: 7, TopicRoutes: JSON.parse(request.data).TopicRoutes.filter(r => r.ThreadId !== null) }),
+        'PUT TgJelly/Destinations/d1': request => {
+            const body = JSON.parse(request.data);
+            const routes = new Map((current.TopicRoutes ?? []).map(r => [r.Slot, r.ThreadId]));
+            for (const r of body.TopicRoutes ?? []) {
+                if (r.ThreadId === null) { routes.delete(r.Slot); } else { routes.set(r.Slot, r.ThreadId); }
+            }
+            current = { ...current, Revision: ++revision, SeparateMediaTopics: body.SeparateMediaTopics ?? current.SeparateMediaTopics, TopicRoutes: [...routes].map(([Slot, ThreadId]) => ({ Slot, ThreadId })) };
+            return current;
+        },
         'POST TgJelly/Destinations/d1/Topics': created,
     });
     await show(view);
     await destAct(view, 'edit', { 'data-tgj-id': 'd1' });
-    const html = destEl(el);
+    let html = destEl(el);
     assert.ok(html.includes('Posts to') && html.includes('>Jellyfin<'), 'the topic it posts to');
-    assert.ok(html.includes('data-tgj-key="media.movie" data-tgj-save="dest:d1:topic:media.movie"'), 'beside a media event');
+    assert.ok(html.includes('data-tgj-key="media" data-tgj-save="dest:d1:topic:media"'), 'one choice for Media');
+    assert.ok(!html.includes('data-tgj-key="media.movie" data-tgj-save="dest:d1:topic:media.movie"'), 'no per-event choice yet');
     assert.ok(html.includes('data-tgj-key="security" data-tgj-save="dest:d1:topic:security"'), 'beside the Security group');
-    assert.ok(!html.includes('data-tgj-key="security.lockout" data-tgj-save="dest:d1:topic:'), 'not per security event');
+    assert.ok(html.includes('Separate topics for each event'));
     assert.ok(html.includes('Topic #9') && html.includes('Default topic (Jellyfin)'));
 
     await destInput(view, 'destTopic', { 'data-tgj-id': 'd1', 'data-tgj-key': 'server', 'data-tgj-save': 'dest:d1:topic:server' }, { value: '9' });
-    assert.deepEqual(putBodies(api), [{ ExpectedRevision: 5, TopicRoutes: [{ Slot: 'server', ThreadId: 9 }] }]);
+    await destInput(view, 'destTopic', { 'data-tgj-id': 'd1', 'data-tgj-key': 'media', 'data-tgj-save': 'dest:d1:topic:media' }, { value: 'separate' });
+    assert.deepEqual(putBodies(api), [
+        { ExpectedRevision: 5, TopicRoutes: [{ Slot: 'server', ThreadId: 9 }] },
+        { ExpectedRevision: 6, SeparateMediaTopics: true },
+    ]);
+    html = destEl(el);
+    assert.ok(html.includes('data-tgj-key="media.movie" data-tgj-save="dest:d1:topic:media.movie"'), 'now beside each media event');
 
     await destInput(view, 'destTopic', { 'data-tgj-id': 'd1', 'data-tgj-key': 'media.movie', 'data-tgj-save': 'dest:d1:topic:media.movie' }, { value: 'create' });
     assert.ok(!api.calls.some(c => c.type === 'POST' && c.url.includes('/Topics')), 'choosing Create only asks');
@@ -1364,6 +1381,7 @@ test('a forum chooses a topic beside each media event and each other group; Crea
     await destAct(view, 'topicCreateYes', { 'data-tgj-id': 'd1', 'data-tgj-key': 'media.movie' });
     const topic = api.calls.find(c => c.type === 'POST' && c.url.includes('Destinations/d1/Topics'));
     assert.deepEqual(JSON.parse(topic.data), { ExpectedRevision: 7, Slot: 'media.movie', Create: true });
+    assert.ok(destEl(el).includes('data-tgj-key="media.movie" data-tgj-save="dest:d1:topic:media.movie"'));
     assert.ok(destEl(el).includes('>Movies<'), 'the new topic is offered by name');
 
     assert.ok(!destEl(el).includes('Chat ID'), 'the IDs are folded away');
@@ -1530,9 +1548,11 @@ test('editor_eventLabels_haveNoGroupPrefix', () => {
     }
 });
 
-test('botEventStrings_unchanged', () => {
-    assert.equal(EN['dest.event.media.movie'], 'Media: Movies');
-    assert.equal(EN['dest.event.server.started'], 'Server: Started');
+test('botEventStrings_matchTheDashboard', () => {
+    // The bot shows events inside their group's screen too, so its names match the dashboard's (owner, 2026-10-25).
+    for (const key of Object.keys(EN).filter(k => k.startsWith('dest.event.'))) {
+        assert.equal(EN[key], EN[`web.event.${key.slice('dest.event.'.length)}`], key);
+    }
 });
 
 test('the all-libraries line follows the library switches', async () => {

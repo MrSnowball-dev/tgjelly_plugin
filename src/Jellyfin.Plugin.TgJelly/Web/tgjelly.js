@@ -528,6 +528,7 @@ export function destinationFormData(dest) {
     return {
         Enabled: Boolean(dest.Enabled),
         Routes: routeList(dest.TopicRoutes),
+        Separate: Boolean(dest.SeparateMediaTopics),
         Events: [...(dest.Events ?? [])],
         LibraryIds: [...(dest.LibraryIds ?? [])],
         SilentGroups: [...(dest.SilentGroups ?? [])],
@@ -548,6 +549,10 @@ export function destinationChanges(base, local, revision) {
         if (differs(key)) {
             body[key] = local[key];
         }
+    }
+
+    if (differs('Separate')) {
+        body.SeparateMediaTopics = local.Separate;
     }
 
     // Only the slots whose topic changed; null sends a slot back to the destination's own topic.
@@ -619,7 +624,8 @@ export function renderEditor(dest, catalog, libraries, S, ui) {
     // A forum: where the destination posts, and a topic choice beside each media event and each other group.
     const forum = Boolean(dest.IsForum);
     const routes = routeMap(local.Routes);
-    const topic = slot => (forum ? topicChoice(dest, slot, routes, S, ui) : '');
+    const separate = Boolean(local.Separate);
+    const topic = slot => (forum ? topicChoice(dest, slot, routes, S, ui, separate) : '');
     if (forum) {
         parts.push(row({ label: text(S, 'web.topics.postsTo'), control: `<span class="tgj-topic-name">${esc(topicName(dest, dest.ThreadId, S))}</span>` }));
     }
@@ -628,11 +634,12 @@ export function renderEditor(dest, catalog, libraries, S, ui) {
     parts.push(`<h3 class="tgj-subtitle">${t(S, 'dest.events.title')}</h3>`);
     for (const group of catalog.Groups) {
         const keys = catalog.EventKeys.filter(k => k.startsWith(group + '.'));
-        // Media events each have their own topic; Security and Server have one for the whole group.
-        const groupTopic = group === 'media' ? '' : topic(group);
+        // Each group has one topic; Media can instead have a topic for each event ("Separate topics for each event"),
+        // and only then do the events show their own choice (owner, 2026-10-25).
+        const groupTopic = topic(group);
         parts.push(`<div class="tgj-subcard" data-tgj-group-card="${esc(group)}">`
             + `<div class="tgj-subcard-head"><h3 class="tgj-subcard-title">${t(S, `web.event.group.${group}`)}</h3>${groupTopic}</div>`
-            + keys.map(k => (group === 'media' && forum
+            + keys.map(k => (group === 'media' && forum && separate
                 ? row({ label: text(S, `web.event.${k}`), control: switchFor('destEvent', `event:${k}`, events.has(k), text(S, `web.event.${k}`), { 'data-tgj-key': k }) + topic(k), cueKey: destSaveKey(id, `event:${k}`) })
                 : toggle('destEvent', `event:${k}`, events.has(k), text(S, `web.event.${k}`), { 'data-tgj-key': k }))).join('')
             + '</div>');
@@ -661,7 +668,7 @@ export function renderEditor(dest, catalog, libraries, S, ui) {
         + catalog.Groups.map(g => toggle('destSilent', `silent:${g}`, silent.has(g), text(S, `groups.${g}`), { 'data-tgj-group': g })).join('')
         + `<p class="tgj-row-hint">${t(S, 'dest.silent.hint')}</p>`);
 
-    parts.push(destinationIds(dest, routes, S, Boolean(ui.idsOpen)));
+    parts.push(destinationIds(dest, routes, S, Boolean(ui.idsOpen), separate));
 
     parts.push('<div class="tgj-actions">'
         + actionButton({ label: text(S, 'dest.btn.test'), act: 'testDest', id })
@@ -709,10 +716,10 @@ const slotLabel = (slot, S) => text(S, slot.includes('.') ? `web.event.${slot}` 
  * topics TgJelly knows, Create a topic…, or Use a topic link…; a cue beside it, "Topic gone" when Telegram says so, and
  * the link field while a link is being entered.
  */
-function topicChoice(dest, slot, routes, S, ui) {
+function topicChoice(dest, slot, routes, S, ui, separate = false) {
     const id = dest.Id;
     const key = destSaveKey(id, `topic:${slot}`);
-    const value = routes.has(slot) ? String(routes.get(slot)) : '';
+    const value = slot === 'media' && separate ? 'separate' : routes.has(slot) ? String(routes.get(slot)) : '';
     const threads = [0, ...(dest.KnownTopics ?? []).map(k => k.ThreadId)].filter((t, i, all) => t !== dest.ThreadId && all.indexOf(t) === i);
     if (routes.has(slot) && !threads.includes(routes.get(slot)) && routes.get(slot) !== dest.ThreadId) {
         threads.push(routes.get(slot));
@@ -721,6 +728,7 @@ function topicChoice(dest, slot, routes, S, ui) {
     const options = [
         { value: '', label: text(S, 'web.topics.default', { topic: topicName(dest, dest.ThreadId, S) }) },
         ...threads.map(t => ({ value: String(t), label: topicName(dest, t, S) })),
+        ...(slot === 'media' ? [{ value: 'separate', label: text(S, 'web.topics.separate') }] : []),
         { value: 'create', label: text(S, 'web.topics.create') },
         { value: 'link', label: text(S, 'web.topics.link') },
     ];
@@ -750,7 +758,7 @@ function topicChoice(dest, slot, routes, S, ui) {
 }
 
 /** A destination's IDs, folded away until opened: the chat, its topic, and each routed slot's topic. */
-function destinationIds(dest, routes, S, open) {
+function destinationIds(dest, routes, S, open, separate) {
     const toggleButton = `<button type="button" class="tgj-ref-toggle" data-tgj-act="destIds" data-tgj-id="${esc(dest.Id)}" data-tgj-instant aria-expanded="${open}">${t(S, 'web.dest.ids')}</button>`;
     if (!open) {
         return `<div class="tgj-dest-ids">${toggleButton}</div>`;
@@ -761,7 +769,12 @@ function destinationIds(dest, routes, S, open) {
         lines.push([text(S, 'web.dest.ids.topic'), dest.ThreadId]);
     }
 
+    // Only the routes in use: the media events' own with separate topics, the Media topic otherwise.
     for (const [slot, thread] of routes) {
+        if (slot.startsWith('media.') !== separate && (slot === 'media' || slot.startsWith('media.'))) {
+            continue;
+        }
+
         lines.push([text(S, 'web.dest.ids.slot', { what: slotLabel(slot, S) }), thread]);
     }
 
@@ -2876,6 +2889,13 @@ export default function TgJellyPage(view, params) {
                 return;
             }
 
+            if (slot === 'media' && value === 'separate') {
+                editDestination(id, { Separate: true });
+                renderSection('destinations');
+                saveDestination(id, `topic:${slot}`, fieldSelector(el));
+                return;
+            }
+
             const routes = routeMap(form.local.Routes);
             if (value === '') {
                 routes.delete(slot);
@@ -2883,7 +2903,8 @@ export default function TgJellyPage(view, params) {
                 routes.set(slot, Number(value));
             }
 
-            editDestination(id, { Routes: [...routes].map(([k, v]) => `${k}=${v}`).sort() });
+            // One topic for all media again ends separate topics; the events' own choices are kept for next time.
+            editDestination(id, { Routes: [...routes].map(([k, v]) => `${k}=${v}`).sort(), ...(slot === 'media' ? { Separate: false } : {}) });
             renderSection('destinations');
             saveDestination(id, `topic:${slot}`, fieldSelector(el));
         },

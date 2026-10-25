@@ -34,6 +34,7 @@ public sealed class DestinationScreens
     private readonly StringTable _strings;
     private readonly Formatter _formatter;
     private readonly ILogger<DestinationScreens> _logger;
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, byte> _creating = new(StringComparer.Ordinal);
 
     /// <summary>
     /// Initializes a new instance of the <see cref="DestinationScreens"/> class.
@@ -108,6 +109,12 @@ public sealed class DestinationScreens
                 return ConfirmRemove(id);
             case "drx":
                 return await RemoveAsync(id, arg == "1", ct).ConfigureAwait(false);
+            case "dtp":
+                return Topics(id);
+            case "dts":
+                return TopicPick(id, arg);
+            case "dtc":
+                return await SetTopicAsync(id, arg, args.Count > 2 ? args[2] : string.Empty, ct).ConfigureAwait(false);
             default:
                 return null;
         }
@@ -210,9 +217,9 @@ public sealed class DestinationScreens
         html.Append(_formatter.Escape(_strings.Get("dest.line.kind", ("kind", _strings.Get(d.KindKey))))).Append('\n');
         if (d.KindKey == "dest.kind.Forum")
         {
-            // Which topic it posts to, and the slots that have their own (set in the dashboard).
+            // Which topic it posts to, and the slots in use that have their own (Topics changes them).
             html.Append(_formatter.Escape(_strings.Get("dest.line.topic", ("topic", TopicName(d, d.ThreadId))))).Append('\n');
-            foreach (var route in d.TopicRoutes)
+            foreach (var route in d.TopicRoutes.Where(r => r.Slot.StartsWith("media.", StringComparison.Ordinal) == d.SeparateMediaTopics || !r.Slot.StartsWith("media", StringComparison.Ordinal)))
             {
                 var what = _strings.Get(route.Slot.Contains('.', StringComparison.Ordinal) ? "web.event." + route.Slot : "web.event.group." + route.Slot);
                 html.Append(_formatter.Escape(_strings.Get("dest.line.route", ("what", what), ("topic", TopicName(d, route.ThreadId))))).Append('\n');
@@ -228,16 +235,18 @@ public sealed class DestinationScreens
         }
 
         var pauseKey = d.Enabled ? "dest.btn.pause" : "dest.btn.resume";
+        var forum = d.KindKey == "dest.kind.Forum";
         html.Append(ButtonGuide.Lines(
             _strings,
             _formatter,
+            [.. forum ? new[] { ("dest.btn.topics", "dest.btn.topics.about") } : [],
             ("dest.btn.events", "dest.btn.events.about"),
             ("dest.btn.libraries", "dest.btn.libraries.about"),
             ("dest.btn.silent", "dest.btn.silent.about"),
             ("dest.btn.test", "dest.btn.test.about"),
             ("dest.btn.check", "dest.btn.check.about"),
             (pauseKey, pauseKey + ".about"),
-            ("dest.btn.remove", "dest.btn.remove.about")));
+            ("dest.btn.remove", "dest.btn.remove.about")]));
         var rows = new List<InlineKeyboardButton[]>
         {
             new[] { Button("dest.btn.events", "de", d.Id), Button("dest.btn.libraries", "dlb", d.Id, "0") },
@@ -246,8 +255,168 @@ public sealed class DestinationScreens
             new[] { Button("dest.btn.remove", "dr", d.Id) },
             new[] { Button("menu.back", "dl", "0") },
         };
+        if (forum)
+        {
+            rows.Insert(0, [Button("dest.btn.topics", "dtp", d.Id)]);
+        }
+
         return new Screen(html.ToString(), new InlineKeyboardMarkup(rows));
     }
+
+    /// <summary>
+    /// A forum destination's topics (owner, 2026-10-25): one line per group, and per media event with separate media
+    /// topics; a button for each opens its choice.
+    /// </summary>
+    private Screen Topics(string id, string? note = null)
+    {
+        if (Find(id) is not { } d)
+        {
+            return Gone();
+        }
+
+        var slots = new List<string> { "media" };
+        if (d.SeparateMediaTopics)
+        {
+            slots.AddRange(TopicSlots.All.Where(slot => slot.StartsWith("media.", StringComparison.Ordinal)));
+        }
+
+        slots.AddRange(["security", "server"]);
+        var html = new StringBuilder(Heading("dest.topics.title", d)).Append("\n\n");
+        foreach (var slot in slots)
+        {
+            var where = slot == "media" && d.SeparateMediaTopics ? _strings.Get("web.topics.separate") : TopicName(d, RouteOf(d, slot) ?? d.ThreadId);
+            html.Append(_formatter.Escape(_strings.Get("dest.line.route", ("what", SlotLabel(slot)), ("topic", where)))).Append('\n');
+        }
+
+        if (note is not null)
+        {
+            html.Append('\n').Append(note).Append('\n');
+        }
+
+        html.Append(ButtonGuide.Block([.. slots.Select(slot => ButtonGuide.Line(_formatter, SlotLabel(slot), _strings.Get("dest.topics.slot.about", ("what", SlotLabel(slot))))),
+            ButtonGuide.Line(_strings, _formatter, "menu.back", "dest.topics.back.about")]));
+        var rows = slots.Select(slot => new[] { InlineKeyboardButton.WithCallbackData(SlotLabel(slot), CallbackData.Format("dts", d.Id, slot)) }).ToList();
+        rows.Add([Button("menu.back", "d", d.Id)]);
+        return new Screen(html.ToString(), new InlineKeyboardMarkup(rows));
+    }
+
+    /// <summary>
+    /// The choice for one slot: the destination's own topic, General, the topics TgJelly knows, Separate topics for
+    /// each event (Media only), or a new topic named after the slot.
+    /// </summary>
+    private Screen TopicPick(string id, string slot)
+    {
+        if (Find(id) is not { } d)
+        {
+            return Gone();
+        }
+
+        if (!TopicSlots.All.Contains(slot, StringComparer.Ordinal))
+        {
+            return Topics(id);
+        }
+
+        var what = SlotLabel(slot);
+        var choices = new List<(string Label, string Value, string About)>
+        {
+            (_strings.Get("web.topics.default", ("topic", TopicName(d, d.ThreadId))), "d", _strings.Get("dest.topics.default.about")),
+        };
+        var threads = new[] { 0 }.Concat(d.KnownTopics.Select(t => t.ThreadId)).Distinct().Where(t => t != d.ThreadId);
+        choices.AddRange(threads.Select(t => (TopicName(d, t), t.ToString(CultureInfo.InvariantCulture), _strings.Get("dest.topics.known.about", ("what", what)))));
+        if (slot == "media")
+        {
+            choices.Add((_strings.Get("web.topics.separate"), "s", _strings.Get("dest.topics.separate.about")));
+        }
+
+        choices.Add((_strings.Get("dest.topics.create", ("name", what)), "n", _strings.Get("dest.topics.create.about")));
+        var html = Heading("dest.topics.title", d) + "\n\n" + _formatter.Escape(_strings.Get("dest.topics.pick", ("what", what)))
+            + ButtonGuide.Block([.. choices.Select(c => ButtonGuide.Line(_formatter, c.Label, c.About)), ButtonGuide.Line(_strings, _formatter, "menu.back", "dest.topics.pickBack.about")]);
+        var rows = choices.Select(c => new[] { InlineKeyboardButton.WithCallbackData(MenuScreens.Label(c.Label), CallbackData.Format("dtc", d.Id, slot, c.Value)) }).ToList();
+        rows.Add([Button("menu.back", "dtp", d.Id)]);
+        return new Screen(html, new InlineKeyboardMarkup(rows));
+    }
+
+    /// <summary>Applies a topic choice, creating the topic first for "n", and shows the topics again.</summary>
+    private async Task<Screen> SetTopicAsync(string id, string slot, string choice, CancellationToken ct)
+    {
+        if (Find(id) is not { } d || !TopicSlots.All.Contains(slot, StringComparer.Ordinal))
+        {
+            return Find(id) is null ? Gone() : Topics(id);
+        }
+
+        int? thread;
+        var name = string.Empty;
+        switch (choice)
+        {
+            case "d":
+                thread = null;
+                break;
+            case "s" when slot == "media":
+                Change(id, x => x.SeparateMediaTopics = true);
+                return Topics(id);
+            case "n":
+                name = SlotLabel(slot);
+                // A double tap, or a redelivered press, must not create a second topic.
+                if (!_creating.TryAdd(id + "|" + slot, 0))
+                {
+                    return Topics(id);
+                }
+
+                try
+                {
+                    thread = await _connection.RequireSender().CreateForumTopicAsync(d.ChatId, name, ct).ConfigureAwait(false);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    var error = TelegramErrorClassifier.ClassifyDelivery(ex);
+                    _logger.LogWarning("TgJelly could not create a topic in {Destination}: {Error}", d.Title, error.Description);
+                    return Topics(id, _formatter.Escape(_strings.Get("web.topics.createFailed", ("error", error.Description))));
+                }
+                finally
+                {
+                    _creating.TryRemove(id + "|" + slot, out _);
+                }
+
+                break;
+            default:
+                if (!int.TryParse(choice, NumberStyles.None, CultureInfo.InvariantCulture, out var picked))
+                {
+                    return Topics(id);
+                }
+
+                thread = picked;
+                break;
+        }
+
+        var created = thread;
+        Change(id, x =>
+        {
+            if (choice == "n" && created is { } t && !x.KnownTopics.Any(k => k.ThreadId == t))
+            {
+                x.KnownTopics = [.. x.KnownTopics, new KnownTopic { ThreadId = t, Name = name }];
+            }
+
+            var routes = x.TopicRoutes.Where(r => !string.Equals(r.Slot, slot, StringComparison.Ordinal)).ToList();
+            if (created is { } th)
+            {
+                routes.Add(new TopicRoute { Slot = slot, ThreadId = th });
+            }
+
+            x.TopicRoutes = [.. TopicSlots.All.SelectMany(s => routes.Where(r => r.Slot == s))];
+            if (slot == "media")
+            {
+                // One topic for all media again ends separate topics; the events' own choices are kept for next time.
+                x.SeparateMediaTopics = false;
+            }
+        });
+        return Topics(id);
+    }
+
+    private static int? RouteOf(Destination d, string slot)
+        => Array.Find(d.TopicRoutes, r => string.Equals(r.Slot, slot, StringComparison.Ordinal))?.ThreadId;
+
+    private string SlotLabel(string slot)
+        => _strings.Get(slot.Contains('.', StringComparison.Ordinal) ? "web.event." + slot : "web.event.group." + slot);
 
     private Screen Events(string id)
     {

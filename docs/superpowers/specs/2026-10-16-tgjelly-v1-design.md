@@ -402,8 +402,9 @@ Groups: `media.*` = **media**, `security.*` = **security**, `server.*` = **serve
 - Upgrade: a destination saved with the old New media or Admin alerts preset keeps its events and becomes `Custom`.
 
 ### 7.2a Topics in a forum (amended 2026-10-25)
-- A forum destination posts to its own topic (`ThreadId`; 0 is General). `TopicRoutes` can send each **media event** (`media.movie` … `media.book`) and the **Security** and **Server** groups to topics of their own; the digest and the alert summary follow the destination's topic.
-- The dashboard's editor has a topic choice beside each media event and on the Security and Server titles: the default topic, General, topics TgJelly knows (`KnownTopics`), **Create a topic…** (`createForumTopic`, named after the slot; the bot needs Manage topics) or **Use a topic link…** (checked to be in the same chat). The bot's destination screen lists the topics but doesn't edit them.
+- A forum destination posts to its own topic (`ThreadId`; 0 is General). `TopicRoutes` can send the **Media**, **Security** and **Server** groups to topics of their own; with `SeparateMediaTopics`, each **media event** (`media.movie` … `media.book`) has its own route instead of Media's. The digest and the alert summary follow the destination's topic.
+- The dashboard's editor has a topic choice on each group's title (Media's also offers **Separate topics for each event**, and only then do the media events show their own choice): the default topic, General, topics TgJelly knows (`KnownTopics`), **Create a topic…** (asks first; `createForumTopic`, named after the slot; the bot needs Manage topics) or **Use a topic link…** (checked to be in the same chat). The bot's destination screen has a **Topics** button with the same choices, except pasting a link.
+- Topic names: the topic the setup creates ("Jellyfin") is remembered with the destination; for other topics, a message sent into a topic comes back with the topic's creation message, whose name TgJelly remembers.
 - When Telegram says a routed topic is gone (`message thread not found`), that message and the slot's next ones go to the destination's own topic instead of holding everything; the Log notes it, and the editor shows "Topic gone" until a check passes.
 - Every destination's editor has a folded **Advanced** block with the chat ID and the topic IDs.
 

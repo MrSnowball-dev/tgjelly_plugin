@@ -82,7 +82,7 @@ public sealed class FlowEngine : IBotFlows, IDisposable
     /// </summary>
     public static IReadOnlyList<string> Actions { get; } =
     [
-        "m", "st", "dl", "noop", "d", "de", "deg", "det", "dlb", "dlt", "dsg", "dsgt", "dt", "dc", "dp", "dr", "drx", "tp",
+        "m", "st", "dl", "noop", "d", "de", "deg", "det", "dlb", "dlt", "dsg", "dsgt", "dt", "dc", "dp", "dr", "drx", "dtp", "dts", "dtc", "tp",
         "s", "sm", "smt", "su", "sut", "sum", "sp", "spu", "spt", "spc", "oa", "ot", "oh", "on", "ox", "ol", "od",
         "tg", "tc", "te", "tb", "tk", "xl", "xs", "xd",
     ];

@@ -523,10 +523,10 @@ public sealed class OnboardingFlow
     /// to do when the step is still waiting or has ended with its own message.
     /// </summary>
     private Task ContinueWithTopicAsync(long chatId, TopicChoice? choice, CancellationToken ct)
-        => choice is null ? Task.CompletedTask : ContinueWithChatAsync(chatId, choice.Check, choice.ThreadId, choice.WizardMessageId, ct);
+        => choice is null ? Task.CompletedTask : ContinueWithChatAsync(chatId, choice.Check, choice.ThreadId, choice.WizardMessageId, ct, choice.TopicName);
 
     /// <summary>The duplicate rule, then the destination is added with every event on.</summary>
-    private async Task ContinueWithChatAsync(long chatId, ChatCheckResult check, int threadId, int? wizardMessageId, CancellationToken ct)
+    private async Task ContinueWithChatAsync(long chatId, ChatCheckResult check, int threadId, int? wizardMessageId, CancellationToken ct, string? topicName = null)
     {
         if (DestinationCreator.Find(_settings.Current, check.ChatId, threadId) is { } existing)
         {
@@ -554,14 +554,14 @@ public sealed class OnboardingFlow
         // No "what should I send" step (presets were removed): a new destination starts with every event on, and the
         // admin trims it from its screen afterwards.
         flow.WizardMessageId = wizardMessageId;
-        await CreateAsync(chatId, flow, check, ct).ConfigureAwait(false);
+        await CreateAsync(chatId, flow, check, ct, topicName).ConfigureAwait(false);
     }
 
     /// <summary>
     /// Adds the destination with every event on, using the check that was just made, and edits the wizard to Done
     /// (spec §6.2 step 5).
     /// </summary>
-    private async Task CreateAsync(long chatId, FlowState flow, ChatCheckResult check, CancellationToken ct)
+    private async Task CreateAsync(long chatId, FlowState flow, ChatCheckResult check, CancellationToken ct, string? topicName = null)
     {
         // Marks the wizard as used, so a second press while this runs, or a redelivered one, does nothing more.
         flow.Params[CreatingKey] = "1";
@@ -576,7 +576,7 @@ public sealed class OnboardingFlow
             return;
         }
 
-        var result = await _creator.CreateAsync(check, threadId, EventCatalog.Expand(PresetKind.Everything), PresetKind.Everything, null, ct).ConfigureAwait(false);
+        var result = await _creator.CreateAsync(check, threadId, EventCatalog.Expand(PresetKind.Everything), PresetKind.Everything, null, ct, topicName).ConfigureAwait(false);
         switch (result.Outcome)
         {
             case CreateOutcome.Added:

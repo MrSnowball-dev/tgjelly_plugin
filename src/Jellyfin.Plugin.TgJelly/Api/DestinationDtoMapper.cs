@@ -89,6 +89,7 @@ public sealed class DestinationDtoMapper
         Kind = d.Kind.ToString(),
         IsForum = d.KindKey == "dest.kind.Forum",
         TopicRoutes = d.TopicRoutes,
+        SeparateMediaTopics = d.SeparateMediaTopics,
         KnownTopics = d.KnownTopics,
         MissingTopics = [.. _health.Get(d.Id).MissingTopics],
         Enabled = d.Enabled,

@@ -229,6 +229,7 @@ public class DestinationsController : ControllerBase
                 return false;
             }
 
+            d.SeparateMediaTopics = request.SeparateMediaTopics ?? d.SeparateMediaTopics;
             if (request.TopicRoutes is { } routes)
             {
                 d.TopicRoutes = WithRoutes(d.TopicRoutes, routes.Select(r => (r.Slot, r.ThreadId)));
@@ -519,6 +520,12 @@ public class DestinationsController : ControllerBase
             }
 
             d.TopicRoutes = WithRoutes(d.TopicRoutes, [(request.Slot, (int?)thread)]);
+            if (request.Slot == "media")
+            {
+                // One topic for all media ends separate topics, as choosing a known topic does.
+                d.SeparateMediaTopics = false;
+            }
+
             return true;
         });
 

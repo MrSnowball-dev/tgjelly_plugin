@@ -70,6 +70,12 @@ public class Destination
     /// <summary>Gets or sets, for a forum, the slots that post to their own topic (<see cref="TopicSlots"/>).</summary>
     public TopicRoute[] TopicRoutes { get; set; } = Array.Empty<TopicRoute>();
 
+    /// <summary>
+    /// Gets or sets a value indicating whether each media event has its own topic choice; otherwise all media follows
+    /// the Media group's topic.
+    /// </summary>
+    public bool SeparateMediaTopics { get; set; }
+
     /// <summary>Gets or sets the forum topics TgJelly knows for this chat, with their names when it knows them.</summary>
     public KnownTopic[] KnownTopics { get; set; } = Array.Empty<KnownTopic>();
 
@@ -89,8 +95,31 @@ public class Destination
     /// <returns>The thread id; 0 is General.</returns>
     public int ThreadFor(string eventKey)
     {
-        var slot = TopicSlots.For(eventKey);
+        var slot = RouteSlotFor(eventKey);
         var route = slot is null ? null : Array.Find(TopicRoutes, r => string.Equals(r.Slot, slot, StringComparison.Ordinal));
         return route?.ThreadId ?? ThreadId;
+    }
+
+    /// <summary>
+    /// The slot whose route an event key follows: the media event itself with separate media topics, Media
+    /// otherwise, or Security or Server; <c>null</c> for the digest and the alert summary, which follow the
+    /// destination's own topic.
+    /// </summary>
+    /// <param name="eventKey">The event key.</param>
+    /// <returns>The slot, or <c>null</c>.</returns>
+    public string? RouteSlotFor(string eventKey)
+    {
+        if (!EventCatalog.IsKnown(eventKey))
+        {
+            return null;
+        }
+
+        var group = EventCatalog.GroupOf(eventKey);
+        return group switch
+        {
+            "media" => SeparateMediaTopics ? eventKey : "media",
+            "security" or "server" => group,
+            _ => null,
+        };
     }
 }

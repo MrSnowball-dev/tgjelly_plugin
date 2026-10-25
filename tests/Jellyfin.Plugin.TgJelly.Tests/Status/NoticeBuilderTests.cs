@@ -77,7 +77,7 @@ public class NoticeBuilderTests
         Assert.Equal("TemplateFlagged", error.Kind);
         Assert.Contains("Security: Lockouts", error.Text, StringComparison.Ordinal);
         Assert.Contains("line 1, column 2: bad", error.Text, StringComparison.Ordinal);
-        Assert.Contains("Media: Movies", notices.Single(n => n.Id.StartsWith("template:media.movie:", StringComparison.Ordinal)).Text, StringComparison.Ordinal);
+        Assert.Contains("Movies", notices.Single(n => n.Id.StartsWith("template:media.movie:", StringComparison.Ordinal)).Text, StringComparison.Ordinal);
 
         h.Settings.Update(null, c => c.Templates = [new TemplateOverride { EventKey = "security.lockout", Enabled = true, Text = "changed" }]);
 

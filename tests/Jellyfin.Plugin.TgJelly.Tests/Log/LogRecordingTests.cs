@@ -487,11 +487,18 @@ public sealed class LogRecordingTests : IDisposable
     }
 
     [Fact]
-    public void ThreadFor_RoutesMediaEventsAndGroups_TheDigestFollowsTheDestination()
+    public void ThreadFor_MediaAsAGroupOrPerEvent_TheDigestAndSummaryFollowTheDestination()
     {
-        var d = new Destination { ThreadId = 3, TopicRoutes = [new TopicRoute { Slot = "media.movie", ThreadId = 10 }, new TopicRoute { Slot = "server", ThreadId = 20 }] };
+        var d = new Destination
+        {
+            ThreadId = 3,
+            TopicRoutes = [new TopicRoute { Slot = "media", ThreadId = 5 }, new TopicRoute { Slot = "media.movie", ThreadId = 10 }, new TopicRoute { Slot = "server", ThreadId = 20 }],
+        };
 
-        Assert.Equal((10, 3, 20, 3, 3), (d.ThreadFor("media.movie"), d.ThreadFor("media.episodes"), d.ThreadFor("server.started"), d.ThreadFor("security.lockout"), d.ThreadFor("media.digest")));
+        // Without separate media topics, every media event follows the Media topic.
+        Assert.Equal((5, 5, 20, 3, 3), (d.ThreadFor("media.movie"), d.ThreadFor("media.episodes"), d.ThreadFor("server.started"), d.ThreadFor("security.lockout"), d.ThreadFor("media.digest")));
+        d.SeparateMediaTopics = true;
+        Assert.Equal((10, 3, 3), (d.ThreadFor("media.movie"), d.ThreadFor("media.episodes"), d.ThreadFor("server.summary")));
     }
 
     [Fact]
