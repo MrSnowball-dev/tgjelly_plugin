@@ -33,7 +33,7 @@ public sealed class UpdateRouterTests : IDisposable
         _h.Track(_health);
         var migration = new DestinationMigration(_h.Settings, new Outbox(_h.State, _h.Strings, _h.Time), _health);
         _memory = new BotMemory(_h.State, _h.Time);
-        _router = new UpdateRouter(_queue, _flows, _h.Connection, _health, migration, _memory, _log);
+        _router = new UpdateRouter(_queue, _flows, _h.Connection, _health, migration, _memory, _h.Settings, _log);
     }
 
     [Fact]
@@ -114,6 +114,21 @@ public sealed class UpdateRouterTests : IDisposable
     }
 
     [Fact]
+    public async Task TopicRenamed_RenamesItForEveryDestinationInThatChat()
+    {
+        _h.AddDestination(-1001, threadId: 7);
+        _h.AddDestination(-1002, threadId: 7);
+
+        await _router.HandleAsync(TelegramFixtures.Update("forum_topic_edited", ("chat_id", "-1001"), ("text", "Films")), TestContext.Current.CancellationToken);
+        await _queue.RunPendingAsync(TestContext.Current.CancellationToken);
+
+        var (renamed, other) = (_h.Settings.Current.Destinations[0], _h.Settings.Current.Destinations[1]);
+        Assert.Equal((7, "Films"), (Assert.Single(renamed.KnownTopics).ThreadId, renamed.KnownTopics[0].Name));
+        Assert.Empty(other.KnownTopics);
+        Assert.Empty(_flows.Calls);
+    }
+
+    [Fact]
     public async Task MigrateToChatId_RewritesTheDestination()
     {
         var d = _h.AddDestination(-1001, ChatKind.Group);
@@ -171,7 +186,7 @@ public sealed class UpdateRouterTests : IDisposable
         var gate = await _h.StartOwnedGateAsync();
         using var health = new HealthService(gate, _h.Connection, new DestinationChecker(_h.Connection, _h.Strings), _h.Settings, _h.State, _h.Time, NullLogger<HealthService>.Instance);
         await health.StartAsync(TestContext.Current.CancellationToken);
-        var router = new UpdateRouter(_queue, _flows, _h.Connection, health, new DestinationMigration(_h.Settings, new Outbox(_h.State, _h.Strings, _h.Time), health), _memory, _log);
+        var router = new UpdateRouter(_queue, _flows, _h.Connection, health, new DestinationMigration(_h.Settings, new Outbox(_h.State, _h.Strings, _h.Time), health), _memory, _h.Settings, _log);
 
         await router.HandleAsync(TelegramFixtures.Update("my_chat_member_group_member", ("chat_id", "-1002")), TestContext.Current.CancellationToken);
 
