@@ -31,6 +31,7 @@ public sealed class DestinationTester
     private readonly StringTable _strings;
     private readonly ILogger<DestinationTester> _logger;
     private readonly LogRecorder? _log;
+    private readonly SettingsStore? _settings;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="DestinationTester"/> class.
@@ -40,8 +41,10 @@ public sealed class DestinationTester
     /// <param name="strings">The string table.</param>
     /// <param name="logger">The logger.</param>
     /// <param name="log">The Log, which records every test message.</param>
-    public DestinationTester(BotConnection connection, HealthService health, StringTable strings, ILogger<DestinationTester> logger, LogRecorder? log = null)
+    /// <param name="settings">The settings, to remember the name of a topic a test went to.</param>
+    public DestinationTester(BotConnection connection, HealthService health, StringTable strings, ILogger<DestinationTester> logger, LogRecorder? log = null, SettingsStore? settings = null)
     {
+        _settings = settings;
         _connection = connection;
         _health = health;
         _strings = strings;
@@ -58,7 +61,7 @@ public sealed class DestinationTester
     public Task<TestSendResult> SendTestAsync(Destination destination, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(destination);
-        return LoggedAsync(destination, "test", CheckAndSendAsync(destination, (sender, token) => sender.SendTextAsync(new OutgoingText(destination.ChatId, destination.ThreadId, Message(destination), ParseMode.Html, null, null, false), token), ct));
+        return LoggedAsync(destination, "test", CheckAndSendAsync(destination, async (sender, token) => await sender.SendTextAsync(new OutgoingText(destination.ChatId, destination.ThreadId, Message(destination), ParseMode.Html, null, null, false), token).ConfigureAwait(false), ct));
     }
 
     /// <summary>
@@ -78,15 +81,16 @@ public sealed class DestinationTester
         var buttons = sample.Buttons.Count == 0
             ? null
             : new InlineKeyboardMarkup(sample.Buttons.Select(row => row.Select(b => InlineKeyboardButton.WithUrl(b.Text, b.Url))));
-        Task SendText(ITelegramSender sender, CancellationToken token)
-            => sender.SendTextAsync(new OutgoingText(destination.ChatId, destination.ThreadId, sample.TextHtml ?? sample.Html ?? string.Empty, ParseMode.Html, buttons, null, silent), token);
+        // A sample goes where that message would go: its slot's topic in a forum.
+        var thread = destination.ThreadFor(sample.EventKey);
+        Task<Message> SendText(ITelegramSender sender, CancellationToken token)
+            => sender.SendTextAsync(new OutgoingText(destination.ChatId, thread, sample.TextHtml ?? sample.Html ?? string.Empty, ParseMode.Html, buttons, null, silent), token);
 
-        async Task Send(ITelegramSender sender, CancellationToken token)
+        async Task<Message?> Send(ITelegramSender sender, CancellationToken token)
         {
             if (!sample.Poster || _health.Get(destination.Id).PhotosBlocked)
             {
-                await SendText(sender, token).ConfigureAwait(false);
-                return;
+                return await SendText(sender, token).ConfigureAwait(false);
             }
 
             try
@@ -95,15 +99,15 @@ public sealed class DestinationTester
                     ?? throw new InvalidOperationException("The sample poster is missing from the plugin.");
                 await using (stream.ConfigureAwait(false))
                 {
-                    var photo = new OutgoingPhoto(destination.ChatId, destination.ThreadId, InputFile.FromStream(stream, "poster.png"), sample.Html ?? string.Empty, ParseMode.Html, buttons, null, silent);
-                    await sender.SendPhotoAsync(photo, token).ConfigureAwait(false);
+                    var photo = new OutgoingPhoto(destination.ChatId, thread, InputFile.FromStream(stream, "poster.png"), sample.Html ?? string.Empty, ParseMode.Html, buttons, null, silent);
+                    return await sender.SendPhotoAsync(photo, token).ConfigureAwait(false);
                 }
             }
             catch (Exception ex) when (ex is not OperationCanceledException && TelegramErrorClassifier.ClassifyDelivery(ex).Kind == DeliveryErrorKind.PhotosBlocked)
             {
                 // A first-time photo refusal, as delivery handles it: remember it and send the text once instead.
                 _health.SetPhotosBlocked(destination.Id);
-                await SendText(sender, token).ConfigureAwait(false);
+                return await SendText(sender, token).ConfigureAwait(false);
             }
         }
 
@@ -118,7 +122,7 @@ public sealed class DestinationTester
         return result;
     }
 
-    private async Task<TestSendResult> CheckAndSendAsync(Destination destination, Func<ITelegramSender, CancellationToken, Task> send, CancellationToken ct)
+    private async Task<TestSendResult> CheckAndSendAsync(Destination destination, Func<ITelegramSender, CancellationToken, Task<Message?>> send, CancellationToken ct)
     {
         if (_connection.Sender is not { } sender)
         {
@@ -143,7 +147,12 @@ public sealed class DestinationTester
 
         try
         {
-            await send(sender, ct).ConfigureAwait(false);
+            var sent = await send(sender, ct).ConfigureAwait(false);
+            if (_settings is not null)
+            {
+                TopicNames.LearnFrom(_settings, destination.Id, sent);
+            }
+
             return new TestSendResult(true, null, _health.Get(destination.Id));
         }
         catch (Exception ex) when (ex is not OperationCanceledException)

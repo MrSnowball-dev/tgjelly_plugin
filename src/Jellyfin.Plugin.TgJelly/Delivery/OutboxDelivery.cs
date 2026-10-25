@@ -254,6 +254,16 @@ public sealed class OutboxDelivery
     {
         var now = _time.GetUtcNow();
         _pacing.RecordSend(destination.ChatId, now);
+        try
+        {
+            TopicNames.LearnFrom(_settings, destination.Id, sent);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // A name is a nicety: never let it disturb a delivered message.
+            _logger.LogWarning(ex, "TgJelly could not remember a topic's name");
+        }
+
         var logId = entry.LogId.Length > 0 ? entry.LogId : entry.EntryId;
         if (sent is null)
         {

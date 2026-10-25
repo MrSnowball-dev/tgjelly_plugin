@@ -435,7 +435,7 @@ public sealed class TopicFlow
             return await FailAsync(chatId, flow, null, ct).ConfigureAwait(false);
         }
 
-        return new TopicChoice(check, thread, flow.WizardMessageId);
+        return new TopicChoice(check, thread, flow.WizardMessageId, TopicName);
     }
 
     /// <summary>
