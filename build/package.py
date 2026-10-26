@@ -1,14 +1,11 @@
 #!/usr/bin/env python3
-"""Build the TgJelly plugin zips and the plugin repository manifest (spec §13.3-§13.4).
+"""Build the TgJelly plugin zip and the plugin repository manifest.
 
-One release tag vX.Y produces two builds from the same commit:
-  track 1: net9.0,  targetAbi 10.11.0.0, version 1.X.Y.0  (Jellyfin 10.11)
-  track 2: net10.0, targetAbi 12.0.0.0,  version 2.X.Y.0  (Jellyfin 12)
-Every 12 build therefore outranks every 10.11 build, which Jellyfin needs because it only checks
-targetAbi <= server version (spec F7).
+One release tag vX.Y (or vX.Y.Z) produces one net9.0 build, version X.Y.0.0 (or X.Y.Z.0), with targetAbi
+10.11.0.0. Jellyfin 10.11 and 12 both load it.
 
 Usage:
-  python3 build/package.py --release 0.1 --changelog "First release" \
+  python3 build/package.py --release 1.0 --changelog "First release" \
       [--output artifacts] [--manifest-in old-manifest.json] [--source-url-base URL]
 """
 
@@ -37,26 +34,30 @@ DESCRIPTION = (
 IMAGE_URL = "https://mrsnowball-dev.github.io/tgjelly_plugin/logo.png"
 REPO_URL = "https://github.com/MrSnowball-dev/tgjelly_plugin"
 
-# Exactly these DLLs ship, and meta.json lists them, so no stray framework DLL is ever loaded (spec §13.4, F5).
-# Scriban.dll is the template engine (plan 5).
+# Exactly these DLLs ship, and meta.json lists them, so no stray framework DLL is ever loaded.
+# Scriban.dll is the template engine.
 ASSEMBLIES = ["Jellyfin.Plugin.TgJelly.dll", "Telegram.Bot.dll", "Scriban.dll"]
 
-TRACKS = [
-    {"track": 1, "tfm": "net9.0", "target_abi": "10.11.0.0"},
-    {"track": 2, "tfm": "net10.0", "target_abi": "12.0.0.0"},
-]
+TFM = "net9.0"
+TARGET_ABI = "10.11.0.0"
 
 
-def track_version(track: int, release: str) -> str:
-    """Map release "X.Y" to the four-part version of a track, e.g. (2, "0.3") -> "2.0.3.0"."""
+def version_for(release: str) -> str:
+    """Map release "X.Y" or "X.Y.Z" to the four-part plugin version, e.g. "1.2" -> "1.2.0.0", "1.2.3" -> "1.2.3.0"."""
     parts = release.split(".")
-    if len(parts) != 2 or not all(p.isdigit() for p in parts):
-        raise ValueError(f"release must look like X.Y, got {release!r}")
-    return f"{track}.{int(parts[0])}.{int(parts[1])}.0"
+    if len(parts) not in (2, 3) or not all(p.isdigit() for p in parts):
+        raise ValueError(f"release must look like X.Y or X.Y.Z, got {release!r}")
+    numbers = [int(p) for p in parts] + [0] * (4 - len(parts))
+    return ".".join(str(n) for n in numbers)
+
+
+def is_pre_release(entry: dict) -> bool:
+    """Whether a manifest entry is a 0.x build. Those were versioned 1.0.N.0 and 2.0.N.0, above v1.0's 1.0.0.0."""
+    return "/download/v0." in entry.get("sourceUrl", "")
 
 
 def make_meta(version: str, target_abi: str, changelog: str, timestamp: str) -> dict:
-    """The meta.json packaged in the zip. imagePath stays empty so the repository's imageUrl is used (F5)."""
+    """The meta.json packaged in the zip. imagePath stays empty so the repository's imageUrl is used."""
     return {
         "guid": GUID,
         "name": NAME,
@@ -122,7 +123,7 @@ def _version_key(entry: dict) -> tuple:
 
 
 def update_manifest(manifest: list, new_versions: list) -> list:
-    """Add version entries to TgJelly's PackageInfo, keeping older ones; newest first (spec §13.4)."""
+    """Add version entries to TgJelly's PackageInfo, keeping older ones except 0.x builds; newest first."""
     package = next((p for p in manifest if p.get("guid") == GUID), None)
     if package is None:
         package = {"guid": GUID, "versions": []}
@@ -138,7 +139,7 @@ def update_manifest(manifest: list, new_versions: list) -> list:
         }
     )
     replaced = {v["version"] for v in new_versions}
-    kept = [v for v in package.get("versions", []) if v["version"] not in replaced]
+    kept = [v for v in package.get("versions", []) if v["version"] not in replaced and not is_pre_release(v)]
     package["versions"] = sorted(kept + list(new_versions), key=_version_key, reverse=True)
     return manifest
 
@@ -160,7 +161,7 @@ def publish(tfm: str, version: str, out_dir: Path, dotnet: str) -> None:
 
 def main(argv: list) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--release", required=True, help="release number X.Y (from tag vX.Y)")
+    parser.add_argument("--release", required=True, help="release number X.Y or X.Y.Z (from tag vX.Y or vX.Y.Z)")
     parser.add_argument("--changelog", default="", help="changelog text for this release")
     parser.add_argument("--output", default=str(ROOT / "artifacts"), help="output folder")
     parser.add_argument("--manifest-in", help="existing manifest.json to extend")
@@ -176,30 +177,26 @@ def main(argv: list) -> int:
     if args.manifest_in:
         manifest = json.loads(Path(args.manifest_in).read_text(encoding="utf-8"))
 
-    new_versions = []
-    for track in TRACKS:
-        version = track_version(track["track"], args.release)
-        publish_dir = output / "publish" / track["tfm"]
-        stage_dir = output / "stage" / track["tfm"]
-        zip_path = output / f"tgjelly_{version}.zip"
+    version = version_for(args.release)
+    publish_dir = output / "publish"
+    stage_dir = output / "stage"
+    zip_path = output / f"tgjelly_{version}.zip"
 
-        publish(track["tfm"], version, publish_dir, args.dotnet)
-        stage(publish_dir, stage_dir, make_meta(version, track["target_abi"], args.changelog, timestamp))
-        write_zip(stage_dir, zip_path)
-        new_versions.append(
-            {
-                "version": version,
-                "changelog": args.changelog,
-                "targetAbi": track["target_abi"],
-                "sourceUrl": f"{base_url}/{zip_path.name}",
-                "checksum": md5(zip_path),
-                "timestamp": timestamp,
-            }
-        )
-        print(f"built {zip_path.name} (targetAbi {track['target_abi']})")
+    publish(TFM, version, publish_dir, args.dotnet)
+    stage(publish_dir, stage_dir, make_meta(version, TARGET_ABI, args.changelog, timestamp))
+    write_zip(stage_dir, zip_path)
+    entry = {
+        "version": version,
+        "changelog": args.changelog,
+        "targetAbi": TARGET_ABI,
+        "sourceUrl": f"{base_url}/{zip_path.name}",
+        "checksum": md5(zip_path),
+        "timestamp": timestamp,
+    }
+    print(f"built {zip_path.name} (targetAbi {TARGET_ABI})")
 
     manifest_path = output / "manifest.json"
-    manifest_path.write_text(json.dumps(update_manifest(manifest, new_versions), indent=2) + "\n", encoding="utf-8")
+    manifest_path.write_text(json.dumps(update_manifest(manifest, [entry]), indent=2) + "\n", encoding="utf-8")
     print(f"wrote {manifest_path}")
     return 0
 

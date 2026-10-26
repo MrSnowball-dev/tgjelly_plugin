@@ -2,14 +2,13 @@
 """Docker smoke test: install a TgJelly zip into a real Jellyfin and check that it loads.
 
 Usage:
-  python3 tests/integration/smoke.py --image jellyfin/jellyfin:12.2 --track 2 --artifacts artifacts [--stub] [--base-url /jf]
-  python3 tests/integration/smoke.py --image jellyfin/jellyfin:12.2 --zip artifacts/tgjelly_1.0.0.0.zip --expect-incompatible
+  python3 tests/integration/smoke.py --image jellyfin/jellyfin:12.2 [--artifacts artifacts | --zip FILE] [--stub] [--base-url /jf]
 
---track N --artifacts DIR picks the one tgjelly_N.*.zip in DIR, whatever release build/package.py packaged.
+--artifacts DIR (the default is "artifacts") picks the one tgjelly_*.zip in DIR, whatever release build/package.py
+packaged. The same zip runs on Jellyfin 10.11 and 12.
 
 --stub runs a stand-in Bot API (botapi_stub.py) and checks end to end: the token, destinations and test messages, a new
 movie's announcement, and a single server.started message after a restart.
---expect-incompatible checks that a 10.11 build loaded by a 12 server reports itself incompatible.
 
 Needs docker. Exit code 0 means every check passed. Runs in CI; there is no local Docker requirement.
 """
@@ -137,8 +136,7 @@ def wait_until(predicate, what: str, timeout: float) -> None:
     raise AssertionError(f"timed out after {timeout:.0f}s waiting for: {what}")
 
 
-def run(image: str, zip_path: Path, use_stub: bool = False, expect_incompatible: bool = False,
-        base_url: str = "") -> None:
+def run(image: str, zip_path: Path, use_stub: bool = False, base_url: str = "") -> None:
     with zipfile.ZipFile(zip_path) as archive:
         meta = json.loads(archive.read("meta.json"))
         with tempfile.TemporaryDirectory() as tmp:
@@ -166,7 +164,7 @@ def run(image: str, zip_path: Path, use_stub: bool = False, expect_incompatible:
                     docker("cp", str(Path(tmp) / "config"), f"{name}:/config/")
                 docker("start", name)
                 base = f"http://127.0.0.1:{parse_host_port(docker('port', name, '8096/tcp'))}" + with_base(base_url, "")
-                token = checks(base, meta, expect_compatible=not expect_incompatible)
+                token = checks(base, meta)
                 if stub is not None:
                     telegram_checks(base, token, stub)
                     media_and_restart_checks(base, token, stub, name)
@@ -181,7 +179,7 @@ def run(image: str, zip_path: Path, use_stub: bool = False, expect_incompatible:
                     stub.stop()
 
 
-def checks(base: str, meta: dict, expect_compatible: bool = True) -> str:
+def checks(base: str, meta: dict) -> str:
     wait_until(lambda: http("GET", f"{base}/health")[2].strip() == "Healthy", "server is healthy", 240)
 
     # Startup wizard: open to anonymous callers until it completes (same in 10.11 and 12).
@@ -215,20 +213,12 @@ def checks(base: str, meta: dict, expect_compatible: bool = True) -> str:
     status, _, text = http("GET", f"{base}/TgJelly/Strings?lang=en", token=token)
     check(status == 200 and "web.connect.title" in json.loads(text), f"GET /TgJelly/Strings has web.connect.title (got {status})")
 
-    if not expect_compatible:
-        code, _, body = http("GET", f"{base}/TgJelly/Status", token=token)
-        check(code == 200, "GET /TgJelly/Status answers")
-        data = json.loads(body)
-        check(data.get("Compatible") is False, "a 10.11 build on a 12 server reports itself incompatible")
-        check(data.get("ConnectionState") == "Incompatible", "and keeps the bot off")
-        return token
-
     def status_ok():
         code, _, body = http("GET", f"{base}/TgJelly/Status", token=token)
         data = json.loads(body) if code == 200 else {}
-        return data.get("Compatible") is True and data.get("InstanceOwner") is True
+        return data.get("InstanceOwner") is True
 
-    wait_until(status_ok, "GET /TgJelly/Status: compatible and owning its data folder", 60)
+    wait_until(status_ok, "GET /TgJelly/Status: owning its data folder", 60)
     return token
 
 
@@ -297,11 +287,11 @@ def create_library(base: str, token: str, container: str) -> None:
     check(status in (200, 204), f"POST /Library/Refresh starts a scan (got {status} {text[:300]})")
 
 
-def find_track_zip(folder: Path, track: int) -> Path:
-    """The one zip of a track in folder (tgjelly_<track>.X.Y.0.zip from build/package.py), for any release X.Y."""
-    matches = sorted(folder.glob(f"tgjelly_{track}.*.zip"))
+def find_zip(folder: Path) -> Path:
+    """The one zip in folder (tgjelly_<version>.zip from build/package.py), for any release."""
+    matches = sorted(folder.glob("tgjelly_*.zip"))
     if len(matches) != 1:
-        raise SystemExit(f"expected exactly one tgjelly_{track}.*.zip in {folder}, found {[m.name for m in matches]}")
+        raise SystemExit(f"expected exactly one tgjelly_*.zip in {folder}, found {[m.name for m in matches]}")
     return matches[0]
 
 
@@ -423,25 +413,23 @@ def docker_logs_lines() -> list:
 def parse_args(argv) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--image", required=True, help="e.g. jellyfin/jellyfin:12.2")
-    which = parser.add_mutually_exclusive_group(required=True)
+    which = parser.add_mutually_exclusive_group()
     which.add_argument("--zip", type=Path, help="plugin zip built by build/package.py")
-    which.add_argument("--track", type=int, choices=(1, 2), help="test this track's zip from --artifacts")
-    parser.add_argument("--artifacts", type=Path, default=Path("artifacts"), help="folder with the zips (for --track)")
+    which.add_argument("--artifacts", type=Path, default=Path("artifacts"), help="folder with the one zip (the default)")
     parser.add_argument("--stub", action="store_true", help="run the Bot API stub and the Telegram checks")
     parser.add_argument("--base-url", default="", help="run Jellyfin under this BaseUrl, e.g. /jf")
-    parser.add_argument("--expect-incompatible", action="store_true", help="expect CompatGuard to report a mismatch")
     return parser.parse_args(argv)
 
 
 def resolve_zip(args: argparse.Namespace) -> Path:
-    return args.zip if args.zip is not None else find_track_zip(args.artifacts, args.track)
+    return args.zip if args.zip is not None else find_zip(args.artifacts)
 
 
 def main(argv) -> int:
     args = parse_args(argv)
     zip_path = resolve_zip(args)
     print(f"testing {zip_path}")
-    run(args.image, zip_path, use_stub=args.stub, expect_incompatible=args.expect_incompatible, base_url=args.base_url)
+    run(args.image, zip_path, use_stub=args.stub, base_url=args.base_url)
     print("smoke test passed")
     return 0
 

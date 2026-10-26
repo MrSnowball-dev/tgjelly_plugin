@@ -23,7 +23,7 @@ namespace Jellyfin.Plugin.TgJelly.Tests.Intake;
 
 public class ConsumerTests
 {
-    private readonly IntakeQueues _queues = new(IntakeQueuesTests.Compatible, new FakeTimeProvider());
+    private readonly IntakeQueues _queues = new(new FakeTimeProvider());
 
     [Fact]
     public async Task LoginFailed_MapsEveryField()
@@ -113,7 +113,7 @@ public class ConsumerTests
     [Fact]
     public async Task QueuesThrow_IsLogged_NotRethrown()
     {
-        var queues = new IntakeQueues(IntakeQueuesTests.Compatible, new ThrowingTime());
+        var queues = new IntakeQueues(new ThrowingTime());
         var logger = new ListLogger<UserCreatedConsumer>();
 
         var task = new UserCreatedConsumer(queues, logger).OnEvent(new UserCreatedEventArgs(new User("bob", "p", "r")));

@@ -1,7 +1,6 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
-using Jellyfin.Plugin.TgJelly.Compat;
 using Jellyfin.Plugin.TgJelly.Hosting;
 using Jellyfin.Plugin.TgJelly.State;
 using Microsoft.Extensions.Hosting;
@@ -21,7 +20,6 @@ public sealed class BotWorker : BackgroundService
     private static readonly TimeSpan DrainBudget = TimeSpan.FromSeconds(2);
 
     private readonly InstanceGate _gate;
-    private readonly CompatResult _compat;
     private readonly BotWorkQueue _queue;
     private readonly IBotFlows _flows;
     private readonly StateStore _state;
@@ -33,16 +31,14 @@ public sealed class BotWorker : BackgroundService
     /// Initializes a new instance of the <see cref="BotWorker"/> class.
     /// </summary>
     /// <param name="gate">The instance gate.</param>
-    /// <param name="compat">The compatibility result; an incompatible build never runs work.</param>
     /// <param name="queue">The work queue.</param>
     /// <param name="flows">The bot flows, ticked here.</param>
     /// <param name="state">The state store, where failures are recorded.</param>
     /// <param name="time">The clock.</param>
     /// <param name="logger">The logger.</param>
-    public BotWorker(InstanceGate gate, CompatResult compat, BotWorkQueue queue, IBotFlows flows, StateStore state, TimeProvider time, ILogger<BotWorker> logger)
+    public BotWorker(InstanceGate gate, BotWorkQueue queue, IBotFlows flows, StateStore state, TimeProvider time, ILogger<BotWorker> logger)
     {
         _gate = gate;
-        _compat = compat;
         _queue = queue;
         _flows = flows;
         _state = state;
@@ -77,11 +73,6 @@ public sealed class BotWorker : BackgroundService
     private async Task RunAsync(CancellationToken stoppingToken)
     {
         await _gate.WaitForOwnershipAsync(stoppingToken).ConfigureAwait(false);
-        if (!_compat.IsCompatible)
-        {
-            return;
-        }
-
         _started = true;
         var lastTick = _time.GetUtcNow();
         while (!stoppingToken.IsCancellationRequested)

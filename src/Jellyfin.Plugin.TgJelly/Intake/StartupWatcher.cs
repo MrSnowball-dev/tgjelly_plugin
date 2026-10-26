@@ -2,7 +2,6 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.TgJelly.Bot;
-using Jellyfin.Plugin.TgJelly.Compat;
 using Jellyfin.Plugin.TgJelly.Hosting;
 using Jellyfin.Plugin.TgJelly.Library;
 using Microsoft.Extensions.Hosting;
@@ -22,7 +21,6 @@ public sealed class StartupWatcher : BackgroundService
     private readonly IServerStartup _startup;
     private readonly IServerInfo _server;
     private readonly IntakeQueues _queues;
-    private readonly CompatResult _compat;
     private readonly TimeProvider _time;
     private readonly ILogger<StartupWatcher> _logger;
     private bool _announced;
@@ -33,15 +31,13 @@ public sealed class StartupWatcher : BackgroundService
     /// <param name="startup">Jellyfin's startup state.</param>
     /// <param name="server">The server info.</param>
     /// <param name="queues">The intake queues.</param>
-    /// <param name="compat">The compatibility result; nothing is sent while it reports a mismatch.</param>
     /// <param name="time">The clock.</param>
     /// <param name="logger">The logger.</param>
-    public StartupWatcher(IServerStartup startup, IServerInfo server, IntakeQueues queues, CompatResult compat, TimeProvider time, ILogger<StartupWatcher> logger)
+    public StartupWatcher(IServerStartup startup, IServerInfo server, IntakeQueues queues, TimeProvider time, ILogger<StartupWatcher> logger)
     {
         _startup = startup;
         _server = server;
         _queues = queues;
-        _compat = compat;
         _time = time;
         _logger = logger;
     }
@@ -65,11 +61,6 @@ public sealed class StartupWatcher : BackgroundService
 
     private async Task RunAsync(CancellationToken stoppingToken)
     {
-        if (!_compat.IsCompatible)
-        {
-            return;
-        }
-
         while (!_announced)
         {
             if (_startup.HasCompleted)

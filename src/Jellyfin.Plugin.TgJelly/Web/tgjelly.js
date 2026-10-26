@@ -425,7 +425,6 @@ export default function TgJellyPage(view, params) {
 
     const connection = () => connectionLabel(state.status, state.strings, state.ui.statusFailed);
     const pluginVersion = () => (state.status && state.status.Version) || '';
-    const pluginTarget = () => (state.status && state.status.BuildTarget) || '';
 
     /**
      * Shows one section and marks its sidebar button; with { remember: true } (the admin chose it) also records it in the
@@ -480,7 +479,7 @@ export default function TgJellyPage(view, params) {
 
         const connected = Boolean(state.status && state.status.HasToken);
         const first = connected ? sectionFromHash(window.location && window.location.hash) : 'overview';
-        root.innerHTML = renderShell(state.strings, { active: first, connection: connection(), counts: navCounts(), version: pluginVersion(), buildTarget: pluginTarget() });
+        root.innerHTML = renderShell(state.strings, { active: first, connection: connection(), counts: navCounts(), version: pluginVersion() });
         shellDrawn = true;
         selectSection(first);
     };
@@ -492,7 +491,7 @@ export default function TgJellyPage(view, params) {
         }
 
         setHtml('tgj-conn', connectionHtml(connection()));
-        setHtml('tgj-version', versionHtml(state.strings, pluginVersion(), pluginTarget()));
+        setHtml('tgj-version', versionHtml(state.strings, pluginVersion()));
         const counts = navCounts();
         for (const name of SECTIONS) {
             setHtml(`tgj-nav-count-${name}`, navCountHtml(name, counts[name]));

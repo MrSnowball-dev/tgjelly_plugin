@@ -5,7 +5,6 @@ using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.TgJelly.Bot;
-using Jellyfin.Plugin.TgJelly.Compat;
 using Jellyfin.Plugin.TgJelly.Destinations;
 using Jellyfin.Plugin.TgJelly.State;
 using Jellyfin.Plugin.TgJelly.State.Documents;
@@ -43,16 +42,6 @@ public sealed class BotSupervisorTests : IDisposable
         await supervisor.StopAsync(CancellationToken.None);
     }
 
-    [Fact]
-    public async Task Incompatible_NeverCallsTelegram()
-    {
-        using var supervisor = await StartAsync(compatible: false);
-
-        await Eventually.TrueAsync(() => _h.Connection.State == ConnectionState.Incompatible, "incompatible");
-        await Eventually.SettleAsync();
-        Assert.Empty(_h.Api.Calls);
-        await supervisor.StopAsync(CancellationToken.None);
-    }
 
     [Fact]
     public async Task WaitsForJellyfinStartup()
@@ -310,7 +299,7 @@ public sealed class BotSupervisorTests : IDisposable
         }
     }
 
-    private async Task<BotSupervisor> StartAsync(string? token = FakeBotApi.Token, bool compatible = true, bool startHealth = false)
+    private async Task<BotSupervisor> StartAsync(string? token = FakeBotApi.Token, bool startHealth = false)
     {
         if (token is not null)
         {
@@ -325,8 +314,7 @@ public sealed class BotSupervisorTests : IDisposable
             await _health.StartAsync(CancellationToken.None);
         }
 
-        var compat = CompatGuard.Evaluate(new Version(BuildInfo.TargetJellyfinMajor + (compatible ? 0 : 1), 0, 0, 0));
-        var supervisor = new BotSupervisor(gate, compat, _startup, _h.Secrets, _h.State, _factory, _h.Connection, _health, _handler, _h.Strings, _h.Time, NullLogger<BotSupervisor>.Instance);
+        var supervisor = new BotSupervisor(gate, _startup, _h.Secrets, _h.State, _factory, _h.Connection, _health, _handler, _h.Strings, _h.Time, NullLogger<BotSupervisor>.Instance);
         _h.Track(supervisor);
         await supervisor.StartAsync(CancellationToken.None);
         return supervisor;

@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
-using Jellyfin.Plugin.TgJelly.Compat;
 using Jellyfin.Plugin.TgJelly.Hosting;
 using MediaBrowser.Controller;
 using Microsoft.Extensions.Hosting;
@@ -18,7 +17,6 @@ public sealed class RestartWatcher : BackgroundService
 {
     private readonly IServerApplicationHost _host;
     private readonly IntakeQueues _queues;
-    private readonly CompatResult _compat;
     private readonly ILogger<RestartWatcher> _logger;
     private readonly Lock _gate = new();
     private bool _subscribed;
@@ -28,13 +26,11 @@ public sealed class RestartWatcher : BackgroundService
     /// </summary>
     /// <param name="host">The server host.</param>
     /// <param name="queues">The intake queues.</param>
-    /// <param name="compat">The compatibility result.</param>
     /// <param name="logger">The logger.</param>
-    public RestartWatcher(IServerApplicationHost host, IntakeQueues queues, CompatResult compat, ILogger<RestartWatcher> logger)
+    public RestartWatcher(IServerApplicationHost host, IntakeQueues queues, ILogger<RestartWatcher> logger)
     {
         _host = host;
         _queues = queues;
-        _compat = compat;
         _logger = logger;
     }
 
@@ -86,11 +82,6 @@ public sealed class RestartWatcher : BackgroundService
 
     private async Task RunAsync(CancellationToken stoppingToken)
     {
-        if (!_compat.IsCompatible)
-        {
-            return;
-        }
-
         lock (_gate)
         {
             if (!_subscribed)

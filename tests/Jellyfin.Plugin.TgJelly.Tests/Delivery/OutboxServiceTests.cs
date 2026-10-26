@@ -2,7 +2,6 @@ using System;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using Jellyfin.Plugin.TgJelly.Compat;
 using Jellyfin.Plugin.TgJelly.Configuration;
 using Jellyfin.Plugin.TgJelly.Delivery;
 using Jellyfin.Plugin.TgJelly.Destinations;
@@ -78,20 +77,6 @@ public sealed class OutboxServiceTests : IDisposable
         await service.StopAsync(CancellationToken.None);
     }
 
-    [Fact]
-    public async Task Incompatible_NeverSends()
-    {
-        _h.Connect();
-        var d = _h.AddDestination(-1001);
-        _outbox.Enqueue(Entry(d, "media.movie", "movie"));
-        using var service = await StartAsync(compatible: false);
-
-        _h.Time.Advance(TimeSpan.FromMinutes(1));
-        await Eventually.SettleAsync();
-
-        Assert.Empty(_h.Api.Calls);
-        await service.StopAsync(CancellationToken.None);
-    }
 
     [Fact]
     public async Task Disconnected_SendsNothing_UntilConnected()
@@ -124,14 +109,13 @@ public sealed class OutboxServiceTests : IDisposable
 
     public void Dispose() => _h.Dispose();
 
-    private async Task<OutboxService> StartAsync(bool compatible = true)
+    private async Task<OutboxService> StartAsync()
     {
         var gate = await _h.StartOwnedGateAsync();
         _health = new HealthService(gate, _h.Connection, new DestinationChecker(_h.Connection, _h.Strings), _h.Settings, _h.State, _h.Time, NullLogger<HealthService>.Instance);
         _h.Track(_health);
         var delivery = new OutboxDelivery(_h.Connection, _outbox, _health, _h.Settings, _h.State, _pacing, new Jellyfin.Plugin.TgJelly.Rendering.Formatter(_h.Strings), _h.Time, new Jellyfin.Plugin.TgJelly.Destinations.DestinationMigration(_h.Settings, _outbox, _health), new Jellyfin.Plugin.TgJelly.Templates.TemplateFlags(_h.State, _h.Settings, _h.Time), NullLogger<OutboxDelivery>.Instance);
-        var compat = compatible ? CompatGuard.Evaluate(new Version(BuildInfo.TargetJellyfinMajor, 0, 0, 0)) : CompatGuard.Evaluate(new Version(BuildInfo.TargetJellyfinMajor + 1, 0, 0, 0));
-        var service = new OutboxService(gate, compat, _h.Connection, _outbox, delivery, _health, _h.Settings, _pacing, _h.Time, NullLogger<OutboxService>.Instance);
+        var service = new OutboxService(gate, _h.Connection, _outbox, delivery, _health, _h.Settings, _pacing, _h.Time, NullLogger<OutboxService>.Instance);
         await service.StartAsync(CancellationToken.None);
         return service;
     }

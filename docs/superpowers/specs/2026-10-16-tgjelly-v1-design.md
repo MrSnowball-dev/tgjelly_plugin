@@ -69,7 +69,7 @@ TgJelly is a Jellyfin server plugin with a built-in Telegram bot. Version 1 is a
 |---|---|---|
 | D1 | One C# plugin hosts everything: the bot (long polling), the event pipeline and the dashboard page | Owner's choice. A single install, no ports to open, one shared config |
 | D2 | Telegram.Bot **22.10.3.3**, pinned exactly. Its API methods are called only from `ITelegramSender` and `BotSupervisor` | Well maintained (checked by the owner). This version or later counts length in Unicode code points |
-| D3 | Two builds: net9.0 / ABI 10.11.0.0 / version 1.x, and net10.0 / ABI 12.0.0.0 / version 2.x | Jellyfin 12 moved to .NET 10, and its compatibility check only enforces an upper bound (F7) |
+| D3 | Two builds: net9.0 / ABI 10.11.0.0 / version 1.x, and net10.0 / ABI 12.0.0.0 / version 2.x | Jellyfin 12 moved to .NET 10, and its compatibility check only enforces an upper bound (F7). **Replaced by the v1 cleanup design:** one net9.0 build for both |
 | D4 | Only the admin configures; the bot sends to chats, groups and channels | Owner's choice |
 | D5 | **Trust the BotFather restriction**; no pairing and no claim lock | Owner's decision. The owner has used the restriction on regular bots. §6.4 |
 | D6 | Destinations are added through inline `startchannel` / `startgroup` deep-link buttons, which open Telegram's chat chooser. The bot matches the resulting `my_chat_member` to the admin's flow. Manual methods are under Advanced and appear only after a failure | Owner's setup correction; rev. 3: inline buttons only, no reply keyboards (owner, 2026-10-21). `request_chat` exists only on reply keyboards |
@@ -95,8 +95,8 @@ These facts were checked against Jellyfin **v10.11.11** and **v12.2** server sou
 - F4. Restarts happen **in-process**. A new host, a new plugin instance and a new collectible `PluginLoadContext` are created, and the old context is only unloaded cooperatively. On **10.11**, an exception from any `StopAsync` cancels a pending restart; 12 guards against this.
 - F5. Each plugin folder gets its own `PluginLoadContext`. If `meta.json` has a non-empty `assemblies` list, **only those DLLs** are loaded. If its `imagePath` is non-empty, it overrides the image downloaded from the repository's `imageUrl`.
 - F6. `IEventConsumer<T>` implementations are **not** found by scanning; they must be registered in DI. Events are published **inline**, inside the login or install code path. The DI services are resolved **outside** EventManager's try/catch, so a consumer constructor that throws breaks the publisher.
-- F7. Compatibility checks only `targetAbi <= server version`; there is no lower bound. A 12.x server picks a 10.11 build if its version number is higher. The official repo uses version ranges that don't overlap.
-- F8. On a 10.11→12 upgrade the server **still loads the old 10.11 build** until the plugin update task replaces it.
+- F7. Compatibility checks only `targetAbi <= server version`; there is no lower bound. A 12.x server picks a 10.11 build if its version number is higher. The official repo uses version ranges that don't overlap. **Replaced by the v1 cleanup design, `2026-10-25-tgjelly-v1-cleanup-single-build-design.md`:** one build with targetAbi 10.11.0.0 runs on both, so there are no ranges to keep apart.
+- F8. On a 10.11→12 upgrade the server **still loads the old 10.11 build** until the plugin update task replaces it. **Replaced by the v1 cleanup design, `2026-10-25-tgjelly-v1-cleanup-single-build-design.md`:** the 10.11 build is the only build, so loading it on 12 is correct and CompatGuard is gone.
 - F9. Plugin config: `BasePlugin<T>` uses `XmlSerializer` (no `Dictionary<,>`, no interface-typed members; pre-filled lists get deserialized items appended). The file is `plugins/configurations/{AssemblyName}.xml`. `LoadConfiguration` **swallows load errors and saves a fresh default config over the file.** `POST Plugins/{id}/Configuration` **replaces the whole object**. `UpdateConfiguration` is virtual.
 - F10. `BasePlugin.DataFolderPath` points at `plugins/{AssemblyName}`, so it is not used.
 - F11. Plugin ASP.NET controllers are discovered automatically. The admin policy is `Policies.RequiresElevation` (`MediaBrowser.Common/Api/Policies.cs`) in both versions.
@@ -178,7 +178,7 @@ Telegram (private chats) ──────┘        │
 |---|---|---|
 | `Plugin` | `BasePlugin<PluginConfiguration>`, `IHasWebPages`; overrides `UpdateConfiguration` (§10.4) | yes |
 | `PluginServiceRegistrator` | Registers every service, consumer and hosted service explicitly (F6) | — |
-| `CompatGuard` | Compares the major version this build targets (10 or 12) with `ApplicationVersion.Major`. On a mismatch, intake, the bot and the outbox stay off and Status reports it (F8) | read-only |
+| `CompatGuard` | Compares the major version this build targets (10 or 12) with `ApplicationVersion.Major`. On a mismatch, intake, the bot and the outbox stay off and Status reports it (F8). **Removed by the v1 cleanup design.** | read-only |
 | **Intake consumers** | `IEventConsumer<T>` for auth, user and plugin events. Each maps its event to an immutable `NotificationEvent` and writes it to the **other** queue | — |
 | **Intake watchers** | Hosted services that subscribe to C# events in `ExecuteAsync` and unsubscribe in `StopAsync`: `LibraryWatcher` (ItemAdded, ItemUpdated, ItemRemoved), `TaskWatcher` (TaskCompleted), `RestartWatcher` (HasPendingRestartChanged), `StartupWatcher` (polls `CoreStartupHasCompleted` every 1 s, since that property has no change event, and emits `server.started` once). LibraryWatcher also provides `IScanState` (backed by `ILibraryManager.IsScanRunning`) | read-only |
 | `ScanFinishedTask` | A public `ILibraryPostScanTask`. It only writes a `ScanFinished` event to the media queue (F14) | — |
@@ -868,7 +868,7 @@ Every eviction increments `status.counters.evictions`.
 - **Intake queues:** two bounded queues:
   - **media**, 10 000 events: when full, queued `ItemUpdated` entries are evicted before `ItemAdded`; drops are counted;
   - **other**, 1 000 events: when full, the newest is dropped and counted.
-- **CompatGuard** banner: "This TgJelly build is for Jellyfin 10.11. Update the plugin (Dashboard → Plugins) to get the Jellyfin 12 build."
+- **CompatGuard** banner: "This TgJelly build is for Jellyfin 10.11. Update the plugin (Dashboard → Plugins) to get the Jellyfin 12 build." **Removed by the v1 cleanup design.**
 - **Logging:** `ILogger<T>`. Request URLs are never logged. Everything TgJelly logs, and the diagnostics report, has secrets redacted (`\d{5,}:[A-Za-z0-9_-]{30,}` → `<token>`). Proxy passwords are never logged.
 - **Templates:** the limits in §8.5, a data-only model, and a pinned Scriban version.
 - **Delivery semantics:** at least once.
@@ -886,9 +886,9 @@ Every eviction increments `status.counters.evictions`.
 ### 13.1 Repository layout
 ```
 Jellyfin.Plugin.TgJelly.sln
-src/Jellyfin.Plugin.TgJelly/        plugin (TargetFrameworks net9.0;net10.0)
+src/Jellyfin.Plugin.TgJelly/        plugin (TargetFramework net9.0)
   Configuration/ State/ Intake/ Pipeline/ Rendering/ Telegram/ Bot/ Api/ Web/ Strings/ Compat/
-tests/Jellyfin.Plugin.TgJelly.Tests/              unit tests (both TFMs)
+tests/Jellyfin.Plugin.TgJelly.Tests/              unit tests (net9.0)
 tests/Jellyfin.Plugin.TgJelly.IntegrationTests/   docker smoke tests + fake Bot API server
 build/package.(sh|py)                zip + meta.json + manifest generation
 .github/workflows/ci.yml, release.yml
@@ -898,33 +898,33 @@ README.md (setup with screenshots, BotFather restriction, GitHub contact for upd
 ```
 
 ### 13.2 Project file
-- `TargetFrameworks`: `net9.0;net10.0`. Nullable enabled, `TreatWarningsAsErrors`, `AnalysisMode=AllEnabledByDefault`, StyleCop and Serilog analyzers, the same as the official template.
-- **net9.0:** `Jellyfin.Controller` and `Jellyfin.Model` **10.11.0**, with `ExcludeAssets=runtime`.
-- **net10.0:** the same packages at **12.0.0**, with `ExcludeAssets=runtime`, and `DefineConstants` `JF12`.
+*(Updated by the v1 cleanup design, `2026-10-25-tgjelly-v1-cleanup-single-build-design.md`.)*
+- `TargetFramework`: `net9.0`. Nullable enabled, `TreatWarningsAsErrors`, `AnalysisMode=AllEnabledByDefault`, StyleCop and Serilog analyzers, the same as the official template.
+- `Jellyfin.Controller` and `Jellyfin.Model` **10.11.0**, with `ExcludeAssets=runtime`. Jellyfin 12 loads this build too. The one member that differs, `Video.PrimaryVersionId` (`string` on 10.11, `Guid?` on 12), is read at runtime by `JellyfinItems`.
 - **Exact versions:** `Telegram.Bot 22.10.3.3`, `Scriban 7.5.1`.
 - **Embedded resources:** `Web/tgjelly.html`, `Web/tgjelly.js`, `Strings/en.json`.
 
 ### 13.3 Versions and ABI
-| Track | Framework | targetAbi | Version | Zip |
+*(Updated by the v1 cleanup design, `2026-10-25-tgjelly-v1-cleanup-single-build-design.md`.)*
+| Tag | Framework | targetAbi | Version | Zip |
 |---|---|---|---|---|
-| Jellyfin 10.11 | net9.0 | `10.11.0.0` | `1.X.Y.0` | `tgjelly_1.X.Y.0.zip` |
-| Jellyfin 12 | net10.0 | `12.0.0.0` | `2.X.Y.0` | `tgjelly_2.X.Y.0.zip` |
+| `vX.Y` | net9.0 | `10.11.0.0` | `X.Y.0.0` | `tgjelly_X.Y.0.0.zip` |
+| `vX.Y.Z` | net9.0 | `10.11.0.0` | `X.Y.Z.0` | `tgjelly_X.Y.Z.0.zip` |
 
-- Git tag `vX.Y` produces both builds from the same commit. Every 12 build has a higher version number than every 10.11 build (F7). After a server upgrade, the plugin update task moves it to the 12 build. Until then, CompatGuard keeps the plugin inactive (F8).
-- Each track compiles against the **lowest** Jellyfin package version of its line, so its targetAbi is accurate.
-- The 10.11 track gets the same features until a separate decision freezes it.
+- One tag produces one build, which Jellyfin 10.11 and 12 both install. It compiles against the **lowest** 10.11 packages, so its targetAbi is accurate.
+- The 0.x pre-releases used two tracks (`1.0.N.0` for 10.11, `2.0.N.0` for 12). v1.0 drops them from the manifest; they would otherwise outrank `1.0.0.0`.
 
 ### 13.4 Packaging (`build/package`)
-- **For each framework:**
-  1. `dotnet publish -c Release -f <tfm>`.
+- **Once per release:**
+  1. `dotnet publish -c Release -f net9.0`.
   2. Copy **exactly** `Jellyfin.Plugin.TgJelly.dll`, `Telegram.Bot.dll` and `Scriban.dll`, and write a `meta.json`: guid, name, overview, description, owner `MrSnowball-dev`, category **`Administration`**, version, targetAbi, changelog, timestamp, **`imagePath` empty**, and `assemblies` = those three DLLs (F5).
   3. Zip and compute the MD5.
-- **Manifest:** `manifest.json` is one `PackageInfo` entry with the GUID from §5.1 and `imageUrl` = `https://mrsnowball-dev.github.io/tgjelly_plugin/logo.png`, a PNG kept on `gh-pages`. New version entries (sourceUrl, checksum, timestamp, targetAbi, changelog) are appended; older ones are kept.
+- **Manifest:** `manifest.json` is one `PackageInfo` entry with the GUID from §5.1 and `imageUrl` = `https://mrsnowball-dev.github.io/tgjelly_plugin/logo.png`, a PNG kept on `gh-pages`. New version entries (sourceUrl, checksum, timestamp, targetAbi, changelog) are appended; older ones are kept, except entries from a `v0.*` release, which are dropped.
 - **CI fails** if a zip contains anything other than the three DLLs and `meta.json`, or if `tgjelly.html` lacks `data-role="page"` or contains `${`.
 
 ### 13.5 CI and distribution
-- **`ci.yml`** (PRs, pushes to `main`, manual runs): install .NET 9 and 10, build both frameworks, run unit tests on both, the web checks, package, then the integration smoke tests (§14.3). A change gets the full smoke matrix once, on its PR (and on a manual run). A push to `main` skips the smoke tests. Branch pushes without a PR run nothing.
-- **`release.yml`** (tag `v*`): first checks that `ci.yml` passed on `main` for the tagged commit, and stops if it didn't. Then it builds and packages the release zips and smoke-tests them on one image per track (10.11.11 and 12.2, without a BaseUrl). It then creates a GitHub Release with both zips and commits the updated `manifest.json` to `gh-pages`.
+- **`ci.yml`** (PRs, pushes to `main`, manual runs): install .NET 9 and 10 (`global.json` pins SDK 10; the build and tests target net9.0), build, run the unit tests, the web checks, package one zip, then the integration smoke tests (§14.3). A change gets the full smoke matrix once, on its PR (and on a manual run). A push to `main` skips the smoke tests. Branch pushes without a PR run nothing.
+- **`release.yml`** (tag `v*`): first checks that `ci.yml` passed on `main` for the tagged commit, and stops if it didn't. Then it builds and packages the release zip and smoke-tests it on 10.11.11 and 12.2, without a BaseUrl. It then creates a GitHub Release with the zip and commits the updated `manifest.json` to `gh-pages`.
 - **Users add:** `https://mrsnowball-dev.github.io/tgjelly_plugin/manifest.json`.
 - ⚠️ **Prerequisite:** the repo is currently **private**. On a free plan, Pages and public release downloads need it to be public, so the owner makes it public before the first release.
 - **Local development:**
@@ -1023,7 +1023,7 @@ Recorded Bot API JSON for:
 They are parsed with Telegram.Bot and passed to `UpdateRouter`, FlowEngine and the classifier.
 
 ### 14.3 Integration smoke tests (CI; Docker)
-- **Matrix** (`.github/smoke-matrix.json`): the latest image of each track, `jellyfin/jellyfin:10.11.11` with the 1.x zip and `12.2` with the 2.x zip, each also with BaseUrl `/jf`, plus `12.2` with the 1.x zip (F8). The owner narrowed it to these images on 2026-10-21; 10.11.0 and 12.0 are no longer tested. A release runs only the entries marked `release` (§13.5).
+- **Matrix** (`.github/smoke-matrix.json`): the one zip on `jellyfin/jellyfin:10.11.11` and `12.2`, each with and without BaseUrl `/jf`. The owner narrowed it to these images on 2026-10-21; 10.11.0 and 12.0 are no longer tested. A release runs only the entries marked `release` (§13.5).
 - **Setup:**
   1. Unpack the zip into the container's `plugins/TgJelly_<ver>/` and start the container with `TGJELLY_BOT_API_BASE_URL=http://stub:8081`.
   2. Complete the startup wizard through `/Startup/*` and authenticate.

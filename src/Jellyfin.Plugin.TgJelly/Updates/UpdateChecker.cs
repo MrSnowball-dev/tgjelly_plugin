@@ -7,7 +7,6 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.TgJelly.Bot;
-using Jellyfin.Plugin.TgJelly.Compat;
 using Jellyfin.Plugin.TgJelly.Configuration;
 using Jellyfin.Plugin.TgJelly.Hosting;
 using Jellyfin.Plugin.TgJelly.Intake;
@@ -37,7 +36,6 @@ public sealed class UpdateChecker : BackgroundService
     private static readonly TimeSpan Poll = TimeSpan.FromMinutes(1);
 
     private readonly InstanceGate _gate;
-    private readonly CompatResult _compat;
     private readonly IServerStartup _startup;
     private readonly SettingsStore _settings;
     private readonly StateStore _state;
@@ -53,7 +51,6 @@ public sealed class UpdateChecker : BackgroundService
     /// Initializes a new instance of the <see cref="UpdateChecker"/> class.
     /// </summary>
     /// <param name="gate">The instance gate.</param>
-    /// <param name="compat">The compatibility result; an incompatible build never checks.</param>
     /// <param name="startup">Whether Jellyfin finished starting.</param>
     /// <param name="settings">The settings (update check options and destinations).</param>
     /// <param name="state">The state store.</param>
@@ -65,7 +62,6 @@ public sealed class UpdateChecker : BackgroundService
     /// <param name="logger">The logger.</param>
     public UpdateChecker(
         InstanceGate gate,
-        CompatResult compat,
         IServerStartup startup,
         SettingsStore settings,
         StateStore state,
@@ -77,7 +73,6 @@ public sealed class UpdateChecker : BackgroundService
         ILogger<UpdateChecker> logger)
     {
         _gate = gate;
-        _compat = compat;
         _startup = startup;
         _settings = settings;
         _state = state;
@@ -215,11 +210,6 @@ public sealed class UpdateChecker : BackgroundService
     private async Task RunAsync(CancellationToken stoppingToken)
     {
         await _gate.WaitForOwnershipAsync(stoppingToken).ConfigureAwait(false);
-        if (!_compat.IsCompatible)
-        {
-            return;
-        }
-
         while (!stoppingToken.IsCancellationRequested)
         {
             await StepAsync(stoppingToken).ConfigureAwait(false);

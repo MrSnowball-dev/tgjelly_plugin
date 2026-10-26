@@ -1,7 +1,6 @@
 using System;
 using System.Linq;
 using Jellyfin.Plugin.TgJelly.Bot;
-using Jellyfin.Plugin.TgJelly.Compat;
 using Jellyfin.Plugin.TgJelly.Configuration;
 using Jellyfin.Plugin.TgJelly.Delivery;
 using Jellyfin.Plugin.TgJelly.Destinations;
@@ -171,10 +170,9 @@ public class DiagnosticsReportTests
         var gate = await h.StartOwnedGateAsync();
         var library = new FakeLibrary();
         var health = new HealthService(gate, h.Connection, new DestinationChecker(h.Connection, h.Strings), h.Settings, h.State, h.Time, NullLogger<HealthService>.Instance);
-        var compat = CompatGuard.Evaluate(new Version(BuildInfo.TargetJellyfinMajor, 0, 0, 0));
         var readiness = new MediaReadiness(h.State, h.Settings, library, new PendingIdSet(), h.Time, NullLogger<MediaReadiness>.Instance);
         var report = new DiagnosticsReport(
-            compat, gate, h.Settings, h.State, h.Secrets, h.Connection, BotApiEnvironment.FromValue(baseUrl),
+            gate, h.Settings, h.State, h.Secrets, h.Connection, BotApiEnvironment.FromValue(baseUrl),
             new Outbox(h.State, h.Strings, h.Time), readiness, health, new FakeServerInfo(),
             new Jellyfin.Plugin.TgJelly.Templates.TemplateFlags(h.State, h.Settings, h.Time),
             new NoticeBuilder(h.State, h.Secrets, h.Settings, library, h.Strings, new Jellyfin.Plugin.TgJelly.Templates.TemplateFlags(h.State, h.Settings, h.Time)));

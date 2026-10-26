@@ -9,23 +9,22 @@ from pathlib import Path
 import package
 
 
-class TrackVersionTests(unittest.TestCase):
+class VersionTests(unittest.TestCase):
     def test_whitelist_includes_telegram_bot_and_scriban(self):
         self.assertEqual(package.ASSEMBLIES, ["Jellyfin.Plugin.TgJelly.dll", "Telegram.Bot.dll", "Scriban.dll"])
 
-    def test_maps_release_to_both_tracks(self):
-        self.assertEqual(package.track_version(1, "0.3"), "1.0.3.0")
-        self.assertEqual(package.track_version(2, "1.12"), "2.1.12.0")
-
-    def test_every_12_build_outranks_every_1011_build(self):
-        newest_1011 = tuple(int(p) for p in package.track_version(1, "99.99").split("."))
-        oldest_12 = tuple(int(p) for p in package.track_version(2, "0.0").split("."))
-        self.assertLess(newest_1011, oldest_12)
+    def test_maps_release_to_four_parts(self):
+        self.assertEqual(package.version_for("1.0"), "1.0.0.0")
+        self.assertEqual(package.version_for("1.2"), "1.2.0.0")
+        self.assertEqual(package.version_for("1.2.3"), "1.2.3.0")
 
     def test_rejects_malformed_release(self):
-        for bad in ["1", "1.2.3", "v1.2", "1.x", ""]:
+        for bad in ["1", "1.2.3.4", "v1.2", "1.x", ""]:
             with self.assertRaises(ValueError, msg=bad):
-                package.track_version(1, bad)
+                package.version_for(bad)
+
+    def test_one_build_for_10_11_and_later(self):
+        self.assertEqual(package.TARGET_ABI, "10.11.0.0")
 
 
 class MetaTests(unittest.TestCase):
@@ -109,6 +108,24 @@ class ManifestTests(unittest.TestCase):
         entry = next(p for p in updated if p["guid"] == package.GUID)
         self.assertEqual([v["version"] for v in entry["versions"]], ["2.0.2.0", "2.0.1.0", "1.0.2.0", "1.0.1.0"])
         self.assertEqual(len(updated), 2)
+
+    def _released(self, version, tag):
+        entry = self._version(version, "10.11.0.0")
+        entry["sourceUrl"] = f"{package.REPO_URL}/releases/download/{tag}/tgjelly_{version}.zip"
+        return entry
+
+    def test_pre_release_entries_leave_the_manifest(self):
+        # The 0.x builds were 1.0.N.0 and 2.0.N.0: left in, 1.0.9.0 would outrank 1.0.0.0 on 10.11.
+        old = package.update_manifest(
+            [], [self._released("2.0.9.0", "v0.9"), self._released("1.0.9.0", "v0.9"), self._released("1.0.1.0", "v0.1")]
+        )
+        updated = package.update_manifest(old, [self._released("1.0.0.0", "v1.0")])
+        self.assertEqual([v["version"] for v in updated[0]["versions"]], ["1.0.0.0"])
+
+    def test_a_later_release_keeps_the_earlier_ones(self):
+        old = package.update_manifest([], [self._released("1.0.0.0", "v1.0")])
+        updated = package.update_manifest(old, [self._released("1.1.0.0", "v1.1")])
+        self.assertEqual([v["version"] for v in updated[0]["versions"]], ["1.1.0.0", "1.0.0.0"])
 
 
 if __name__ == "__main__":

@@ -57,6 +57,14 @@ class PublishPagesTests(unittest.TestCase):
             publish_pages.prepare(self.pages, self.manifest, None)
         self.assertEqual(json.loads((self.pages / "manifest.json").read_text(encoding="utf-8")), old)
 
+    def test_accepts_dropping_pre_release_versions(self):
+        url = f"{package.REPO_URL}/releases/download"
+        old = [{"guid": package.GUID, "versions": [{"version": "2.0.9.0", "sourceUrl": f"{url}/v0.9/tgjelly_2.0.9.0.zip"}]}]
+        new = [{"guid": package.GUID, "versions": [{"version": "1.0.0.0", "sourceUrl": f"{url}/v1.0/tgjelly_1.0.0.0.zip"}]}]
+        (self.pages / "manifest.json").write_text(json.dumps(old), encoding="utf-8")
+        self.manifest.write_text(json.dumps(new), encoding="utf-8")
+        self.assertEqual(publish_pages.prepare(self.pages, self.manifest, None), ["manifest.json"])
+
     def test_accepts_manifest_that_keeps_existing_versions(self):
         old = [{"guid": package.GUID, "versions": [{"version": "2.0.1.0"}]}]
         new = [{"guid": package.GUID, "versions": [{"version": "2.0.2.0"}, {"version": "2.0.1.0"}]}]

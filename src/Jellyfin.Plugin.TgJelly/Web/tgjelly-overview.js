@@ -19,28 +19,24 @@ export function renderStatus(status, S, lang = 'en') {
     const dropped = (counters.DroppedIntake ?? 0) + (counters.DroppedOutbox ?? 0) + (counters.Evictions ?? 0);
     const parts = [];
 
-    if (!status.Compatible) {
-        parts.push(notice({ kind: 'error', extraClass: 'tgj-compat', html: esc(status.CompatMessage) }));
-    } else {
-        // Connecting and the two waits are in progress; no token is neutral.
-        const tone = PROBLEM_STATES.has(status.ConnectionState) ? 'bad'
-            : status.ConnectionState === 'Connected' ? 'good'
-                : status.ConnectionState === 'NoToken' ? 'neutral' : 'progress';
-        const takeOver = status.ConnectionState === 'WebhookConflict'
-            ? actionButton({ label: text(S, 'web.status.takeOver'), act: 'takeover', kind: 'primary' })
-            : '';
-        // The label holds the state word; the server's message (long when something is wrong) is plain text beside it.
-        // Not connected and Connected say it all in the label ("No bot connected" and "Connected as @bot" would only
-        // repeat it; the Bot card names the bot), so they carry no message.
-        const word = status.ConnectionState === 'Connected' ? text(S, 'web.status.connected') : connectionLabel(status, S).text;
-        const repeats = status.ConnectionState === 'NoToken' || status.ConnectionState === 'Connected';
-        const message = status.ConnectionMessage && status.ConnectionMessage !== word && !repeats
-            ? `<span class="tgj-conn-message">${esc(status.ConnectionMessage)}</span>` : '';
-        parts.push(row({
-            label: text(S, 'web.status.connection'),
-            control: label(word, tone) + message + takeOver,
-        }));
-    }
+    // Connecting and the two waits are in progress; no token is neutral.
+    const tone = PROBLEM_STATES.has(status.ConnectionState) ? 'bad'
+        : status.ConnectionState === 'Connected' ? 'good'
+            : status.ConnectionState === 'NoToken' ? 'neutral' : 'progress';
+    const takeOver = status.ConnectionState === 'WebhookConflict'
+        ? actionButton({ label: text(S, 'web.status.takeOver'), act: 'takeover', kind: 'primary' })
+        : '';
+    // The label holds the state word; the server's message (long when something is wrong) is plain text beside it.
+    // Not connected and Connected say it all in the label ("No bot connected" and "Connected as @bot" would only
+    // repeat it; the Bot card names the bot), so they carry no message.
+    const word = status.ConnectionState === 'Connected' ? text(S, 'web.status.connected') : connectionLabel(status, S).text;
+    const repeats = status.ConnectionState === 'NoToken' || status.ConnectionState === 'Connected';
+    const message = status.ConnectionMessage && status.ConnectionMessage !== word && !repeats
+        ? `<span class="tgj-conn-message">${esc(status.ConnectionMessage)}</span>` : '';
+    parts.push(row({
+        label: text(S, 'web.status.connection'),
+        control: label(word, tone) + message + takeOver,
+    }));
 
     if (!status.HasToken) {
         // Before a bot is connected the card is just the connection line, above the Connect card.

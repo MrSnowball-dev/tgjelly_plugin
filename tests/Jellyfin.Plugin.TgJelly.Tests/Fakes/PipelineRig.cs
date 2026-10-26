@@ -1,5 +1,4 @@
 using System;
-using Jellyfin.Plugin.TgJelly.Compat;
 using Jellyfin.Plugin.TgJelly.Delivery;
 using Jellyfin.Plugin.TgJelly.Intake;
 using Jellyfin.Plugin.TgJelly.Library;
@@ -16,13 +15,11 @@ namespace Jellyfin.Plugin.TgJelly.Tests.Fakes;
 /// </summary>
 public sealed class PipelineRig
 {
-    public static readonly CompatResult Compatible = new(true, "test", new Version(12, 0), null);
-
     public PipelineRig(BotTestHarness h, FakeLibrary library, FakeScanState scan, StateStore? state = null, Jellyfin.Plugin.TgJelly.Log.LogRecorder? recorder = null)
     {
         ArgumentNullException.ThrowIfNull(h);
         State = state ?? h.State;
-        Queues = new IntakeQueues(Compatible, h.Time);
+        Queues = new IntakeQueues(h.Time);
         Readiness = new MediaReadiness(State, h.Settings, library, new PendingIdSet(), h.Time, NullLogger<MediaReadiness>.Instance, recorder);
         Outbox = new Outbox(State, h.Strings, h.Time, recorder);
         Aggregator = new MediaAggregator(State, h.Settings, Outbox, scan, h.Time);

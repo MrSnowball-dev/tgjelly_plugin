@@ -20,7 +20,6 @@ public sealed class LibraryWatcher : BackgroundService, IScanState
     private readonly ILibraryManager _library;
     private readonly IntakeQueues _queues;
     private readonly PendingIdSet _pending;
-    private readonly CompatResult _compat;
     private readonly ILogger<LibraryWatcher> _logger;
     private readonly Lock _gate = new();
     private bool _subscribed;
@@ -31,14 +30,12 @@ public sealed class LibraryWatcher : BackgroundService, IScanState
     /// <param name="library">Jellyfin's library manager.</param>
     /// <param name="queues">The intake queues.</param>
     /// <param name="pending">The pending-ID set.</param>
-    /// <param name="compat">The compatibility result; an incompatible build never subscribes.</param>
     /// <param name="logger">The logger.</param>
-    public LibraryWatcher(ILibraryManager library, IntakeQueues queues, PendingIdSet pending, CompatResult compat, ILogger<LibraryWatcher> logger)
+    public LibraryWatcher(ILibraryManager library, IntakeQueues queues, PendingIdSet pending, ILogger<LibraryWatcher> logger)
     {
         _library = library;
         _queues = queues;
         _pending = pending;
-        _compat = compat;
         _logger = logger;
     }
 
@@ -139,11 +136,6 @@ public sealed class LibraryWatcher : BackgroundService, IScanState
 
     private async Task RunAsync(CancellationToken stoppingToken)
     {
-        if (!_compat.IsCompatible)
-        {
-            return;
-        }
-
         lock (_gate)
         {
             if (!_subscribed)

@@ -3,7 +3,6 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.TgJelly.Bot;
-using Jellyfin.Plugin.TgJelly.Compat;
 using Jellyfin.Plugin.TgJelly.Configuration;
 using Jellyfin.Plugin.TgJelly.Destinations;
 using Jellyfin.Plugin.TgJelly.Hosting;
@@ -22,7 +21,6 @@ public sealed class OutboxService : BackgroundService
     private static readonly TimeSpan IdleWait = TimeSpan.FromSeconds(30);
 
     private readonly InstanceGate _gate;
-    private readonly CompatResult _compat;
     private readonly BotConnection _connection;
     private readonly Outbox _outbox;
     private readonly OutboxDelivery _delivery;
@@ -37,7 +35,6 @@ public sealed class OutboxService : BackgroundService
     /// Initializes a new instance of the <see cref="OutboxService"/> class.
     /// </summary>
     /// <param name="gate">The instance gate.</param>
-    /// <param name="compat">The compatibility result; an incompatible build never sends.</param>
     /// <param name="connection">The bot connection.</param>
     /// <param name="outbox">The Outbox.</param>
     /// <param name="delivery">The delivery.</param>
@@ -46,14 +43,13 @@ public sealed class OutboxService : BackgroundService
     /// <param name="pacing">The pacing gate.</param>
     /// <param name="time">The clock.</param>
     /// <param name="logger">The logger.</param>
-    public OutboxService(InstanceGate gate, CompatResult compat, BotConnection connection, Outbox outbox, OutboxDelivery delivery, HealthService health, SettingsStore settings, PacingGate pacing, TimeProvider time, ILogger<OutboxService> logger)
+    public OutboxService(InstanceGate gate, BotConnection connection, Outbox outbox, OutboxDelivery delivery, HealthService health, SettingsStore settings, PacingGate pacing, TimeProvider time, ILogger<OutboxService> logger)
     {
         ArgumentNullException.ThrowIfNull(connection);
         ArgumentNullException.ThrowIfNull(outbox);
         ArgumentNullException.ThrowIfNull(health);
         ArgumentNullException.ThrowIfNull(settings);
         _gate = gate;
-        _compat = compat;
         _connection = connection;
         _outbox = outbox;
         _delivery = delivery;
@@ -87,11 +83,6 @@ public sealed class OutboxService : BackgroundService
     private async Task RunAsync(CancellationToken stoppingToken)
     {
         await _gate.WaitForOwnershipAsync(stoppingToken).ConfigureAwait(false);
-        if (!_compat.IsCompatible)
-        {
-            return;
-        }
-
         while (!stoppingToken.IsCancellationRequested)
         {
             if (!_connection.CanSend)
