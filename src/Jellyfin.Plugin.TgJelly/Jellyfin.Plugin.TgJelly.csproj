@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFrameworks>net9.0;net10.0</TargetFrameworks>
+    <TargetFramework>net9.0</TargetFramework>
     <RootNamespace>Jellyfin.Plugin.TgJelly</RootNamespace>
     <AssemblyName>Jellyfin.Plugin.TgJelly</AssemblyName>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
@@ -13,19 +13,11 @@
     <NoWarn>$(NoWarn);CA1819</NoWarn>
   </PropertyGroup>
 
-  <!-- Jellyfin 12 build: .NET 10, compiled against the lowest 12.x packages (spec §13.2). -->
-  <PropertyGroup Condition="'$(TargetFramework)' == 'net10.0'">
-    <DefineConstants>$(DefineConstants);JF12</DefineConstants>
-  </PropertyGroup>
-
-  <ItemGroup Condition="'$(TargetFramework)' == 'net9.0'">
+  <!-- One build for Jellyfin 10.11 and 12: compiled against 10.11, which 12 still loads (JellyfinItems reads the one
+       member that differs at runtime). -->
+  <ItemGroup>
     <PackageReference Include="Jellyfin.Controller" Version="10.11.0" ExcludeAssets="runtime" />
     <PackageReference Include="Jellyfin.Model" Version="10.11.0" ExcludeAssets="runtime" />
-  </ItemGroup>
-
-  <ItemGroup Condition="'$(TargetFramework)' == 'net10.0'">
-    <PackageReference Include="Jellyfin.Controller" Version="12.0.0" ExcludeAssets="runtime" />
-    <PackageReference Include="Jellyfin.Model" Version="12.0.0" ExcludeAssets="runtime" />
   </ItemGroup>
 
   <ItemGroup>

@@ -1,7 +1,6 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
-using Jellyfin.Plugin.TgJelly.Compat;
 using Jellyfin.Plugin.TgJelly.Hosting;
 using Jellyfin.Plugin.TgJelly.Intake;
 using Jellyfin.Plugin.TgJelly.State;
@@ -22,7 +21,6 @@ public sealed class PipelineService : BackgroundService
     private static readonly TimeSpan IdleWait = TimeSpan.FromSeconds(1);
 
     private readonly InstanceGate _gate;
-    private readonly CompatResult _compat;
     private readonly StateStore _state;
     private readonly IntakeQueues _queues;
     private readonly NotificationPipeline _pipeline;
@@ -34,16 +32,14 @@ public sealed class PipelineService : BackgroundService
     /// Initializes a new instance of the <see cref="PipelineService"/> class.
     /// </summary>
     /// <param name="gate">The instance gate.</param>
-    /// <param name="compat">The compatibility result; an incompatible build never starts.</param>
     /// <param name="state">The state store.</param>
     /// <param name="queues">The intake queues.</param>
     /// <param name="pipeline">The pipeline.</param>
     /// <param name="time">The clock.</param>
     /// <param name="logger">The logger.</param>
-    public PipelineService(InstanceGate gate, CompatResult compat, StateStore state, IntakeQueues queues, NotificationPipeline pipeline, TimeProvider time, ILogger<PipelineService> logger)
+    public PipelineService(InstanceGate gate, StateStore state, IntakeQueues queues, NotificationPipeline pipeline, TimeProvider time, ILogger<PipelineService> logger)
     {
         _gate = gate;
-        _compat = compat;
         _state = state;
         _queues = queues;
         _pipeline = pipeline;
@@ -80,11 +76,6 @@ public sealed class PipelineService : BackgroundService
     private async Task RunAsync(CancellationToken stoppingToken)
     {
         await _gate.WaitForOwnershipAsync(stoppingToken).ConfigureAwait(false);
-        if (!_compat.IsCompatible)
-        {
-            return;
-        }
-
         while (!_state.IsLoaded)
         {
             await Task.Delay(IdleWait, _time, stoppingToken).ConfigureAwait(false);

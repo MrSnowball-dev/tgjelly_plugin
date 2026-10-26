@@ -6,7 +6,6 @@ using System.Threading;
 using System;
 using Jellyfin.Plugin.TgJelly.Api;
 using Jellyfin.Plugin.TgJelly.Bot;
-using Jellyfin.Plugin.TgJelly.Compat;
 using Jellyfin.Plugin.TgJelly.Configuration;
 using Jellyfin.Plugin.TgJelly.Delivery;
 using Jellyfin.Plugin.TgJelly.Destinations;
@@ -40,13 +39,8 @@ public class TgJellyControllerTests
         using var gate = new InstanceGate(paths, time, NullLogger<InstanceGate>.Instance);
         await gate.StartAsync(CancellationToken.None);
         await gate.WaitForOwnershipAsync(TestContext.Current.CancellationToken).WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
-        var compat = CompatGuard.Evaluate(new Version(12, 2, 0, 0), 10, "10.11");
+        var status = NewController(gate, settings, state, new SecretsStore(paths, time, NullLogger<SecretsStore>.Instance)).GetStatus().Value!;
 
-        var status = NewController(compat, gate, settings, state, new SecretsStore(paths, time, NullLogger<SecretsStore>.Instance)).GetStatus().Value!;
-
-        Assert.Equal("10.11", status.BuildTarget);
-        Assert.False(status.Compatible);
-        Assert.Equal(compat.Message, status.CompatMessage);
         Assert.True(status.InstanceOwner);
         Assert.Null(status.InstanceMessage);
         Assert.Equal(1, status.Revision);
@@ -69,11 +63,8 @@ public class TgJellyControllerTests
         using var gate = new InstanceGate(paths, time, NullLogger<InstanceGate>.Instance);
         await gate.StartAsync(CancellationToken.None);
         await Eventually.TrueAsync(() => gate.WaitingMessage == InstanceGate.WaitingForPreviousInstance, "the gate found state.lock busy");
-        var compat = CompatGuard.Evaluate(new Version(BuildInfo.TargetJellyfinMajor, 0, 0, 0));
+        var status = NewController(gate, settings, state, new SecretsStore(paths, time, NullLogger<SecretsStore>.Instance)).GetStatus().Value!;
 
-        var status = NewController(compat, gate, settings, state, new SecretsStore(paths, time, NullLogger<SecretsStore>.Instance)).GetStatus().Value!;
-
-        Assert.True(status.Compatible);
         Assert.False(status.InstanceOwner);
         Assert.Equal(InstanceGate.WaitingForPreviousInstance, status.InstanceMessage);
         Assert.Equal(0, status.Revision);
@@ -95,7 +86,7 @@ public class TgJellyControllerTests
         var secrets = new SecretsStore(paths, time, NullLogger<SecretsStore>.Instance);
         _ = secrets.Load();
 
-        var status = NewController(CompatGuard.Evaluate(new Version(BuildInfo.TargetJellyfinMajor, 0, 0, 0)), gate, settings, state, secrets)
+        var status = NewController(gate, settings, state, secrets)
             .GetStatus().Value!;
 
         var warning = Assert.Single(status.LoadWarnings);
@@ -114,7 +105,7 @@ public class TgJellyControllerTests
         using var gate = new InstanceGate(paths, time, NullLogger<InstanceGate>.Instance);
         state.RecordError("outbox", "boom");
 
-        var status = NewController(CompatGuard.Evaluate(new Version(BuildInfo.TargetJellyfinMajor, 0, 0, 0)), gate, settings, state, new SecretsStore(paths, time, NullLogger<SecretsStore>.Instance)).GetStatus().Value!;
+        var status = NewController(gate, settings, state, new SecretsStore(paths, time, NullLogger<SecretsStore>.Instance)).GetStatus().Value!;
 
         var error = Assert.Single(status.LastErrors);
         Assert.Equal(("outbox", "boom"), (error.Source, error.Message));
@@ -136,7 +127,7 @@ public class TgJellyControllerTests
         state.RecordError("outbox", "<dest:" + id + ">: Forbidden");
         state.RecordError("outbox", "<dest:gone>: Forbidden");
 
-        var status = NewController(CompatGuard.Evaluate(new Version(BuildInfo.TargetJellyfinMajor, 0, 0, 0)), gate, settings, state, new SecretsStore(paths, time, NullLogger<SecretsStore>.Instance)).GetStatus().Value!;
+        var status = NewController(gate, settings, state, new SecretsStore(paths, time, NullLogger<SecretsStore>.Instance)).GetStatus().Value!;
 
         Assert.Equal(["Family: Forbidden", "<dest:gone>: Forbidden"], status.LastErrors.Select(e => e.Message));
         Assert.Equal("<dest:" + id + ">: Forbidden", state.LastErrorsSnapshot()[0].Message);
@@ -155,7 +146,7 @@ public class TgJellyControllerTests
         health.MarkProblem(d.Id, HealthStatus.Lost, "kicked");
         var library = new FakeLibrary();
         var readiness = new MediaReadiness(h.State, h.Settings, library, new PendingIdSet(), h.Time, NullLogger<MediaReadiness>.Instance);
-        var controller = new TgJellyController(CompatGuard.Evaluate(new Version(BuildInfo.TargetJellyfinMajor, 0, 0, 0)), gate, h.Settings, h.State, h.Secrets, h.Connection, outbox, health, h.Strings, readiness, library, new NoticeBuilder(h.State, h.Secrets, h.Settings, library, h.Strings, new Jellyfin.Plugin.TgJelly.Templates.TemplateFlags(h.State, h.Settings, h.Time)));
+        var controller = new TgJellyController(gate, h.Settings, h.State, h.Secrets, h.Connection, outbox, health, h.Strings, readiness, library, new NoticeBuilder(h.State, h.Secrets, h.Settings, library, h.Strings, new Jellyfin.Plugin.TgJelly.Templates.TemplateFlags(h.State, h.Settings, h.Time)));
 
         var status = controller.GetStatus().Value!;
 
@@ -173,7 +164,7 @@ public class TgJellyControllerTests
         await gate.StartAsync(CancellationToken.None);
         await Eventually.TrueAsync(() => gate.WaitingMessage is not null, "gate waiting");
 
-        var status = NewController(CompatGuard.Evaluate(new Version(BuildInfo.TargetJellyfinMajor, 0, 0, 0)), gate, h.Settings, h.State, h.Secrets).GetStatus().Value!;
+        var status = NewController(gate, h.Settings, h.State, h.Secrets).GetStatus().Value!;
 
         Assert.Equal(("WaitingForInstance", InstanceGate.WaitingForPreviousInstance), (status.ConnectionState, status.ConnectionMessage));
         await gate.StopAsync(CancellationToken.None);
@@ -187,7 +178,7 @@ public class TgJellyControllerTests
         using var gate = new InstanceGate(h.Paths, h.Time, NullLogger<InstanceGate>.Instance);
         h.State.RecordError("bot", "failed for " + FakeBotApi.Token);
 
-        var status = NewController(CompatGuard.Evaluate(new Version(BuildInfo.TargetJellyfinMajor, 0, 0, 0)), gate, h.Settings, h.State, h.Secrets).GetStatus().Value!;
+        var status = NewController(gate, h.Settings, h.State, h.Secrets).GetStatus().Value!;
 
         Assert.True(status.HasToken);
         Assert.DoesNotContain(FakeBotApi.Token, JsonSerializer.Serialize(status), StringComparison.Ordinal);
@@ -203,7 +194,7 @@ public class TgJellyControllerTests
         readiness.Process(new MediaIntake(MediaIntakeKind.Added, PipelineRig.Facts(new MediaItem { Id = Guid.NewGuid(), Kind = MediaKind.Movie }, refreshed: false), h.Time.GetUtcNow()));
         using var gate = new InstanceGate(h.Paths, h.Time, NullLogger<InstanceGate>.Instance);
 
-        var status = NewController(Compatible, gate, h.Settings, h.State, h.Secrets, readiness, library).GetStatus().Value!;
+        var status = NewController(gate, h.Settings, h.State, h.Secrets, readiness, library).GetStatus().Value!;
 
         Assert.Equal(2, status.PendingMedia);
     }
@@ -218,11 +209,11 @@ public class TgJellyControllerTests
             s.UpdateCheck.ConsecutiveFailures = 2;
             s.UpdateCheck.LastError = "GitHub answered 403 Forbidden";
         });
-        Assert.Null(NewController(Compatible, gate, h.Settings, h.State, h.Secrets).GetStatus().Value!.UpdateCheckFailing);
+        Assert.Null(NewController(gate, h.Settings, h.State, h.Secrets).GetStatus().Value!.UpdateCheckFailing);
 
         h.State.Update(s => s.UpdateCheck.ConsecutiveFailures = 3);
 
-        Assert.Equal("Update check failing: GitHub answered 403 Forbidden", NewController(Compatible, gate, h.Settings, h.State, h.Secrets).GetStatus().Value!.UpdateCheckFailing);
+        Assert.Equal("Update check failing: GitHub answered 403 Forbidden", NewController(gate, h.Settings, h.State, h.Secrets).GetStatus().Value!.UpdateCheckFailing);
     }
 
     [Fact]
@@ -243,7 +234,7 @@ public class TgJellyControllerTests
             c.Destinations[1].LibraryIds = [gone];
         });
 
-        Assert.Equal(1, NewController(Compatible, gate, h.Settings, h.State, h.Secrets, library: library).GetStatus().Value!.RemovedLibraryFilters);
+        Assert.Equal(1, NewController(gate, h.Settings, h.State, h.Secrets, library: library).GetStatus().Value!.RemovedLibraryFilters);
     }
 
     [Fact]
@@ -253,7 +244,7 @@ public class TgJellyControllerTests
         using var gate = new InstanceGate(h.Paths, h.Time, NullLogger<InstanceGate>.Instance);
         h.State.Update(s => s.Status.LoadWarnings = ["state.json was quarantined"]);
 
-        var notice = Assert.Single(NewController(Compatible, gate, h.Settings, h.State, h.Secrets).GetStatus().Value!.Notices);
+        var notice = Assert.Single(NewController(gate, h.Settings, h.State, h.Secrets).GetStatus().Value!.Notices);
 
         Assert.Equal(("LoadWarning", "state.json was quarantined"), (notice.Kind, notice.Text));
         Assert.StartsWith("load:", notice.Id, StringComparison.Ordinal);
@@ -265,7 +256,7 @@ public class TgJellyControllerTests
         using var h = new BotTestHarness();
         var gate = await h.StartOwnedGateAsync();
         h.State.Update(s => s.Status.LoadWarnings = ["state.json was quarantined"]);
-        var controller = NewController(Compatible, gate, h.Settings, h.State, h.Secrets);
+        var controller = NewController(gate, h.Settings, h.State, h.Secrets);
         var id = controller.GetStatus().Value!.Notices.Single().Id;
 
         Assert.IsType<NoContentResult>(controller.Dismiss(new DismissRequest { NoticeId = id }));
@@ -274,15 +265,13 @@ public class TgJellyControllerTests
         Assert.Empty(controller.GetStatus().Value!.Notices);
     }
 
-    private static CompatResult Compatible => CompatGuard.Evaluate(new Version(BuildInfo.TargetJellyfinMajor, 0, 0, 0));
-
-    private static TgJellyController NewController(CompatResult compat, InstanceGate gate, SettingsStore settings, StateStore state, SecretsStore secrets, MediaReadiness? readiness = null, ILibraryAccess? library = null)
+    private static TgJellyController NewController(InstanceGate gate, SettingsStore settings, StateStore state, SecretsStore secrets, MediaReadiness? readiness = null, ILibraryAccess? library = null)
     {
         var connection = new BotConnection();
         var strings = StringTable.LoadEmbedded();
         var health = new HealthService(gate, connection, new DestinationChecker(connection, strings), settings, state, TimeProvider.System, NullLogger<HealthService>.Instance);
         library ??= new FakeLibrary();
         readiness ??= new MediaReadiness(state, settings, library, new PendingIdSet(), TimeProvider.System, NullLogger<MediaReadiness>.Instance);
-        return new TgJellyController(compat, gate, settings, state, secrets, connection, new Outbox(state, strings, TimeProvider.System), health, strings, readiness, library, new NoticeBuilder(state, secrets, settings, library, strings, new Jellyfin.Plugin.TgJelly.Templates.TemplateFlags(state, settings, TimeProvider.System)));
+        return new TgJellyController(gate, settings, state, secrets, connection, new Outbox(state, strings, TimeProvider.System), health, strings, readiness, library, new NoticeBuilder(state, secrets, settings, library, strings, new Jellyfin.Plugin.TgJelly.Templates.TemplateFlags(state, settings, TimeProvider.System)));
     }
 }

@@ -5,7 +5,7 @@ import { esc, text } from './configurationpage?name=tgjelly-ui.js';
 export const POLL_MS = 3000;
 
 /** Connection states shown in the error color (the ConnectionState names from GET Status). */
-export const PROBLEM_STATES = new Set(['TokenRejected', 'WebhookConflict', 'ConflictingInstance', 'Unreachable', 'InvalidBaseUrl', 'Incompatible']);
+export const PROBLEM_STATES = new Set(['TokenRejected', 'WebhookConflict', 'ConflictingInstance', 'Unreachable', 'InvalidBaseUrl']);
 
 export function isPlainObject(value) {
     return value !== null && typeof value === 'object' && !Array.isArray(value);

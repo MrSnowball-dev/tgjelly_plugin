@@ -23,9 +23,6 @@ const IDS = [
 function status(overrides = {}) {
     return {
         Version: '1.0.0.0',
-        BuildTarget: '10.11',
-        Compatible: true,
-        CompatMessage: null,
         InstanceOwner: true,
         InstanceMessage: null,
         Revision: 3,
@@ -256,13 +253,6 @@ test('renderStatus shows take over only on WebhookConflict', () => {
     const connected = m.renderStatus(status(), EN);
     assert.ok(conflict.includes('data-tgj-act="takeover"'));
     assert.ok(!connected.includes('data-tgj-act="takeover"'));
-});
-
-test('renderStatus shows the compat banner when incompatible', () => {
-    const html = m.renderStatus(status({ Compatible: false, CompatMessage: 'Install the <12> build', ConnectionState: 'Incompatible' }), EN);
-    assert.ok(html.includes('tgj-notice--error') && html.includes('tgj-compat'));
-    assert.ok(html.includes('Install the &lt;12&gt; build'));
-    assert.ok(!m.renderStatus(status(), EN).includes('tgj-compat'));
 });
 
 test('renderStatus shows the connection message, counts and last errors, escaped', () => {
@@ -3076,7 +3066,6 @@ const STATUS_FIXTURES = {
     connected: () => status(),
     noToken: () => noToken(),
     webhookConflict: () => status({ ConnectionState: 'WebhookConflict', ConnectionMessage: 'Another webhook is set' }),
-    incompatible: () => status({ Compatible: false, CompatMessage: 'Install the 10.11 build', ConnectionState: 'Incompatible' }),
     rejected: () => status({ ConnectionState: 'TokenRejected', ConnectionMessage: 'Telegram rejected the token' }),
     withNoticesAndErrors: () => status({
         Notices: [{ Id: 'n1', Kind: 'X', Text: 'A notice' }],
@@ -3134,9 +3123,9 @@ test('overview_connected_statusLeads', async () => {
 });
 
 test('header_showsVersionLabelNextToTitle', async () => {
-    const html = m.renderShell(EN, { active: 'overview', connection: { tone: 'good', text: 'Connected' }, version: '1.0.5.0', buildTarget: '10.11' });
+    const html = m.renderShell(EN, { active: 'overview', connection: { tone: 'good', text: 'Connected' }, version: '1.0.5.0' });
     const version = '<a class="tgj-version-link" href="https://github.com/MrSnowball-dev/tgjelly_plugin/releases/tag/v0.5"'
-        + ' target="_blank" rel="noopener noreferrer" title="TgJelly 1.0.5.0, built for Jellyfin 10.11">'
+        + ' target="_blank" rel="noopener noreferrer" title="TgJelly 1.0.5.0">'
         + `${ui.label('v0.5', 'neutral')}</a>`;
     assert.match(html, /<h1 class="tgj-header-title">TgJelly<\/h1>/);
     assert.ok(html.indexOf('</h1>') < html.indexOf(version), 'the version follows the title');
@@ -3161,15 +3150,15 @@ test('header_versionLabel_isReleaseName', async () => {
     assert.ok(el('tgj-version').innerHTML.includes('>v1.12<'));
 });
 
-test('header_versionTitle_hasFullVersionAndBuildTarget', async () => {
-    const { view, el } = mount({ 'GET TgJelly/Status': status({ Version: '1.0.4.0', BuildTarget: '10.11' }) });
+test('header_versionTitle_hasFullVersion', async () => {
+    const { view, el } = mount({ 'GET TgJelly/Status': status({ Version: '1.0.4.0' }) });
     await show(view);
-    assert.ok(el('tgj-version').innerHTML.includes('title="TgJelly 1.0.4.0, built for Jellyfin 10.11"'), el('tgj-version').innerHTML);
+    assert.ok(el('tgj-version').innerHTML.includes('title="TgJelly 1.0.4.0"'), el('tgj-version').innerHTML);
 });
 
 test('status_hasNoVersionLine', () => {
     const html = m.renderStatus(status(), EN);
-    assert.ok(!html.includes('built for Jellyfin') && !html.includes('tgj-version'));
+    assert.ok(!html.includes('tgj-version'));
     assert.ok(!('web.status.version' in EN));
 });
 

@@ -60,12 +60,12 @@ export function releaseUrl(version) {
 }
 
 /**
- * The header's version label, a link to its release page in a new tab, with the full version and build target as its
- * tooltip; '' before the version is known.
+ * The header's version label, a link to its release page in a new tab, with the full version as its tooltip; '' before
+ * the version is known.
  */
-export const versionHtml = (S, version, buildTarget) => (version
+export const versionHtml = (S, version) => (version
     ? `<a class="tgj-version-link" href="${esc(releaseUrl(version))}" target="_blank" rel="noopener noreferrer"`
-        + ` title="${esc(text(S, 'web.header.versionTitle', { version, target: buildTarget ?? '' }))}">`
+        + ` title="${esc(text(S, 'web.header.versionTitle', { version }))}">`
         + `${label(releaseName(version), 'neutral')}</a>`
     : '');
 
@@ -86,7 +86,7 @@ export function connectionLabel(status, S, failed = false) {
         return { tone: 'neutral', text: text(S, 'web.header.notConnected') };
     }
 
-    if (PROBLEM_STATES.has(status.ConnectionState) || status.Compatible === false) {
+    if (PROBLEM_STATES.has(status.ConnectionState)) {
         return { tone: 'attention', text: text(S, 'web.header.attention') };
     }
 
@@ -117,7 +117,7 @@ export function navCountHtml(name, text) {
  *   counts are plain text by section name, e.g. { destinations: '3', messages: '1 edited' }
  * @returns {string}
  */
-export function renderShell(S, { active, connection, counts = {}, version = '', buildTarget = '' }) {
+export function renderShell(S, { active, connection, counts = {}, version = '' }) {
     const current = SECTIONS.includes(active) ? active : 'overview';
     const nav = SECTIONS.map(name => `<button type="button" id="tgj-nav-${name}" data-tgj-nav="${name}"`
         + `${name === current ? ' aria-current="page"' : ''}>`
@@ -126,7 +126,7 @@ export function renderShell(S, { active, connection, counts = {}, version = '', 
     const sections = SECTIONS.map(name => `<section id="tgj-sec-${name}" data-tgj-section="${name}" aria-labelledby="tgj-nav-${name}"`
         + `${name === current ? '' : ' hidden'}>${SECTION_HOSTS[name].map(id => `<div id="${id}"></div>`).join('')}</section>`);
     return '<div class="tgj-shell">'
-        + `<header class="tgj-header"><div class="tgj-header-brand"><h1 class="tgj-header-title">TgJelly</h1><span id="tgj-version">${versionHtml(S, version, buildTarget)}</span></div><span id="tgj-conn">${connectionHtml(connection)}</span></header>`
+        + `<header class="tgj-header"><div class="tgj-header-brand"><h1 class="tgj-header-title">TgJelly</h1><span id="tgj-version">${versionHtml(S, version)}</span></div><span id="tgj-conn">${connectionHtml(connection)}</span></header>`
         + `<nav class="tgj-sidebar" aria-label="${t(S, 'web.nav.label')}">${nav.join('')}</nav>`
         + `<div class="tgj-content">${sections.join('')}</div>`
         + '</div>';

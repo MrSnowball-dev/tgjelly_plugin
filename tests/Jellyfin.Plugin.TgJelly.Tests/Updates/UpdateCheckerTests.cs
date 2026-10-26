@@ -3,7 +3,6 @@ using System.Linq;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
-using Jellyfin.Plugin.TgJelly.Compat;
 using Jellyfin.Plugin.TgJelly.Configuration;
 using Jellyfin.Plugin.TgJelly.Intake;
 using Jellyfin.Plugin.TgJelly.Rendering;
@@ -21,7 +20,7 @@ public sealed class UpdateCheckerTests : IDisposable
     private readonly FakeReleaseFeed _feed = new();
     private readonly FakeServerInfo _server = new() { Version = new Version(10, 11, 11, 0) };
     private readonly FakeStartup _startup = new();
-    private readonly IntakeQueues _queues = new(PipelineRig.Compatible, TimeProvider.System);
+    private readonly IntakeQueues _queues = new(TimeProvider.System);
 
     [Fact]
     public async Task NotSubscribed_NeverCalls()
@@ -274,22 +273,6 @@ public sealed class UpdateCheckerTests : IDisposable
         Assert.Equal(1, _h.State.Read(s => s.UpdateCheck.ConsecutiveFailures));
     }
 
-    [Fact]
-    public async Task Incompatible_NeverRuns()
-    {
-        _h.AddDestination(-1001, events: BotTestHarness.AdminEvents);
-        var gate = await _h.StartOwnedGateAsync();
-        using var checker = new UpdateChecker(
-            gate, new CompatResult(false, "test", new Version(11, 0), "no"), _startup, _h.Settings, _h.State, _server, _feed, _queues,
-            new Formatter(_h.Strings), _h.Time, NullLogger<UpdateChecker>.Instance);
-
-        await checker.StartAsync(CancellationToken.None);
-        await checker.ExecuteTask!.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
-        _h.Time.Advance(TimeSpan.FromHours(13));
-        await checker.StopAsync(CancellationToken.None);
-
-        Assert.Equal(0, _feed.Calls);
-    }
 
     public void Dispose() => _h.Dispose();
 
@@ -299,7 +282,7 @@ public sealed class UpdateCheckerTests : IDisposable
     private async Task<UpdateChecker> NewAsync()
     {
         var gate = await _h.StartOwnedGateAsync();
-        var checker = new UpdateChecker(gate, PipelineRig.Compatible, _startup, _h.Settings, _h.State, _server, _feed, _queues, new Formatter(_h.Strings), _h.Time, NullLogger<UpdateChecker>.Instance);
+        var checker = new UpdateChecker(gate, _startup, _h.Settings, _h.State, _server, _feed, _queues, new Formatter(_h.Strings), _h.Time, NullLogger<UpdateChecker>.Instance);
         await checker.StepAsync(CancellationToken.None);
         return checker;
     }

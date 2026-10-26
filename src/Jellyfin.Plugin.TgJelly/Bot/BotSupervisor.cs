@@ -2,7 +2,6 @@ using System;
 using System.Diagnostics.CodeAnalysis;
 using System.Threading;
 using System.Threading.Tasks;
-using Jellyfin.Plugin.TgJelly.Compat;
 using Jellyfin.Plugin.TgJelly.Destinations;
 using Jellyfin.Plugin.TgJelly.Hosting;
 using Jellyfin.Plugin.TgJelly.State;
@@ -16,7 +15,7 @@ using Telegram.Bot.Types.Enums;
 namespace Jellyfin.Plugin.TgJelly.Bot;
 
 /// <summary>
-/// Owns the bot connection: waits for compatibility, <c>state.lock</c>, Jellyfin's startup and a token;
+/// Owns the bot connection: waits for <c>state.lock</c>, Jellyfin's startup and a token;
 /// then <c>getMe</c>, the webhook check and TgJelly's own GetUpdates loop with an in-memory offset. Each
 /// <see cref="Restart"/> ends the current session completely before the next one starts, so two polls never overlap.
 /// </summary>
@@ -32,7 +31,6 @@ public sealed class BotSupervisor : BackgroundService, ISupervisorControl
     private static readonly TimeSpan ConfirmTimeout = TimeSpan.FromSeconds(2);
 
     private readonly InstanceGate _gate;
-    private readonly CompatResult _compat;
     private readonly IServerStartup _startup;
     private readonly SecretsStore _secrets;
     private readonly StateStore _state;
@@ -53,7 +51,6 @@ public sealed class BotSupervisor : BackgroundService, ISupervisorControl
     /// Initializes a new instance of the <see cref="BotSupervisor"/> class.
     /// </summary>
     /// <param name="gate">The instance gate.</param>
-    /// <param name="compat">The compatibility result.</param>
     /// <param name="startup">Jellyfin's startup state.</param>
     /// <param name="secrets">The secrets store, for the token.</param>
     /// <param name="state">The state store.</param>
@@ -66,7 +63,6 @@ public sealed class BotSupervisor : BackgroundService, ISupervisorControl
     /// <param name="logger">The logger.</param>
     public BotSupervisor(
         InstanceGate gate,
-        CompatResult compat,
         IServerStartup startup,
         SecretsStore secrets,
         StateStore state,
@@ -79,7 +75,6 @@ public sealed class BotSupervisor : BackgroundService, ISupervisorControl
         ILogger<BotSupervisor> logger)
     {
         _gate = gate;
-        _compat = compat;
         _startup = startup;
         _secrets = secrets;
         _state = state;
@@ -161,12 +156,6 @@ public sealed class BotSupervisor : BackgroundService, ISupervisorControl
 
     private async Task RunAsync(CancellationToken stoppingToken)
     {
-        if (!_compat.IsCompatible)
-        {
-            _connection.SetState(ConnectionState.Incompatible, _compat.Message);
-            return;
-        }
-
         _connection.SetState(ConnectionState.WaitingForInstance);
         await _gate.WaitForOwnershipAsync(stoppingToken).ConfigureAwait(false);
         while (!stoppingToken.IsCancellationRequested)

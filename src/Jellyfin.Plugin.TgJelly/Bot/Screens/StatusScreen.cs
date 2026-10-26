@@ -1,7 +1,6 @@
 using System;
 using System.Linq;
 using System.Text;
-using Jellyfin.Plugin.TgJelly.Compat;
 using Jellyfin.Plugin.TgJelly.Configuration;
 using Jellyfin.Plugin.TgJelly.Delivery;
 using Jellyfin.Plugin.TgJelly.Destinations;
@@ -26,7 +25,6 @@ public sealed class StatusScreen
     private const int MaxErrorChars = 150;
 
     private readonly BotConnection _connection;
-    private readonly CompatResult _compat;
     private readonly InstanceGate _gate;
     private readonly SettingsStore _settings;
     private readonly StateStore _state;
@@ -42,7 +40,6 @@ public sealed class StatusScreen
     /// Initializes a new instance of the <see cref="StatusScreen"/> class.
     /// </summary>
     /// <param name="connection">The bot connection.</param>
-    /// <param name="compat">The CompatGuard result.</param>
     /// <param name="gate">The instance gate.</param>
     /// <param name="settings">The settings store.</param>
     /// <param name="state">The state store.</param>
@@ -53,10 +50,9 @@ public sealed class StatusScreen
     /// <param name="formatter">The formatter.</param>
     /// <param name="time">The clock.</param>
     /// <param name="server">The Jellyfin server's identity.</param>
-    public StatusScreen(BotConnection connection, CompatResult compat, InstanceGate gate, SettingsStore settings, StateStore state, HealthService health, MediaReadiness readiness, Outbox outbox, StringTable strings, Formatter formatter, TimeProvider time, IServerInfo server)
+    public StatusScreen(BotConnection connection, InstanceGate gate, SettingsStore settings, StateStore state, HealthService health, MediaReadiness readiness, Outbox outbox, StringTable strings, Formatter formatter, TimeProvider time, IServerInfo server)
     {
         _connection = connection;
-        _compat = compat;
         _gate = gate;
         _settings = settings;
         _state = state;
@@ -76,8 +72,7 @@ public sealed class StatusScreen
     public Screen Build()
     {
         var html = new StringBuilder("<b>").Append(Icons.Heading(_strings, _formatter, "status.title")).Append("</b>\n\n");
-        html.Append(_formatter.Escape(_strings.Get("status.connection", ("state", ConnectionText())))).Append('\n');
-        html.Append(_formatter.Escape(_strings.Get("status.compat", ("message", _compat.IsCompatible ? _strings.Get("status.compat.ok") : _compat.Message)))).Append("\n\n");
+        html.Append(_formatter.Escape(_strings.Get("status.connection", ("state", ConnectionText())))).Append("\n\n");
 
         // The tail is built first so the destination list can use what is left of Telegram's message limit.
         var tail = new StringBuilder();
@@ -142,11 +137,10 @@ public sealed class StatusScreen
 
     private string ConnectionText()
     {
-        var state = !_compat.IsCompatible ? ConnectionState.Incompatible : !_gate.IsOwner ? ConnectionState.WaitingForInstance : _connection.State;
+        var state = !_gate.IsOwner ? ConnectionState.WaitingForInstance : _connection.State;
         var username = _connection.BotUsername.Length > 0 ? _connection.BotUsername : _state.Read(s => s.Telegram.BotUsername);
         return state switch
         {
-            ConnectionState.Incompatible => _compat.Message ?? string.Empty,
             ConnectionState.WaitingForInstance => _gate.WaitingMessage ?? string.Empty,
             ConnectionState.Connected => _strings.Get("status.connection.connected", ("server", _server.ServerName.Length > 0 ? _server.ServerName + " " : string.Empty), ("version", _formatter.Version(_server.Version))),
             _ => _strings.Get("connection." + state, ("bot", username)),

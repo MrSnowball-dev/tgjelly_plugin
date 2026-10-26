@@ -5,7 +5,6 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.TgJelly.Bot;
-using Jellyfin.Plugin.TgJelly.Compat;
 using Jellyfin.Plugin.TgJelly.Tests.Fakes;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -15,7 +14,6 @@ namespace Jellyfin.Plugin.TgJelly.Tests.Bot;
 
 public sealed class BotWorkerTests : IDisposable
 {
-    private static readonly CompatResult Compatible = new(true, "12", new Version(12, 2, 0, 0), null);
     private readonly BotTestHarness _h = new();
     private readonly ListLogger<BotWorkQueue> _queueLog = new();
     private readonly ListLogger<BotWorker> _log = new();
@@ -28,7 +26,7 @@ public sealed class BotWorkerTests : IDisposable
     [Fact]
     public async Task RunsInOrder()
     {
-        using var worker = await StartedAsync(Compatible);
+        using var worker = await StartedAsync();
         Enqueue("a");
         Enqueue("b");
         Enqueue("c");
@@ -41,7 +39,7 @@ public sealed class BotWorkerTests : IDisposable
     [Fact]
     public async Task ThrowingItem_IsLoggedAndTheNextRuns()
     {
-        using var worker = await StartedAsync(Compatible);
+        using var worker = await StartedAsync();
         Assert.True(_queue.Enqueue("bad", _ => throw new InvalidOperationException("kaput")));
         Enqueue("next");
 
@@ -72,7 +70,7 @@ public sealed class BotWorkerTests : IDisposable
     [Fact]
     public async Task Stop_RunsWhatIsQueued_WithinTwoSeconds()
     {
-        using var worker = await StartedAsync(Compatible);
+        using var worker = await StartedAsync();
         var release = new TaskCompletionSource();
         _queue.Enqueue("blocker", async ct => await release.Task.WaitAsync(ct));
         await Task.Delay(100, TestContext.Current.CancellationToken);
@@ -90,7 +88,7 @@ public sealed class BotWorkerTests : IDisposable
     [Fact]
     public async Task Ticks_EveryThirtySeconds()
     {
-        using var worker = await StartedAsync(Compatible);
+        using var worker = await StartedAsync();
         await Task.Delay(100, TestContext.Current.CancellationToken);
         Assert.Equal(0, _flows.Ticks);
 
@@ -99,17 +97,6 @@ public sealed class BotWorkerTests : IDisposable
         await worker.StopAsync(TestContext.Current.CancellationToken);
     }
 
-    [Fact]
-    public async Task Incompatible_NeverRuns()
-    {
-        using var worker = await StartedAsync(new CompatResult(false, "test", new Version(11, 0), "no"));
-        Enqueue("a");
-
-        await Task.Delay(300, TestContext.Current.CancellationToken);
-        Assert.Empty(_ran);
-        await worker.StopAsync(TestContext.Current.CancellationToken);
-        Assert.Empty(_ran);
-    }
 
     public void Dispose() => _h.Dispose();
 
@@ -119,10 +106,10 @@ public sealed class BotWorkerTests : IDisposable
         return Task.CompletedTask;
     });
 
-    private async Task<BotWorker> StartedAsync(CompatResult compat)
+    private async Task<BotWorker> StartedAsync()
     {
         var gate = await _h.StartOwnedGateAsync();
-        var worker = new BotWorker(gate, compat, _queue, _flows, _h.State, _h.Time, _log);
+        var worker = new BotWorker(gate, _queue, _flows, _h.State, _h.Time, _log);
         await worker.StartAsync(TestContext.Current.CancellationToken);
         return worker;
     }

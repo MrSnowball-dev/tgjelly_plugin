@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
-using Jellyfin.Plugin.TgJelly.Compat;
 using Jellyfin.Plugin.TgJelly.Intake;
 using Jellyfin.Plugin.TgJelly.Library;
 using Microsoft.Extensions.Time.Testing;
@@ -12,8 +11,6 @@ namespace Jellyfin.Plugin.TgJelly.Tests.Intake;
 
 public class IntakeQueuesTests
 {
-    public static readonly CompatResult Compatible = new(true, "12", new Version(12, 2, 0, 0), null);
-
     private static readonly IReadOnlyDictionary<string, string> NoValues = new Dictionary<string, string>();
 
     private readonly FakeTimeProvider _time = new(new DateTimeOffset(2026, 10, 18, 10, 0, 0, TimeSpan.Zero));
@@ -21,7 +18,7 @@ public class IntakeQueuesTests
     [Fact]
     public void Full_EvictsUpdatedBeforeAdded()
     {
-        var queues = new IntakeQueues(Compatible, _time);
+        var queues = new IntakeQueues(_time);
         for (var i = 0; i < IntakeQueues.MediaCapacity - 1; i++)
         {
             Assert.True(queues.PublishMedia(MediaIntakeKind.Added, Facts()));
@@ -39,7 +36,7 @@ public class IntakeQueuesTests
     [Fact]
     public void Full_WithoutUpdated_DropsTheIncomingUpdated()
     {
-        var queues = new IntakeQueues(Compatible, _time);
+        var queues = new IntakeQueues(_time);
         for (var i = 0; i < IntakeQueues.MediaCapacity; i++)
         {
             queues.PublishMedia(MediaIntakeKind.Added, Facts());
@@ -54,7 +51,7 @@ public class IntakeQueuesTests
     [Fact]
     public void Full_OnlyAdded_DropsTheOldestAdded_NeverAScanFinished()
     {
-        var queues = new IntakeQueues(Compatible, _time);
+        var queues = new IntakeQueues(_time);
         queues.PublishMedia(MediaIntakeKind.ScanFinished, null);
         var oldest = Facts();
         queues.PublishMedia(MediaIntakeKind.Added, oldest);
@@ -75,7 +72,7 @@ public class IntakeQueuesTests
     [Fact]
     public void Other_Full_DropsTheNewest()
     {
-        var queues = new IntakeQueues(Compatible, _time);
+        var queues = new IntakeQueues(_time);
         for (var i = 0; i < IntakeQueues.OtherCapacity; i++)
         {
             Assert.True(queues.Publish("server.started", NoValues));
@@ -87,20 +84,11 @@ public class IntakeQueuesTests
         Assert.Equal(1, queues.TakeDropped());
     }
 
-    [Fact]
-    public void Incompatible_AcceptsNothing()
-    {
-        var queues = new IntakeQueues(Compatible with { IsCompatible = false }, _time);
-
-        Assert.False(queues.Publish("server.started", NoValues));
-        Assert.False(queues.PublishMedia(MediaIntakeKind.Added, Facts()));
-        Assert.Equal((0, 0, 0L), (queues.MediaCount, queues.OtherCount, queues.TakeDropped()));
-    }
 
     [Fact]
     public void Publish_StampsTheClock_AndTakeIsFifo()
     {
-        var queues = new IntakeQueues(Compatible, _time);
+        var queues = new IntakeQueues(_time);
         queues.Publish("server.started", new Dictionary<string, string> { ["version"] = "12.2.0" });
         _time.Advance(TimeSpan.FromSeconds(1));
         queues.Publish("server.task_failed", NoValues);
@@ -114,7 +102,7 @@ public class IntakeQueuesTests
     [Fact]
     public async Task WaitAsync_WakesOnPublish()
     {
-        var queues = new IntakeQueues(Compatible, _time);
+        var queues = new IntakeQueues(_time);
         var wait = queues.WaitAsync(TimeSpan.FromMinutes(1), TestContext.Current.CancellationToken);
         Assert.False(wait.IsCompleted);
 

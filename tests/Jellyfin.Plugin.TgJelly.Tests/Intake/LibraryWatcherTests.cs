@@ -18,12 +18,12 @@ namespace Jellyfin.Plugin.TgJelly.Tests.Intake;
 public sealed class LibraryWatcherTests : IDisposable
 {
     private readonly ILibraryManager _manager = Substitute.For<ILibraryManager>();
-    private readonly IntakeQueues _queues = new(IntakeQueuesTests.Compatible, new FakeTimeProvider());
+    private readonly IntakeQueues _queues = new(new FakeTimeProvider());
     private readonly PendingIdSet _pending = new();
     private readonly ListLogger<LibraryWatcher> _logger = new();
     private readonly LibraryWatcher _watcher;
 
-    public LibraryWatcherTests() => _watcher = new LibraryWatcher(_manager, _queues, _pending, IntakeQueuesTests.Compatible, _logger);
+    public LibraryWatcherTests() => _watcher = new LibraryWatcher(_manager, _queues, _pending, _logger);
 
     [Fact]
     public void Added_KeptMovie_IsQueued_AndMarkedPending()
@@ -145,17 +145,6 @@ public sealed class LibraryWatcherTests : IDisposable
         Assert.Equal(3, _manager.ReceivedCalls().Count(c => c.GetMethodInfo().Name.StartsWith("remove_", StringComparison.Ordinal)));
     }
 
-    [Fact]
-    public async Task Incompatible_NeverSubscribes()
-    {
-        using var watcher = new LibraryWatcher(_manager, _queues, _pending, IntakeQueuesTests.Compatible with { IsCompatible = false }, _logger);
-
-        await watcher.StartAsync(TestContext.Current.CancellationToken);
-        await Eventually.SettleAsync();
-        await watcher.StopAsync(TestContext.Current.CancellationToken);
-
-        Assert.DoesNotContain(_manager.ReceivedCalls(), c => c.GetMethodInfo().Name.StartsWith("add_", StringComparison.Ordinal));
-    }
 
     public void Dispose() => _watcher.Dispose();
 }

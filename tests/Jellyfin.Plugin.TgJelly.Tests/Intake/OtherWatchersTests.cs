@@ -15,13 +15,13 @@ public class OtherWatchersTests
     private readonly FakeTimeProvider _time = new(new DateTimeOffset(2026, 10, 18, 10, 0, 0, TimeSpan.Zero));
     private readonly IntakeQueues _queues;
 
-    public OtherWatchersTests() => _queues = new IntakeQueues(IntakeQueuesTests.Compatible, _time);
+    public OtherWatchersTests() => _queues = new IntakeQueues(_time);
 
     [Fact]
     public void TaskWatcher_FailedTask_IsTaskFailed_CompletedIsNothing()
     {
         var tasks = Substitute.For<ITaskManager>();
-        var watcher = new TaskWatcher(tasks, _queues, IntakeQueuesTests.Compatible, new ListLogger<TaskWatcher>());
+        var watcher = new TaskWatcher(tasks, _queues, new ListLogger<TaskWatcher>());
 
         watcher.OnTaskCompleted(null, new TaskCompletionEventArgs(Substitute.For<IScheduledTaskWorker>(), new TaskResult { Name = "Extract chapter images", Key = "x", Status = TaskCompletionStatus.Failed, ErrorMessage = "ffmpeg exited with 1" }));
         watcher.OnTaskCompleted(null, new TaskCompletionEventArgs(Substitute.For<IScheduledTaskWorker>(), new TaskResult { Name = "Other", Key = "y", Status = TaskCompletionStatus.Completed }));
@@ -37,7 +37,7 @@ public class OtherWatchersTests
     [Fact]
     public void TaskWatcher_RefreshLibrary_IsScanFinished()
     {
-        var watcher = new TaskWatcher(Substitute.For<ITaskManager>(), _queues, IntakeQueuesTests.Compatible, new ListLogger<TaskWatcher>());
+        var watcher = new TaskWatcher(Substitute.For<ITaskManager>(), _queues, new ListLogger<TaskWatcher>());
 
         watcher.OnTaskCompleted(null, new TaskCompletionEventArgs(Substitute.For<IScheduledTaskWorker>(), new TaskResult { Name = "Scan Media Library", Key = "RefreshLibrary", Status = TaskCompletionStatus.Completed }));
 
@@ -48,7 +48,7 @@ public class OtherWatchersTests
     public void RestartWatcher_PublishesOnlyWhenARestartIsPending()
     {
         var host = Substitute.For<IServerApplicationHost>();
-        var watcher = new RestartWatcher(host, _queues, IntakeQueuesTests.Compatible, new ListLogger<RestartWatcher>());
+        var watcher = new RestartWatcher(host, _queues, new ListLogger<RestartWatcher>());
 
         watcher.OnPendingRestartChanged(null, EventArgs.Empty);
         host.HasPendingRestart.Returns(true);
@@ -63,7 +63,7 @@ public class OtherWatchersTests
     public async Task StartupWatcher_EmitsServerStartedOnce_AfterStartupCompletes()
     {
         var startup = new FakeStartup { HasCompleted = false };
-        using var watcher = new StartupWatcher(startup, new FakeServerInfo(), _queues, IntakeQueuesTests.Compatible, _time, new ListLogger<StartupWatcher>());
+        using var watcher = new StartupWatcher(startup, new FakeServerInfo(), _queues, _time, new ListLogger<StartupWatcher>());
         await watcher.StartAsync(TestContext.Current.CancellationToken);
 
         for (var i = 0; i < 3; i++)
@@ -86,21 +86,6 @@ public class OtherWatchersTests
         Assert.Equal(("server.started", "12.2.0", "Home"), (e.EventKey, e.Values["version"], e.Values["server"]));
     }
 
-    [Fact]
-    public async Task StartupWatcher_Incompatible_NeverEmits()
-    {
-        var queues = new IntakeQueues(IntakeQueuesTests.Compatible, _time);
-        using var watcher = new StartupWatcher(new FakeStartup(), new FakeServerInfo(), queues, IntakeQueuesTests.Compatible with { IsCompatible = false }, _time, new ListLogger<StartupWatcher>());
-        await watcher.StartAsync(TestContext.Current.CancellationToken);
-        for (var i = 0; i < 3; i++)
-        {
-            await Eventually.SettleAsync();
-            _time.Advance(TimeSpan.FromSeconds(1));
-        }
-
-        await watcher.StopAsync(TestContext.Current.CancellationToken);
-        Assert.Equal(0, queues.OtherCount);
-    }
 
     [Fact]
     public async Task ScanFinishedTask_PublishesScanFinished()

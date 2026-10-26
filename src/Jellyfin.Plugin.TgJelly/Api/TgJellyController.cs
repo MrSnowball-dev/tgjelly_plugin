@@ -3,7 +3,6 @@ using System.ComponentModel.DataAnnotations;
 using System.Linq;
 using System.Net.Mime;
 using Jellyfin.Plugin.TgJelly.Bot;
-using Jellyfin.Plugin.TgJelly.Compat;
 using Jellyfin.Plugin.TgJelly.Configuration;
 using Jellyfin.Plugin.TgJelly.Delivery;
 using Jellyfin.Plugin.TgJelly.Destinations;
@@ -29,7 +28,6 @@ namespace Jellyfin.Plugin.TgJelly.Api;
 [Produces(MediaTypeNames.Application.Json)]
 public class TgJellyController : ControllerBase
 {
-    private readonly CompatResult _compat;
     private readonly InstanceGate _gate;
     private readonly SettingsStore _settings;
     private readonly StateStore _state;
@@ -45,7 +43,6 @@ public class TgJellyController : ControllerBase
     /// <summary>
     /// Initializes a new instance of the <see cref="TgJellyController"/> class.
     /// </summary>
-    /// <param name="compat">The CompatGuard result.</param>
     /// <param name="gate">The instance gate.</param>
     /// <param name="settings">The settings store.</param>
     /// <param name="state">The state store.</param>
@@ -57,12 +54,11 @@ public class TgJellyController : ControllerBase
     /// <param name="readiness">Media readiness, for the pending count.</param>
     /// <param name="library">The library, for removed-library filters.</param>
     /// <param name="notices">The notice builder.</param>
-    public TgJellyController(CompatResult compat, InstanceGate gate, SettingsStore settings, StateStore state, SecretsStore secrets, BotConnection connection, Outbox outbox, HealthService health, StringTable strings, MediaReadiness readiness, ILibraryAccess library, NoticeBuilder notices)
+    public TgJellyController(InstanceGate gate, SettingsStore settings, StateStore state, SecretsStore secrets, BotConnection connection, Outbox outbox, HealthService health, StringTable strings, MediaReadiness readiness, ILibraryAccess library, NoticeBuilder notices)
     {
         _notices = notices;
         _readiness = readiness;
         _library = library;
-        _compat = compat;
         _gate = gate;
         _settings = settings;
         _state = state;
@@ -81,11 +77,10 @@ public class TgJellyController : ControllerBase
     [ProducesResponseType(StatusCodes.Status200OK)]
     public ActionResult<StatusDto> GetStatus()
     {
-        var state = !_compat.IsCompatible ? ConnectionState.Incompatible : !_gate.IsOwner ? ConnectionState.WaitingForInstance : _connection.State;
+        var state = !_gate.IsOwner ? ConnectionState.WaitingForInstance : _connection.State;
         var username = _connection.BotUsername.Length > 0 ? _connection.BotUsername : _state.Read(s => s.Telegram.BotUsername);
         var message = state switch
         {
-            ConnectionState.Incompatible => _compat.Message,
             ConnectionState.WaitingForInstance => _gate.WaitingMessage,
             ConnectionState.Connected => _strings.Get("web.status.connected"),
             _ => _strings.Get("connection." + state, ("bot", username)),
@@ -97,9 +92,6 @@ public class TgJellyController : ControllerBase
         return new StatusDto
         {
             Version = typeof(Plugin).Assembly.GetName().Version?.ToString() ?? string.Empty,
-            BuildTarget = _compat.BuildLabel,
-            Compatible = _compat.IsCompatible,
-            CompatMessage = _compat.Message,
             InstanceOwner = _gate.IsOwner,
             InstanceMessage = _gate.WaitingMessage,
             Revision = settings.Revision,

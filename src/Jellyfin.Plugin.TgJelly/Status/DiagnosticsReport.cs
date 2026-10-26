@@ -4,7 +4,6 @@ using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
 using Jellyfin.Plugin.TgJelly.Bot;
-using Jellyfin.Plugin.TgJelly.Compat;
 using Jellyfin.Plugin.TgJelly.Configuration;
 using Jellyfin.Plugin.TgJelly.Delivery;
 using Jellyfin.Plugin.TgJelly.Destinations;
@@ -23,7 +22,6 @@ namespace Jellyfin.Plugin.TgJelly.Status;
 /// </summary>
 public sealed class DiagnosticsReport
 {
-    private readonly CompatResult _compat;
     private readonly InstanceGate _gate;
     private readonly SettingsStore _settings;
     private readonly StateStore _state;
@@ -40,7 +38,6 @@ public sealed class DiagnosticsReport
     /// <summary>
     /// Initializes a new instance of the <see cref="DiagnosticsReport"/> class.
     /// </summary>
-    /// <param name="compat">The CompatGuard result.</param>
     /// <param name="gate">The instance gate.</param>
     /// <param name="settings">The settings store.</param>
     /// <param name="state">The state store.</param>
@@ -53,10 +50,9 @@ public sealed class DiagnosticsReport
     /// <param name="server">The Jellyfin server info.</param>
     /// <param name="templates">The template flags.</param>
     /// <param name="notices">The notice builder.</param>
-    public DiagnosticsReport(CompatResult compat, InstanceGate gate, SettingsStore settings, StateStore state, SecretsStore secrets, BotConnection connection, BotApiEnvironment environment, Outbox outbox, MediaReadiness readiness, HealthService health, IServerInfo server, TemplateFlags templates, NoticeBuilder notices)
+    public DiagnosticsReport(InstanceGate gate, SettingsStore settings, StateStore state, SecretsStore secrets, BotConnection connection, BotApiEnvironment environment, Outbox outbox, MediaReadiness readiness, HealthService health, IServerInfo server, TemplateFlags templates, NoticeBuilder notices)
     {
         _templates = templates;
-        _compat = compat;
         _gate = gate;
         _settings = settings;
         _state = state;
@@ -81,8 +77,6 @@ public sealed class DiagnosticsReport
 
         Section(sb, "TgJelly");
         Line(sb, "version", typeof(Plugin).Assembly.GetName().Version?.ToString() ?? string.Empty);
-        Line(sb, "build target", _compat.BuildLabel);
-        Line(sb, "compatible", YesNo(_compat.IsCompatible));
         Line(sb, "instance owner", YesNo(_gate.IsOwner));
 
         Section(sb, "Server");

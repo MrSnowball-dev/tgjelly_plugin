@@ -52,7 +52,7 @@ const COLUMNS = ['When', 'Event', 'Destination', 'Result', 'Why'];
 // --- the controller on a fake view ---
 
 const STATUS = {
-    Version: '1.0.4.0', BuildTarget: '10.11', Compatible: true, InstanceOwner: true, Revision: 5, LoadWarnings: [], LastErrors: [],
+    Version: '1.0.4.0', InstanceOwner: true, Revision: 5, LoadWarnings: [], LastErrors: [],
     ConnectionState: 'Connected', ConnectionMessage: 'Connected to Telegram', BotUsername: 'jf_bot', HasToken: true,
     Counters: { DroppedIntake: 0, DroppedOutbox: 0, Evictions: 0 }, OutboxCount: 0, UnhealthyDestinations: 0, PendingMedia: 0,
     UpdateCheckFailing: null, RemovedLibraryFilters: 0, Notices: [],

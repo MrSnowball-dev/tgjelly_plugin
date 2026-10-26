@@ -3,7 +3,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.TgJelly.Api;
 using Jellyfin.Plugin.TgJelly.Bot;
-using Jellyfin.Plugin.TgJelly.Compat;
 using Jellyfin.Plugin.TgJelly.State;
 using Jellyfin.Plugin.TgJelly.Tests.Fakes;
 using Microsoft.AspNetCore.Mvc;
@@ -25,12 +24,10 @@ public sealed class BotControllerTests : IAsyncLifetime
         _tokens = new BotTokenService(new FakeClientFactory(_h.Api), _h.Secrets, _h.State, _h.Settings, _supervisor, _h.Strings, _h.Time, NullLogger<BotTokenService>.Instance);
     }
 
-    private static CompatResult Compatible => CompatGuard.Evaluate(new Version(BuildInfo.TargetJellyfinMajor, 0, 0, 0));
-
     public async ValueTask InitializeAsync()
     {
         _gate = await _h.StartOwnedGateAsync();
-        _controller = new BotController(_tokens, _h.Strings, _gate, _h.State, Compatible);
+        _controller = new BotController(_tokens, _h.Strings, _gate, _h.State);
     }
 
     [Fact]
@@ -105,7 +102,7 @@ public sealed class BotControllerTests : IAsyncLifetime
     public async Task PostToken_BeforeOwnership_Is503_AndStoresNothing()
     {
         using var gate = new InstanceGate(_h.Paths, _h.Time, NullLogger<InstanceGate>.Instance); // not started: not the owner
-        var controller = new BotController(_tokens, _h.Strings, gate, _h.State, Compatible);
+        var controller = new BotController(_tokens, _h.Strings, gate, _h.State);
 
         var result = await controller.PostToken(new TokenRequest { Token = FakeBotApi.Token }, CancellationToken.None);
 
@@ -115,16 +112,6 @@ public sealed class BotControllerTests : IAsyncLifetime
         Assert.Equal(503, Assert.IsType<ObjectResult>(await controller.DeleteToken(false, CancellationToken.None)).StatusCode);
     }
 
-    [Fact]
-    public async Task PostToken_OnAnIncompatibleBuild_Is409_AndNeverCallsTelegram()
-    {
-        var controller = new BotController(_tokens, _h.Strings, _gate, _h.State, CompatGuard.Evaluate(new Version(BuildInfo.TargetJellyfinMajor + 1, 0, 0, 0)));
-
-        var result = await controller.PostToken(new TokenRequest { Token = FakeBotApi.Token }, CancellationToken.None);
-
-        Assert.IsType<ConflictObjectResult>(result.Result);
-        Assert.Empty(_h.Api.Calls);
-    }
 
     public ValueTask DisposeAsync()
     {

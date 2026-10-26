@@ -13,15 +13,6 @@ public sealed class StatusDto
     /// <summary>Gets the plugin version.</summary>
     public string Version { get; init; } = string.Empty;
 
-    /// <summary>Gets the Jellyfin line this build targets ("10.11" or "12").</summary>
-    public string BuildTarget { get; init; } = string.Empty;
-
-    /// <summary>Gets a value indicating whether this build matches the server (CompatGuard).</summary>
-    public bool Compatible { get; init; }
-
-    /// <summary>Gets the CompatGuard banner text when incompatible.</summary>
-    public string? CompatMessage { get; init; }
-
     /// <summary>Gets a value indicating whether this instance owns the data folder.</summary>
     public bool InstanceOwner { get; init; }
 

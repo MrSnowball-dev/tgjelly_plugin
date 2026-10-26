@@ -11,9 +11,6 @@ public enum ConnectionState
     /// <summary>A previous instance still holds <c>state.lock</c>.</summary>
     WaitingForInstance,
 
-    /// <summary>This build doesn't match the server's Jellyfin line.</summary>
-    Incompatible,
-
     /// <summary>Jellyfin hasn't finished starting.</summary>
     WaitingForStartup,
 

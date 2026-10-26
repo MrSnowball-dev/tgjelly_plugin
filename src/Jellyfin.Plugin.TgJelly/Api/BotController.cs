@@ -3,7 +3,6 @@ using System.Net.Mime;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.TgJelly.Bot;
-using Jellyfin.Plugin.TgJelly.Compat;
 using Jellyfin.Plugin.TgJelly.State;
 using Jellyfin.Plugin.TgJelly.Strings;
 using MediaBrowser.Common.Api;
@@ -26,7 +25,6 @@ public class BotController : ControllerBase
     private readonly StringTable _strings;
     private readonly InstanceGate _gate;
     private readonly StateStore _state;
-    private readonly CompatResult _compat;
     private readonly SecretsStore? _secrets;
 
     /// <summary>
@@ -36,15 +34,13 @@ public class BotController : ControllerBase
     /// <param name="strings">The string table.</param>
     /// <param name="gate">The instance gate; changes wait until this instance owns the data folder.</param>
     /// <param name="state">The state store.</param>
-    /// <param name="compat">The compatibility result; an incompatible build never talks to Telegram.</param>
     /// <param name="secrets">The secrets, for showing the token to an administrator.</param>
-    public BotController(BotTokenService tokens, StringTable strings, InstanceGate gate, StateStore state, CompatResult compat, SecretsStore? secrets = null)
+    public BotController(BotTokenService tokens, StringTable strings, InstanceGate gate, StateStore state, SecretsStore? secrets = null)
     {
         _tokens = tokens;
         _strings = strings;
         _gate = gate;
         _state = state;
-        _compat = compat;
         _secrets = secrets;
     }
 
@@ -74,7 +70,7 @@ public class BotController : ControllerBase
     public async Task<ActionResult<TokenResponse>> PostToken([FromBody] TokenRequest request, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
-        if (ApiGuard.Block(_gate, _state, _compat) is { } blocked)
+        if (ApiGuard.Block(_gate, _state) is { } blocked)
         {
             return blocked;
         }
@@ -113,7 +109,7 @@ public class BotController : ControllerBase
     [ProducesResponseType(StatusCodes.Status409Conflict)]
     public async Task<IActionResult> TakeOverWebhook(CancellationToken cancellationToken)
     {
-        if (ApiGuard.Block(_gate, _state, _compat) is { } blocked)
+        if (ApiGuard.Block(_gate, _state) is { } blocked)
         {
             return blocked;
         }

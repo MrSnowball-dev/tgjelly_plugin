@@ -1,7 +1,6 @@
 using System;
 using System.IO;
 using System.Linq;
-using Jellyfin.Plugin.TgJelly.Compat;
 using Jellyfin.Plugin.TgJelly.Configuration;
 using Jellyfin.Plugin.TgJelly.Hosting;
 using Jellyfin.Plugin.TgJelly.State;
@@ -27,7 +26,7 @@ public class PluginServiceRegistratorTests
         var paths = Substitute.For<IApplicationPaths>();
         paths.PluginConfigurationsPath.Returns(Path.Combine(dir.Path, "plugins", "configurations"));
         var host = Substitute.For<IServerApplicationHost>();
-        host.ApplicationVersion.Returns(new Version(BuildInfo.TargetJellyfinMajor, 0, 0, 0));
+        host.ApplicationVersion.Returns(new Version(10, 11, 0, 0));
 
         var services = new ServiceCollection();
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
@@ -53,7 +52,6 @@ public class PluginServiceRegistratorTests
 
         Assert.NotNull(provider.GetRequiredService<SecretsStore>());
         Assert.NotNull(provider.GetRequiredService<StateStore>());
-        Assert.True(provider.GetRequiredService<CompatResult>().IsCompatible);
         Assert.Equal(Path.Combine(dir.Path, "plugins", "configurations", "TgJelly"), provider.GetRequiredService<DataPaths>().Root);
 
         var hosted = provider.GetServices<IHostedService>().ToList();

@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
-using Jellyfin.Plugin.TgJelly.Compat;
 using Jellyfin.Plugin.TgJelly.Hosting;
 using Jellyfin.Plugin.TgJelly.Library;
 
@@ -10,7 +9,7 @@ namespace Jellyfin.Plugin.TgJelly.Intake;
 
 /// <summary>
 /// The two bounded in-memory intake queues. Callbacks publish here in O(1) without I/O; the pipeline
-/// drains them. An incompatible build accepts nothing (intake stays off).
+/// drains them.
 /// </summary>
 public sealed class IntakeQueues
 {
@@ -20,7 +19,6 @@ public sealed class IntakeQueues
     /// <summary>The other queue's capacity; when full, the newest event is dropped.</summary>
     public const int OtherCapacity = 1_000;
 
-    private readonly CompatResult _compat;
     private readonly TimeProvider _time;
     private readonly Lock _gate = new();
     private readonly LinkedList<MediaIntake> _media = new();
@@ -31,11 +29,9 @@ public sealed class IntakeQueues
     /// <summary>
     /// Initializes a new instance of the <see cref="IntakeQueues"/> class.
     /// </summary>
-    /// <param name="compat">The compatibility result.</param>
     /// <param name="time">The clock that stamps events.</param>
-    public IntakeQueues(CompatResult compat, TimeProvider time)
+    public IntakeQueues(TimeProvider time)
     {
-        _compat = compat;
         _time = time;
     }
 
@@ -71,11 +67,6 @@ public sealed class IntakeQueues
     /// <returns><c>false</c> when the event was dropped or intake is off.</returns>
     public bool PublishMedia(MediaIntakeKind kind, ItemFacts? item)
     {
-        if (!_compat.IsCompatible)
-        {
-            return false;
-        }
-
         var intake = new MediaIntake(kind, item, _time.GetUtcNow());
         lock (_gate)
         {
@@ -100,11 +91,6 @@ public sealed class IntakeQueues
     /// <returns><c>false</c> when the event was dropped or intake is off.</returns>
     public bool Publish(string eventKey, IReadOnlyDictionary<string, string> values)
     {
-        if (!_compat.IsCompatible)
-        {
-            return false;
-        }
-
         var e = new NotificationEvent(eventKey, _time.GetUtcNow(), values);
         lock (_gate)
         {

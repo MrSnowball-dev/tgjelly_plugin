@@ -64,11 +64,19 @@ public class JellyfinItemsTests
     {
         var movie = new Movie { Id = Guid.NewGuid() };
         Assert.False(JellyfinItems.Describe(movie, NoAlbum).IsAlternateVersion);
-#if JF12
-        movie.SetPrimaryVersionId(Guid.NewGuid());
-#else
         movie.SetPrimaryVersionId(Guid.NewGuid().ToString("N"));
-#endif
         Assert.True(JellyfinItems.Describe(movie, NoAlbum).IsAlternateVersion);
+    }
+
+    // Jellyfin 10.11 stores PrimaryVersionId as a string and 12 as a Guid?; one build reads both.
+    [Fact]
+    public void IsAlternateVersionValue_BothShapes()
+    {
+        Assert.False(JellyfinItems.IsAlternateVersionValue(null));
+        Assert.False(JellyfinItems.IsAlternateVersionValue(string.Empty));
+        Assert.True(JellyfinItems.IsAlternateVersionValue("abc"));
+        Assert.False(JellyfinItems.IsAlternateVersionValue(Guid.Empty));
+        Assert.False(JellyfinItems.IsAlternateVersionValue((Guid?)null));
+        Assert.True(JellyfinItems.IsAlternateVersionValue(Guid.NewGuid()));
     }
 }
