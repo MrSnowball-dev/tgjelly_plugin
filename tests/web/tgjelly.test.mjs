@@ -3123,29 +3123,31 @@ test('overview_connected_statusLeads', async () => {
 });
 
 test('header_showsVersionLabelNextToTitle', async () => {
-    const html = m.renderShell(EN, { active: 'overview', connection: { tone: 'good', text: 'Connected' }, version: '1.0.5.0' });
-    const version = '<a class="tgj-version-link" href="https://github.com/MrSnowball-dev/tgjelly_plugin/releases/tag/v0.5"'
-        + ' target="_blank" rel="noopener noreferrer" title="TgJelly 1.0.5.0">'
-        + `${ui.label('v0.5', 'neutral')}</a>`;
+    const html = m.renderShell(EN, { active: 'overview', connection: { tone: 'good', text: 'Connected' }, version: '1.5.0.0' });
+    const version = '<a class="tgj-version-link" href="https://github.com/MrSnowball-dev/tgjelly_plugin/releases/tag/v1.5"'
+        + ' target="_blank" rel="noopener noreferrer" title="TgJelly 1.5.0.0">'
+        + `${ui.label('v1.5', 'neutral')}</a>`;
     assert.match(html, /<h1 class="tgj-header-title">TgJelly<\/h1>/);
     assert.ok(html.indexOf('</h1>') < html.indexOf(version), 'the version follows the title');
     assert.ok(html.indexOf(version) < html.indexOf(ui.label('Connected', 'good')), 'and precedes the connection');
     assert.ok(!m.renderShell(EN, { active: 'overview', connection: { tone: 'neutral', text: 'x' } }).includes('>v'), 'no version, no label');
 
-    const { view, el } = mount({ 'GET TgJelly/Status': status({ Version: '1.0.5.0' }) });
+    const { view, el } = mount({ 'GET TgJelly/Status': status({ Version: '1.5.0.0' }) });
     await show(view);
     assert.equal(el('tgj-version').innerHTML, version, 'painted from the status');
 });
 
 test('header_versionLabel_isReleaseName', async () => {
-    assert.equal(m.releaseName('1.0.4.0'), 'v0.4');
-    assert.equal(m.releaseName('2.1.12.0'), 'v1.12');
+    assert.equal(m.releaseName('1.0.0.0'), 'v1.0');
+    assert.equal(m.releaseName('1.12.0.0'), 'v1.12');
+    assert.equal(m.releaseName('1.2.3.0'), 'v1.2.3');
     assert.equal(m.releaseName('1.0.4'), 'v1.0.4', 'a malformed version shows raw');
     assert.equal(m.releaseName('1.x.4.0'), 'v1.x.4.0');
-    assert.equal(m.releaseUrl('1.0.4.0'), 'https://github.com/MrSnowball-dev/tgjelly_plugin/releases/tag/v0.4');
+    assert.equal(m.releaseUrl('1.0.0.0'), 'https://github.com/MrSnowball-dev/tgjelly_plugin/releases/tag/v1.0');
+    assert.equal(m.releaseUrl('1.2.3.0'), 'https://github.com/MrSnowball-dev/tgjelly_plugin/releases/tag/v1.2.3');
     assert.equal(m.releaseUrl('1.x.4.0'), 'https://github.com/MrSnowball-dev/tgjelly_plugin/releases', 'no release name: the list');
-    assert.equal(m.releaseUrl('1.0.0.0'), 'https://github.com/MrSnowball-dev/tgjelly_plugin/releases', 'a development build: the list');
-    const { view, el } = mount({ 'GET TgJelly/Status': status({ Version: '2.1.12.0' }) });
+    assert.equal(m.releaseUrl('0.0.0.0'), 'https://github.com/MrSnowball-dev/tgjelly_plugin/releases', 'a development build: the list');
+    const { view, el } = mount({ 'GET TgJelly/Status': status({ Version: '1.12.0.0' }) });
     await show(view);
     assert.ok(el('tgj-version').innerHTML.includes('>v1.12<'));
 });

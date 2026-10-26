@@ -35,14 +35,18 @@ const STYLESHEET_WAIT_MS = 1000;
 export const connectionHtml = connection => label(connection.text, connection.tone);
 
 /**
- * The release an assembly version stands for: "1.0.4.0" is v0.4 and "2.1.12.0" is v1.12 (build/package.py
- * track_version). A version without four numeric parts shows as it is.
+ * The release an assembly version stands for: "1.0.0.0" is v1.0 and "1.2.3.0" is v1.2.3 (build/package.py
+ * version_for). A version without four numeric parts shows as it is.
  * @param {string} version the status's Version
  * @returns {string}
  */
 export function releaseName(version) {
     const parts = String(version ?? '').split('.');
-    return parts.length === 4 && parts.every(part => /^\d+$/.test(part)) ? `v${parts[1]}.${parts[2]}` : `v${version}`;
+    if (parts.length !== 4 || !parts.every(part => /^\d+$/.test(part))) {
+        return `v${version}`;
+    }
+    const [major, minor, patch] = parts.map(Number);
+    return patch === 0 ? `v${major}.${minor}` : `v${major}.${minor}.${patch}`;
 }
 
 /** The project's GitHub releases; a release name links to its tag there. */
@@ -56,7 +60,7 @@ const RELEASES_URL = 'https://github.com/MrSnowball-dev/tgjelly_plugin/releases'
 export function releaseUrl(version) {
     const name = releaseName(version);
     // v0.0 is a development build, which has no release page.
-    return /^v\d+\.\d+$/.test(name) && name !== 'v0.0' ? `${RELEASES_URL}/tag/${name}` : RELEASES_URL;
+    return /^v\d+\.\d+(\.\d+)?$/.test(name) && name !== 'v0.0' ? `${RELEASES_URL}/tag/${name}` : RELEASES_URL;
 }
 
 /**

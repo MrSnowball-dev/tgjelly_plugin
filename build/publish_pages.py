@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Prepare the gh-pages checkout of the plugin repository (spec §13.4).
+"""Prepare the gh-pages checkout of the plugin repository.
 
 Usage:
   python3 build/publish_pages.py --pages-dir pages --manifest artifacts/manifest.json --logo build/logo.png
@@ -15,12 +15,13 @@ import package
 
 
 def _versions(entries: list) -> set:
-    """All version strings of the TgJelly entry."""
+    """The TgJelly entry's version strings, without 0.x builds, which a release may drop."""
     return {
         v["version"]
         for e in entries
         if isinstance(e, dict) and e.get("guid") == package.GUID
         for v in e.get("versions", [])
+        if not package.is_pre_release(v)
     }
 
 
