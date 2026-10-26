@@ -71,44 +71,37 @@ class WebAssetTests(unittest.TestCase):
         self.assertFalse(smoke.asset_served(404, "text/css", "css"))
 
 
-class TrackZipTests(unittest.TestCase):
-    """The smoke jobs name a track, not a file, so a release run (any X.Y) finds its zips."""
+class ZipTests(unittest.TestCase):
+    """The smoke jobs name the artifacts folder, not a file, so a run of any release finds its one zip."""
 
     def _artifacts(self, release):
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)
         folder = Path(temp.name)
-        for track in (1, 2):
-            (folder / f"tgjelly_{package.track_version(track, release)}.zip").write_bytes(b"")
+        (folder / f"tgjelly_{package.version_for(release)}.zip").write_bytes(b"")
         (folder / "manifest.json").write_text("[]")
         return folder
 
-    def test_finds_each_tracks_zip_for_a_release(self):
-        folder = self._artifacts("0.3")
-        self.assertEqual(folder / "tgjelly_1.0.3.0.zip", smoke.find_track_zip(folder, 1))
-        self.assertEqual(folder / "tgjelly_2.0.3.0.zip", smoke.find_track_zip(folder, 2))
+    def test_finds_the_zip_of_a_release(self):
+        folder = self._artifacts("1.2.3")
+        self.assertEqual(folder / "tgjelly_1.2.3.0.zip", smoke.find_zip(folder))
 
     def test_finds_the_push_build_too(self):
         folder = self._artifacts("0.0")
-        self.assertEqual(folder / "tgjelly_1.0.0.0.zip", smoke.find_track_zip(folder, 1))
-
-    def test_track_10_is_not_track_1(self):
-        folder = self._artifacts("0.3")
-        (folder / "tgjelly_10.0.3.0.zip").write_bytes(b"")
-        self.assertEqual(folder / "tgjelly_1.0.3.0.zip", smoke.find_track_zip(folder, 1))
+        self.assertEqual(folder / "tgjelly_0.0.0.0.zip", smoke.find_zip(folder))
 
     def test_missing_or_ambiguous_fails(self):
-        folder = self._artifacts("0.3")
+        folder = self._artifacts("1.0")
+        (folder / "tgjelly_1.1.0.0.zip").write_bytes(b"")
         with self.assertRaises(SystemExit):
-            smoke.find_track_zip(folder, 3)
-        (folder / "tgjelly_1.0.4.0.zip").write_bytes(b"")
+            smoke.find_zip(folder)
         with self.assertRaises(SystemExit):
-            smoke.find_track_zip(folder, 1)
+            smoke.find_zip(folder / "empty")
 
-    def test_command_line_takes_a_track_and_the_artifacts_folder(self):
-        folder = self._artifacts("0.3")
-        args = smoke.parse_args(["--image", "jellyfin/jellyfin:12.2", "--track", "2", "--artifacts", str(folder), "--stub"])
-        self.assertEqual(folder / "tgjelly_2.0.3.0.zip", smoke.resolve_zip(args))
+    def test_command_line_takes_the_artifacts_folder_or_a_zip(self):
+        folder = self._artifacts("1.0")
+        args = smoke.parse_args(["--image", "jellyfin/jellyfin:12.2", "--artifacts", str(folder), "--stub"])
+        self.assertEqual(folder / "tgjelly_1.0.0.0.zip", smoke.resolve_zip(args))
         args = smoke.parse_args(["--image", "x", "--zip", "some.zip"])
         self.assertEqual(Path("some.zip"), smoke.resolve_zip(args))
 
