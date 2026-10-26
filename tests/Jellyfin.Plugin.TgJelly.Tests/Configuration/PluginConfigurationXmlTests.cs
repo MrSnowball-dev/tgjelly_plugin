@@ -8,7 +8,7 @@ namespace Jellyfin.Plugin.TgJelly.Tests.Configuration;
 
 public class PluginConfigurationXmlTests
 {
-    // Jellyfin's IXmlSerializer is a thin wrapper over System.Xml.Serialization.XmlSerializer (F9).
+    // Jellyfin's IXmlSerializer is a thin wrapper over System.Xml.Serialization.XmlSerializer.
     private static readonly XmlSerializer Serializer = new(typeof(PluginConfiguration));
 
     [Fact]
@@ -101,7 +101,7 @@ public class PluginConfigurationXmlTests
     public void XmlFromANewerVersion_WithUnknownElements_StillLoads()
     {
         // After a downgrade the XML may contain fields this version does not know. If loading threw,
-        // Jellyfin would replace the whole config with defaults (F9).
+        // Jellyfin would replace the whole config with defaults.
         const string Xml = "<?xml version=\"1.0\"?><PluginConfiguration><Revision>9</Revision><FutureSetting>x</FutureSetting>"
             + "<Batching><QuietWindowSeconds>60</QuietWindowSeconds><FutureNested>1</FutureNested></Batching></PluginConfiguration>";
 
@@ -115,7 +115,7 @@ public class PluginConfigurationXmlTests
     [Fact]
     public void XmlFromANewerVersion_WithUnknownEnumNames_ReadsSafeFallbacks()
     {
-        // An enum member added by a newer version must not make the whole XML fail to load (F9).
+        // An enum member added by a newer version must not make the whole XML fail to load.
         const string Xml = "<?xml version=\"1.0\"?><PluginConfiguration><Revision>3</Revision>"
             + "<Proxy><Mode>Mtproto</Mode></Proxy><UpdateCheck><Mode>Nightly</Mode></UpdateCheck>"
             + "<Destinations><Destination><Id>abcd1234</Id><ChatId>42</ChatId><Kind>Bogus</Kind><Preset>Playback</Preset></Destination></Destinations>"

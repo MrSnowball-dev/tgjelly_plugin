@@ -207,8 +207,7 @@ const isField = el => FIELD_TAGS.has(String(el.tagName).toUpperCase())
 const isTyped = el => el.tagName === 'TEXTAREA' || (el.tagName === 'INPUT' && TYPED_INPUTS.has(String(el.type || 'text').toLowerCase()));
 
 /**
- * Runs a write that may replace fields inside rootEl, so that typing is never interrupted (generalising
- * v0.3's template caret fix):
+ * Runs a write that may replace fields inside rootEl, so that typing is never interrupted:
  * - a focused input, textarea, select or switch inside rootEl is focused again in its new copy, with the same selection and
  *   scroll; a typed field keeps what the admin typed since the last render (its value differs from its defaultValue);
  * - a field in pending (selectors from fieldSelector, e.g. a change whose auto-save hasn't gone out) keeps the value it

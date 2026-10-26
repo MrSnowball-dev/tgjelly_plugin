@@ -1,4 +1,4 @@
-// The Log section (plan 9 Task 13, design §8.1): every event, per destination, with its result and a plain reason.
+// The Log section: every event, per destination, with its result and a plain reason.
 // Run: node --import ./tests/web/jellyfin-resolve.mjs --test 'tests/web/*.test.mjs'
 import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
@@ -147,7 +147,7 @@ test('log_sentRow_hasEmptyWhy', () => {
     assert.ok(!cells.get('media.movie|d1|1')[3].includes('data-tgj-act'), 'a plain Sent row has nothing to expand');
     assert.equal(cells.get('skip-1')[4], 'No destination has Movies switched on');
 
-    // The tones of design §8.1, as labels: a word in an outline, no symbol.
+    // The tones, as labels: a word in an outline, no symbol.
     const tones = { Sent: 'good', Waiting: 'progress', Skipped: 'neutral', SentLate: 'attention', SentWithBuiltIn: 'attention', SentWithoutPhoto: 'attention', Failed: 'bad' };
     const words = { Sent: 'Sent', Waiting: 'Waiting', Skipped: 'Skipped', SentLate: 'Sent late', SentWithBuiltIn: 'Sent with built-in', SentWithoutPhoto: 'Sent without photo', Failed: 'Failed' };
     for (const [result, tone] of Object.entries(tones)) {

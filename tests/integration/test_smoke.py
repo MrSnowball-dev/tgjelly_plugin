@@ -72,7 +72,7 @@ class WebAssetTests(unittest.TestCase):
 
 
 class TrackZipTests(unittest.TestCase):
-    """The smoke jobs name a track, not a file, so a release run (any X.Y) finds its zips (final review C1)."""
+    """The smoke jobs name a track, not a file, so a release run (any X.Y) finds its zips."""
 
     def _artifacts(self, release):
         temp = tempfile.TemporaryDirectory()

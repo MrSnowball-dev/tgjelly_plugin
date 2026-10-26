@@ -1,4 +1,4 @@
-// Dashboard component tests (plan 8, design §5.3). Run: node --import ./tests/web/jellyfin-resolve.mjs --test 'tests/web/*.test.mjs'
+// Dashboard component tests. Run: node --import ./tests/web/jellyfin-resolve.mjs --test 'tests/web/*.test.mjs'
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';

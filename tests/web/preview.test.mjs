@@ -1,4 +1,4 @@
-// The template preview (plan 9 Task 10, design §6.4-6.5): Telegram's own look, and the pieces the hover link uses.
+// The template preview: Telegram's own look, and the pieces the hover link uses.
 // Run: node --import ./tests/web/jellyfin-resolve.mjs --test 'tests/web/*.test.mjs'
 import { test } from 'node:test';
 import assert from 'node:assert/strict';

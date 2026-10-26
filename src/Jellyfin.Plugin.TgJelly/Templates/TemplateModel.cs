@@ -34,7 +34,7 @@ public sealed class TemplateModel
     /// <summary>Gets the item count of the shrinkable list; 0 when there is none.</summary>
     public int ListCount { get; }
 
-    /// <summary>Gets the fewest list items the fitter keeps: 1, or 0 for the digest, which v0.2 could empty.</summary>
+    /// <summary>Gets the fewest list items the fitter keeps: 1, or 0 for the digest, which may be emptied.</summary>
     public int MinListKept { get; }
 
     /// <summary>

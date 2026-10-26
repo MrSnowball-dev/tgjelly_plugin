@@ -7,7 +7,7 @@ using Telegram.Bot.Extensions;
 namespace Jellyfin.Plugin.TgJelly.Templates;
 
 /// <summary>
-/// Shortens rendered template output in v0.2's order: the text field first, then the list, then the whole text.
+/// Shortens rendered template output: the text field first, then the list, then the whole text.
 /// </summary>
 public static class TemplateFitter
 {

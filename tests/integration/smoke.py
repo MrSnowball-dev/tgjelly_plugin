@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Docker smoke test: install a TgJelly zip into a real Jellyfin and check that it loads (spec §14.3).
+"""Docker smoke test: install a TgJelly zip into a real Jellyfin and check that it loads.
 
 Usage:
   python3 tests/integration/smoke.py --image jellyfin/jellyfin:12.2 --track 2 --artifacts artifacts [--stub] [--base-url /jf]
@@ -9,7 +9,7 @@ Usage:
 
 --stub runs a stand-in Bot API (botapi_stub.py) and checks end to end: the token, destinations and test messages, a new
 movie's announcement, and a single server.started message after a restart.
---expect-incompatible checks that a 10.11 build loaded by a 12 server reports itself incompatible (spec F8).
+--expect-incompatible checks that a 10.11 build loaded by a 12 server reports itself incompatible.
 
 Needs docker. Exit code 0 means every check passed. Runs in CI; there is no local Docker requirement.
 """
@@ -42,7 +42,7 @@ PASSWORD = "smoke-pass-1"
 
 
 # Every dashboard asset GetPages() registers besides the page itself, with the content type a browser needs: a module
-# script with any other type is refused, and so is a stylesheet (design §8). test_smoke.py pins this to Plugin.cs.
+# script with any other type is refused, and so is a stylesheet. test_smoke.py pins this to Plugin.cs.
 WEB_ASSETS = (
     ("tgjelly.js", "javascript"),
     ("tgjelly-ui.js", "javascript"),
@@ -85,7 +85,7 @@ def network_xml(base_url: str) -> str:
 
 
 def stub_docker_args(port: int) -> list:
-    """Lets the container reach the stub on the host, and points TgJelly at it (spec §9.1, §14.3)."""
+    """Lets the container reach the stub on the host, and points TgJelly at it."""
     return ["--add-host=host.docker.internal:host-gateway", "-e", f"TGJELLY_BOT_API_BASE_URL=http://host.docker.internal:{port}"]
 
 
@@ -105,7 +105,7 @@ def docker(*args: str, check: bool = True) -> str:
 
 
 def http(method: str, url: str, body=None, token: str = None, timeout: float = 20):
-    """Returns (status, headers, text). Uses the header-based auth that Jellyfin 12 requires (F29)."""
+    """Returns (status, headers, text). Uses the header-based auth that Jellyfin 12 requires."""
     data = json.dumps(body).encode("utf-8") if body is not None else None
     request = urllib.request.Request(url, data=data, method=method)
     request.add_header("Authorization", CLIENT + (f', Token="{token}"' if token else ""))
@@ -219,7 +219,7 @@ def checks(base: str, meta: dict, expect_compatible: bool = True) -> str:
         code, _, body = http("GET", f"{base}/TgJelly/Status", token=token)
         check(code == 200, "GET /TgJelly/Status answers")
         data = json.loads(body)
-        check(data.get("Compatible") is False, "a 10.11 build on a 12 server reports itself incompatible (F8)")
+        check(data.get("Compatible") is False, "a 10.11 build on a 12 server reports itself incompatible")
         check(data.get("ConnectionState") == "Incompatible", "and keeps the bot off")
         return token
 
@@ -233,7 +233,7 @@ def checks(base: str, meta: dict, expect_compatible: bool = True) -> str:
 
 
 def telegram_checks(base: str, token: str, stub) -> None:
-    """Connect a bot, add a NewMedia chat by ID, receive the automatic test message (plan 2's deliverable)."""
+    """Connect a bot, add a NewMedia chat by ID, receive the automatic test message."""
     status, _, text = http("POST", f"{base}/TgJelly/Token", {"Token": SMOKE_TOKEN}, token=token, timeout=60)
     check(status == 200 and json.loads(text).get("Outcome") == "Connected", f"POST /TgJelly/Token connects (got {status} {text[:200]})")
 

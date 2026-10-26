@@ -85,7 +85,7 @@ public sealed class TemplateModelBuilder
         ApplyToggles(result, _settings.Current.Message.For(model.EventKey));
         if (entries is not null)
         {
-            // v0.2 kept the first entries that fit, grouped again by library, and could keep none at all.
+            // The digest keeps the first entries that fit, grouped again by library, and may keep none at all.
             return TemplateModel.Custom(
                 result,
                 null,

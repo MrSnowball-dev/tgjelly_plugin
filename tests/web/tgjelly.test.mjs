@@ -1,4 +1,4 @@
-// Dashboard page tests (spec §11.1). Run: node --import ./tests/web/jellyfin-resolve.mjs --test 'tests/web/*.test.mjs'
+// Dashboard page tests. Run: node --import ./tests/web/jellyfin-resolve.mjs --test 'tests/web/*.test.mjs'
 import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -573,7 +573,7 @@ test('a failed status poll says so, escaped through the strings', async t => {
     assert.ok(el('tgj-status').innerHTML.includes(m.t(EN, 'web.status.failed', { reason: 'HTTP 500: x', seconds: 3 })));
 });
 
-// --- core fixes from the Task 7 review ---
+// --- core fixes ---
 
 test('markDirty on a form that does not exist yet does nothing', async () => {
     const { view, hooks } = mount();
@@ -621,7 +621,7 @@ test('a throwing render is caught inside reloadSection', async t => {
     assert.ok(errors.length > 0);
 });
 
-// --- connecting a bot (spec §6.1, §6.4, §6.6) ---
+// --- connecting a bot ---
 
 const noToken = () => status({ HasToken: false, BotUsername: null, ConnectionState: 'NoToken', ConnectionMessage: 'No bot connected' });
 const input = (view, name, value, extra = {}) => dispatchOn(view, 'input', { 'data-tgj-input': name }, { value, ...extra });
@@ -888,7 +888,7 @@ test('bot username is escaped', async () => {
 
 // --- proxy form ---
 
-// --- auto-save helpers (plan 8, task 6) ---
+// --- auto-save helpers ---
 
 /** The newest cue spot for a key, as { className, innerHTML } (an empty one when the key has none). */
 const cue = (view, key) => ({ className: 'tgj-cue', innerHTML: '', ...view.cues.get(key) });
@@ -1039,7 +1039,7 @@ test('proxy 400 shows the field errors, escaped', async () => {
     assert.ok(proxyEl(el).includes('value="nonsense"'), 'a refresh keeps what was typed');
 });
 
-// --- labels (plan 9, task 1; design §3): every state word is an outlined label ---
+// --- labels: every state word is an outlined label ---
 
 test('cue_saved_isGoodLabel', async () => {
     const { view, api, timers } = mount({
@@ -1094,7 +1094,7 @@ test('templateBadge_edited_isAccentLabel', () => {
     assert.ok(!/tgj-badge/.test(edited + builtIn), 'one label style, not a parallel badge');
 });
 
-// --- fix round 1: secrets stay out of the page and state ---
+// --- secrets stay out of the page and state ---
 
 test('a typed proxy password is never rendered or kept in state, and survives a re-render in the input', async () => {
     const SECRET = 'hunter2-secret';
@@ -1223,7 +1223,7 @@ test('createApi throws on a network failure', async () => {
     await assert.rejects(api.get('Status'), TypeError);
 });
 
-// --- destinations (spec §6.6.3, §7.2, §7.3, §10.4; plan 8 Task 7: cards, auto-save) ---
+// --- destinations: cards, auto-save ---
 
 const destEl = el => el('tgj-destinations').innerHTML;
 const destAct = (view, act, attributes = {}) => {
@@ -1250,7 +1250,7 @@ function switchIn(html, name, attributes = {}) {
 
     return null;
 }
-// The bot's strings keep their emoji (design §7), so the dashboard must not show them: these too.
+// The bot's strings keep their emoji, so the dashboard must not show them: these too.
 const DEST_SYMBOLS = /[●✓✅⚠❌⛔▫🔔🔕]|️/u;
 
 /**
@@ -1659,7 +1659,7 @@ test('the set up manually link only shows when ManualUnlocked', async () => {
 
     const open = mount({ 'GET TgJelly/Destinations': destinations({ ManualUnlocked: true }) });
     await show(open.view);
-    // Jellyfin's dashboard routes on the hash, so the control must not carry an href="#…" (final review M1).
+    // Jellyfin's dashboard routes on the hash, so the control must not carry an href="#…".
     assert.ok(destEl(open.el).includes(ui.actionButton({ label: EN['web.dest.manualLink'], act: 'open-manual' })));
     assert.ok(!destEl(open.el).includes('href="#'));
     open.el('tgj-manual').scrolled = 0;
@@ -1671,7 +1671,7 @@ test('the set up manually link only shows when ManualUnlocked', async () => {
     assert.equal(open.el('tgj-manual').scrolled, 1);
 });
 
-// --- manual block and detected chats (spec §6.5) ---
+// --- manual block and detected chats ---
 
 const manualEl = el => el('tgj-manual').innerHTML;
 const DETECTED = [{ ChatId: -100777, Title: 'Movie <b>club</b>', Kind: 'Supergroup', DetectedAt: '2026-10-20T10:00:00Z' }];
@@ -2006,7 +2006,7 @@ test('copy diagnostics falls back to a textarea when clipboard rejects', async (
     assert.equal(selected, 1);
 });
 
-// --- message templates (Plan 7 Task 8) ---
+// --- message templates ---
 
 function templates(overrides = {}) {
     return {
@@ -2035,7 +2035,7 @@ function validation(overrides = {}) {
 
 const tplInput = (view, name, extra, type = 'input') => dispatchOn(view, type, { 'data-tgj-input': name }, extra);
 const tplUi = (overrides = {}) => ({ key: 'media.movie', forms: {}, result: null, good: null, destinations: [{ Id: 'd1', Title: 'Family' }], ...overrides });
-/** The Messages section with only the templates loaded: the pickers, the template card and the preview (plan 9 Task 8). */
+/** The Messages section with only the templates loaded: the pickers, the template card and the preview. */
 const renderTemplates = (dto, S, ui) => msg.renderMessagesSection({ templates: dto, settings: null, forms: ui.forms ?? {} }, S, ui);
 /** The template textarea's attributes, as renderTemplates writes them for an event key. */
 const tplAttrs = (key = 'media.movie') => ({ 'data-tgj-input': 'tplText', 'data-tgj-key': key, 'data-tgj-save': `template:${key}` });
@@ -2151,7 +2151,7 @@ test('renderTemplatePreview_posterPlaceholderAndButtons', () => {
     assert.ok(html.includes('href="https://jf.example/web/"') && html.includes('Open &lt;x&gt;'));
     assert.ok(!html.includes('javascript:'));
     assert.ok(html.includes('IMDb'));
-    // The length sits under the template (Task 8 fix round 1), not in the preview.
+    // The length sits under the template, not in the preview.
     assert.ok(!html.includes('9 / 1,024'));
     assert.ok(m.renderTemplateCheck(result, EN, 'en').includes('9 / 1,024'));
 
@@ -2388,7 +2388,7 @@ test('a spoiler in the preview is revealed on click', async () => {
     assert.ok(classes.has('tgj-tg-revealed'));
 });
 
-// --- templates save themselves (plan 8 Task 8, design §6.1 and §6.3) ---
+// --- templates save themselves ---
 
 /** The template PUTs, as [path, body]. */
 const tplPuts = api => api.calls.filter(c => c.type === 'PUT' && c.url.startsWith('/jf/TgJelly/Templates/'))
@@ -2443,7 +2443,7 @@ test('template_withErrors_notSaved', async () => {
     assert.equal(EN['web.templates.notSavedErrors'], 'fix the template errors');
     assert.deepEqual(cue(view, TPL_CUE), errorCue(EN['web.templates.notSavedErrors']));
 
-    // Leaving the field doesn't send it either, and the reason stays until the text is fixed (design §6.2).
+    // Leaving the field doesn't send it either, and the reason stays until the text is fixed.
     leave(view, tplAttrs());
     await timers.advance(5000);
     assert.deepEqual(tplPuts(api), []);
@@ -2622,7 +2622,7 @@ test('every web.* key in en.json is used by tgjelly.js', () => {
     }
 });
 
-// --- one revision across the sections (final review I1, spec §10.4) ---
+// --- one revision across the sections ---
 
 /** A server with one Revision for every section, like PluginConfiguration.Revision; each save moves it on. */
 function oneRevisionServer() {
@@ -2711,7 +2711,7 @@ test('a status poll with a higher revision reloads the sections, keeping unsaved
     assert.equal(gets(), before);
 });
 
-// --- the template textarea keeps its caret across section renders (final review M11) ---
+// --- the template textarea keeps its caret across section renders ---
 
 /** The template textarea as a live field: every write of the templates section replaces it (see liveFields). */
 const liveTextarea = (view, doc) => liveFields(view, doc, 'tgj-messages', [{ tag: 'textarea', attributes: { 'data-tgj-input': 'tplText', 'data-tgj-key': 'media.movie' } }]);
@@ -2756,7 +2756,7 @@ test('a render without the textarea focused does not take the focus', async () =
     assert.equal(doc.activeElement, null);
 });
 
-// --- the shell, section navigation and focus-safe writes (plan 8 Task 4, design §5.1-5.2) ---
+// --- the shell, section navigation and focus-safe writes ---
 
 /** Each <section data-tgj-section> of the shell markup: name → { attrs, body }. */
 function shellSections(html) {
@@ -2819,7 +2819,7 @@ test('shell_rendersAllSections_onlyActiveVisible', () => {
         assert.deepEqual(ids, HOSTS[name], `${name} holds today's containers, in order`);
     }
 
-    // The templates live in Messages now (plan 9): there is no Templates section or host.
+    // The templates live in Messages: there is no Templates section or host.
     assert.ok(!html.includes('id="tgj-templates"'));
     assert.doesNotMatch(html, /[●✓✔✅⚠❌✗🟢🔴]/u);
 });
@@ -3067,7 +3067,7 @@ test('pendingField_keepsTypedValueAcrossRefresh', async () => {
     assert.equal(field().value, 'https://later.example');
 });
 
-// --- Overview section (plan 8, task 5) ---
+// --- Overview section ---
 
 const SYMBOLS = /[●✓✅⚠❌]|️/u;
 
@@ -3260,7 +3260,7 @@ test('disconnectConfirm_switchOn_sendsFlag', async () => {
     assert.equal(api.calls.filter(c => c.type === 'DELETE')[1].url, '/jf/TgJelly/Token?removeDestinations=true');
 });
 
-// --- Messages and Advanced, with auto-save (plan 8, task 6) ---
+// --- Messages and Advanced, with auto-save ---
 
 const MESSAGE_KEYS = ['ShowPoster', 'ShowOverview', 'ShowRatingGenres', 'ShowOpenInJellyfin', 'ShowProviderLinks', 'AnnounceUpgrades'];
 const BATCHING_KEYS = ['QuietWindowSeconds', 'MaxHoldMinutes', 'ReleaseQuietSeconds', 'DigestThreshold', 'LateEditHours', 'ReadyTimeoutMinutes'];
@@ -3520,7 +3520,7 @@ test('the manual block and diagnostics are cards: their actions stay buttons', a
     assert.match(el('tgj-diagnostics').innerHTML, /<textarea id="tgj-diagnostics-text" class="tgj-field tgj-diag-text" readonly rows="12">diag<\/textarea>/);
 });
 
-// --- Task 6 fix round 1 ---
+// --- auto-save edge cases ---
 
 test('a save in flight does not cover a newer invalid change: its error stays, and the change stays pending', async () => {
     const { view, api, hooks } = mount({ 'PUT TgJelly/Proxy': request => settings({ Revision: 6, ProxyMode: JSON.parse(request.data).Mode }) });
@@ -3580,7 +3580,7 @@ test('a save queued behind a settings save sends the revision that save moved to
     const results = [];
     toggle(view, 'ShowPoster');
     await Promise.resolve();
-    // A destination save (Task 7's kind) queued right behind it, built when it is sent.
+    // A destination save queued right behind it, built when it is sent.
     hooks.queueSave({
         key: 'dest:d1',
         mode: 'now',
@@ -3595,7 +3595,7 @@ test('a save queued behind a settings save sends the revision that save moved to
     assert.deepEqual(api.calls.filter(c => c.type === 'PUT').map(c => JSON.parse(c.data).ExpectedRevision), [5, 6]);
     assert.deepEqual(results, [200]);
     assert.equal(server.revision, 7);
-    assert.equal(hooks.pageRevision(), 6, 'this raw send does not take its reply in; the destination save does (Task 7)');
+    assert.equal(hooks.pageRevision(), 6, 'this raw send does not take its reply in; the destination save does');
 });
 
 test('validatePublicUrl matches System.Uri on hosts URL alone would accept', () => {
@@ -3634,7 +3634,7 @@ test('batching uses the server rules and messages, the longest hold against the 
     assert.equal(putSettings(api)[0].Batching.QuietWindowSeconds, 120, 'the quiet window edit is not sent with it');
 });
 
-// --- no decorative symbols (Plan 8 Task 9) ---
+// --- no decorative symbols ---
 
 const NO_SYMBOLS = /[●✓✔✅⚠❌✗🟢🔴]/u;
 
@@ -3663,7 +3663,7 @@ test('renderedDashboard_hasNoDecorativeSymbols', async () => {
     assert.ok(!NO_SYMBOLS.test(everything(unconnected.view)), 'not connected');
 });
 
-// --- a section reload that lands after a newer save (final review F1) ---
+// --- a section reload that lands after a newer save ---
 
 /** Holds the reply to the next GET of this path (the reply is read from the routes when it is sent); release() lets it land. */
 function holdNextGet(api, path) {
@@ -3767,7 +3767,7 @@ test('a templates reload sent before a template save and answered after it is ig
     assert.equal(text, 'New {{ title }}');
 });
 
-// --- actions wait for the auto-save queue (final review F3) ---
+// --- actions wait for the auto-save queue ---
 
 test('remove, add and set up started while a settings save is in flight send the Revision it moved to: no false conflict', async () => {
     const conflict = m.t(EN, 'web.dest.conflictPlain');
@@ -3817,7 +3817,7 @@ test('remove, add and set up started while a settings save is in flight send the
     }
 });
 
-// --- Task 14: no vague errors ---
+// --- no vague errors ---
 
 test('requestError_includesStatusAndServerText', () => {
     const withText = m.requestError(EN, { status: 409, body: { Message: 'Changed <elsewhere>' } });
@@ -3883,7 +3883,7 @@ test('a save with nothing to save into says what happened and what to do', () =>
     }
 });
 
-// --- Task 14 fix round 1 ---
+// --- no vague errors: more cases ---
 
 test('a throwing save cue says the cause and the next step', async t => {
     t.mock.method(console, 'error', () => {});
@@ -3926,7 +3926,7 @@ test('bodyless 404, 401 and 403 name their known causes', () => {
     assert.ok(m.requestError(EN, { status: 502, body: null }).includes('without saying why'));
 });
 
-// --- Task 14 fix round 2 ---
+// --- no vague errors: still more cases ---
 
 test('a throwing template check shows the cause and the next step, and clears', async t => {
     t.mock.method(console, 'error', () => {});

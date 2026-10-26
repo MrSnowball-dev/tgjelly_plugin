@@ -1,4 +1,4 @@
-// Auto-save queue tests (plan 8, design §6). Pure module, driven by a fake clock.
+// Auto-save queue tests. Pure module, driven by a fake clock.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createAutosave } from '../../src/Jellyfin.Plugin.TgJelly/Web/tgjelly-autosave.js';

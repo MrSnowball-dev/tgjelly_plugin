@@ -1,4 +1,4 @@
-// The Messages section (plan 9 Task 8, design §6.1-6.2): one page per message, with its switches, its template and the
+// The Messages section: one page per message, with its switches, its template and the
 // preview. Run: node --import ./tests/web/jellyfin-resolve.mjs --test 'tests/web/*.test.mjs'
 import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
@@ -397,7 +397,7 @@ test('advanced_hasBatchingCard', async () => {
     const advanced = el('tgjelly-root').innerHTML.match(/<section[^>]*data-tgj-section="advanced"[^>]*>([\s\S]*?)<\/section>/)[1];
     const hosts = [...advanced.matchAll(/id="([^"]+)"/g)].map(x => x[1]);
     assert.ok(hosts.includes('tgj-batching'));
-    assert.ok(hosts.indexOf('tgj-updates') < hosts.indexOf('tgj-batching'), 'Batching comes after Update checks (design §7)');
+    assert.ok(hosts.indexOf('tgj-updates') < hosts.indexOf('tgj-batching'), 'Batching comes after Update checks');
     assert.ok(el('tgj-batching').innerHTML.includes(`<h2 class="tgj-card-title">${m.t(EN, 'web.batching.title')}</h2>`));
     assert.ok(el('tgj-batching').innerHTML.includes('data-tgj-input="batching"'));
 });
@@ -420,7 +420,7 @@ test('previewOffset keeps the preview under the header and within the cards', ()
     assert.equal(msg.previewOffset({ ...base, cardsTop: -400, sideHeight: 3000 }), 0, 'a preview taller than the cards stays');
 });
 
-// --- the template's errors and length sit under the textarea (Task 8 fix round 1, design §6.1) ---
+// --- the template's errors and length sit under the textarea ---
 
 const FAILED = { ...VALIDATION, Errors: [{ Message: 'Unexpected <end>', Line: 2, Column: 7 }], Warnings: ['careful & slow'], Html: '', Length: 0 };
 const GOOD = { ...VALIDATION, Html: '<b>last good</b>', Length: 9, Limit: 1024 };
@@ -485,7 +485,7 @@ test('templateErrors_updateWithoutTouchingTextarea', async () => {
     assert.deepEqual([typing.selectionStart, typing.selectionEnd, typing.selectionDirection], [4, 6, 'forward'], 'and the caret');
 });
 
-// --- the Fields and Formatting tables, click to insert (Task 9, design §6.3) ---
+// --- the Fields and Formatting tables, click to insert ---
 
 const TPL_ATTRS = { 'data-tgj-input': 'tplText', 'data-tgj-key': 'media.movie', 'data-tgj-save': 'template:media.movie' };
 const fieldItem = () => item('media.movie', {
@@ -685,7 +685,7 @@ test('insertCell_isKeyboardActivatable', async () => {
     assert.ok(event.defaultPrevented);
 });
 
-// --- the hover link between template and preview (Task 10, design §6.5) ---
+// --- the hover link between template and preview ---
 
 const HOVER_TEXT = '<b>{{ title }}</b> ({{ year }})';
 // The pieces Templates/Validate gives for HOVER_TEXT: <b>, {{ title }}, </b> (, {{ year }} and ).

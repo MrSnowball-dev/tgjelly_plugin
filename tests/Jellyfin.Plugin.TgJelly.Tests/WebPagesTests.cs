@@ -56,11 +56,11 @@ public class WebPagesTests
     {
         var html = ReadResource("Jellyfin.Plugin.TgJelly.Web.tgjelly.html");
 
-        // viewContainer looks for this literal, with double quotes (F25).
+        // viewContainer looks for this literal, with double quotes.
         Assert.Contains("data-role=\"page\"", html, StringComparison.Ordinal);
         Assert.Contains("data-controller=\"__plugin/tgjelly.js\"", html, StringComparison.Ordinal);
 
-        // translateHtml rewrites every ${...} in the HTML (F26); all JS lives in tgjelly.js.
+        // translateHtml rewrites every ${...} in the HTML; all JS lives in tgjelly.js.
         Assert.DoesNotContain("${", html, StringComparison.Ordinal);
         Assert.DoesNotContain("<script", html, StringComparison.OrdinalIgnoreCase);
     }
@@ -81,7 +81,7 @@ public class WebPagesTests
     [Fact]
     public void Html_IsAThinShell_TheStylesheetAndTheRoot()
     {
-        // Plan 8: tgjelly.js renders the shell and every section container into #tgjelly-root (tests/web checks
+        // tgjelly.js renders the shell and every section container into #tgjelly-root (tests/web checks
         // where each container sits); the page only loads the stylesheet, and keeps no inline styles.
         var html = ReadResource("Jellyfin.Plugin.TgJelly.Web.tgjelly.html");
 

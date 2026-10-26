@@ -171,7 +171,7 @@ public sealed class TemplateRenderer
 
     /// <summary>
     /// Fits a template to both limits. The problem is the first render error, HTML whitelist problem or empty part.
-    /// The digest is sent as text only, so its caption stays empty, as in v0.2. A fit that runs past
+    /// The digest is sent as text only, so its caption stays empty. A fit that runs past
     /// <see cref="FitDeadline"/> in all fails with "the template took too long".
     /// </summary>
     /// <param name="key">The template key.</param>

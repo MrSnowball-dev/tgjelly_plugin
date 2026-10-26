@@ -131,7 +131,7 @@ public sealed class SettingsStoreTests : IDisposable
     public void RestoreBackupIfWiped_RestoresBackup_AndRecordsNotice()
     {
         _store.Update(null, c => c.Destinations = [new Destination { Id = "abcd1234", ChatId = 42, Title = "Me" }]);
-        _host.SaveFromStore(new PluginConfiguration()); // what Jellyfin does after a failed XML load (F9)
+        _host.SaveFromStore(new PluginConfiguration()); // what Jellyfin does after a failed XML load
 
         Assert.True(_store.RestoreBackupIfWiped());
 
