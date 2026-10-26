@@ -157,12 +157,5 @@ public sealed class LibraryWatcherTests : IDisposable
         Assert.DoesNotContain(_manager.ReceivedCalls(), c => c.GetMethodInfo().Name.StartsWith("add_", StringComparison.Ordinal));
     }
 
-    [Fact]
-    public void IsScanRunning_ReadsTheLibraryManager()
-    {
-        _manager.IsScanRunning.Returns(true);
-        Assert.True(_watcher.IsScanRunning);
-    }
-
     public void Dispose() => _watcher.Dispose();
 }

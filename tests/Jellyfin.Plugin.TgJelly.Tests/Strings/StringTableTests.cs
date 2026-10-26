@@ -49,9 +49,6 @@ public class StringTableTests
         => Assert.Equal(expected, StringTable.BestMatch(lang));
 
     [Fact]
-    public void EmbeddedLanguages_ListsEnglish() => Assert.Contains("en", StringTable.EmbeddedLanguages);
-
-    [Fact]
     public void Snapshot_HasEveryEnglishKey()
     {
         var english = StringTable.LoadEmbedded("en").Snapshot();

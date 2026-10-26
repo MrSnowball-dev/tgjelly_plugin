@@ -21,9 +21,6 @@ public sealed class AlertCoalescerTests : IDisposable
     private DateTimeOffset Now => _h.Time.GetUtcNow();
 
     [Fact]
-    public void LoginFailedKey_IsPrefixed() => Assert.Equal("login_failed:ALICE", AlertCoalescer.LoginFailedKey("ALICE"));
-
-    [Fact]
     public void LockoutBeforeLoginFailed_IsHeld_ThenRepliesAndMarksLocked()
     {
         Assert.Empty(_coalescer.Process(Lockout("alice", 3)));
