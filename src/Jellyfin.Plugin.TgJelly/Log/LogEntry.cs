@@ -4,7 +4,7 @@ using System.Collections.Generic;
 namespace Jellyfin.Plugin.TgJelly.Log;
 
 /// <summary>
-/// One row of the event log: one message for one destination, or an event no destination got (design §8.1).
+/// One row of the event log: one message for one destination, or an event no destination got.
 /// </summary>
 public sealed record LogEntry
 {

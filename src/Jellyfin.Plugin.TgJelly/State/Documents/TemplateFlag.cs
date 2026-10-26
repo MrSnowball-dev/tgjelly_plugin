@@ -3,7 +3,7 @@ using System;
 namespace Jellyfin.Plugin.TgJelly.State.Documents;
 
 /// <summary>
-/// A problem with a custom template found at send time (spec §8.5, §9.4 row 6).
+/// A problem with a custom template found at send time.
 /// </summary>
 public sealed class TemplateFlag
 {

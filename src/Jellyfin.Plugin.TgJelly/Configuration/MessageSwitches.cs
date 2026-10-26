@@ -4,7 +4,7 @@ using System.Collections.Generic;
 namespace Jellyfin.Plugin.TgJelly.Configuration;
 
 /// <summary>
-/// What one message shows (design §6.2). A new instance has the media defaults, all on;
+/// What one message shows. A new instance has the media defaults, all on;
 /// <see cref="DefaultFor"/> gives each message's own defaults.
 /// </summary>
 public class MessageSwitches
@@ -49,7 +49,7 @@ public class MessageSwitches
     public bool ShowProviderLinks { get; set; } = true;
 
     /// <summary>
-    /// Returns the switches that change a message, in the order shown; the others are hidden for it (design §6.2).
+    /// Returns the switches that change a message, in the order shown; the others are hidden for it.
     /// </summary>
     /// <param name="eventKey">The event key, or <see cref="MessageOptions.DigestKey"/>.</param>
     /// <returns>The switch names: none for the digest, only <see cref="ShowPoster"/> for Security and Server.</returns>

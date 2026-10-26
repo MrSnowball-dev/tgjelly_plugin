@@ -1,7 +1,7 @@
 namespace Jellyfin.Plugin.TgJelly.Templates;
 
 /// <summary>
-/// One field a custom template can use for an event key (spec §8.5).
+/// One field a custom template can use for an event key.
 /// </summary>
 /// <param name="Name">The field name, as written in a template.</param>
 /// <param name="Type">One of <c>string</c>, <c>number</c>, <c>bool</c>, <c>string[]</c>, <c>episode[]</c> or <c>library[]</c>.</param>

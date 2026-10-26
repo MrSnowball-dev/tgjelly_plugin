@@ -3,12 +3,11 @@ using System.Collections.Generic;
 using System.Linq;
 using Jellyfin.Plugin.TgJelly.Configuration;
 using Jellyfin.Plugin.TgJelly.Delivery;
-using Jellyfin.Plugin.TgJelly.State.Documents;
 
 namespace Jellyfin.Plugin.TgJelly.Destinations;
 
 /// <summary>
-/// Moves a group's destinations to its supergroup chat ID (spec §9.4 row 5), shared by delivery and the update router.
+/// Moves a group's destinations to its supergroup chat ID, shared by delivery and the update router.
 /// </summary>
 public sealed class DestinationMigration
 {
@@ -68,7 +67,7 @@ public sealed class DestinationMigration
                 other.Events = [.. other.Events.Union(d.Events, StringComparer.Ordinal)];
                 other.SilentGroups = [.. other.SilentGroups.Union(d.SilentGroups, StringComparer.Ordinal)];
                 other.LibraryIds = other.LibraryIds.Length == 0 || d.LibraryIds.Length == 0 ? [] : [.. other.LibraryIds.Union(d.LibraryIds, StringComparer.Ordinal)];
-                other.Preset = EventCatalog.PresetFor(other.Events);
+                other.FollowsNewEvents = EventCatalog.HasAll(other.Events);
 
                 c.Destinations = [.. c.Destinations.Where(x => x.Id != d.Id)];
                 map[d.Id] = other.Id;

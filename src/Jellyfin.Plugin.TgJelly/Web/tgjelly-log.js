@@ -1,4 +1,4 @@
-// TgJelly dashboard: the Log section (plan 9 Task 13, design §8.1). Imported as './configurationpage?name=tgjelly-log.js'.
+// TgJelly dashboard: the Log section. Imported as './configurationpage?name=tgjelly-log.js'.
 //
 // One row per message per destination, newest first: when, the event, the destination, the result as a label, and a
 // plain reason. A Failed or attention row opens to show what Telegram or the network said, the tries and what to do.
@@ -12,10 +12,10 @@ import { esc, t, text, plural, label, card, actionButton, emptyState, selectFiel
 const PAGE_SIZE = 100;
 /** The most rows one GET Log returns (LogController.MaxLimit). */
 const MAX_LIMIT = 500;
-/** Longer than this without an event from Jellyfin, the top line says the server has been quiet (design §8.1). */
+/** Longer than this without an event from Jellyfin, the top line says the server has been quiet. */
 const QUIET_MS = 24 * 60 * 60 * 1000;
 
-/** Each result's label (design §3, §8.1): its word and its tone. An unknown result shows as a neutral word. */
+/** Each result's label: its word and its tone. An unknown result shows as a neutral word. */
 const RESULTS = {
     Waiting: ['web.log.result.Waiting', 'progress'],
     Skipped: ['web.log.result.Skipped', 'neutral'],
@@ -253,7 +253,7 @@ function renderRow(row, index, S, lang, now, expanded) {
     // Why is empty for a plain Sent (the server sends no details for it); several details are joined, most serious first.
     const why = esc((row.Details ?? []).join('; '));
     const classes = `tgj-log-row${more ? ' tgj-log-row--opens' : ''}${open ? ' tgj-log-row--open' : ''}`;
-    // The whole row opens it too (design §8.1: clicking the row); the button is the keyboard's way in.
+    // The whole row opens it too (clicking the row); the button is the keyboard's way in.
     const rowAct = more ? ` data-tgj-act="logToggle" data-tgj-id="${id}" data-tgj-instant` : '';
     return `<tr class="${classes}" data-tgj-row="${id}"${rowAct}>`
         + `<td class="tgj-log-when">${timeHtml(row.At, lang, now)}</td>`
@@ -266,7 +266,7 @@ function renderRow(row, index, S, lang, now, expanded) {
 }
 
 /**
- * Renders the Log section (design §8.1): the lead, the filters, the top lines and the table, newest first.
+ * Renders the Log section: the lead, the filters, the top lines and the table, newest first.
  * @param {object | null} page the LogDto (with any older pages appended), or null while it loads
  * @param {{ problemsOnly: boolean, destinationId: string, eventKey: string }} filters
  * @param {Record<string, string> | null} S

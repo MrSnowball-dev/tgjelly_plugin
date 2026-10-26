@@ -1,7 +1,7 @@
 namespace Jellyfin.Plugin.TgJelly.Library;
 
 /// <summary>
-/// The kinds of library item the pipeline tells apart (spec §7.4 step 1). Type tests are exact, most-derived first.
+/// The kinds of library item the pipeline tells apart. Type tests are exact, most-derived first.
 /// </summary>
 public enum MediaKind
 {

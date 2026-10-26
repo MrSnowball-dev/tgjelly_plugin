@@ -1,7 +1,7 @@
 namespace Jellyfin.Plugin.TgJelly.Bot;
 
 /// <summary>
-/// The bot's <c>t.me</c> links (spec §6.5, §11.2), shared by the API and the bot's screens.
+/// The bot's <c>t.me</c> links, shared by the API and the bot's screens.
 /// </summary>
 public static class BotLinks
 {

@@ -4,7 +4,7 @@ using Jellyfin.Plugin.TgJelly.Configuration;
 namespace Jellyfin.Plugin.TgJelly.Api;
 
 /// <summary>
-/// <c>PUT TgJelly/Settings</c>: replaces these sections, except <c>Message</c>, which merges; proxy fields aren't part of it (spec §11.2).
+/// <c>PUT TgJelly/Settings</c>: replaces these sections, except <c>Message</c>, which merges; proxy fields aren't part of it.
 /// </summary>
 public sealed class SettingsUpdateRequest
 {

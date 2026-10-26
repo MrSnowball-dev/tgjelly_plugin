@@ -5,7 +5,7 @@ using Jellyfin.Plugin.TgJelly.State.Documents;
 namespace Jellyfin.Plugin.TgJelly.Bot;
 
 /// <summary>
-/// What a bot switch or a disconnect clears and keeps (spec §10.4). Plan 4 adds its bot-scoped sections here.
+/// What a bot switch or a disconnect clears and keeps.
 /// </summary>
 public static class BotStateReset
 {
@@ -25,7 +25,6 @@ public static class BotStateReset
         ArgumentNullException.ThrowIfNull(destinationIds);
         queue.SentMessages.Clear();
         queue.FileIdCache.Clear();
-        state.Telegram.Profile = new ProfileState();
         ClearBotSections(state);
         foreach (var id in destinationIds)
         {
@@ -47,7 +46,6 @@ public static class BotStateReset
         queue.SentMessages.Clear();
         queue.Outbox.Clear();
         queue.FileIdCache.Clear();
-        state.Telegram.Profile = new ProfileState();
         ClearBotSections(state);
     }
 

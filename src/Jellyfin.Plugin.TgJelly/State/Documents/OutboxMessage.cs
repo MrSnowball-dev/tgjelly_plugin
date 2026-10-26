@@ -3,7 +3,7 @@ using System.Collections.Generic;
 namespace Jellyfin.Plugin.TgJelly.State.Documents;
 
 /// <summary>
-/// The rendered message of an Outbox entry (spec §9.3), plus the fallback flags delivery sets (§9.4).
+/// The rendered message of an Outbox entry, plus the fallback flags delivery sets.
 /// </summary>
 public sealed class OutboxMessage
 {

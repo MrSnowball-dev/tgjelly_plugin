@@ -16,7 +16,7 @@ using Microsoft.Extensions.Logging;
 namespace Jellyfin.Plugin.TgJelly.Api;
 
 /// <summary>
-/// Detected-chat endpoints (spec §6.5, §11.2): set up a chat the bot was added to outside setup, or dismiss it. The
+/// Detected-chat endpoints: set up a chat the bot was added to outside setup, or dismiss it. The
 /// list comes with <c>GET Destinations</c>.
 /// </summary>
 [ApiController]
@@ -25,7 +25,6 @@ namespace Jellyfin.Plugin.TgJelly.Api;
 [Produces(MediaTypeNames.Application.Json)]
 public class DetectedChatsController : ControllerBase
 {
-    private readonly SettingsStore _settings;
     private readonly BotConnection _connection;
     private readonly DestinationChecker _checker;
     private readonly DestinationCreator _creator;
@@ -39,7 +38,6 @@ public class DetectedChatsController : ControllerBase
     /// <summary>
     /// Initializes a new instance of the <see cref="DetectedChatsController"/> class.
     /// </summary>
-    /// <param name="settings">The settings store.</param>
     /// <param name="connection">The bot connection.</param>
     /// <param name="checker">The chat checker.</param>
     /// <param name="creator">The destination creator.</param>
@@ -49,9 +47,8 @@ public class DetectedChatsController : ControllerBase
     /// <param name="gate">The instance gate; changes wait until this instance owns the data folder.</param>
     /// <param name="state">The state store.</param>
     /// <param name="logger">The logger.</param>
-    public DetectedChatsController(SettingsStore settings, BotConnection connection, DestinationChecker checker, DestinationCreator creator, BotMemory memory, DestinationDtoMapper mapper, StringTable strings, InstanceGate gate, StateStore state, ILogger<DetectedChatsController> logger)
+    public DetectedChatsController(BotConnection connection, DestinationChecker checker, DestinationCreator creator, BotMemory memory, DestinationDtoMapper mapper, StringTable strings, InstanceGate gate, StateStore state, ILogger<DetectedChatsController> logger)
     {
-        _settings = settings;
         _connection = connection;
         _checker = checker;
         _creator = creator;
@@ -64,7 +61,7 @@ public class DetectedChatsController : ControllerBase
     }
 
     /// <summary>
-    /// Sets up a detected chat: checks it once, as in the bot (spec §6.2 step 2), then adds it as a destination. It
+    /// Sets up a detected chat: checks it once, as in the bot, then adds it as a destination. It
     /// stops being a detected chat when it is added.
     /// </summary>
     /// <param name="chatId">The detected chat.</param>
@@ -122,7 +119,7 @@ public class DetectedChatsController : ControllerBase
         }
 
         // A new destination starts with every event on; the admin trims it afterwards.
-        var created = await _creator.CreateAsync(check, threadId, EventCatalog.Expand(PresetKind.Everything), PresetKind.Everything, request.ExpectedRevision, cancellationToken).ConfigureAwait(false);
+        var created = await _creator.CreateAsync(check, threadId, [.. EventCatalog.AllKeys], request.ExpectedRevision, cancellationToken).ConfigureAwait(false);
         switch (created.Outcome)
         {
             case CreateOutcome.Conflict:

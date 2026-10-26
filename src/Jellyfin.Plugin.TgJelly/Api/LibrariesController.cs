@@ -10,7 +10,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace Jellyfin.Plugin.TgJelly.Api;
 
 /// <summary>
-/// Lists the libraries for the library filter (spec §11.2).
+/// Lists the libraries for the library filter.
 /// </summary>
 [ApiController]
 [Route("TgJelly")]

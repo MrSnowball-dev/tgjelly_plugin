@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using Jellyfin.Plugin.TgJelly.Configuration;
 using MediaBrowser.Common.Configuration;
@@ -15,16 +16,16 @@ namespace Jellyfin.Plugin.TgJelly;
 public class Plugin : BasePlugin<PluginConfiguration>, IConfigurationHost, IHasWebPages
 {
     /// <summary>
-    /// The plugin name. Fixed forever (spec §5.1).
+    /// The plugin name. Fixed forever.
     /// </summary>
     public const string PluginName = "TgJelly";
 
     /// <summary>
-    /// The plugin GUID. Fixed forever (spec §5.1).
+    /// The plugin GUID. Fixed forever.
     /// </summary>
     public static readonly Guid PluginId = new("e547b901-0dc4-42ae-8999-3871dd141270");
 
-    // True only while SettingsStore is saving, so outside saves can be told apart (spec §10.4).
+    // True only while SettingsStore is saving, so outside saves can be told apart.
     private static readonly AsyncLocal<bool> SavingFromStore = new();
 
     private readonly Lock _saveGate = new();
@@ -58,7 +59,16 @@ public class Plugin : BasePlugin<PluginConfiguration>, IConfigurationHost, IHasW
     public override string Description => "Telegram notifications for Jellyfin.";
 
     /// <summary>
-    /// Lists the dashboard pages (spec §11.1). The HTML page must come first: the plugin's Settings button
+    /// Gets the dashboard's script modules: the page controller first, then the modules it imports.
+    /// </summary>
+    internal static IReadOnlyList<string> WebModules { get; } =
+    [
+        "tgjelly.js", "tgjelly-ui.js", "tgjelly-api.js", "tgjelly-shell.js", "tgjelly-overview.js", "tgjelly-destinations.js",
+        "tgjelly-advanced.js", "tgjelly-autosave.js", "tgjelly-messages.js", "tgjelly-preview.js", "tgjelly-log.js",
+    ];
+
+    /// <summary>
+    /// Lists the dashboard pages. The HTML page must come first: the plugin's Settings button
     /// opens the first page, and a JS page there would crash the view.
     /// </summary>
     /// <returns>The page descriptors.</returns>
@@ -75,36 +85,7 @@ public class Plugin : BasePlugin<PluginConfiguration>, IConfigurationHost, IHasW
                 EnableInMainMenu = true,
                 MenuIcon = "send",
             },
-            new PluginPageInfo
-            {
-                Name = "tgjelly.js",
-                EmbeddedResourcePath = resourcePrefix + "tgjelly.js",
-            },
-            new PluginPageInfo
-            {
-                Name = "tgjelly-ui.js",
-                EmbeddedResourcePath = resourcePrefix + "tgjelly-ui.js",
-            },
-            new PluginPageInfo
-            {
-                Name = "tgjelly-autosave.js",
-                EmbeddedResourcePath = resourcePrefix + "tgjelly-autosave.js",
-            },
-            new PluginPageInfo
-            {
-                Name = "tgjelly-messages.js",
-                EmbeddedResourcePath = resourcePrefix + "tgjelly-messages.js",
-            },
-            new PluginPageInfo
-            {
-                Name = "tgjelly-preview.js",
-                EmbeddedResourcePath = resourcePrefix + "tgjelly-preview.js",
-            },
-            new PluginPageInfo
-            {
-                Name = "tgjelly-log.js",
-                EmbeddedResourcePath = resourcePrefix + "tgjelly-log.js",
-            },
+            .. WebModules.Select(m => new PluginPageInfo { Name = m, EmbeddedResourcePath = resourcePrefix + m }),
             new PluginPageInfo
             {
                 Name = "tgjelly.css",

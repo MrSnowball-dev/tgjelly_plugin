@@ -35,8 +35,8 @@ public sealed class TemplateItemDto
     public IReadOnlyDictionary<string, object?> SampleSparse { get; init; } = new Dictionary<string, object?>();
 
     /// <summary>
-    /// Gets the message switches that change this message, in the order shown (<c>MessageSwitches.Applicable</c>,
-    /// design §6.2): the dashboard shows only these.
+    /// Gets the message switches that change this message, in the order shown (<c>MessageSwitches.Applicable</c>): the
+    /// dashboard shows only these.
     /// </summary>
     public IReadOnlyList<string> ApplicableSwitches { get; init; } = [];
 

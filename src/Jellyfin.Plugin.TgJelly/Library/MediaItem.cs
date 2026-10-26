@@ -65,6 +65,6 @@ public sealed class MediaItem
     /// <summary>Gets the Primary image, if any.</summary>
     public ImageRef? Primary { get; init; }
 
-    /// <summary>Gets the identity set (spec §7.4 step 8).</summary>
+    /// <summary>Gets the identity set.</summary>
     public IReadOnlyList<string> Identities { get; init; } = [];
 }

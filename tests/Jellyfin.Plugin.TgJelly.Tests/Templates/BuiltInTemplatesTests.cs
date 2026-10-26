@@ -12,45 +12,12 @@ public sealed class BuiltInTemplatesTests
 {
     public static TheoryData<string> EnKeys() => [.. BuiltInTemplates.Keys("en")];
 
-    [Theory]
-    [InlineData("media.movie")]
-    [InlineData("media.musicvideo")]
-    [InlineData("media.book")]
-    [InlineData("media.episodes")]
-    [InlineData("media.album")]
-    [InlineData("media.digest")]
-    public void MediaKeys_Exist(string key)
-    {
-        Assert.False(string.IsNullOrWhiteSpace(BuiltInTemplates.Get(key, "en")));
-        Assert.Contains(key, BuiltInTemplates.Keys("en"));
-    }
-
-    [Theory]
-    [InlineData("security.login_failed")]
-    [InlineData("security.lockout")]
-    [InlineData("security.login_succeeded")]
-    [InlineData("security.user_created")]
-    [InlineData("security.user_deleted")]
-    [InlineData("security.password_changed")]
-    [InlineData("server.started")]
-    [InlineData("server.update_available")]
-    [InlineData("server.plugin_installed")]
-    [InlineData("server.plugin_updated")]
-    [InlineData("server.plugin_uninstalled")]
-    [InlineData("server.plugin_install_failed")]
-    [InlineData("server.task_failed")]
-    [InlineData("server.restart_pending")]
-    public void AlertKeys_Exist(string key)
-    {
-        Assert.False(string.IsNullOrWhiteSpace(BuiltInTemplates.Get(key, "en")));
-        Assert.Contains(key, BuiltInTemplates.Keys("en"));
-    }
-
     [Fact]
     public void EveryTemplateKey_HasABuiltIn()
     {
         // Messages have no other text source, so a key without a built-in template would only get the last-resort text.
         Assert.Equal(TemplateKeys.All.Order(StringComparer.Ordinal), BuiltInTemplates.Keys("en"));
+        Assert.All(TemplateKeys.All, key => Assert.False(string.IsNullOrWhiteSpace(BuiltInTemplates.Get(key, "en"))));
     }
 
     [Fact]

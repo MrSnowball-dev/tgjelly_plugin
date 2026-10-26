@@ -11,7 +11,7 @@ namespace Jellyfin.Plugin.TgJelly.Bot;
 /// The bounded queue between the poll loop and the <see cref="BotWorker"/>: the poll loop only enqueues, so a slow
 /// screen never delays confirming updates.
 /// </summary>
-[System.Diagnostics.CodeAnalysis.SuppressMessage("Naming", "CA1711:Identifiers should not have incorrect suffix", Justification = "It is a queue; the name is part of the plan 4 contract.")]
+[System.Diagnostics.CodeAnalysis.SuppressMessage("Naming", "CA1711:Identifiers should not have incorrect suffix", Justification = "It is a queue.")]
 public sealed class BotWorkQueue
 {
     /// <summary>The most items that wait; further ones are dropped.</summary>

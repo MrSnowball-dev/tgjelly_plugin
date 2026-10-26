@@ -5,7 +5,7 @@ using System.Xml.Serialization;
 namespace Jellyfin.Plugin.TgJelly.Configuration;
 
 /// <summary>
-/// Proxy settings without credentials (spec §10.1).
+/// Proxy settings without credentials.
 /// </summary>
 public class ProxySettings
 {

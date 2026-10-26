@@ -17,7 +17,7 @@ using Jellyfin.Plugin.TgJelly.Templates;
 namespace Jellyfin.Plugin.TgJelly.Status;
 
 /// <summary>
-/// Builds the plain-text diagnostics report admins paste into GitHub issues (spec §12). It never includes the
+/// Builds the plain-text diagnostics report admins paste into GitHub issues. It never includes the
 /// token, proxy credentials, chat IDs, chat titles or the base-URL override's value, and the whole text goes
 /// through <see cref="SecretRedactor"/>.
 /// </summary>
@@ -141,11 +141,11 @@ public sealed class DiagnosticsReport
         foreach (var d in settings.Destinations)
         {
             var health = _health.Get(d.Id);
-            sb.Append(CultureInfo.InvariantCulture, $"{d.Id}: kind {d.Kind}, all events: {YesNo(d.Preset == PresetKind.Everything)}, enabled: {YesNo(d.Enabled)}, health: {health.Status}, photos blocked: {YesNo(health.PhotosBlocked)}, topic set: {YesNo(d.ThreadId != 0)}, events: {d.Events.Length}, libraries: {d.LibraryIds.Length}\n");
+            sb.Append(CultureInfo.InvariantCulture, $"{d.Id}: kind {d.Kind}, all events: {YesNo(d.FollowsNewEvents)}, enabled: {YesNo(d.Enabled)}, health: {health.Status}, photos blocked: {YesNo(health.PhotosBlocked)}, topic set: {YesNo(d.ThreadId != 0)}, events: {d.Events.Length}, libraries: {d.LibraryIds.Length}\n");
         }
 
         Section(sb, "Templates");
-        // Every override is the template in use (design §5.1); the settings migration has already dropped empty ones.
+        // Every override is the template in use; the settings migration has already dropped empty ones.
         foreach (var template in settings.Templates.OrderBy(t => t.EventKey, StringComparer.Ordinal))
         {
             Line(sb, template.EventKey, _templates.Current(template.EventKey)?.Kind ?? "ok");

@@ -8,7 +8,7 @@ namespace Jellyfin.Plugin.TgJelly.Tests.Configuration;
 
 public class PluginConfigurationXmlTests
 {
-    // Jellyfin's IXmlSerializer is a thin wrapper over System.Xml.Serialization.XmlSerializer (F9).
+    // Jellyfin's IXmlSerializer is a thin wrapper over System.Xml.Serialization.XmlSerializer.
     private static readonly XmlSerializer Serializer = new(typeof(PluginConfiguration));
 
     [Fact]
@@ -16,7 +16,7 @@ public class PluginConfigurationXmlTests
     {
         var c = new PluginConfiguration();
 
-        Assert.Equal(1, c.SchemaVersion);
+        Assert.Equal(2, c.SchemaVersion);
         Assert.Equal(0, c.Revision);
         Assert.Equal("en", c.Language);
         Assert.Equal(ProxyMode.System, c.Proxy.Mode);
@@ -53,13 +53,13 @@ public class PluginConfigurationXmlTests
                     ThreadId = 42,
                     Title = "Movie Club",
                     Kind = ChatKind.Supergroup,
-                    Preset = PresetKind.Custom,
+                    FollowsNewEvents = false,
                     Events = ["media.movie", "server.started"],
                     LibraryIds = ["0123456789abcdef0123456789abcdef"],
                     SilentGroups = ["media"],
                 },
             ],
-            Templates = [new TemplateOverride { EventKey = "media.movie", Enabled = true, Text = "{{ title }}" }],
+            Templates = [new TemplateOverride { EventKey = "media.movie", Text = "{{ title }}" }],
         };
 
         var copy = RoundTrip(original);
@@ -70,7 +70,7 @@ public class PluginConfigurationXmlTests
         Assert.Equal(-1001234567890123, d.ChatId);
         Assert.Equal(42, d.ThreadId);
         Assert.Equal(ChatKind.Supergroup, d.Kind);
-        Assert.Equal(PresetKind.Custom, d.Preset);
+        Assert.False(d.FollowsNewEvents);
         Assert.Equal(["media.movie", "server.started"], d.Events);
         Assert.Equal(["media"], d.SilentGroups);
         Assert.Equal("{{ title }}", Assert.Single(copy.Templates).Text);
@@ -101,7 +101,7 @@ public class PluginConfigurationXmlTests
     public void XmlFromANewerVersion_WithUnknownElements_StillLoads()
     {
         // After a downgrade the XML may contain fields this version does not know. If loading threw,
-        // Jellyfin would replace the whole config with defaults (F9).
+        // Jellyfin would replace the whole config with defaults.
         const string Xml = "<?xml version=\"1.0\"?><PluginConfiguration><Revision>9</Revision><FutureSetting>x</FutureSetting>"
             + "<Batching><QuietWindowSeconds>60</QuietWindowSeconds><FutureNested>1</FutureNested></Batching></PluginConfiguration>";
 
@@ -115,7 +115,7 @@ public class PluginConfigurationXmlTests
     [Fact]
     public void XmlFromANewerVersion_WithUnknownEnumNames_ReadsSafeFallbacks()
     {
-        // An enum member added by a newer version must not make the whole XML fail to load (F9).
+        // An enum member added by a newer version must not make the whole XML fail to load.
         const string Xml = "<?xml version=\"1.0\"?><PluginConfiguration><Revision>3</Revision>"
             + "<Proxy><Mode>Mtproto</Mode></Proxy><UpdateCheck><Mode>Nightly</Mode></UpdateCheck>"
             + "<Destinations><Destination><Id>abcd1234</Id><ChatId>42</ChatId><Kind>Bogus</Kind><Preset>Playback</Preset></Destination></Destinations>"
@@ -130,7 +130,41 @@ public class PluginConfigurationXmlTests
         Assert.Equal((true, true, false), (c.UpdateCheck.Fixes, c.UpdateCheck.NewReleases, c.UpdateCheck.NewMajor));
         var d = Assert.Single(c.Destinations);
         Assert.Equal(ChatKind.Private, d.Kind);
-        Assert.Equal(PresetKind.Custom, d.Preset); // never silently "Everything"
+        Assert.False(d.FollowsNewEvents); // never silently "Everything"
+    }
+
+    [Fact]
+    public void AV09File_LoadsWithEveryValue()
+    {
+        // Written by v0.9's code: the owner's settings file looks like this.
+        using var file = File.OpenRead(Path.Combine(System.AppContext.BaseDirectory, "Fixtures", "Settings", "v0.9.xml"));
+        var c = (PluginConfiguration)Serializer.Deserialize(file)!;
+        c.Normalize();
+
+        Assert.Equal((2, 41L, "https://jf.example.com"), (c.SchemaVersion, c.Revision, c.PublicUrl));
+        Assert.Equal((ProxyMode.Http, "http://10.0.0.2:3128"), (c.Proxy.Mode, c.Proxy.Url));
+        Assert.True(c.Message.AnnounceUpgrades);
+        Assert.False(c.Message.For("media.movie").ShowPoster);
+        Assert.True(c.Message.For("media.episodes").ShowPoster);
+        Assert.Equal((90, 25, 15, 8, 4, 12), (c.Batching.QuietWindowSeconds, c.Batching.MaxHoldMinutes, c.Batching.ReleaseQuietSeconds, c.Batching.DigestThreshold, c.Batching.LateEditHours, c.Batching.ReadyTimeoutMinutes));
+        Assert.Equal((true, false, true, true), (c.UpdateCheck.Enabled, c.UpdateCheck.Fixes, c.UpdateCheck.NewReleases, c.UpdateCheck.NewMajor));
+        Assert.Equal(("media.movie", "<b>{{ title }}</b>"), (Assert.Single(c.Templates).EventKey, c.Templates[0].Text));
+
+        Assert.Equal(2, c.Destinations.Length);
+        var forum = c.Destinations[0];
+        Assert.Equal(("forum001", -1003514547050L, 5, "Family", ChatKind.Supergroup, true, true), (forum.Id, forum.ChatId, forum.ThreadId, forum.Title, forum.Kind, forum.Enabled, forum.IsForum));
+        Assert.False(forum.FollowsNewEvents);
+        Assert.Equal(["media.movie", "media.episodes", "security.login_failed"], forum.Events);
+        Assert.Equal(["0123456789abcdef0123456789abcdef"], forum.LibraryIds);
+        Assert.Equal(["security"], forum.SilentGroups);
+        Assert.True(forum.SeparateMediaTopics);
+        Assert.Equal([("media.movie", 7), ("security", 8)], System.Linq.Enumerable.Select(forum.TopicRoutes, r => (r.Slot, r.ThreadId)));
+        Assert.Equal([(5, "Jellyfin"), (7, "Films")], System.Linq.Enumerable.Select(forum.KnownTopics, t => (t.ThreadId, t.Name)));
+
+        var channel = c.Destinations[1];
+        Assert.Equal(("chan0002", ChatKind.Channel, false), (channel.Id, channel.Kind, channel.Enabled));
+        Assert.True(channel.FollowsNewEvents);
+        Assert.Equal(EventCatalog.AllKeys, channel.Events);
     }
 
     private static PluginConfiguration RoundTrip(PluginConfiguration c)

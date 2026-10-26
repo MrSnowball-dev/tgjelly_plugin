@@ -1,4 +1,3 @@
-using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using Telegram.Bot.Types;
@@ -6,7 +5,7 @@ using Telegram.Bot.Types;
 namespace Jellyfin.Plugin.TgJelly.Bot;
 
 /// <summary>
-/// The only door to the Bot API besides the supervisor's GetUpdates loop (spec §5.4 rule 1): one thin method per
+/// The only door to the Bot API besides the supervisor's GetUpdates loop: one thin method per
 /// call. Exceptions are not caught here; callers classify them with <c>TelegramErrorClassifier</c>.
 /// </summary>
 public interface ITelegramSender
@@ -81,12 +80,6 @@ public interface ITelegramSender
     /// <param name="ct">Cancels the call.</param>
     /// <returns>A task.</returns>
     Task AnswerCallbackAsync(string callbackQueryId, CancellationToken ct);
-
-    /// <summary>Calls <c>sendMessage</c> in HTML with reply-area markup (only <c>ReplyKeyboardRemove</c>, for stale v0.1 keyboards).</summary>
-    /// <param name="prompt">The prompt.</param>
-    /// <param name="ct">Cancels the call.</param>
-    /// <returns>The sent message.</returns>
-    Task<Message> SendPromptAsync(OutgoingPrompt prompt, CancellationToken ct);
 
     /// <summary>Calls <c>deleteMessage</c>.</summary>
     /// <param name="chatId">The chat.</param>

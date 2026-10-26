@@ -1,7 +1,7 @@
 namespace Jellyfin.Plugin.TgJelly.Bot;
 
 /// <summary>
-/// What a failed send or edit means, rows 1–15 of the spec §9.4 table, in order.
+/// What a failed send or edit means.
 /// </summary>
 public enum DeliveryErrorKind
 {

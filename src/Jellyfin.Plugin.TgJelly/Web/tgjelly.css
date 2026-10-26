@@ -1,5 +1,5 @@
 /*
- * TgJelly dashboard styles (plan 8, design §5.3 and §8). Served as configurationpage?name=tgjelly.css.
+ * TgJelly dashboard styles. Served as configurationpage?name=tgjelly.css.
  *
  * Rules:
  * - every selector starts with #tgjelly-root, so nothing leaks into Jellyfin's own page (tests/web/css.test.mjs);
@@ -617,7 +617,7 @@
     margin-top: var(--tgj-space-3);
 }
 
-/* ---- Label (plan 9 design §3): every state is a word in an outlined pill, no fill and no symbol ---- */
+/* ---- Label: every state is a word in an outlined pill, no fill and no symbol ---- */
 
 /* A soft tint of the tone's colour outlines it, and the text is in the tone's colour. Neutral is today's Built-in. */
 #tgjelly-root .tgj-label {
@@ -662,7 +662,7 @@
     color: var(--tgj-accent-text);
 }
 
-/* ---- Save cue (design §6.2, plan 9 §3): a label; Saved fades out over its 2 s; Not saved stays with its reason ---- */
+/* ---- Save cue: a label; Saved fades out over its 2 s; Not saved stays with its reason ---- */
 
 #tgjelly-root .tgj-cue {
     order: -1;
@@ -739,7 +739,7 @@
     padding-left: 1.2em;
 }
 
-/* ---- Messages: one page per message (design §6.1) ---- */
+/* ---- Messages: one page per message ---- */
 
 /* The pickers across the top; What it shows and the template on the left; the preview beside them, in view on scroll. */
 #tgjelly-root .tgj-msg-layout {
@@ -1039,8 +1039,8 @@
 }
 
 /*
- * The template preview copies Telegram's dark theme on purpose (design §6.4), so these tgj-tg- rules keep Telegram's
- * own colours (R3; tests/web/css.test.mjs exempts exactly this prefix): the chat background, the incoming bubble with
+ * The template preview copies Telegram's dark theme on purpose, so these tgj-tg- rules keep Telegram's
+ * own colours (tests/web/css.test.mjs exempts exactly this prefix): the chat background, the incoming bubble with
  * its tail and the time in its corner, the photo on top, and the inline keys under the bubble.
  */
 #tgjelly-root .tgj-tg-chat {
@@ -1235,7 +1235,7 @@
 }
 
 /*
- * The hover link (design §6.5): the piece under the pointer, lit on both sides at once. In the template a mirror of the
+ * The hover link: the piece under the pointer, lit on both sides at once. In the template a mirror of the
  * text lies behind the transparent textarea and draws the highlight; it never takes the pointer, the focus or the caret.
  */
 #tgjelly-root .tgj-piece-hl {
@@ -1512,7 +1512,7 @@
     }
 }
 
-/* ---- Log (plan 9 design §8.1): filters, the top lines, and one row per message per destination ---- */
+/* ---- Log: filters, the top lines, and one row per message per destination ---- */
 
 #tgjelly-root .tgj-log-controls {
     display: flex;

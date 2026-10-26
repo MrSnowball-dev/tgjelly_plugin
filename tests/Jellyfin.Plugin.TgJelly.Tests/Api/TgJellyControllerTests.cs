@@ -131,7 +131,7 @@ public class TgJellyControllerTests
         using var settings = new SettingsStore(new FakeConfigurationHost(), paths, state, time, NullLogger<SettingsStore>.Instance);
         using var gate = new InstanceGate(paths, time, NullLogger<InstanceGate>.Instance);
         var id = DestinationIds.New([]);
-        var saved = settings.Update(null, c => c.Destinations = [new Destination { Id = id, ChatId = -100111, Title = "Family", Kind = ChatKind.Supergroup, Events = EventCatalog.Expand(PresetKind.Everything) }]);
+        var saved = settings.Update(null, c => c.Destinations = [new Destination { Id = id, ChatId = -100111, Title = "Family", Kind = ChatKind.Supergroup, Events = [.. EventCatalog.AllKeys] }]);
         Assert.Equal(SettingsUpdateStatus.Saved, saved.Status);
         state.RecordError("outbox", "<dest:" + id + ">: Forbidden");
         state.RecordError("outbox", "<dest:gone>: Forbidden");
@@ -155,7 +155,7 @@ public class TgJellyControllerTests
         health.MarkProblem(d.Id, HealthStatus.Lost, "kicked");
         var library = new FakeLibrary();
         var readiness = new MediaReadiness(h.State, h.Settings, library, new PendingIdSet(), h.Time, NullLogger<MediaReadiness>.Instance);
-        var controller = new TgJellyController(CompatGuard.Evaluate(new Version(BuildInfo.TargetJellyfinMajor, 0, 0, 0)), gate, h.Settings, h.State, h.Secrets, h.Connection, outbox, health, h.Strings, readiness, library, new NoticeBuilder(h.State, h.Secrets, h.Settings, library, h.Strings, h.Time, new Jellyfin.Plugin.TgJelly.Templates.TemplateFlags(h.State, h.Settings, h.Time)));
+        var controller = new TgJellyController(CompatGuard.Evaluate(new Version(BuildInfo.TargetJellyfinMajor, 0, 0, 0)), gate, h.Settings, h.State, h.Secrets, h.Connection, outbox, health, h.Strings, readiness, library, new NoticeBuilder(h.State, h.Secrets, h.Settings, library, h.Strings, new Jellyfin.Plugin.TgJelly.Templates.TemplateFlags(h.State, h.Settings, h.Time)));
 
         var status = controller.GetStatus().Value!;
 
@@ -283,6 +283,6 @@ public class TgJellyControllerTests
         var health = new HealthService(gate, connection, new DestinationChecker(connection, strings), settings, state, TimeProvider.System, NullLogger<HealthService>.Instance);
         library ??= new FakeLibrary();
         readiness ??= new MediaReadiness(state, settings, library, new PendingIdSet(), TimeProvider.System, NullLogger<MediaReadiness>.Instance);
-        return new TgJellyController(compat, gate, settings, state, secrets, connection, new Outbox(state, strings, TimeProvider.System), health, strings, readiness, library, new NoticeBuilder(state, secrets, settings, library, strings, TimeProvider.System, new Jellyfin.Plugin.TgJelly.Templates.TemplateFlags(state, settings, TimeProvider.System)));
+        return new TgJellyController(compat, gate, settings, state, secrets, connection, new Outbox(state, strings, TimeProvider.System), health, strings, readiness, library, new NoticeBuilder(state, secrets, settings, library, strings, new Jellyfin.Plugin.TgJelly.Templates.TemplateFlags(state, settings, TimeProvider.System)));
     }
 }

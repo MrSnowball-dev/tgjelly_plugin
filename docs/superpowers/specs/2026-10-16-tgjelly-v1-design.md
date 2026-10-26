@@ -26,7 +26,7 @@ TgJelly is a Jellyfin server plugin with a built-in Telegram bot. Version 1 is a
 - Access model: **trust the BotFather restriction**. Anyone who can open the bot's private chat can manage it. The owner rejected an invisible "first /start claims the bot" lock.
 - The owner explicitly kept three behaviors that the review suggested changing:
   - late episodes are added to the earlier message by a silent edit,
-  - (superseded 2026-10-25: presets were removed; a new chat starts with every event on),
+  - (superseded 2026-10-25: presets were removed; a new chat starts with every event on. Removed entirely by the v1 cleanup design, `2026-10-25-tgjelly-v1-cleanup-single-build-design.md`.),
   - every new destination gets an automatic test message.
 - Roadmap after v1: **interactive bot features** (search or browse the library, stats, trigger tasks) and **playback notifications**.
 - **Not planned in any version:** per-user subscriptions and non-Telegram transports.
@@ -398,8 +398,9 @@ Groups: `media.*` = **media**, `security.*` = **security**, `server.*` = **serve
 ### 7.2 Events (presets removed 2026-10-25)
 - Presets are no longer offered anywhere (owner, 2026-10-25). Every new destination, from the bot, the dashboard or Advanced, starts with **every event on**; the admin switches off what they don't want.
 - `Destination.Events` stores the concrete keys; the Router matches by exact string equality.
+- **Removed by the v1 cleanup design, `2026-10-25-tgjelly-v1-cleanup-single-build-design.md`:** the flag is now `Destination.FollowsNewEvents`, still stored as `Preset` (`Everything`/`Custom`) in the XML.
 - `Destination.Preset` stays only as an internal flag: `Everything` while the destination has every event, `Custom` otherwise. It is set from the events on every change and is never shown. When the config loads, keys a later version adds are switched on for `Everything` destinations only, so nothing new appears in a chat the admin trimmed.
-- Upgrade: a destination saved with the old New media or Admin alerts preset keeps its events and becomes `Custom`.
+- Upgrade: a destination saved with the old New media or Admin alerts preset keeps its events and becomes `Custom`. **Removed by the v1 cleanup design, `2026-10-25-tgjelly-v1-cleanup-single-build-design.md`** with the other 0.x conversions.
 
 ### 7.2a Topics in a forum (amended 2026-10-25)
 - A forum destination posts to its own topic (`ThreadId`; 0 is General). `TopicRoutes` can send the **Media**, **Security** and **Server** groups to topics of their own; with `SeparateMediaTopics`, each **media event** (`media.movie` … `media.book`) has its own route instead of Media's. The digest and the alert summary follow the destination's topic.
@@ -724,7 +725,7 @@ Message: MessageOptions { PerMessage: MessageSwitchesEntry[] = []; AnnounceUpgra
                          Switches: MessageSwitches { ShowPoster; ShowOverview; ShowRatingGenres;
                                                      ShowOpenInJellyfin; ShowProviderLinks } }
   A message without an entry uses its defaults (§8.4). v0.4's flat Show* elements under <Message> are
-  read once by the migration, copied to every media message, and never written back.
+  read once by the migration, copied to every media message, and never written back. **Removed by the v1 cleanup design, `2026-10-25-tgjelly-v1-cleanup-single-build-design.md`.**
 Batching: BatchingOptions {
   QuietWindowSeconds = 120   (5–3600)
   MaxHoldMinutes     = 30    (1–240, and ≥ QuietWindowSeconds/60)
@@ -733,7 +734,7 @@ Batching: BatchingOptions {
   LateEditHours      = 6     (0–24; 0 = never edit)
   ReadyTimeoutMinutes = 15   (1–120) }
 UpdateCheck: UpdateCheckOptions { Enabled = true; Fixes = true; NewReleases = true; NewMajor = false }   (Plan 9)
-  v0.4's Mode (SameMajor|AnyNewer) is read once by the migration (§7.6) and never written back.
+  v0.4's Mode (SameMajor|AnyNewer) is read once by the migration (§7.6) and never written back. **Removed by the v1 cleanup design, `2026-10-25-tgjelly-v1-cleanup-single-build-design.md`.**
 Destinations: Destination[] = []
   Destination { Id: string (8 chars, [a-z0-9]); ChatId: long; ThreadId: int = 0 (0 = none / General);
                 Title: string; Kind: ChatKind (Private|Group|Supergroup|Channel);
@@ -742,6 +743,7 @@ Destinations: Destination[] = []
   (ChatId, ThreadId) is unique across Destinations.
 Templates: TemplateOverride[] = []
   TemplateOverride { EventKey: string; Enabled: bool (ignored since Plan 7; a disabled or empty v0.2 override is dropped on load. The migration runs on every load, not once, so an override added to the XML by hand without <Enabled>true</Enabled> is dropped too; the dashboard always saves it as true); Text: string = "" }
+  **Removed by the v1 cleanup design, `2026-10-25-tgjelly-v1-cleanup-single-build-design.md`:** `Enabled` and the v0.2 conversion; an override with blank text is still dropped on load.
 ```
 - Arrays are initialized to `Array.Empty<T>()` (F9), and enums are serialized by name.
 - `PUT Settings` returns 400 with per-field errors for values outside the ranges.

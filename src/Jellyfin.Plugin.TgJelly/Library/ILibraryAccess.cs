@@ -4,7 +4,7 @@ using System.Collections.Generic;
 namespace Jellyfin.Plugin.TgJelly.Library;
 
 /// <summary>
-/// Read-only access to Jellyfin's library for the pipeline and the layouts (spec §5.4 rule 1, D13).
+/// Read-only access to Jellyfin's library for the pipeline and the layouts.
 /// </summary>
 public interface ILibraryAccess
 {
@@ -16,7 +16,7 @@ public interface ILibraryAccess
     MediaItem? GetItem(Guid id);
 
     /// <summary>
-    /// Returns the libraries an item belongs to (spec §7.3).
+    /// Returns the libraries an item belongs to.
     /// </summary>
     /// <param name="itemId">The item ID.</param>
     /// <returns>The libraries.</returns>
@@ -24,14 +24,14 @@ public interface ILibraryAccess
 
     /// <summary>
     /// Returns whether another non-virtual item of the same type shares a provider ID with the item, or (for episodes)
-    /// its series, season and number (spec §7.4 step 8).
+    /// its series, season and number.
     /// </summary>
     /// <param name="item">The item.</param>
     /// <returns><c>true</c> when another copy exists.</returns>
     bool HasOtherCopy(MediaItem item);
 
     /// <summary>
-    /// Returns every library (spec §7.3, §11.2 <c>GET Libraries</c>).
+    /// Returns every library.
     /// </summary>
     /// <returns>The libraries.</returns>
     IReadOnlyList<LibraryRef> GetVirtualFolders();

@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
-using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.TgJelly.Bot.Flows;
@@ -93,11 +92,6 @@ public sealed class FlowEngine : IBotFlows, IDisposable
         ArgumentNullException.ThrowIfNull(message);
         var chatId = message.Chat.Id;
         _memory.TouchManager(chatId);
-        if (await OnLegacyReplyAsync(message, ct).ConfigureAwait(false))
-        {
-            return;
-        }
-
         var command = ParseCommand(message.Text);
         if (command.Length > 0)
         {
@@ -105,7 +99,7 @@ public sealed class FlowEngine : IBotFlows, IDisposable
         }
         else if (message.Text is { Length: > 0 } text)
         {
-            if (await _settingsScreens.OnTextAsync(chatId, text, ct).ConfigureAwait(false) is { Handled: true } typed)
+            if (await _settingsScreens.OnTextAsync(chatId, text).ConfigureAwait(false) is { Handled: true } typed)
             {
                 if (typed.Screen is { } done)
                 {
@@ -219,7 +213,7 @@ public sealed class FlowEngine : IBotFlows, IDisposable
                 break;
             default:
                 var screen = await _destinations.HandleAsync(action, args, ct).ConfigureAwait(false)
-                    ?? await _settingsScreens.HandleAsync(action, args, chatId, ct).ConfigureAwait(false);
+                    ?? await _settingsScreens.HandleAsync(action, args, chatId).ConfigureAwait(false);
                 if (screen is not null)
                 {
                     await ShowAsync(chatId, screen, message.MessageId, ct).ConfigureAwait(false);
@@ -276,30 +270,7 @@ public sealed class FlowEngine : IBotFlows, IDisposable
     }
 
     /// <summary>
-    /// Stale input from a v0.1 client goes to onboarding before any other text: a chat picked in its native picker
-    /// (<c>chat_shared</c>) and the texts of its reply keyboard. The bot sends no reply keyboards any more.
-    /// </summary>
-    /// <returns>True when the message was one of them.</returns>
-    private async Task<bool> OnLegacyReplyAsync(Message message, CancellationToken ct)
-    {
-        Func<Message, CancellationToken, Task>? handler = message switch
-        {
-            { ChatShared: not null } => _onboarding.OnLegacyReplyAsync,
-            { Text: { } text } when OnboardingFlow.LegacyReplyTexts.Contains(text, StringComparer.Ordinal) => _onboarding.OnLegacyReplyAsync,
-            _ => null,
-        };
-        if (handler is null)
-        {
-            return false;
-        }
-
-        _settingsScreens.CancelInput(message.Chat.Id);
-        await handler(message, ct).ConfigureAwait(false);
-        return true;
-    }
-
-    /// <summary>
-    /// Whether a <c>/start</c> begins onboarding (spec §6.2): the <c>setup</c> and <c>add</c> payloads, or no payload
+    /// Whether a <c>/start</c> begins onboarding: the <c>setup</c> and <c>add</c> payloads, or no payload
     /// while there are no destinations yet.
     /// </summary>
     private bool StartsOnboarding(string? text)

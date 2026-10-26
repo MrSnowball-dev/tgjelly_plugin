@@ -3,7 +3,7 @@ using System.Text.RegularExpressions;
 namespace Jellyfin.Plugin.TgJelly.Logging;
 
 /// <summary>
-/// Removes bot tokens from text before it is logged or shown (spec §12).
+/// Removes bot tokens from text before it is logged or shown.
 /// </summary>
 public static partial class SecretRedactor
 {

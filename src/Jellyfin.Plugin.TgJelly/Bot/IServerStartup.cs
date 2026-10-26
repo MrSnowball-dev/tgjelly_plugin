@@ -1,7 +1,7 @@
 namespace Jellyfin.Plugin.TgJelly.Bot;
 
 /// <summary>
-/// Whether Jellyfin has finished starting (spec §5.4 rule 5: nothing is sent before that).
+/// Whether Jellyfin has finished starting (nothing is sent before that).
 /// </summary>
 public interface IServerStartup
 {

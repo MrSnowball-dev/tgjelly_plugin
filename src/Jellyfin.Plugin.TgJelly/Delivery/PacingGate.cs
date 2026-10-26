@@ -5,13 +5,13 @@ using System.Threading;
 namespace Jellyfin.Plugin.TgJelly.Delivery;
 
 /// <summary>
-/// Telegram's rate guidance (spec §9.3, F36): at least 1 s between sends to one chat, at most 20 per minute per group
-/// or channel, at most 2 per second overall (owner, 2026-10-25, to stay clear of flood waits), and a chat paused by a 429's <c>retry_after</c>. In memory only.
+/// Telegram's rate guidance: at least 1 s between sends to one chat, at most 20 per minute per group
+/// or channel, at most 2 per second overall (to stay clear of flood waits), and a chat paused by a 429's <c>retry_after</c>. In memory only.
 /// </summary>
 public sealed class PacingGate
 {
     private const int PerMinuteLimit = 20;
-    // At most 2 messages a second overall (owner, 2026-10-25), well under Telegram's 30, so a busy library scan
+    // At most 2 messages a second overall, well under Telegram's 30, so a busy library scan
     // never runs into flood waits.
     private const int PerSecondLimit = 2;
 
@@ -24,15 +24,6 @@ public sealed class PacingGate
     private readonly Dictionary<long, DateTimeOffset> _pausedUntil = [];
     private readonly Dictionary<long, Queue<DateTimeOffset>> _recentPerChat = [];
     private readonly Queue<DateTimeOffset> _recent = new();
-
-    /// <summary>
-    /// Initializes a new instance of the <see cref="PacingGate"/> class.
-    /// </summary>
-    /// <param name="time">The clock (kept for symmetry with the other services; callers pass <c>now</c>).</param>
-    public PacingGate(TimeProvider time)
-    {
-        ArgumentNullException.ThrowIfNull(time);
-    }
 
     /// <summary>
     /// Returns the earliest time a message may be sent to a chat.

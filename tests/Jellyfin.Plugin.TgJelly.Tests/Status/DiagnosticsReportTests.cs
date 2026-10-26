@@ -129,8 +129,7 @@ public class DiagnosticsReportTests
         using var h = new BotTestHarness();
         h.Settings.Update(null, c => c.Templates =
         [
-            new TemplateOverride { EventKey = "security.lockout", Enabled = true, Text = "SECRET-TEMPLATE-TEXT" },
-            new TemplateOverride { EventKey = "media.movie", Enabled = false, Text = "off" },
+            new TemplateOverride { EventKey = "security.lockout", Text = "SECRET-TEMPLATE-TEXT" },
         ]);
         new Jellyfin.Plugin.TgJelly.Templates.TemplateFlags(h.State, h.Settings, h.Time).Flag("security.lockout", "error", "line 1, column 3: bad", Jellyfin.Plugin.TgJelly.Templates.TemplateText.Hash("SECRET-TEMPLATE-TEXT"));
 
@@ -138,8 +137,6 @@ public class DiagnosticsReportTests
 
         Assert.Contains("Templates", text, StringComparison.Ordinal);
         Assert.Contains("security.lockout: error", text, StringComparison.Ordinal);
-        // A switched-off v0.2 override is gone after the settings migration, so it is not listed.
-        Assert.DoesNotContain("media.movie", text.Split("Templates")[1].Split("Counters")[0], StringComparison.Ordinal);
         Assert.DoesNotContain("SECRET-TEMPLATE-TEXT", text, StringComparison.Ordinal);
     }
 
@@ -180,7 +177,7 @@ public class DiagnosticsReportTests
             compat, gate, h.Settings, h.State, h.Secrets, h.Connection, BotApiEnvironment.FromValue(baseUrl),
             new Outbox(h.State, h.Strings, h.Time), readiness, health, new FakeServerInfo(),
             new Jellyfin.Plugin.TgJelly.Templates.TemplateFlags(h.State, h.Settings, h.Time),
-            new NoticeBuilder(h.State, h.Secrets, h.Settings, library, h.Strings, h.Time, new Jellyfin.Plugin.TgJelly.Templates.TemplateFlags(h.State, h.Settings, h.Time)));
+            new NoticeBuilder(h.State, h.Secrets, h.Settings, library, h.Strings, new Jellyfin.Plugin.TgJelly.Templates.TemplateFlags(h.State, h.Settings, h.Time)));
         return (report, health);
     }
 }

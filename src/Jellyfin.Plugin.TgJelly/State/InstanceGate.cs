@@ -8,8 +8,8 @@ using Microsoft.Extensions.Logging;
 namespace Jellyfin.Plugin.TgJelly.State;
 
 /// <summary>
-/// Owns <c>state.lock</c>. Until it has the lock, nothing that consumes intake or talks to Telegram may start
-/// (spec §10.4). Retries every 5 s.
+/// Owns <c>state.lock</c>. Until it has the lock, nothing that consumes intake or talks to Telegram may start.
+/// Retries every 5 s.
 /// </summary>
 public sealed class InstanceGate : BackgroundService
 {

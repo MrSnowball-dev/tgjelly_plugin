@@ -8,7 +8,7 @@ using Jellyfin.Plugin.TgJelly.State.Documents;
 namespace Jellyfin.Plugin.TgJelly.Rendering;
 
 /// <summary>
-/// The poster and buttons of a media message (spec §8.2, §8.3): each group is looked up again from its item IDs, so an
+/// The poster and buttons of a media message: each group is looked up again from its item IDs, so an
 /// update or a resend shows what the library holds now. The text comes from the message's template.
 /// </summary>
 public sealed class MediaLayouts

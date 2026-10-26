@@ -12,7 +12,7 @@ namespace Jellyfin.Plugin.TgJelly.Hosting;
 
 /// <summary>
 /// Waits until this instance owns the data folder, loads the state files and secrets.json, restores a wiped settings
-/// backup, then writes due state once per second. Flushes everything on stop (spec §10.4, §12).
+/// backup, then writes due state once per second. Flushes everything on stop.
 /// </summary>
 public sealed class PersistenceService : BackgroundService
 {
@@ -97,10 +97,10 @@ public sealed class PersistenceService : BackgroundService
             _restoreChecked = true;
         }
 
-        // Spec §7.2: keys a later version added are switched on, when the config loads, for destinations with every event.
+        // keys a later version added are switched on, when the config loads, for destinations with every event.
         if (!_presetsUpgraded)
         {
-            _settings.UpdateIf(null, PresetUpgrader.Apply);
+            _settings.UpdateIf(null, NewEventsUpgrader.Apply);
             _presetsUpgraded = true;
         }
 

@@ -1,7 +1,7 @@
 namespace Jellyfin.Plugin.TgJelly.Configuration;
 
 /// <summary>
-/// How the bot and the update checker reach the internet (spec §9.1).
+/// How the bot and the update checker reach the internet.
 /// </summary>
 public enum ProxyMode
 {

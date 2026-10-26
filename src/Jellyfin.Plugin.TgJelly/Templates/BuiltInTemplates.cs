@@ -6,7 +6,7 @@ using System.Linq;
 namespace Jellyfin.Plugin.TgJelly.Templates;
 
 /// <summary>
-/// The built-in templates (design §5.1): embedded resources, one file per key and language, at
+/// The built-in templates: embedded resources, one file per key and language, at
 /// <c>Templates/BuiltIn/&lt;language&gt;/&lt;key&gt;.sbn</c>.
 /// </summary>
 public static class BuiltInTemplates

@@ -6,7 +6,7 @@ using Jellyfin.Plugin.TgJelly.Configuration;
 namespace Jellyfin.Plugin.TgJelly.Pipeline;
 
 /// <summary>
-/// A destination's library filter (spec §7.3): empty means all; IDs of removed libraries are kept but match nothing.
+/// A destination's library filter: empty means all; IDs of removed libraries are kept but match nothing.
 /// </summary>
 public static class LibraryFilter
 {

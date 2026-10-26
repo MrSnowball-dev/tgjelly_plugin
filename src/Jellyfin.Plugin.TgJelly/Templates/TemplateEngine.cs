@@ -12,7 +12,7 @@ using Scriban.Syntax;
 namespace Jellyfin.Plugin.TgJelly.Templates;
 
 /// <summary>
-/// Parses and renders user templates with Scriban under the spec's limits (spec §8.5, F41).
+/// Parses and renders user templates with Scriban under the spec's limits.
 /// </summary>
 public sealed class TemplateEngine
 {
@@ -131,7 +131,7 @@ public sealed class TemplateEngine
     }
 
     /// <summary>
-    /// The template's top-level pieces (design §6.5): each run of literal text, each <c>{{ … }}</c> expression and each
+    /// The template's top-level pieces: each run of literal text, each <c>{{ … }}</c> expression and each
     /// whole block, with its place in <paramref name="text"/>. Never throws.
     /// </summary>
     /// <param name="text">The template text.</param>

@@ -51,7 +51,7 @@ public sealed class DetectedChatsControllerTests : IAsyncLifetime
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
     private DetectedChatsController Controller(InstanceGate? gate = null)
-        => new(_h.Settings, _h.Connection, _checker, _creator, _memory, _mapper, _h.Strings, gate ?? _gate, _h.State, NullLogger<DetectedChatsController>.Instance);
+        => new(_h.Connection, _checker, _creator, _memory, _mapper, _h.Strings, gate ?? _gate, _h.State, NullLogger<DetectedChatsController>.Instance);
 
     private void Detect()
     {
@@ -70,7 +70,7 @@ public sealed class DetectedChatsControllerTests : IAsyncLifetime
 
         Assert.Equal(("Added", true), (response.Outcome, response.TestSent));
         var saved = Assert.Single(_h.Settings.Current.Destinations);
-        Assert.Equal((Chat, 0, PresetKind.Everything, response.Destination.Id), (saved.ChatId, saved.ThreadId, saved.Preset, saved.Id));
+        Assert.Equal((Chat, 0, true, response.Destination.Id), (saved.ChatId, saved.ThreadId, saved.FollowsNewEvents, saved.Id));
         _h.Time.Advance(TimeSpan.FromMinutes(1));
         Assert.Equal([-1009L], _memory.VisibleDetected([]).Select(d => d.ChatId));
     }

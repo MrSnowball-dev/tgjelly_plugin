@@ -1,7 +1,7 @@
 namespace Jellyfin.Plugin.TgJelly.Api;
 
 /// <summary>
-/// A library, for the per-destination library filter (spec §11.2).
+/// A library, for the per-destination library filter.
 /// </summary>
 public sealed class LibraryDto
 {

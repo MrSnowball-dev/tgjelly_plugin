@@ -49,6 +49,41 @@ public sealed class SettingsStoreTests : IDisposable
     }
 
     [Fact]
+    public void Current_ReturnsTheSameCopy_UntilASave()
+    {
+        var first = _store.Current;
+        Assert.Same(first, _store.Current);
+
+        _store.Update(null, c => c.PublicUrl = "https://jf.example.com");
+
+        var after = _store.Current;
+        Assert.NotSame(first, after);
+        Assert.Equal("https://jf.example.com", after.PublicUrl);
+        Assert.Same(after, _store.Current);
+    }
+
+    [Fact]
+    public void AnOutsideSave_ReplacesTheCopy()
+    {
+        var before = _store.Current;
+
+        _host.SaveFromOutside(new PluginConfiguration { Revision = 5, PublicUrl = "https://outside.example.com" });
+
+        Assert.NotSame(before, _store.Current);
+        Assert.Equal("https://outside.example.com", _store.Current.PublicUrl);
+    }
+
+    [Fact]
+    public void ChangingCurrentInPlace_IsCaughtInTests()
+    {
+        Assert.True(SettingsStore.VerifySnapshots);
+        _store.Current.PublicUrl = "x";
+
+        var error = Assert.Throws<InvalidOperationException>(() => _store.Current);
+        Assert.Equal("A caller changed SettingsStore.Current in place.", error.Message);
+    }
+
+    [Fact]
     public void Update_WithStaleRevision_IsAConflict_AndSavesNothing()
     {
         _store.Update(null, c => c.PublicUrl = "https://a.example.com");
@@ -96,7 +131,7 @@ public sealed class SettingsStoreTests : IDisposable
     public void RestoreBackupIfWiped_RestoresBackup_AndRecordsNotice()
     {
         _store.Update(null, c => c.Destinations = [new Destination { Id = "abcd1234", ChatId = 42, Title = "Me" }]);
-        _host.SaveFromStore(new PluginConfiguration()); // what Jellyfin does after a failed XML load (F9)
+        _host.SaveFromStore(new PluginConfiguration()); // what Jellyfin does after a failed XML load
 
         Assert.True(_store.RestoreBackupIfWiped());
 
@@ -217,7 +252,7 @@ public sealed class SettingsStoreTests : IDisposable
 
         Assert.Equal(ProxyMode.System, _host.Configuration.Proxy.Mode);
         var d = Assert.Single(_host.Configuration.Destinations);
-        Assert.Equal(PresetKind.Custom, d.Preset);
+        Assert.False(d.FollowsNewEvents);
         Assert.Equal(ChatKind.Private, d.Kind);
     }
 

@@ -3,7 +3,7 @@ using System;
 namespace Jellyfin.Plugin.TgJelly.Api;
 
 /// <summary>
-/// A send-time template problem (spec §9.4 row 6).
+/// A send-time template problem.
 /// </summary>
 public sealed class TemplateFlagDto
 {

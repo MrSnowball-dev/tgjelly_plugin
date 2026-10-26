@@ -10,8 +10,8 @@ using Microsoft.Extensions.Logging;
 namespace Jellyfin.Plugin.TgJelly.Intake;
 
 /// <summary>
-/// Watches <see cref="ITaskManager.TaskCompleted"/> (F18): failed tasks become <c>server.task_failed</c>, and the
-/// scheduled library scan is the fallback <c>ScanFinished</c> (§7.4 step 5).
+/// Watches <see cref="ITaskManager.TaskCompleted"/>: failed tasks become <c>server.task_failed</c>, and the
+/// scheduled library scan is the fallback <c>ScanFinished</c>.
 /// </summary>
 public sealed class TaskWatcher : BackgroundService
 {

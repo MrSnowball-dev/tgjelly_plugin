@@ -1,7 +1,7 @@
 namespace Jellyfin.Plugin.TgJelly.Library;
 
 /// <summary>
-/// What the media filter decides for an added item (spec §7.4 step 1).
+/// What the media filter decides for an added item.
 /// </summary>
 public enum FilterVerdict
 {

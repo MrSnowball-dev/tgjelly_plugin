@@ -6,7 +6,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace Jellyfin.Plugin.TgJelly.Api;
 
 /// <summary>
-/// The check every endpoint that changes something makes first (spec §10.4): until this instance owns the data
+/// The check every endpoint that changes something makes first: until this instance owns the data
 /// folder and has loaded its state, the API serves reads only; an incompatible build never talks to Telegram.
 /// </summary>
 internal static class ApiGuard

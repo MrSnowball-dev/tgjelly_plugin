@@ -55,8 +55,8 @@ public sealed class LogRecordingTests : IDisposable
     [Fact]
     public void Log_LibraryExcluded_SkippedWithLibraryName()
     {
-        var kidsOnly = _h.AddDestination(-1001, preset: PresetKind.NewMedia);
-        var all = _h.AddDestination(-1002, preset: PresetKind.NewMedia);
+        var kidsOnly = _h.AddDestination(-1001, events: BotTestHarness.MediaEvents);
+        var all = _h.AddDestination(-1002, events: BotTestHarness.MediaEvents);
         _h.Settings.Update(null, c => c.Destinations[0].LibraryIds = [Kids.Id.ToString("N")]);
         var movie = Movie("Dune: Part Two", Movies);
 
@@ -71,8 +71,8 @@ public sealed class LogRecordingTests : IDisposable
     [Fact]
     public void Log_PausedAndEventOff_SkippedPerDestination()
     {
-        var paused = _h.AddDestination(-1001, preset: PresetKind.NewMedia);
-        var admin = _h.AddDestination(-1002, preset: PresetKind.AdminAlerts);
+        var paused = _h.AddDestination(-1001, events: BotTestHarness.MediaEvents);
+        var admin = _h.AddDestination(-1002, events: BotTestHarness.AdminEvents);
         _h.Settings.Update(null, c => c.Destinations[0].Enabled = false);
 
         Ready(Movie("Arrival", Movies));
@@ -84,7 +84,7 @@ public sealed class LogRecordingTests : IDisposable
     [Fact]
     public void Log_NoDestinationWants_DashRow()
     {
-        _h.AddDestination(-1001, preset: PresetKind.AdminAlerts);
+        _h.AddDestination(-1001, events: BotTestHarness.AdminEvents);
 
         Ready(Movie("Arrival", Movies));
 
@@ -96,7 +96,7 @@ public sealed class LogRecordingTests : IDisposable
     [Fact]
     public async Task Log_BatchedEpisodes_OneRowWaitingThenSent()
     {
-        var d = _h.AddDestination(-1001, preset: PresetKind.NewMedia);
+        var d = _h.AddDestination(-1001, events: BotTestHarness.MediaEvents);
         var series = Guid.NewGuid();
         var season = Guid.NewGuid();
         var episodes = Enumerable.Range(1, 4).Select(n => _rig.Library.Add(
@@ -124,7 +124,7 @@ public sealed class LogRecordingTests : IDisposable
     [Fact]
     public async Task Log_Digest_OneRowForTheWholeRelease()
     {
-        _h.AddDestination(-1001, preset: PresetKind.NewMedia);
+        _h.AddDestination(-1001, events: BotTestHarness.MediaEvents);
         _h.Settings.Update(null, c => c.Batching.DigestThreshold = 2);
 
         Ready(Movie("One", Movies), Movie("Two", Movies), Movie("Three", Movies));
@@ -139,7 +139,7 @@ public sealed class LogRecordingTests : IDisposable
     [Fact]
     public async Task Log_RetryThenSuccess_OneRowSentLate()
     {
-        var d = _h.AddDestination(-1001, preset: PresetKind.AdminAlerts);
+        var d = _h.AddDestination(-1001, events: BotTestHarness.AdminEvents);
         _h.Api.On("sendMessage", _ => throw new HttpRequestException("connection timed out"));
 
         LoginFailed();
@@ -169,7 +169,7 @@ public sealed class LogRecordingTests : IDisposable
     [Fact]
     public async Task Log_PacedButNoRetry_IsSent()
     {
-        _h.AddDestination(-1001, preset: PresetKind.AdminAlerts);
+        _h.AddDestination(-1001, events: BotTestHarness.AdminEvents);
 
         LoginFailed();
         _h.Time.Advance(TimeSpan.FromMinutes(3));
@@ -183,7 +183,7 @@ public sealed class LogRecordingTests : IDisposable
     [Fact]
     public async Task Log_LostThenRecovered_SameRowSentLate()
     {
-        _h.AddDestination(-1001, preset: PresetKind.AdminAlerts);
+        _h.AddDestination(-1001, events: BotTestHarness.AdminEvents);
         _h.Api.On("sendMessage", _ => FakeBotApi.Error(403, "Forbidden: bot was kicked from the supergroup chat"));
         LoginFailed();
         await _rig.DeliverAllAsync();
@@ -202,7 +202,7 @@ public sealed class LogRecordingTests : IDisposable
     [Fact]
     public async Task Log_QueuedBeforeTheDestinationWasLost_GetsTheHeldReason()
     {
-        var d = _h.AddDestination(-1001, preset: PresetKind.AdminAlerts);
+        var d = _h.AddDestination(-1001, events: BotTestHarness.AdminEvents);
         _h.Api.On("sendMessage", _ => FakeBotApi.Error(403, "Forbidden: bot was kicked from the supergroup chat"));
         LoginFailed();
         LoginFailed("bob");
@@ -222,7 +222,7 @@ public sealed class LogRecordingTests : IDisposable
     [InlineData(true)]
     public async Task Log_Disconnect_SettlesQueuedRowsAsSkipped(bool removeDestinations)
     {
-        var d = _h.AddDestination(-1001, preset: PresetKind.AdminAlerts);
+        var d = _h.AddDestination(-1001, events: BotTestHarness.AdminEvents);
         LoginFailed();
         LoginFailed("bob");
         var tokens = new Jellyfin.Plugin.TgJelly.Bot.BotTokenService(new FakeClientFactory(_h.Api), _h.Secrets, _h.State, _h.Settings, new FakeSupervisorControl(), _h.Strings, _h.Time, NullLogger<Jellyfin.Plugin.TgJelly.Bot.BotTokenService>.Instance, _rig.Recorder);
@@ -256,7 +256,7 @@ public sealed class LogRecordingTests : IDisposable
     [Fact]
     public async Task Log_HeldWithoutAnError_NoEmptyParentheses()
     {
-        var d = _h.AddDestination(-1001, preset: PresetKind.AdminAlerts);
+        var d = _h.AddDestination(-1001, events: BotTestHarness.AdminEvents);
         _rig.Health.MarkProblem(d.Id, Jellyfin.Plugin.TgJelly.State.Documents.HealthStatus.Lost, string.Empty);
         LoginFailed();
 
@@ -288,7 +288,7 @@ public sealed class LogRecordingTests : IDisposable
     [Fact]
     public async Task Log_LateEditRetries_RowStaysSent()
     {
-        _h.AddDestination(-1001, preset: PresetKind.NewMedia);
+        _h.AddDestination(-1001, events: BotTestHarness.MediaEvents);
         var (e1, e2) = (Episode(1), Episode(2));
         Ready(e1);
         _rig.RunFor(150);
@@ -320,7 +320,7 @@ public sealed class LogRecordingTests : IDisposable
     [Fact]
     public async Task Log_LateEditDropped_RowStaysSentWithDetail()
     {
-        _h.AddDestination(-1001, preset: PresetKind.NewMedia);
+        _h.AddDestination(-1001, events: BotTestHarness.MediaEvents);
         var (e1, e2) = (Episode(1), Episode(2));
         Ready(e1);
         _rig.RunFor(150);
@@ -340,7 +340,7 @@ public sealed class LogRecordingTests : IDisposable
     [Fact]
     public void Log_OverTheMediaCap_OldestRowFailedWithReason()
     {
-        var d = _h.AddDestination(-1001, preset: PresetKind.NewMedia);
+        var d = _h.AddDestination(-1001, events: BotTestHarness.MediaEvents);
         for (var i = 0; i <= Jellyfin.Plugin.TgJelly.Delivery.Outbox.MediaCap; i++)
         {
             var id = "m" + i.ToString(System.Globalization.CultureInfo.InvariantCulture);
@@ -361,7 +361,7 @@ public sealed class LogRecordingTests : IDisposable
     [Fact]
     public void Log_DestinationRemovedWithAQueuedMessage_RowSkipped()
     {
-        var d = _h.AddDestination(-1001, preset: PresetKind.AdminAlerts);
+        var d = _h.AddDestination(-1001, events: BotTestHarness.AdminEvents);
         LoginFailed();
 
         _rig.Pipeline.Outbox.RemoveDestination(d.Id);
@@ -374,7 +374,7 @@ public sealed class LogRecordingTests : IDisposable
     [Fact]
     public void Log_QueuedPast24Hours_RowFailedAsExpired()
     {
-        _h.AddDestination(-1001, preset: PresetKind.AdminAlerts);
+        _h.AddDestination(-1001, events: BotTestHarness.AdminEvents);
         LoginFailed();
         _h.Time.Advance(TimeSpan.FromHours(25));
 
@@ -441,7 +441,7 @@ public sealed class LogRecordingTests : IDisposable
     [Fact]
     public void Log_WaitingForMetadata_DashRowMovesOn()
     {
-        var d = _h.AddDestination(-1001, preset: PresetKind.NewMedia);
+        var d = _h.AddDestination(-1001, events: BotTestHarness.MediaEvents);
         var movie = Movie("Arrival", Movies);
 
         _rig.Pipeline.Added(movie);
@@ -504,7 +504,7 @@ public sealed class LogRecordingTests : IDisposable
     [Fact]
     public async Task Log_Dropped_FailedWithTelegramDescription()
     {
-        var d = _h.AddDestination(-1001, preset: PresetKind.AdminAlerts);
+        var d = _h.AddDestination(-1001, events: BotTestHarness.AdminEvents);
         _h.Api.On("sendMessage", _ => FakeBotApi.Error(400, "Bad Request: wrong parameter action in request"));
 
         LoginFailed();
@@ -522,7 +522,7 @@ public sealed class LogRecordingTests : IDisposable
     [Fact]
     public async Task Log_Lost_FailedWithAdviceToAddTheBotBack()
     {
-        var d = _h.AddDestination(-1001, preset: PresetKind.AdminAlerts);
+        var d = _h.AddDestination(-1001, events: BotTestHarness.AdminEvents);
         _h.Api.On("sendMessage", _ => FakeBotApi.Error(403, "Forbidden: bot was kicked from the supergroup chat"));
 
         LoginFailed();
@@ -539,7 +539,7 @@ public sealed class LogRecordingTests : IDisposable
     [Fact]
     public async Task Log_HeldForALostDestination_SaysWhyAndWhatToDo()
     {
-        var d = _h.AddDestination(-1001, preset: PresetKind.AdminAlerts);
+        var d = _h.AddDestination(-1001, events: BotTestHarness.AdminEvents);
         _h.Api.On("sendMessage", _ => FakeBotApi.Error(403, "Forbidden: bot was kicked from the supergroup chat"));
         LoginFailed();
         await _rig.DeliverAllAsync();
@@ -557,7 +557,7 @@ public sealed class LogRecordingTests : IDisposable
     [Fact]
     public async Task Log_NeedsPermissions_NamesTheMissingRight()
     {
-        _h.AddDestination(-1001, kind: ChatKind.Channel, preset: PresetKind.AdminAlerts);
+        _h.AddDestination(-1001, kind: ChatKind.Channel, events: BotTestHarness.AdminEvents);
         _h.Api.On("sendMessage", _ => FakeBotApi.Error(400, "Bad Request: need administrator rights in the channel chat"));
 
         LoginFailed();
@@ -572,8 +572,8 @@ public sealed class LogRecordingTests : IDisposable
     [Fact]
     public async Task Log_TemplateFallback_SentWithBuiltIn()
     {
-        _h.AddDestination(-1001, preset: PresetKind.NewMedia);
-        _h.Settings.Update(null, c => c.Templates = [new TemplateOverride { EventKey = "media.movie", Enabled = true, Text = "<b>{{ title }}" }]);
+        _h.AddDestination(-1001, events: BotTestHarness.MediaEvents);
+        _h.Settings.Update(null, c => c.Templates = [new TemplateOverride { EventKey = "media.movie", Text = "<b>{{ title }}" }]);
 
         Ready(Movie("Arrival", Movies));
         _rig.RunFor(150);
@@ -590,7 +590,7 @@ public sealed class LogRecordingTests : IDisposable
     [Fact]
     public async Task Log_PhotosBlockedAfterARetry_LabelIsMostSerious_WhyListsBoth()
     {
-        _h.AddDestination(-1001, preset: PresetKind.NewMedia);
+        _h.AddDestination(-1001, events: BotTestHarness.MediaEvents);
         var photoCalls = 0;
         _h.Api.On("sendPhoto", _ => ++photoCalls == 1 ? throw new HttpRequestException("connection reset") : FakeBotApi.Error(400, "Bad Request: not enough rights to send photos to the chat"));
         var poster = System.IO.Path.Combine(_h.Dir.Path, "poster.jpg");
@@ -627,7 +627,7 @@ public sealed class LogRecordingTests : IDisposable
     [Fact]
     public void Log_RemovedDestination_HeldGroupMakesNoRowAndNoError()
     {
-        var d = _h.AddDestination(-1001, preset: PresetKind.NewMedia);
+        var d = _h.AddDestination(-1001, events: BotTestHarness.MediaEvents);
         Ready(Movie("Arrival", Movies));
         Assert.Equal(LogResult.Waiting, Single(d.Id).Result);
 
@@ -644,7 +644,7 @@ public sealed class LogRecordingTests : IDisposable
     [Fact]
     public void Log_ItemRemovedBeforeReady_DashRow()
     {
-        _h.AddDestination(-1001, preset: PresetKind.NewMedia);
+        _h.AddDestination(-1001, events: BotTestHarness.MediaEvents);
         var movie = Movie("Arrival", Movies);
         _rig.Pipeline.Added(movie);
         _rig.Pipeline.Pipeline.RunOnce();
@@ -660,7 +660,7 @@ public sealed class LogRecordingTests : IDisposable
     [Fact]
     public async Task Log_HeldFailedRow_GoesOutUntilTheOutboxDropsIt()
     {
-        _h.AddDestination(-1001, preset: PresetKind.AdminAlerts);
+        _h.AddDestination(-1001, events: BotTestHarness.AdminEvents);
         _h.Api.On("sendMessage", _ => FakeBotApi.Error(403, "Forbidden: bot was kicked from the supergroup chat"));
         LoginFailed();
         var queuedAt = Assert.Single(_rig.Pipeline.Outbox.Snapshot()).QueuedAt;
@@ -678,7 +678,7 @@ public sealed class LogRecordingTests : IDisposable
     [Fact]
     public async Task Log_HeldFailedRowExpires_GetsTheExpiredAdvice()
     {
-        _h.AddDestination(-1001, preset: PresetKind.AdminAlerts);
+        _h.AddDestination(-1001, events: BotTestHarness.AdminEvents);
         _h.Api.On("sendMessage", _ => FakeBotApi.Error(403, "Forbidden: bot was kicked from the supergroup chat"));
         LoginFailed();
         await _rig.DeliverAllAsync();
@@ -697,7 +697,7 @@ public sealed class LogRecordingTests : IDisposable
     [Fact]
     public async Task Log_HeldFailedRow_DestinationRemoved_RowSkipped()
     {
-        var d = _h.AddDestination(-1001, preset: PresetKind.AdminAlerts);
+        var d = _h.AddDestination(-1001, events: BotTestHarness.AdminEvents);
         _h.Api.On("sendMessage", _ => FakeBotApi.Error(403, "Forbidden: bot was kicked from the supergroup chat"));
         LoginFailed();
         await _rig.DeliverAllAsync();
@@ -714,7 +714,7 @@ public sealed class LogRecordingTests : IDisposable
     public void Log_ExpiredWithoutATelegramAnswer_AdviceDoesNotPointAtOne()
     {
         // Queued, then the destination was paused: nothing went to Telegram, so there is no answer to point at.
-        _h.AddDestination(-1001, preset: PresetKind.AdminAlerts);
+        _h.AddDestination(-1001, events: BotTestHarness.AdminEvents);
         LoginFailed();
         _h.Settings.Update(null, c => c.Destinations[0].Enabled = false);
         _h.Time.Advance(TimeSpan.FromHours(25));
@@ -731,7 +731,7 @@ public sealed class LogRecordingTests : IDisposable
     [Fact]
     public async Task Log_RateLimited_SaysTelegramAskedToSlowDown_AndCountsNoTry()
     {
-        _h.AddDestination(-1001, preset: PresetKind.AdminAlerts);
+        _h.AddDestination(-1001, events: BotTestHarness.AdminEvents);
         _h.Api.OnSequence("sendMessage", FakeBotApi.Error(429, "Too Many Requests: retry after 7", """{"retry_after":7}"""), SentOk);
         LoginFailed();
 

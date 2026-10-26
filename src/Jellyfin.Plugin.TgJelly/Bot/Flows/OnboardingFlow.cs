@@ -18,7 +18,7 @@ using Telegram.Bot.Types.ReplyMarkups;
 namespace Jellyfin.Plugin.TgJelly.Bot.Flows;
 
 /// <summary>
-/// The bot's onboarding (spec §6.2): an inline prompt whose <c>startchannel</c>/<c>startgroup</c> links open
+/// The bot's onboarding: an inline prompt whose <c>startchannel</c>/<c>startgroup</c> links open
 /// Telegram's chat chooser, the check of the chosen chat and the Done message, all in one message
 /// that gets edited. The chosen chat is learned from the <c>my_chat_member</c> its add produces, or from a group
 /// <c>/start@bot</c>, matched to the private flow of the person who sent it. Each step keys off its own marker in the
@@ -44,19 +44,12 @@ public sealed class OnboardingFlow
     /// <summary>Marks a spent flow whose check failed; its <see cref="ChatIdKey"/> is the chat Try again re-checks.</summary>
     private const string FailedKey = "failed";
 
-    /// <summary>
-    /// The texts a stale v0.1 reply keyboard sends when tapped. Only English shipped in v0.1, so they are fixed here
-    /// rather than read from the string table.
-    /// </summary>
-    internal static readonly string[] LegacyReplyTexts = ["📢 Choose a channel", "👥 Choose a group", "💬 Right here", "Cancel"];
-
     private readonly BotConnection _connection;
     private readonly BotMemory _memory;
     private readonly ScreenSender _screens;
     private readonly SettingsStore _settings;
     private readonly ChatCheckRetrier _retrier;
     private readonly TopicFlow _topics;
-    private readonly DestinationChecker _checker;
     private readonly DestinationCreator _creator;
     private readonly HealthService _health;
     private readonly DestinationScreens _destinations;
@@ -75,7 +68,6 @@ public sealed class OnboardingFlow
     /// <param name="settings">The settings store.</param>
     /// <param name="retrier">Checks a chosen chat, trying again while the bot's membership settles.</param>
     /// <param name="topics">The forum topic step.</param>
-    /// <param name="checker">Re-checks the chat, with its topic, right before creating.</param>
     /// <param name="creator">Adds the destination.</param>
     /// <param name="health">The health service, to re-check an existing destination.</param>
     /// <param name="destinations">The destination screens, to open an existing destination.</param>
@@ -84,7 +76,7 @@ public sealed class OnboardingFlow
     /// <param name="formatter">The formatter, for escaping.</param>
     /// <param name="time">The clock.</param>
     /// <param name="logger">The logger.</param>
-    public OnboardingFlow(BotConnection connection, BotMemory memory, ScreenSender screens, SettingsStore settings, ChatCheckRetrier retrier, TopicFlow topics, DestinationChecker checker, DestinationCreator creator, HealthService health, DestinationScreens destinations, MenuScreens menus, StringTable strings, Formatter formatter, TimeProvider time, ILogger<OnboardingFlow> logger)
+    public OnboardingFlow(BotConnection connection, BotMemory memory, ScreenSender screens, SettingsStore settings, ChatCheckRetrier retrier, TopicFlow topics, DestinationCreator creator, HealthService health, DestinationScreens destinations, MenuScreens menus, StringTable strings, Formatter formatter, TimeProvider time, ILogger<OnboardingFlow> logger)
     {
         _connection = connection;
         _memory = memory;
@@ -92,7 +84,6 @@ public sealed class OnboardingFlow
         _settings = settings;
         _retrier = retrier;
         _topics = topics;
-        _checker = checker;
         _creator = creator;
         _health = health;
         _destinations = destinations;
@@ -104,7 +95,7 @@ public sealed class OnboardingFlow
     }
 
     /// <summary>
-    /// Starts over: replaces the chat's flow and shows the prompt (spec §6.2 step 1). A live prompt shown in another
+    /// Starts over: replaces the chat's flow and shows the prompt. A live prompt shown in another
     /// message is deleted, so only one prompt waits.
     /// </summary>
     /// <param name="chatId">The private chat.</param>
@@ -128,7 +119,7 @@ public sealed class OnboardingFlow
 
     /// <summary>
     /// Ends a prompt that <see cref="BotMemory.Prune"/> just expired: it is edited to "That setup prompt expired."
-    /// with Add destination, and the flow is forgotten (spec §6.2). Flows waiting for anything else are left alone.
+    /// with Add destination, and the flow is forgotten. Flows waiting for anything else are left alone.
     /// </summary>
     /// <param name="chatId">The private chat whose prompt expired.</param>
     /// <param name="ct">Cancels the work.</param>
@@ -156,7 +147,7 @@ public sealed class OnboardingFlow
     }
 
     /// <summary>
-    /// Matches the bot's own membership change to the setup flow of the person who made it (spec §6.2 steps 2–3): an
+    /// Matches the bot's own membership change to the setup flow of the person who made it: an
     /// add while that person's prompt waits is the chosen chat, and the bot made an admin in the forum whose promotion
     /// screen waits is the promotion. A redelivered add of the chat already chosen is taken and ignored. Anything else
     /// is left for <see cref="DetectedChatFlow"/>, including an add elsewhere while the promotion screen waits (which
@@ -221,7 +212,7 @@ public sealed class OnboardingFlow
     }
 
     /// <summary>
-    /// Handles a group <c>/start@bot …</c> (spec §6.2 steps 2–3, F43): from a person whose prompt waits, it counts as
+    /// Handles a group <c>/start@bot …</c>: from a person whose prompt waits, it counts as
     /// choosing that group, which covers a group the bot is already in; from the forum whose promotion screen waits,
     /// it counts as the promotion. The bot never replies in the group.
     /// </summary>
@@ -253,7 +244,7 @@ public sealed class OnboardingFlow
 
     /// <summary>
     /// Handles Right here (<c>oh</c>): this private chat becomes the destination, checked once, in the prompt's
-    /// message (spec §6.2 step 1). A press on anything but the live prompt has expired.
+    /// message. A press on anything but the live prompt has expired.
     /// </summary>
     /// <param name="query">The button press.</param>
     /// <param name="ct">Cancels the work.</param>
@@ -296,7 +287,7 @@ public sealed class OnboardingFlow
     }
 
     /// <summary>
-    /// Handles Try again on a failure (<c>ot</c>, spec §6.2 step 2): the chat whose check failed is checked once more,
+    /// Handles Try again on a failure (<c>ot</c>): the chat whose check failed is checked once more,
     /// without retries, in the same message, and the wizard continues, with the forum topic already chosen when the
     /// failure kept one. Without such a chat, a fresh prompt replaces the pressed message.
     /// </summary>
@@ -330,25 +321,9 @@ public sealed class OnboardingFlow
     }
 
     /// <summary>
-    /// Handles stale input from a v0.1 client (spec §6.2): a tap on its reply keyboard or its chat picker. "That menu
-    /// expired" removes the keyboard the client still shows, then the menu follows.
-    /// </summary>
-    /// <param name="message">The private message.</param>
-    /// <param name="ct">Cancels the work.</param>
-    /// <returns>A task.</returns>
-    public async Task OnLegacyReplyAsync(Message message, CancellationToken ct)
-    {
-        ArgumentNullException.ThrowIfNull(message);
-        var chatId = message.Chat.Id;
-        var expired = new OutgoingPrompt(chatId, _formatter.Escape(_strings.Get("menu.expired")), new ReplyKeyboardRemove());
-        await _connection.RequireSender().SendPromptAsync(expired, ct).ConfigureAwait(false);
-        await _screens.ShowAsync(chatId, MainMenu(), null, ct).ConfigureAwait(false);
-    }
-
-    /// <summary>
     /// Handles a button on the topic wizard: General (<c>tg</c>), Create a "Jellyfin" topic (<c>tc</c>), Use an
     /// existing topic (<c>te</c>), the link prompt's Cancel (<c>tb</c>) or the promotion screen's Check again
-    /// (<c>tk</c>) (spec §6.2 step 3).
+    /// (<c>tk</c>).
     /// </summary>
     /// <param name="query">The button press.</param>
     /// <param name="action">The pressed action.</param>
@@ -366,7 +341,7 @@ public sealed class OnboardingFlow
         var chatId = query.Message!.Chat.Id;
         var choice = action switch
         {
-            "tg" => await _topics.OnGeneralAsync(chatId, flow, ct).ConfigureAwait(false),
+            "tg" => await _topics.OnGeneralAsync(chatId, flow).ConfigureAwait(false),
             "tc" => await _topics.OnCreateAsync(chatId, flow, ct).ConfigureAwait(false),
             "tk" => await _topics.OnPromotedAsync(chatId, flow, ct).ConfigureAwait(false),
             "tb" => await _topics.OnBackAsync(chatId, flow, ct).ConfigureAwait(false),
@@ -391,7 +366,7 @@ public sealed class OnboardingFlow
     }
 
     /// <summary>
-    /// Handles typed text while a topic link is awaited (spec §6.5, "Use an existing topic").
+    /// Handles typed text while a topic link is awaited ("Use an existing topic").
     /// </summary>
     /// <param name="chatId">The private chat.</param>
     /// <param name="text">The text.</param>
@@ -413,7 +388,7 @@ public sealed class OnboardingFlow
     /// Continues after a chat was checked: a failure is explained with <c>[Try again] [Advanced options]</c>; a forum
     /// whose topic isn't chosen yet goes to the topic question (the topic's answers continue through
     /// <see cref="OnTopicAsync"/>, not through here, so General doesn't loop back); anything else meets the duplicate rule, then is added
-    /// with every event on (spec §6.2 steps 2–4).
+    /// with every event on.
     /// </summary>
     /// <param name="privateChatId">The private chat.</param>
     /// <param name="check">The check of the chosen chat.</param>
@@ -451,7 +426,7 @@ public sealed class OnboardingFlow
     }
 
     /// <summary>
-    /// Whether a membership change counts as adding the bot (spec §6.2 step 2): it is now in the chat, and either it
+    /// Whether a membership change counts as adding the bot: it is now in the chat, and either it
     /// wasn't before or it was just made an admin (rights granted in a chat it was already in).
     /// </summary>
     private static bool IsAdd(ChatMemberUpdated u)
@@ -478,7 +453,7 @@ public sealed class OnboardingFlow
 
     /// <summary>
     /// A chat was chosen in Telegram while the prompt waited: the prompt is spent, the chat remembered, and the prompt's
-    /// message turns into "Checking <i>Title</i>…" while the check runs with retries (spec §6.2 step 2).
+    /// message turns into "Checking <i>Title</i>…" while the check runs with retries.
     /// </summary>
     private async Task OnChatChosenAsync(long privateChatId, FlowState flow, Chat chat, CancellationToken ct)
     {
@@ -558,8 +533,7 @@ public sealed class OnboardingFlow
     }
 
     /// <summary>
-    /// Adds the destination with every event on, using the check that was just made, and edits the wizard to Done
-    /// (spec §6.2 step 5).
+    /// Adds the destination with every event on, using the check that was just made, and edits the wizard to Done.
     /// </summary>
     private async Task CreateAsync(long chatId, FlowState flow, ChatCheckResult check, CancellationToken ct, string? topicName = null)
     {
@@ -576,7 +550,7 @@ public sealed class OnboardingFlow
             return;
         }
 
-        var result = await _creator.CreateAsync(check, threadId, EventCatalog.Expand(PresetKind.Everything), PresetKind.Everything, null, ct, topicName).ConfigureAwait(false);
+        var result = await _creator.CreateAsync(check, threadId, [.. EventCatalog.AllKeys], null, ct, topicName).ConfigureAwait(false);
         switch (result.Outcome)
         {
             case CreateOutcome.Added:
@@ -595,7 +569,7 @@ public sealed class OnboardingFlow
     }
 
     /// <summary>
-    /// A failed step (spec §6.2 step 2, "On failure"): the wizard explains what's missing with
+    /// A failed step ("On failure"): the wizard explains what's missing with
     /// <c>[Try again] [Advanced options]</c>, a setup failure is recorded and the flow is spent. The spent flow keeps
     /// the chat that was checked (and its title and forum topic, when known), so Try again can check it again without
     /// asking for the topic, or creating one, a second time.
@@ -647,7 +621,7 @@ public sealed class OnboardingFlow
     }
 
     /// <summary>
-    /// The prompt (spec §6.2 step 1): Add to a channel and Add to a group open Telegram's chat chooser, Right here
+    /// The prompt: Add to a channel and Add to a group open Telegram's chat chooser, Right here
     /// uses this chat, up to three chats the bot is already in are offered as Set up rows, and Cancel ends it.
     /// </summary>
     private Screen PromptScreen()
@@ -719,27 +693,6 @@ public sealed class OnboardingFlow
            && AwaitsChat(flow)
             ? flow
             : null;
-
-    /// <summary>
-    /// The wizard's flow, when the pressed message is the live wizard and it isn't creating already. A failed flow is
-    /// spent, even though it keeps the chat and topic for Try again.
-    /// </summary>
-    private FlowState? Wizard(CallbackQuery query)
-    {
-        if (query.Message is not { } message
-            || _memory.GetFlow(message.Chat.Id) is not { } flow
-            || flow.WizardMessageId != message.MessageId
-            || flow.Params.ContainsKey(CreatingKey)
-            || flow.Params.ContainsKey(FailedKey)
-            || !flow.Params.TryGetValue(ChatIdKey, out var chat) || !long.TryParse(chat, NumberStyles.Integer, CultureInfo.InvariantCulture, out _)
-            || !flow.Params.TryGetValue(ThreadIdKey, out var thread) || !int.TryParse(thread, NumberStyles.Integer, CultureInfo.InvariantCulture, out _)
-            || !flow.Params.ContainsKey(TitleKey))
-        {
-            return null;
-        }
-
-        return flow;
-    }
 
     /// <summary>A stale wizard button: "That menu expired", then the menu.</summary>
     private async Task MenuExpiredAsync(CallbackQuery query, CancellationToken ct)

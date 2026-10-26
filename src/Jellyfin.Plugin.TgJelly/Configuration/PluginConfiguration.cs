@@ -5,13 +5,13 @@ using MediaBrowser.Model.Plugins;
 namespace Jellyfin.Plugin.TgJelly.Configuration;
 
 /// <summary>
-/// TgJelly settings, stored by Jellyfin as XML (spec §10.1).
+/// TgJelly settings, stored by Jellyfin as XML.
 /// Fields are only ever added, never renamed or retyped.
 /// </summary>
 public class PluginConfiguration : BasePluginConfiguration
 {
     /// <summary>
-    /// The highest revision an outside save can set (spec §10.4); far below <see cref="long.MaxValue"/>, so later
+    /// The highest revision an outside save can set; far below <see cref="long.MaxValue"/>, so later
     /// increments never wrap around.
     /// </summary>
     public const long MaxOutsideRevision = long.MaxValue / 2;
@@ -19,7 +19,7 @@ public class PluginConfiguration : BasePluginConfiguration
     /// <summary>
     /// Gets or sets the settings schema version.
     /// </summary>
-    public int SchemaVersion { get; set; } = 1;
+    public int SchemaVersion { get; set; } = 2;
 
     /// <summary>
     /// Gets or sets the settings revision, increased on every save.
@@ -118,80 +118,6 @@ public class PluginConfiguration : BasePluginConfiguration
             entry.Switches ??= MessageSwitches.DefaultFor(entry.EventKey);
         }
 
-        MigrateTemplates();
-        MigrateMessageOptions();
-        UpdateCheck.MigrateMode();
-        MigrateTopics();
-    }
-
-    /// <summary>
-    /// Plan 7 migration (design §5.1): an override that was switched off, or has no text, is removed. The others are
-    /// the template in use, so <see cref="TemplateOverride.Enabled"/> is set to true.
-    /// </summary>
-    public void MigrateTemplates()
-    {
-        Templates ??= Array.Empty<TemplateOverride>();
-        Templates = [.. Templates.Where(t => t is not null && t.Enabled && !string.IsNullOrWhiteSpace(t.Text))];
-    }
-
-    /// <summary>
-    /// v0.7 routed media events one by one, with no Media topic: such a destination keeps its routes by turning
-    /// separate media topics on, once (schema 2). Later on, per-event routes are kept while separate topics are off,
-    /// so this must not run again.
-    /// </summary>
-    public void MigrateTopics()
-    {
-        if (SchemaVersion >= 2)
-        {
-            return;
-        }
-
-        foreach (var d in Destinations ?? [])
-        {
-            if (d is not null && (d.TopicRoutes ?? []).Any(r => r?.Slot?.StartsWith("media.", StringComparison.Ordinal) == true))
-            {
-                d.SeparateMediaTopics = true;
-            }
-        }
-
-        SchemaVersion = 2;
-    }
-
-    /// <summary>
-    /// Plan 9 migration (design §6.2): v0.4's one set of switches becomes each media message's switches, the digest's
-    /// included, so nothing a user sees changes. Security and Server messages keep their defaults: no poster. Runs on
-    /// every settings load (each <c>SettingsStore</c> copy); the v0.4 values are cleared once read, so later runs and
-    /// saves leave the per-message switches alone.
-    /// </summary>
-    public void MigrateMessageOptions()
-    {
-        Message ??= new MessageOptions();
-        var m = Message;
-        m.PerMessage ??= [];
-#pragma warning disable CS0618 // the migration is what reads the v0.4 values
-        var legacy = m.ShowPoster.HasValue || m.ShowOverview.HasValue || m.ShowRatingGenres.HasValue
-            || m.ShowOpenInJellyfin.HasValue || m.ShowProviderLinks.HasValue;
-        if (legacy && m.PerMessage.Length == 0)
-        {
-            var media = new MessageSwitches
-            {
-                ShowPoster = m.ShowPoster ?? true,
-                ShowOverview = m.ShowOverview ?? true,
-                ShowRatingGenres = m.ShowRatingGenres ?? true,
-                ShowOpenInJellyfin = m.ShowOpenInJellyfin ?? true,
-                ShowProviderLinks = m.ShowProviderLinks ?? true,
-            };
-            m.PerMessage =
-            [
-                .. MessageOptions.Keys.Select(key => new MessageSwitchesEntry
-                {
-                    EventKey = key,
-                    Switches = EventCatalog.GroupOf(key) == "media" ? media.Copy() : MessageSwitches.DefaultFor(key),
-                }),
-            ];
-        }
-
-        m.ShowPoster = m.ShowOverview = m.ShowRatingGenres = m.ShowOpenInJellyfin = m.ShowProviderLinks = null;
-#pragma warning restore CS0618
+        Templates = [.. Templates.Where(t => !string.IsNullOrWhiteSpace(t.Text))];
     }
 }

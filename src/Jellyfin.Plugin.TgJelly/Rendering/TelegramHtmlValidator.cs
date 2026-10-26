@@ -5,7 +5,7 @@ using System.Text.RegularExpressions;
 namespace Jellyfin.Plugin.TgJelly.Rendering;
 
 /// <summary>
-/// Checks HTML against Telegram's tag whitelist (spec §8.5): b strong i em u ins s strike del span.tg-spoiler
+/// Checks HTML against Telegram's tag whitelist: b strong i em u ins s strike del span.tg-spoiler
 /// tg-spoiler a code pre blockquote[expandable] tg-emoji tg-time, with balanced tags. Problems are string keys, so the
 /// admin reads them from the string table (<see cref="HtmlProblem.Describe"/>).
 /// </summary>

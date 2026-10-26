@@ -5,7 +5,7 @@ using Jellyfin.Plugin.TgJelly.Library;
 namespace Jellyfin.Plugin.TgJelly.Rendering;
 
 /// <summary>
-/// Builds the links in message buttons (spec §8.3, F23, F37).
+/// Builds the links in message buttons.
 /// </summary>
 public sealed class LinkBuilder
 {

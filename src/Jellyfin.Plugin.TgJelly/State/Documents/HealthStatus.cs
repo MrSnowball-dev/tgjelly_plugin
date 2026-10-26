@@ -1,7 +1,7 @@
 namespace Jellyfin.Plugin.TgJelly.State.Documents;
 
 /// <summary>
-/// A destination's health (spec §9.4). Never changes <c>Destination.Enabled</c>.
+/// A destination's health. Never changes <c>Destination.Enabled</c>.
 /// </summary>
 public enum HealthStatus
 {

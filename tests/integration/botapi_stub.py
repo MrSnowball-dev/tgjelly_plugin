@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""A tiny stand-in for the Telegram Bot API, for the Docker smoke test (spec §14.3).
+"""A tiny stand-in for the Telegram Bot API, for the Docker smoke test.
 
 Jellyfin runs with TGJELLY_BOT_API_BASE_URL pointing here; every request is recorded so the smoke test can check
 what TgJelly sent. Standard library only.
@@ -128,7 +128,7 @@ class StubBotApi:
             pending = self._take_updates(body.get("offset"))
             if pending:
                 return pending
-            time.sleep(1)  # spec §14.3: [] after 1 s, so TgJelly's poll loop doesn't spin
+            time.sleep(1)  # [] after 1 s, so TgJelly's poll loop doesn't spin
             return []
         if method == "getChat":
             if isinstance(chat_id, int) and chat_id > 0:

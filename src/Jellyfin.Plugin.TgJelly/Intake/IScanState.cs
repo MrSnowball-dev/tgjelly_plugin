@@ -1,7 +1,7 @@
 namespace Jellyfin.Plugin.TgJelly.Intake;
 
 /// <summary>
-/// Whether a full library scan is running (F14); the Aggregator reads it only through this.
+/// Whether a full library scan is running; the Aggregator reads it only through this.
 /// </summary>
 public interface IScanState
 {

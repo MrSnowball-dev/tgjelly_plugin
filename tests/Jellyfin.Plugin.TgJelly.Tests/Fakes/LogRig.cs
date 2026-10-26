@@ -40,7 +40,7 @@ public sealed class LogRig
             Health,
             h.Settings,
             h.State,
-            new PacingGate(h.Time),
+            new PacingGate(),
             new Formatter(h.Strings),
             h.Time,
             new DestinationMigration(h.Settings, Pipeline.Outbox, Health),

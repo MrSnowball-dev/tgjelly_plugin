@@ -62,7 +62,7 @@ public sealed class DestinationCreatorTests : IAsyncLifetime
         _memory.RecordDetected(-1001, "Movie night", ChatKind.Supergroup);
         _memory.RecordDetected(-1002, "Other", ChatKind.Supergroup);
 
-        var result = await _creator.CreateAsync(check, 0, EventCatalog.Expand(PresetKind.Everything), PresetKind.Everything, null, Ct);
+        var result = await _creator.CreateAsync(check, 0, [.. EventCatalog.AllKeys], null, Ct);
 
         Assert.Equal(existing ? CreateOutcome.AlreadyExists : CreateOutcome.Added, result.Outcome);
         _h.Time.Advance(System.TimeSpan.FromMinutes(1));
@@ -74,11 +74,11 @@ public sealed class DestinationCreatorTests : IAsyncLifetime
     {
         var check = await CheckAsync(-1001);
 
-        var result = await _creator.CreateAsync(check, 0, EventCatalog.Expand(PresetKind.AdminAlerts), PresetKind.AdminAlerts, 0, Ct);
+        var result = await _creator.CreateAsync(check, 0, BotTestHarness.AdminEvents, 0, Ct);
 
         Assert.Equal(CreateOutcome.Added, result.Outcome);
         var saved = Assert.Single(_h.Settings.Current.Destinations);
-        Assert.Equal((saved.Id, -1001L, "Movie night", PresetKind.AdminAlerts), (result.Destination!.Id, saved.ChatId, saved.Title, saved.Preset));
+        Assert.Equal((saved.Id, -1001L, "Movie night", false), (result.Destination!.Id, saved.ChatId, saved.Title, saved.FollowsNewEvents));
         Assert.True(result.Test!.Sent);
         Assert.Equal(HealthStatus.Ok, _health.Get(saved.Id).Status);
         Assert.Single(_h.Api.CallsTo("sendMessage"));
@@ -91,7 +91,7 @@ public sealed class DestinationCreatorTests : IAsyncLifetime
         _health.MarkProblem(existing.Id, HealthStatus.Lost, "kicked");
         var check = await _checker.CheckAsync(-1001, 0, Ct);
 
-        var result = await _creator.CreateAsync(check, 0, EventCatalog.Expand(PresetKind.Everything), PresetKind.Everything, _h.Settings.Current.Revision, Ct);
+        var result = await _creator.CreateAsync(check, 0, [.. EventCatalog.AllKeys], _h.Settings.Current.Revision, Ct);
 
         Assert.Equal((CreateOutcome.AlreadyExists, existing.Id), (result.Outcome, result.Destination!.Id));
         Assert.Equal(HealthStatus.Ok, _health.Get(existing.Id).Status);
@@ -103,11 +103,11 @@ public sealed class DestinationCreatorTests : IAsyncLifetime
     public async Task RaceWithAnotherAdd_IsAlreadyExists()
     {
         var check = await CheckAsync(-1001);
-        var events = EventCatalog.Expand(PresetKind.Everything);
+        string[] events = [.. EventCatalog.AllKeys];
 
         var results = await Task.WhenAll(
-            _creator.CreateAsync(check, 0, events, PresetKind.Everything, null, Ct),
-            _creator.CreateAsync(check, 0, events, PresetKind.Everything, null, Ct));
+            _creator.CreateAsync(check, 0, events, null, Ct),
+            _creator.CreateAsync(check, 0, events, null, Ct));
 
         Assert.Equal(1, results.Count(r => r.Outcome == CreateOutcome.Added));
         Assert.Equal(1, results.Count(r => r.Outcome == CreateOutcome.AlreadyExists));
@@ -120,7 +120,7 @@ public sealed class DestinationCreatorTests : IAsyncLifetime
         _h.AddDestination(-1001);
         var check = await CheckAsync(-1002, "Other");
 
-        var result = await _creator.CreateAsync(check, 0, EventCatalog.Expand(PresetKind.Everything), PresetKind.Everything, 0, Ct);
+        var result = await _creator.CreateAsync(check, 0, [.. EventCatalog.AllKeys], 0, Ct);
 
         Assert.Equal(CreateOutcome.Conflict, result.Outcome);
         Assert.Null(result.Destination);
@@ -133,11 +133,11 @@ public sealed class DestinationCreatorTests : IAsyncLifetime
     {
         var check = await CheckAsync(-1001);
 
-        var result = await _creator.CreateAsync(check, 0, ["media.movie", "server.started"], PresetKind.Custom, 0, Ct);
+        var result = await _creator.CreateAsync(check, 0, ["media.movie", "server.started"], 0, Ct);
 
         Assert.Equal(CreateOutcome.Added, result.Outcome);
         var saved = Assert.Single(_h.Settings.Current.Destinations);
-        Assert.Equal(PresetKind.Custom, saved.Preset);
+        Assert.False(saved.FollowsNewEvents);
         Assert.Equal(["media.movie", "server.started"], saved.Events);
     }
 }

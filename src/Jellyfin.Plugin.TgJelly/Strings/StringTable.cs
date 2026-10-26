@@ -9,7 +9,7 @@ using System.Text.RegularExpressions;
 namespace Jellyfin.Plugin.TgJelly.Strings;
 
 /// <summary>
-/// The user-facing strings (spec §8.6): an embedded JSON table per language with named <c>{placeholders}</c>
+/// The user-facing strings: an embedded JSON table per language with named <c>{placeholders}</c>
 /// and plural variants (<c>key.one</c> / <c>key.other</c>). Missing keys fall back to English, key by key.
 /// </summary>
 public sealed partial class StringTable

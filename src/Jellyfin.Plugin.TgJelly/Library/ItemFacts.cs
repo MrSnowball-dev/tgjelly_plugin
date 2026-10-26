@@ -4,7 +4,7 @@ using System.Collections.Generic;
 namespace Jellyfin.Plugin.TgJelly.Library;
 
 /// <summary>
-/// What an item-change callback learns about an item, taken in O(1) without touching the library (spec §5.4 rule 3).
+/// What an item-change callback learns about an item, taken in O(1) without touching the library.
 /// </summary>
 /// <param name="Id">The item ID.</param>
 /// <param name="Kind">The item kind.</param>
@@ -15,7 +15,7 @@ namespace Jellyfin.Plugin.TgJelly.Library;
 /// <param name="IsAlternateVersion">Whether the item is an alternate version of another video.</param>
 /// <param name="IsItemByName">Whether the item is a person, genre, studio or similar.</param>
 /// <param name="DateLastRefreshed">When its metadata was last refreshed; <see cref="DateTime.MinValue"/> until the first refresh succeeds.</param>
-/// <param name="Identities">Its identity set (spec §7.4 step 8).</param>
+/// <param name="Identities">Its identity set.</param>
 public sealed record ItemFacts(
     Guid Id,
     MediaKind Kind,

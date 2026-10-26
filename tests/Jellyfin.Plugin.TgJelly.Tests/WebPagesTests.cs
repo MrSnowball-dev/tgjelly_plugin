@@ -14,23 +14,23 @@ public class WebPagesTests
         using var dir = new TempDir();
         var pages = TestPlugin.Create(dir.Path).GetPages().ToList();
 
-        Assert.Equal(["tgjelly", "tgjelly.js", "tgjelly-ui.js", "tgjelly-autosave.js", "tgjelly-messages.js", "tgjelly-preview.js", "tgjelly-log.js", "tgjelly.css"], pages.Select(p => p.Name));
+        Assert.Equal(["tgjelly", .. Plugin.WebModules, "tgjelly.css"], pages.Select(p => p.Name));
         Assert.True(pages[0].EnableInMainMenu);
         Assert.Equal("Telegram", pages[0].DisplayName);
         Assert.All(pages.Skip(1), p => Assert.False(p.EnableInMainMenu));
     }
 
     [Fact]
-    public void NewModules_RegisteredAndChecked()
+    public void EveryWebModule_IsServedAndChecked()
     {
-        // Plan 9: the Messages section, the Telegram preview and the Log are their own modules. Each is a page Jellyfin
-        // serves, CI syntax-checks it, and the smoke test checks it is served as JavaScript.
-        string[] modules = ["tgjelly-messages.js", "tgjelly-preview.js", "tgjelly-log.js"];
+        // A module missing from GetPages would 404 in Jellyfin even though the Node tests import it straight from disk.
+        var modules = Directory.GetFiles(Path.Combine(RepoRoot(), "src", "Jellyfin.Plugin.TgJelly", "Web"), "*.js").Select(Path.GetFileName).ToList();
         using var dir = new TempDir();
         var pages = TestPlugin.Create(dir.Path).GetPages().Select(p => p.Name).ToList();
         var smoke = File.ReadAllText(Path.Combine(RepoRoot(), "tests", "integration", "smoke.py"));
         var ci = File.ReadAllText(Path.Combine(RepoRoot(), ".github", "workflows", "ci.yml"));
 
+        Assert.NotEmpty(modules);
         foreach (var module in modules)
         {
             Assert.Contains(module, pages);
@@ -56,11 +56,11 @@ public class WebPagesTests
     {
         var html = ReadResource("Jellyfin.Plugin.TgJelly.Web.tgjelly.html");
 
-        // viewContainer looks for this literal, with double quotes (F25).
+        // viewContainer looks for this literal, with double quotes.
         Assert.Contains("data-role=\"page\"", html, StringComparison.Ordinal);
         Assert.Contains("data-controller=\"__plugin/tgjelly.js\"", html, StringComparison.Ordinal);
 
-        // translateHtml rewrites every ${...} in the HTML (F26); all JS lives in tgjelly.js.
+        // translateHtml rewrites every ${...} in the HTML; all JS lives in tgjelly.js.
         Assert.DoesNotContain("${", html, StringComparison.Ordinal);
         Assert.DoesNotContain("<script", html, StringComparison.OrdinalIgnoreCase);
     }
@@ -68,18 +68,20 @@ public class WebPagesTests
     [Fact]
     public void Js_IsAnEsModuleWithDefaultExport_AndUsesApiClientUrls()
     {
-        var js = ReadResource("Jellyfin.Plugin.TgJelly.Web.tgjelly.js");
-
-        Assert.Contains("export default function", js, StringComparison.Ordinal);
-        Assert.Contains("ApiClient.getUrl('TgJelly/", js, StringComparison.Ordinal);
-        Assert.DoesNotContain("X-Emby-Token", js, StringComparison.Ordinal);
-        Assert.DoesNotContain("api_key", js, StringComparison.Ordinal);
+        Assert.Contains("export default function", ReadResource("Jellyfin.Plugin.TgJelly.Web.tgjelly.js"), StringComparison.Ordinal);
+        Assert.Contains("ApiClient.getUrl('TgJelly/", ReadResource("Jellyfin.Plugin.TgJelly.Web.tgjelly-api.js"), StringComparison.Ordinal);
+        foreach (var module in Plugin.WebModules)
+        {
+            var js = ReadResource("Jellyfin.Plugin.TgJelly.Web." + module);
+            Assert.DoesNotContain("X-Emby-Token", js, StringComparison.Ordinal);
+            Assert.DoesNotContain("api_key", js, StringComparison.Ordinal);
+        }
     }
 
     [Fact]
     public void Html_IsAThinShell_TheStylesheetAndTheRoot()
     {
-        // Plan 8: tgjelly.js renders the shell and every section container into #tgjelly-root (tests/web checks
+        // tgjelly.js renders the shell and every section container into #tgjelly-root (tests/web checks
         // where each container sits); the page only loads the stylesheet, and keeps no inline styles.
         var html = ReadResource("Jellyfin.Plugin.TgJelly.Web.tgjelly.html");
 

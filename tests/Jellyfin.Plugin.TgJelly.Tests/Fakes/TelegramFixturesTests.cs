@@ -10,7 +10,6 @@ public class TelegramFixturesTests
     [Theory]
     [InlineData("private_text")]
     [InlineData("private_command_start")]
-    [InlineData("chat_shared")]
     [InlineData("callback_query")]
     [InlineData("my_chat_member_channel_admin")]
     [InlineData("my_chat_member_channel_rights")]

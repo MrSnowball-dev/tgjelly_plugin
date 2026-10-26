@@ -4,7 +4,7 @@ using Microsoft.Extensions.Logging;
 namespace Jellyfin.Plugin.TgJelly.Logging;
 
 /// <summary>
-/// The logger every TgJelly type gets (spec §12): the formatted message and the exception are redacted with
+/// The logger every TgJelly type gets: the formatted message and the exception are redacted with
 /// <see cref="SecretRedactor"/> before they reach Jellyfin's log sinks.
 /// </summary>
 /// <typeparam name="T">The category type.</typeparam>

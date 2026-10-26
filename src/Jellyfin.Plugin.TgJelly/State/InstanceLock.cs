@@ -4,7 +4,7 @@ using System.IO;
 namespace Jellyfin.Plugin.TgJelly.State;
 
 /// <summary>
-/// An exclusive lock on <c>state.lock</c>, held while this plugin instance owns the data folder (spec §10.4).
+/// An exclusive lock on <c>state.lock</c>, held while this plugin instance owns the data folder.
 /// </summary>
 public sealed class InstanceLock : IDisposable
 {

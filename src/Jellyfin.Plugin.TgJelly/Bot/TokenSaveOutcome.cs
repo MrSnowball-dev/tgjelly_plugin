@@ -1,7 +1,7 @@
 namespace Jellyfin.Plugin.TgJelly.Bot;
 
 /// <summary>
-/// The outcome of saving a bot token (spec §6.1).
+/// The outcome of saving a bot token.
 /// </summary>
 public enum TokenSaveOutcome
 {

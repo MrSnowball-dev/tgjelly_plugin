@@ -3,7 +3,7 @@ using System.ComponentModel.DataAnnotations;
 namespace Jellyfin.Plugin.TgJelly.Api;
 
 /// <summary>
-/// <c>POST TgJelly/Status/Dismiss</c> (spec §11.2).
+/// <c>POST TgJelly/Status/Dismiss</c>.
 /// </summary>
 public sealed class DismissRequest
 {

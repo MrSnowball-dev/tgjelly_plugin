@@ -3,7 +3,7 @@ using System.ComponentModel.DataAnnotations;
 namespace Jellyfin.Plugin.TgJelly.Api;
 
 /// <summary>
-/// <c>POST TgJelly/Token</c> (spec §6.1, §11.2).
+/// <c>POST TgJelly/Token</c>.
 /// </summary>
 public sealed class TokenRequest
 {

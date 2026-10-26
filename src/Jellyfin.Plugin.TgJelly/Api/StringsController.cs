@@ -9,7 +9,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace Jellyfin.Plugin.TgJelly.Api;
 
 /// <summary>
-/// Serves the dashboard page's text (spec §11.1), so the page holds no strings of its own.
+/// Serves the dashboard page's text, so the page holds no strings of its own.
 /// </summary>
 [ApiController]
 [Route("TgJelly")]

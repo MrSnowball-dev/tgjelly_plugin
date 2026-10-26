@@ -274,27 +274,6 @@ public sealed class TopicFlowTests : IDisposable, IAsyncLifetime
     }
 
     [Fact]
-    public async Task LegacyAllowTopicPick_IsExpired()
-    {
-        AddForum(topics: false);
-        await AskWhere();
-        await Click("1|tc", WizardId());
-        var before = _rig.Memory.GetFlow(Manager)!;
-        var sent = Sent().Length;
-
-        await _rig.Deliver(TelegramFixtures.Update("chat_shared", ("request_id", "5"), ("chat_id", Group.ToString(CultureInfo.InvariantCulture))));
-
-        var expired = Sent()[sent];
-        Assert.Equal("That menu expired", (string)expired.Body["text"]!);
-        Assert.True((bool)expired.Body["reply_markup"]!["remove_keyboard"]!);
-        Assert.Empty(_h.Api.CallsTo("createForumTopic"));
-        var after = _rig.Memory.GetFlow(Manager)!;
-        Assert.Equal(before.WizardMessageId, after.WizardMessageId);
-        Assert.Equal(before.Params, after.Params);
-        Assert.True(TopicFlow.AwaitsPromotion(after));
-    }
-
-    [Fact]
     public async Task PresetButton_OnTheTopicWizard_IsExpired_AndCreatesNothing()
     {
         AddForum();
@@ -497,43 +476,6 @@ public sealed class TopicFlowTests : IDisposable, IAsyncLifetime
         Assert.Equal(["Advanced options"], Labels(failure));
         failure.Explains("Advanced options");
         Assert.DoesNotContain("<b>General topic</b> — ", (string)failure.Body["text"]!, StringComparison.Ordinal);
-    }
-
-    [Theory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public async Task V01FlowCaughtMidPromotion_CreateProceeds(bool rights)
-    {
-        AddForum(topics: rights);
-        var flow = new FlowState { Screen = "onboard", WizardMessageId = 77 };
-        flow.Params["topic"] = "1";
-        flow.Params["chatId"] = Group.ToString(CultureInfo.InvariantCulture);
-        flow.Params["title"] = "Family";
-        flow.Params["kind"] = "Supergroup";
-        flow.Params["isForum"] = "1";
-        flow.Params["photosBlocked"] = "0";
-        flow.Params["creating"] = "1";
-        flow.Params["promotionRequest"] = "5";
-        _rig.Memory.SaveFlow(Manager, flow);
-
-        await Click("1|tc", 77);
-
-        var edit = _h.Api.CallsTo("editMessageText").Last();
-        Assert.Equal(77, (int)edit.Body["message_id"]!);
-        if (rights)
-        {
-            Assert.Single(_h.Api.CallsTo("createForumTopic"));
-            Assert.Contains("✅ Done:", (string)edit.Body["text"]!, StringComparison.Ordinal);
-            Assert.Equal(101, Assert.Single(_h.Settings.Current.Destinations).ThreadId);
-        }
-        else
-        {
-            var after = _rig.Memory.GetFlow(Manager)!;
-            Assert.False(after.Params.ContainsKey("promotionRequest"));
-            Assert.Empty(_h.Api.CallsTo("createForumTopic"));
-            AssertPromotionScreen(edit);
-            Assert.True(TopicFlow.AwaitsPromotion(after));
-        }
     }
 
     [Fact]

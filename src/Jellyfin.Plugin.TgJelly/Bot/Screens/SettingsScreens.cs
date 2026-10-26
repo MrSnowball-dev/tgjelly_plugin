@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
-using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.TgJelly.Configuration;
 using Jellyfin.Plugin.TgJelly.Rendering;
@@ -14,7 +13,7 @@ using Telegram.Bot.Types.ReplyMarkups;
 namespace Jellyfin.Plugin.TgJelly.Bot.Screens;
 
 /// <summary>
-/// The settings screens (spec §8.3, §8.4): message style switches, update checks and the public URL. Every change is
+/// The settings screens: message style switches, update checks and the public URL. Every change is
 /// applied to the settings as they are at save time, so a change made in the dashboard meanwhile is not lost.
 /// </summary>
 public sealed class SettingsScreens
@@ -57,9 +56,8 @@ public sealed class SettingsScreens
     /// <param name="action">The callback action.</param>
     /// <param name="args">The callback arguments.</param>
     /// <param name="chatId">The private chat.</param>
-    /// <param name="ct">Cancels the work.</param>
     /// <returns>The screen, or <c>null</c> when <paramref name="action"/> is not a settings action.</returns>
-    public async Task<Screen?> HandleAsync(string action, IReadOnlyList<string> args, long chatId, CancellationToken ct)
+    public async Task<Screen?> HandleAsync(string action, IReadOnlyList<string> args, long chatId)
     {
         ArgumentNullException.ThrowIfNull(action);
         ArgumentNullException.ThrowIfNull(args);
@@ -126,10 +124,9 @@ public sealed class SettingsScreens
     /// </summary>
     /// <param name="chatId">The private chat.</param>
     /// <param name="text">The text.</param>
-    /// <param name="ct">Cancels the work.</param>
     /// <returns><c>Handled</c> is false when no URL was awaited (the text is ordinary). Otherwise a valid URL is saved
     /// and <c>Screen</c> is the public URL screen to send; an invalid one is explained and asked for again: <c>Screen</c> is the prompt, to send as a new message.</returns>
-    public async Task<(bool Handled, Screen? Screen)> OnTextAsync(long chatId, string text, CancellationToken ct)
+    public async Task<(bool Handled, Screen? Screen)> OnTextAsync(long chatId, string text)
     {
         ArgumentNullException.ThrowIfNull(text);
         if (!AwaitsUrl(chatId))
@@ -147,7 +144,7 @@ public sealed class SettingsScreens
         return (true, PublicUrl());
     }
 
-    /// <summary>Saves the public URL; a changed one clears the "public URL flagged" notice (spec §9.4 row 7).</summary>
+    /// <summary>Saves the public URL; a changed one clears the "public URL flagged" notice.</summary>
     private void SetPublicUrl(string url)
     {
         var before = _settings.Current.PublicUrl;

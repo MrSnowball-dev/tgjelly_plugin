@@ -8,7 +8,6 @@ using Jellyfin.Plugin.TgJelly.Bot.Screens;
 using Jellyfin.Plugin.TgJelly.Configuration;
 using Jellyfin.Plugin.TgJelly.Destinations;
 using Jellyfin.Plugin.TgJelly.Rendering;
-using Jellyfin.Plugin.TgJelly.State.Documents;
 using Jellyfin.Plugin.TgJelly.Strings;
 using Microsoft.Extensions.Logging;
 using Telegram.Bot.Types;
@@ -18,7 +17,7 @@ using Telegram.Bot.Types.ReplyMarkups;
 namespace Jellyfin.Plugin.TgJelly.Bot.Flows;
 
 /// <summary>
-/// Chats the bot was added to outside the setup flow (spec §6.5, "Detected chats"): recording them from
+/// Chats the bot was added to outside the setup flow ("Detected chats"): recording them from
 /// <c>my_chat_member</c>, the list under "Chats added outside setup (n)", and setting one up through the onboarding
 /// continuation. A detected chat receives nothing until it is set up.
 /// </summary>
@@ -62,8 +61,7 @@ public sealed class DetectedChatFlow
     /// <summary>
     /// Follows the bot's own membership change that no setup flow took (an add matched to a waiting prompt never gets
     /// here): a group, supergroup or channel it joined is recorded unless it is a destination; one it left is
-    /// forgotten. A person who blocks the bot stops being a manager, and one who unblocks it is a manager again
-    /// (spec §6.5).
+    /// forgotten. A person who blocks the bot stops being a manager, and one who unblocks it is a manager again.
     /// </summary>
     /// <param name="update">The membership change.</param>
     public void OnChatMember(ChatMemberUpdated update)
@@ -154,7 +152,7 @@ public sealed class DetectedChatFlow
 
     /// <summary>
     /// Sets up a detected chat: one check, without retries, then the onboarding continues at the topic question or the
-    /// destination being added with every event on (spec §6.5), editing the list message.
+    /// destination being added with every event on, editing the list message.
     /// </summary>
     /// <param name="privateChatId">The private chat with the person who pressed Set up.</param>
     /// <param name="chatId">The detected chat.</param>

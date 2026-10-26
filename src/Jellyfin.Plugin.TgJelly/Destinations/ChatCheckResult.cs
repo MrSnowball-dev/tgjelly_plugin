@@ -4,7 +4,7 @@ using Jellyfin.Plugin.TgJelly.State.Documents;
 namespace Jellyfin.Plugin.TgJelly.Destinations;
 
 /// <summary>
-/// The outcome of checking whether the bot can post in a chat (spec §6.2 step 2, §9.4 re-checks).
+/// The outcome of checking whether the bot can post in a chat.
 /// </summary>
 /// <param name="Passed">Whether the bot can post there.</param>
 /// <param name="Problem">The health problem when not passed.</param>

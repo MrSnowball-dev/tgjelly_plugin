@@ -1,7 +1,7 @@
 namespace Jellyfin.Plugin.TgJelly.Configuration;
 
 /// <summary>
-/// New-media batching values (spec §7.4, ranges in §10.1).
+/// New-media batching values (ranges in <see cref="SettingsValidator"/>).
 /// </summary>
 public class BatchingOptions
 {

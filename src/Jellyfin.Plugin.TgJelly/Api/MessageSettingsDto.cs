@@ -6,7 +6,7 @@ using Jellyfin.Plugin.TgJelly.Configuration;
 namespace Jellyfin.Plugin.TgJelly.Api;
 
 /// <summary>
-/// The <c>Message</c> part of <see cref="SettingsDto"/> (design §6.2): every message with its switches, defaults
+/// The <c>Message</c> part of <see cref="SettingsDto"/>: every message with its switches, defaults
 /// included, and whether upgrades are announced.
 /// </summary>
 public sealed class MessageSettingsDto

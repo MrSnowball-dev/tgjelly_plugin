@@ -21,7 +21,7 @@ using Microsoft.Extensions.Logging;
 namespace Jellyfin.Plugin.TgJelly.Updates;
 
 /// <summary>
-/// Announces new Jellyfin releases (spec §7.6). It only reads GitHub while some enabled destination subscribes to
+/// Announces new Jellyfin releases. It only reads GitHub while some enabled destination subscribes to
 /// <c>server.update_available</c>: first 5 minutes after the subscription appears (or after startup), then every
 /// 12 hours. Failures are counted for Status and never sent to Telegram.
 /// </summary>

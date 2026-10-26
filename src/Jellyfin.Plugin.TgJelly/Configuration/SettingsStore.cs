@@ -8,7 +8,7 @@ using Microsoft.Extensions.Logging;
 namespace Jellyfin.Plugin.TgJelly.Configuration;
 
 /// <summary>
-/// The only way TgJelly changes its settings (spec §10.4): under the host's save lock, clone, change, normalize, validate, bump the
+/// The only way TgJelly changes its settings: under the host's save lock, clone, change, normalize, validate, bump the
 /// revision, save, back up to settings.bak.json, then raise <see cref="SettingsChanged"/> once.
 /// </summary>
 public sealed class SettingsStore : IDisposable
@@ -20,6 +20,9 @@ public sealed class SettingsStore : IDisposable
     private readonly ILogger<SettingsStore> _logger;
     private readonly Lock _notifyGate = new();
     private long _lastNotifiedRevision = long.MinValue;
+    private PluginConfiguration? _snapshot;
+    private PluginConfiguration? _snapshotSource;
+    private string? _snapshotJson;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="SettingsStore"/> class.
@@ -48,9 +51,16 @@ public sealed class SettingsStore : IDisposable
     public event EventHandler<SettingsChangedEventArgs>? SettingsChanged;
 
     /// <summary>
-    /// Gets a copy of the current settings.
+    /// Gets or sets a value indicating whether each read of <see cref="Current"/> first checks that no caller changed
+    /// the shared copy. Tests turn it on; it costs a serialization per read.
     /// </summary>
-    public PluginConfiguration Current => _host.RunExclusive(() => Clone(_host.Configuration));
+    internal static bool VerifySnapshots { get; set; }
+
+    /// <summary>
+    /// Gets the current settings: one copy shared by every reader until the settings change. Read-only: a change goes
+    /// through <see cref="Update"/> or <see cref="UpdateIf"/>.
+    /// </summary>
+    public PluginConfiguration Current => _host.RunExclusive(Snapshot);
 
     /// <summary>
     /// Applies a change to a copy of the settings and saves it.
@@ -117,7 +127,7 @@ public sealed class SettingsStore : IDisposable
     }
 
     /// <summary>
-    /// Restores settings.bak.json when Jellyfin has replaced the settings with defaults after a load error (F9).
+    /// Restores settings.bak.json when Jellyfin has replaced the settings with defaults after a load error.
     /// Requires the state store to be loaded.
     /// </summary>
     /// <returns><c>true</c> when the backup was restored.</returns>
@@ -167,16 +177,27 @@ public sealed class SettingsStore : IDisposable
     public void Dispose() => _host.ExternalConfigurationSaved -= OnExternalConfigurationSaved;
 
     private static PluginConfiguration Clone(PluginConfiguration configuration)
-    {
-        var copy = JsonSerializer.Deserialize<PluginConfiguration>(JsonSerializer.Serialize(configuration, JsonDefaults.Options), JsonDefaults.Options)!;
+        => JsonSerializer.Deserialize<PluginConfiguration>(JsonSerializer.Serialize(configuration, JsonDefaults.Options), JsonDefaults.Options)!;
 
-        // Settings read from an older file: a switched-off or empty override is gone (design §5.1), and v0.4's message
-        // switches are each message's (plan 9, design §6.2).
-        copy.MigrateTemplates();
-        copy.MigrateMessageOptions();
-        copy.UpdateCheck?.MigrateMode();
-        copy.MigrateTopics();
-        return copy;
+    // Jellyfin replaces its configuration object on every save, ours or an outside one, so a new object (or a new
+    // revision on the same one) means the copy is stale.
+    private PluginConfiguration Snapshot()
+    {
+        var live = _host.Configuration;
+        if (_snapshot is not null && ReferenceEquals(live, _snapshotSource) && live.Revision == _snapshot.Revision)
+        {
+            if (VerifySnapshots && JsonSerializer.Serialize(_snapshot, JsonDefaults.Options) != _snapshotJson)
+            {
+                throw new InvalidOperationException("A caller changed SettingsStore.Current in place.");
+            }
+
+            return _snapshot;
+        }
+
+        _snapshot = Clone(live);
+        _snapshotSource = live;
+        _snapshotJson = VerifySnapshots ? JsonSerializer.Serialize(_snapshot, JsonDefaults.Options) : null;
+        return _snapshot;
     }
 
     // The backup is a safety net: failing to write it must not turn a successful save into an error.

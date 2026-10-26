@@ -1,4 +1,4 @@
-// Lets Node load the dashboard modules the way Jellyfin serves them (plan 8, ruling R4).
+// Lets Node load the dashboard modules the way Jellyfin serves them.
 // Run: node --import ./tests/web/jellyfin-resolve.mjs --test 'tests/web/*.test.mjs'
 //
 // In the browser a module imports its siblings as './configurationpage?name=tgjelly-ui.js', the URL Jellyfin serves an

@@ -1,6 +1,5 @@
 using System;
 using Jellyfin.Plugin.TgJelly.Delivery;
-using Microsoft.Extensions.Time.Testing;
 using Xunit;
 
 namespace Jellyfin.Plugin.TgJelly.Tests.Delivery;
@@ -8,7 +7,7 @@ namespace Jellyfin.Plugin.TgJelly.Tests.Delivery;
 public class PacingGateTests
 {
     private static readonly DateTimeOffset T0 = new(2026, 10, 18, 10, 0, 0, TimeSpan.Zero);
-    private readonly PacingGate _gate = new(new FakeTimeProvider(T0));
+    private readonly PacingGate _gate = new();
 
     [Fact]
     public void SameChat_WaitsOneSecond()

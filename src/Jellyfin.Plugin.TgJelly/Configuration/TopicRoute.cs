@@ -1,7 +1,7 @@
 namespace Jellyfin.Plugin.TgJelly.Configuration;
 
 /// <summary>
-/// Where one kind of message goes in a forum (owner, 2026-10-25): a slot and the topic it posts to. A slot without a
+/// Where one kind of message goes in a forum: a slot and the topic it posts to. A slot without a
 /// route posts to the destination's own topic.
 /// </summary>
 public class TopicRoute

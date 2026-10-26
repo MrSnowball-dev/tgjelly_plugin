@@ -26,13 +26,6 @@ public class JellyfinServerInfoTests
     }
 
     [Fact]
-    public void Identity_ComesFromTheHost()
-    {
-        var info = new JellyfinServerInfo(_host, _config);
-        Assert.Equal(("sys1", "Home", "12.2.0", new Version(12, 2, 0, 0), "/jf"), (info.SystemId, info.ServerName, info.VersionString, info.Version, info.BaseUrl));
-    }
-
-    [Fact]
     public void Suggest_PrefersExternal_ThenAll_ThenSmartUrl()
     {
         var info = new JellyfinServerInfo(_host, _config);

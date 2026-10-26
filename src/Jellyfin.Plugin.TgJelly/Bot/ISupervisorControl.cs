@@ -1,7 +1,7 @@
 namespace Jellyfin.Plugin.TgJelly.Bot;
 
 /// <summary>
-/// Restarts the bot session, e.g. after a token or proxy change (spec §9.1).
+/// Restarts the bot session, e.g. after a token or proxy change.
 /// </summary>
 public interface ISupervisorControl
 {

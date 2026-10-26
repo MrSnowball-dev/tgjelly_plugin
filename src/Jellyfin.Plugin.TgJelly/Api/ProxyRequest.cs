@@ -3,7 +3,7 @@ using System.ComponentModel.DataAnnotations;
 namespace Jellyfin.Plugin.TgJelly.Api;
 
 /// <summary>
-/// <c>PUT TgJelly/Proxy</c> (spec §9.1, §11.2). An omitted username or password keeps the stored one; an empty
+/// <c>PUT TgJelly/Proxy</c>. An omitted username or password keeps the stored one; an empty
 /// string clears it.
 /// </summary>
 public sealed class ProxyRequest

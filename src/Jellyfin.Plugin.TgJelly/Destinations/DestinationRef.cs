@@ -5,7 +5,7 @@ using Jellyfin.Plugin.TgJelly.Configuration;
 namespace Jellyfin.Plugin.TgJelly.Destinations;
 
 /// <summary>
-/// Names a destination in stored text by its ID, never its title or chat ID (spec §12): diagnostics can't leak the title
+/// Names a destination in stored text by its ID, never its title or chat ID: diagnostics can't leak the title
 /// of a destination that was removed after the text was written. The dashboard shows a live destination's title instead.
 /// </summary>
 public static class DestinationRef

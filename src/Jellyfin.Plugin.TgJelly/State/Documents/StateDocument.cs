@@ -4,7 +4,7 @@ using System.Collections.Generic;
 namespace Jellyfin.Plugin.TgJelly.State.Documents;
 
 /// <summary>
-/// The contents of state.json: small, bot-scoped runtime state saved within 1 s of a change (spec §10.3).
+/// The contents of state.json: small, bot-scoped runtime state saved within 1 s of a change.
 /// Later plans add their sections here.
 /// </summary>
 public sealed class StateDocument
@@ -18,10 +18,10 @@ public sealed class StateDocument
     /// <summary>Gets or sets the connected bot's identity and profile state.</summary>
     public TelegramSection Telegram { get; set; } = new();
 
-    /// <summary>Gets or sets each destination's health, keyed by destination ID (spec §9.4).</summary>
+    /// <summary>Gets or sets each destination's health, keyed by destination ID.</summary>
     public Dictionary<string, DestinationHealth> Health { get; set; } = new(StringComparer.Ordinal);
 
-    /// <summary>Gets or sets the update checker's state (spec §7.6).</summary>
+    /// <summary>Gets or sets the update checker's state.</summary>
     public UpdateCheckState UpdateCheck { get; set; } = new();
 
     /// <summary>Gets or sets each private chat's menu or setup flow, keyed by chat ID (invariant culture).</summary>

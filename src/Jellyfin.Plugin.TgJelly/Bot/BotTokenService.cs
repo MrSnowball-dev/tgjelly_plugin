@@ -6,7 +6,6 @@ using System.Threading.Tasks;
 using Jellyfin.Plugin.TgJelly.Configuration;
 using Jellyfin.Plugin.TgJelly.Logging;
 using Jellyfin.Plugin.TgJelly.State;
-using Jellyfin.Plugin.TgJelly.State.Documents;
 using Jellyfin.Plugin.TgJelly.Strings;
 using Microsoft.Extensions.Logging;
 using Telegram.Bot.Types;
@@ -14,7 +13,7 @@ using Telegram.Bot.Types;
 namespace Jellyfin.Plugin.TgJelly.Bot;
 
 /// <summary>
-/// Saving a bot token, switching bots, disconnecting and taking over a webhook (spec §6.1, §10.4). Nothing is stored
+/// Saving a bot token, switching bots, disconnecting and taking over a webhook. Nothing is stored
 /// until every check has passed, and one save runs at a time.
 /// </summary>
 public sealed class BotTokenService : IDisposable
@@ -56,7 +55,7 @@ public sealed class BotTokenService : IDisposable
     }
 
     /// <summary>
-    /// Checks and saves a token (spec §6.1 steps 1–5).
+    /// Checks and saves a token.
     /// </summary>
     /// <param name="token">The token as pasted.</param>
     /// <param name="confirmSwitch">Whether the user confirmed switching to a different bot.</param>
@@ -115,7 +114,7 @@ public sealed class BotTokenService : IDisposable
                 var webhook = await sender.GetWebhookInfoAsync(ct).ConfigureAwait(false);
                 if (!string.IsNullOrEmpty(webhook.Url))
                 {
-                    // The only automatic webhook deletion (spec §9.2).
+                    // The only automatic webhook deletion.
                     await sender.DeleteWebhookAsync(ct).ConfigureAwait(false);
                     webhookDeleted = true;
                 }
@@ -138,8 +137,6 @@ public sealed class BotTokenService : IDisposable
             {
                 s.Telegram.BotId = me.Id;
                 s.Telegram.BotUsername = username;
-                // TgJelly leaves the bot's profile (description, commands, admin rights) to the owner (2026-10-25).
-                s.Telegram.Profile = new ProfileState();
             });
             _supervisor.Restart();
             _logger.LogInformation("TgJelly connected bot @{Bot}", username);
@@ -152,7 +149,7 @@ public sealed class BotTokenService : IDisposable
     }
 
     /// <summary>
-    /// Disconnects the bot (spec §10.4): clears the token and the bot-scoped state, keeps the proxy credentials and
+    /// Disconnects the bot: clears the token and the bot-scoped state, keeps the proxy credentials and
     /// the bot identity. Waits for a token save still in flight, so that save can't finish after it.
     /// </summary>
     /// <param name="removeDestinations">Whether to remove every destination too, in one settings change. Their Health,

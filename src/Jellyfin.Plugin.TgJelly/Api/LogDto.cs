@@ -4,7 +4,7 @@ using System.Collections.Generic;
 namespace Jellyfin.Plugin.TgJelly.Api;
 
 /// <summary>
-/// A page of the Log for the dashboard (design §8.1).
+/// A page of the Log for the dashboard.
 /// </summary>
 public sealed class LogDto
 {

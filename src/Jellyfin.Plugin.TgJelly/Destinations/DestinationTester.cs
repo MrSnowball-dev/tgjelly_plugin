@@ -18,8 +18,8 @@ using Telegram.Bot.Types.ReplyMarkups;
 namespace Jellyfin.Plugin.TgJelly.Destinations;
 
 /// <summary>
-/// Sends the test message ("✅ TgJelly test: this chat will receive …"), after a re-check that bypasses the hold
-/// (spec §6.2 step 5, §9.4). Goes straight to Telegram, not through the Outbox, so the caller gets the result.
+/// Sends the test message ("✅ TgJelly test: this chat will receive …"), after a re-check that bypasses the hold.
+/// Goes straight to Telegram, not through the Outbox, so the caller gets the result.
 /// </summary>
 public sealed class DestinationTester
 {

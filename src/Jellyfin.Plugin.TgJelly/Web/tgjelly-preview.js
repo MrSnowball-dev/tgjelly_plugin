@@ -1,8 +1,8 @@
-// TgJelly dashboard: the template preview (spec §8.5; plan 9). Imported as './configurationpage?name=tgjelly-preview.js'.
+// TgJelly dashboard: the template preview. Imported as './configurationpage?name=tgjelly-preview.js'.
 //
 // Turns a Validate reply into the message as Telegram would show it. Every piece of markup it writes is either built
 // from esc()/t() output or comes from previewHtml(), the sanitiser, which re-emits only Telegram's formatting tags.
-// The tgj-tg- classes imitate Telegram on purpose, so tgjelly.css styles them with Telegram's own colours (plan 8, R3).
+// The tgj-tg- classes imitate Telegram on purpose, so tgjelly.css styles them with Telegram's own colours.
 import { esc, t, formatNumber } from './configurationpage?name=tgjelly-ui.js';
 
 /** Tags of Telegram HTML that the preview shows as the same tag, without any attribute. */
@@ -32,7 +32,7 @@ function safeHref(value) {
     return /^(?:https?|tg):/i.test(href) ? href : null;
 }
 
-// The server's hover-link markers (TemplateMarkers, design §6.5): U+E000, a piece's index, U+E001 before the piece's
+// The server's hover-link markers (TemplateMarkers): U+E000, a piece's index, U+E001 before the piece's
 // output, and U+E002 after it. Escaped as \u here so no editor or tool can lose them.
 const MARK_START = '\uE000';
 const MARK_INDEX = '\uE001';
@@ -189,7 +189,7 @@ function previewElement(name, attrs, children) {
  * span.tgj-tg-spoiler; blockquote (an expandable one as details/summary); a as a new-tab link for http:, https: and tg:
  * hrefs only, otherwise its text; tg-emoji and tg-time as their text. An unknown, unclosed or stray tag is shown as text.
  * Entities are decoded once, and all text is escaped on output.
- * The server's hover-link markers (design §6.5) are taken out first, wherever they are, even inside a tag; each run of
+ * The server's hover-link markers are taken out first, wherever they are, even inside a tag; each run of
  * a piece's text becomes a span data-tgj-piece="<index>", and a piece that is only tags gets no span.
  * @param {string} telegramHtml
  * @returns {string} HTML
@@ -254,7 +254,7 @@ function clockTime() {
 const failed = result => Boolean(result.RequestError) || (result.Errors ?? []).length > 0;
 
 /**
- * The template's check, shown under the textarea (design §6.1): the validation's errors and warnings, then the
+ * The template's check, shown under the textarea: the validation's errors and warnings, then the
  * message's length against Telegram's limit (left out while the text has errors and renders nothing).
  * @param {object | null} result the last TemplateValidationDto; RequestError (HTML) when the request itself failed
  * @param {Record<string, string>} S
@@ -289,7 +289,7 @@ export function renderTemplateCheck(result, S, lang = 'en') {
 }
 
 /**
- * The template preview pane: the message as Telegram's dark theme shows it (design §6.4), on the chat background. The
+ * The template preview pane: the message as Telegram's dark theme shows it, on the chat background. The
  * bubble has its tail and holds the poster on top, then the text with the time in its bottom right corner; the inline
  * keys sit under the bubble, in their rows. The text comes from MarkedHtml when the server sent it, so each piece of
  * the template is a span the hover link can find. With errors, the last good preview is shown dimmed instead;

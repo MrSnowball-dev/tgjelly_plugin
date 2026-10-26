@@ -21,7 +21,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace Jellyfin.Plugin.TgJelly.Api;
 
 /// <summary>
-/// Admin-only REST API for the dashboard page (spec §11.2). Later plans add endpoints.
+/// Admin-only REST API for the dashboard page. Later plans add endpoints.
 /// </summary>
 [ApiController]
 [Route("TgJelly")]

@@ -3,7 +3,7 @@ using System;
 namespace Jellyfin.Plugin.TgJelly.Bot;
 
 /// <summary>
-/// The Bot API base URL override from <c>TGJELLY_BOT_API_BASE_URL</c> (spec §9.1), read once at startup and used by
+/// The Bot API base URL override from <c>TGJELLY_BOT_API_BASE_URL</c>, read once at startup and used by
 /// the integration tests. Never part of settings, the API or any UI.
 /// </summary>
 /// <param name="BaseUrl">The override, or <c>null</c> for the real Bot API.</param>

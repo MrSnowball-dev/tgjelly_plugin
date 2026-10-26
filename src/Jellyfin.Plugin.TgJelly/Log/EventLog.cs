@@ -13,7 +13,7 @@ using Microsoft.Extensions.Logging;
 namespace Jellyfin.Plugin.TgJelly.Log;
 
 /// <summary>
-/// The event log (design §8): one row per message per destination, kept in memory and written to
+/// The event log: one row per message per destination, kept in memory and written to
 /// <c>event-log.jsonl</c> by a background writer, so a slow or failing disk never delays a message. Rows older than
 /// <see cref="Retention"/> and beyond <see cref="MaxRows"/> are dropped, oldest first. A missing, unreadable or newer
 /// file never stops anything: it is moved aside as <c>.corrupt</c> and the log starts empty, saying so.
@@ -441,7 +441,7 @@ public sealed class EventLog : IDisposable
             MoveAside(ex.Message);
         }
 
-        var dirty = false;
+        bool dirty;
         lock (_gate)
         {
             foreach (var row in rows ?? [])

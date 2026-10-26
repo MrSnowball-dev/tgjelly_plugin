@@ -3,7 +3,7 @@ using System.Collections.Generic;
 namespace Jellyfin.Plugin.TgJelly.Api;
 
 /// <summary>
-/// The outcome of validating a template (spec §8.5).
+/// The outcome of validating a template.
 /// </summary>
 public sealed class TemplateValidationDto
 {

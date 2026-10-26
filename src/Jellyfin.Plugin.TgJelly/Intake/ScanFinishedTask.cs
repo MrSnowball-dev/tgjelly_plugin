@@ -6,7 +6,7 @@ using MediaBrowser.Controller.Library;
 namespace Jellyfin.Plugin.TgJelly.Intake;
 
 /// <summary>
-/// Runs at the end of every full library validation (F14) and only queues a <c>ScanFinished</c> event. Jellyfin finds
+/// Runs at the end of every full library validation and only queues a <c>ScanFinished</c> event. Jellyfin finds
 /// it by scanning (it must stay public) and creates it from the container.
 /// </summary>
 public sealed class ScanFinishedTask : ILibraryPostScanTask

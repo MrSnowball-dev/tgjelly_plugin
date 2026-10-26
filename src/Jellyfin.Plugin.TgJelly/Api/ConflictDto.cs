@@ -1,7 +1,7 @@
 namespace Jellyfin.Plugin.TgJelly.Api;
 
 /// <summary>
-/// A 409 response: the caller's revision was stale; here is the current data (spec §10.4).
+/// A 409 response: the caller's revision was stale; here is the current data.
 /// </summary>
 /// <typeparam name="T">The resource type.</typeparam>
 public sealed class ConflictDto<T>

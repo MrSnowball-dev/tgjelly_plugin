@@ -67,8 +67,15 @@ public sealed class BotTestHarness : IDisposable
         Connection.SetState(ConnectionState.Connected);
     }
 
-    public Destination AddDestination(long chatId, ChatKind kind = ChatKind.Supergroup, int threadId = 0, PresetKind preset = PresetKind.Everything, string? id = null)
+    /// <summary>The media events: a destination that only announces new media.</summary>
+    public static readonly string[] MediaEvents = [.. EventCatalog.AllKeys.Where(k => EventCatalog.GroupOf(k) == "media")];
+
+    /// <summary>The server and security events, without successful logins: a destination for admin alerts.</summary>
+    public static readonly string[] AdminEvents = [.. EventCatalog.AllKeys.Where(k => EventCatalog.GroupOf(k) != "media" && k != "security.login_succeeded")];
+
+    public Destination AddDestination(long chatId, ChatKind kind = ChatKind.Supergroup, int threadId = 0, string[]? events = null, string? id = null)
     {
+        events ??= [.. EventCatalog.AllKeys];
         var destination = new Destination
         {
             Id = id ?? DestinationIds.New(Settings.Current.Destinations.Select(d => d.Id)),
@@ -76,8 +83,8 @@ public sealed class BotTestHarness : IDisposable
             ThreadId = threadId,
             Title = "Chat " + chatId.ToString(System.Globalization.CultureInfo.InvariantCulture),
             Kind = kind,
-            Preset = preset,
-            Events = EventCatalog.Expand(preset),
+            FollowsNewEvents = EventCatalog.HasAll(events),
+            Events = events,
         };
         var result = Settings.Update(null, c => c.Destinations = [.. c.Destinations, destination]);
         Assert.Equal(SettingsUpdateStatus.Saved, result.Status);

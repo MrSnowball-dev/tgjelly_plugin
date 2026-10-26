@@ -16,14 +16,14 @@ using Telegram.Bot.Types.Enums;
 namespace Jellyfin.Plugin.TgJelly.Bot;
 
 /// <summary>
-/// Owns the bot connection (spec §9.2): waits for compatibility, <c>state.lock</c>, Jellyfin's startup and a token;
+/// Owns the bot connection: waits for compatibility, <c>state.lock</c>, Jellyfin's startup and a token;
 /// then <c>getMe</c>, the webhook check and TgJelly's own GetUpdates loop with an in-memory offset. Each
 /// <see cref="Restart"/> ends the current session completely before the next one starts, so two polls never overlap.
 /// </summary>
 public sealed class BotSupervisor : BackgroundService, ISupervisorControl
 {
     /// <summary>
-    /// The update types TgJelly asks for (F31: always explicit).
+    /// The update types TgJelly asks for (always explicit).
     /// </summary>
     public static readonly UpdateType[] AllowedUpdates = [UpdateType.Message, UpdateType.CallbackQuery, UpdateType.MyChatMember];
 
@@ -93,7 +93,7 @@ public sealed class BotSupervisor : BackgroundService, ISupervisorControl
     }
 
     /// <summary>
-    /// Gets the last handled update's ID in this session (in memory only, spec §9.2).
+    /// Gets the last handled update's ID in this session (in memory only).
     /// </summary>
     internal int? LastUpdateId
     {
@@ -275,7 +275,7 @@ public sealed class BotSupervisor : BackgroundService, ISupervisorControl
                     break;
                 }
 
-                // Deleted only by the dashboard's [Take over] or a token save (spec §9.2 step 2).
+                // Deleted only by the dashboard's [Take over] or a token save.
                 _connection.SetState(ConnectionState.WebhookConflict);
                 await Task.Delay(WebhookRecheck, _time, ct).ConfigureAwait(false);
             }

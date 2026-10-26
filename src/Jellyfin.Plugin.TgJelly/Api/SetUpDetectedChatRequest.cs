@@ -1,7 +1,7 @@
 namespace Jellyfin.Plugin.TgJelly.Api;
 
 /// <summary>
-/// <c>POST TgJelly/DetectedChats/{chatId}</c>: set up a detected chat (spec §11.2).
+/// <c>POST TgJelly/DetectedChats/{chatId}</c>: set up a detected chat.
 /// </summary>
 public sealed class SetUpDetectedChatRequest
 {

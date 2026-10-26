@@ -3,7 +3,7 @@ using System;
 namespace Jellyfin.Plugin.TgJelly.Api;
 
 /// <summary>
-/// A chat the bot was added to outside setup (spec §6.5).
+/// A chat the bot was added to outside setup.
 /// </summary>
 public sealed class DetectedChatDto
 {

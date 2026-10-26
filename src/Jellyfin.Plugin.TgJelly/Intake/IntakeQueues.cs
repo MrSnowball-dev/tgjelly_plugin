@@ -9,8 +9,8 @@ using Jellyfin.Plugin.TgJelly.Library;
 namespace Jellyfin.Plugin.TgJelly.Intake;
 
 /// <summary>
-/// The two bounded in-memory intake queues (spec §12). Callbacks publish here in O(1) without I/O; the pipeline
-/// drains them. An incompatible build accepts nothing (intake stays off, F8).
+/// The two bounded in-memory intake queues. Callbacks publish here in O(1) without I/O; the pipeline
+/// drains them. An incompatible build accepts nothing (intake stays off).
 /// </summary>
 public sealed class IntakeQueues
 {
@@ -164,7 +164,7 @@ public sealed class IntakeQueues
         return taken;
     }
 
-    // Spec §12: queued Updated events are evicted before Added ones. An incoming Updated is dropped rather than
+    // queued Updated events are evicted before Added ones. An incoming Updated is dropped rather than
     // pushing out an Added; a ScanFinished is never evicted. Each eviction counts as a drop.
     private bool MakeRoom(MediaIntakeKind incoming)
     {

@@ -12,7 +12,7 @@ using Microsoft.Extensions.Logging;
 namespace Jellyfin.Plugin.TgJelly.Pipeline;
 
 /// <summary>
-/// Decides when a new item is ready to announce (spec §7.4 steps 2, 3 and 8): pending items wait for their metadata
+/// Decides when a new item is ready to announce: pending items wait for their metadata
 /// (a forwarded ItemUpdated) or the timeout, items that disappeared are dropped quietly, and upgrades are suppressed
 /// unless <c>AnnounceUpgrades</c> is on. Its state lives in queue.json, so it survives restarts.
 /// </summary>
@@ -207,7 +207,7 @@ public sealed class MediaReadiness
             return [];
         }
 
-        // Over the cap, the oldest pending item takes the timeout path: announced with what it has (spec §10.3).
+        // Over the cap, the oldest pending item takes the timeout path: announced with what it has.
         var ready = new List<MediaReady>();
         var oldest = _state.ReadQueue(q => q.PendingMedia.Count >= Cap(PendingCap) ? q.PendingMedia.MinBy(p => p.Value).Key : null);
         if (oldest is not null && Guid.TryParseExact(oldest, "N", out var oldestId))

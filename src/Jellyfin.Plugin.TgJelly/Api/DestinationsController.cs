@@ -8,7 +8,6 @@ using Jellyfin.Plugin.TgJelly.Bot;
 using Jellyfin.Plugin.TgJelly.Configuration;
 using Jellyfin.Plugin.TgJelly.Delivery;
 using Jellyfin.Plugin.TgJelly.Destinations;
-using Jellyfin.Plugin.TgJelly.Pipeline;
 using Jellyfin.Plugin.TgJelly.State;
 using Jellyfin.Plugin.TgJelly.State.Documents;
 using Jellyfin.Plugin.TgJelly.Strings;
@@ -23,7 +22,7 @@ using Telegram.Bot.Types;
 namespace Jellyfin.Plugin.TgJelly.Api;
 
 /// <summary>
-/// Destination endpoints (spec §11.2): list, add by chat ID or topic link (checked first, with the automatic test
+/// Destination endpoints: list, add by chat ID or topic link (checked first, with the automatic test
 /// message), edit, remove, test, check, and the bot's links.
 /// </summary>
 [ApiController]
@@ -151,7 +150,7 @@ public class DestinationsController : ControllerBase
         }
 
         // A new destination starts with every event on; the admin trims it afterwards.
-        var created = await _creator.CreateAsync(check, threadId, EventCatalog.Expand(PresetKind.Everything), PresetKind.Everything, request.ExpectedRevision, cancellationToken).ConfigureAwait(false);
+        var created = await _creator.CreateAsync(check, threadId, [.. EventCatalog.AllKeys], request.ExpectedRevision, cancellationToken).ConfigureAwait(false);
         switch (created.Outcome)
         {
             case CreateOutcome.Conflict:
@@ -232,13 +231,13 @@ public class DestinationsController : ControllerBase
             d.SeparateMediaTopics = request.SeparateMediaTopics ?? d.SeparateMediaTopics;
             if (request.TopicRoutes is { } routes)
             {
-                d.TopicRoutes = WithRoutes(d.TopicRoutes, routes.Select(r => (r.Slot, r.ThreadId)));
+                d.SetRoutes(routes.Select(r => (r.Slot, r.ThreadId)));
             }
 
             if (request.Events is not null)
             {
                 d.Events = [.. request.Events.Distinct(StringComparer.Ordinal)];
-                d.Preset = EventCatalog.PresetFor(d.Events);
+                d.FollowsNewEvents = EventCatalog.HasAll(d.Events);
             }
 
             d.LibraryIds = libraries ?? d.LibraryIds;
@@ -510,16 +509,8 @@ public class DestinationsController : ControllerBase
                 return false;
             }
 
-            if (Array.Find(d.KnownTopics, t => t.ThreadId == thread) is { } known)
-            {
-                known.Name = name.Length > 0 ? name : known.Name;
-            }
-            else
-            {
-                d.KnownTopics = [.. d.KnownTopics, new KnownTopic { ThreadId = thread, Name = name }];
-            }
-
-            d.TopicRoutes = WithRoutes(d.TopicRoutes, [(request.Slot, (int?)thread)]);
+            d.RememberTopic(thread, name);
+            d.SetRoutes([(request.Slot, thread)]);
             if (request.Slot == "media")
             {
                 // One topic for all media ends separate topics, as choosing a known topic does.
@@ -536,25 +527,6 @@ public class DestinationsController : ControllerBase
             SettingsUpdateStatus.Unchanged => NotFound(),
             _ => ToDto(result.Configuration.Destinations.First(d => d.Id == id), result.Configuration.Revision),
         };
-    }
-
-    /// <summary>The routes with the changes applied: a thread id sets a slot's route, <c>null</c> removes it.</summary>
-    private static TopicRoute[] WithRoutes(TopicRoute[] current, IEnumerable<(string Slot, int? ThreadId)> changes)
-    {
-        var routes = current.ToDictionary(r => r.Slot, r => r.ThreadId, StringComparer.Ordinal);
-        foreach (var (slot, thread) in changes)
-        {
-            if (thread is { } t)
-            {
-                routes[slot] = t;
-            }
-            else
-            {
-                routes.Remove(slot);
-            }
-        }
-
-        return [.. TopicSlots.All.Where(routes.ContainsKey).Select(slot => new TopicRoute { Slot = slot, ThreadId = routes[slot] })];
     }
 
     private BadRequestObjectResult Error(string field, string message)

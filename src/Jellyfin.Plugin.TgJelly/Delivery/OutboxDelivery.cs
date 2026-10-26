@@ -22,12 +22,12 @@ using Telegram.Bot.Types.ReplyMarkups;
 namespace Jellyfin.Plugin.TgJelly.Delivery;
 
 /// <summary>
-/// Delivers one Outbox entry, applying every fallback of spec §9.4 and recording the outcome in the Outbox, the
+/// Delivers one Outbox entry, applying every fallback for a failed send and recording the outcome in the Outbox, the
 /// destination's health and <c>status</c>. Never throws except <see cref="OperationCanceledException"/>.
 /// </summary>
 public sealed class OutboxDelivery
 {
-    /// <summary>A send that leaves the Outbox later than this after it was queued gets the ⏱ line (spec §8.1).</summary>
+    /// <summary>A send that leaves the Outbox later than this after it was queued gets the ⏱ line.</summary>
     public static readonly TimeSpan DelayedAfter = TimeSpan.FromMinutes(5);
 
     private const int MaxResends = 4;
@@ -177,7 +177,7 @@ public sealed class OutboxDelivery
         SentMessage? target = null;
         if (entry.Op == OutboxOp.Edit && (entry.TargetKey is null || !_outbox.TryGetSent(destination.Id, entry.TargetKey, out target)))
         {
-            // The message to edit isn't known (a different bot, an evicted record): send it as a new one (§9.3).
+            // The message to edit isn't known (a different bot, an evicted record): send it as a new one.
             entry.Op = OutboxOp.Send;
             entry.SentKey ??= entry.TargetKey;
         }
@@ -331,7 +331,7 @@ public sealed class OutboxDelivery
                 return null;
             case DeliveryErrorKind.TopicMissing when ThreadOf(entry, destination) != destination.ThreadId:
                 // A routed topic is gone: remember it, and send this one (and its slot's next ones) to the destination's
-                // own topic instead of holding everything (owner, 2026-10-25).
+                // own topic instead of holding everything.
                 _health.SetTopicMissing(destination.Id, ThreadOf(entry, destination));
                 message.TopicFallback = destination.RouteSlotFor(entry.EventKey);
                 return (entry, destination);
@@ -426,7 +426,7 @@ public sealed class OutboxDelivery
     {
         _logger.LogWarning("TgJelly dropped a message to {Destination}: {Reason}", destination.Title, reason);
         _outbox.Drop(entry.EntryId);
-        // The ID, not the title: last errors outlive the destination, and diagnostics must never show its title (§12).
+        // The ID, not the title: last errors outlive the destination, and diagnostics must never show its title.
         _state.RecordError("outbox", DestinationRef.Of(destination) + ": " + reason);
         _log?.Failed(entry, destination, error, telegram, afterFallbacks, fromTelegram);
     }

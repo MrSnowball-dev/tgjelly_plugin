@@ -305,7 +305,7 @@ public sealed class OnboardingFlowTests : IDisposable, IAsyncLifetime
         var destination = Assert.Single(_h.Settings.Current.Destinations);
         Assert.Equal(Manager, destination.ChatId);
         Assert.Equal(ChatKind.Private, destination.Kind);
-        Assert.Equal(PresetKind.Everything, destination.Preset);
+        Assert.True(destination.FollowsNewEvents);
         Assert.Contains(Sent(), c => ((string)c.Body["text"]!).Contains("TgJelly test", StringComparison.Ordinal));
         Assert.StartsWith("✅ Done: <b>Ann</b>", (string)Edits(prompt).Last().Body["text"]!, StringComparison.Ordinal);
     }
@@ -343,33 +343,6 @@ public sealed class OnboardingFlowTests : IDisposable, IAsyncLifetime
         Assert.Null(_rig.Memory.GetFlow(Manager));
         Assert.Single(Sent());
         Assert.DoesNotContain(_h.Api.Calls, c => c.Body["reply_markup"]?["remove_keyboard"] is not null);
-    }
-
-    [Theory]
-    [InlineData("📢 Choose a channel")]
-    [InlineData("👥 Choose a group")]
-    [InlineData("💬 Right here")]
-    [InlineData("Cancel")]
-    [InlineData("chat_shared")]
-    public async Task LegacyReplyInput_RemovesTheOldKeyboard_AndShowsTheMenu(string input)
-    {
-        if (input == "chat_shared")
-        {
-            await _rig.Deliver(TelegramFixtures.Update("chat_shared", ("request_id", "5")));
-        }
-        else
-        {
-            Assert.Contains(input, OnboardingFlow.LegacyReplyTexts);
-            await Text(input);
-        }
-
-        var sent = Sent();
-        Assert.Equal(2, sent.Length);
-        Assert.Equal("That menu expired", (string)sent[0].Body["text"]!);
-        Assert.True((bool)sent[0].Body["reply_markup"]!["remove_keyboard"]!);
-        Assert.Contains("Destinations (0)", Labels(sent[1]));
-        Assert.Single(_h.Api.Calls, c => c.Body["reply_markup"]?["remove_keyboard"] is not null);
-        Assert.Empty(_h.Api.CallsTo("getChat"));
     }
 
     [Fact]
@@ -514,7 +487,7 @@ public sealed class OnboardingFlowTests : IDisposable, IAsyncLifetime
         Assert.Equal(0, destination.ThreadId);
         Assert.Equal("Family", destination.Title);
         Assert.Equal(ChatKind.Channel, destination.Kind);
-        Assert.Equal(PresetKind.Everything, destination.Preset);
+        Assert.True(destination.FollowsNewEvents);
         Assert.Equal(EventCatalog.AllKeys, destination.Events);
 
         var test = Assert.Single(Sent(Channel));

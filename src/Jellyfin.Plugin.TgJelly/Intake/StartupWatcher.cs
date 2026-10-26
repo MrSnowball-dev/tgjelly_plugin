@@ -11,9 +11,9 @@ using Microsoft.Extensions.Logging;
 namespace Jellyfin.Plugin.TgJelly.Intake;
 
 /// <summary>
-/// Emits <c>server.started</c> once per plugin start, after Jellyfin's startup has completed (spec §7.1, D14).
+/// Emits <c>server.started</c> once per plugin start, after Jellyfin's startup has completed.
 /// <c>CoreStartupHasCompleted</c> has no change event, so it is polled every second. A restart creates a new instance,
-/// so each start announces once (F4).
+/// so each start announces once.
 /// </summary>
 public sealed class StartupWatcher : BackgroundService
 {

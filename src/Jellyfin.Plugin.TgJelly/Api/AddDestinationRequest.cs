@@ -1,7 +1,7 @@
 namespace Jellyfin.Plugin.TgJelly.Api;
 
 /// <summary>
-/// <c>POST TgJelly/Destinations</c>: add a chat by ID or by topic link (spec §6.5, Advanced).
+/// <c>POST TgJelly/Destinations</c>: add a chat by ID or by topic link (Advanced).
 /// </summary>
 public sealed class AddDestinationRequest
 {

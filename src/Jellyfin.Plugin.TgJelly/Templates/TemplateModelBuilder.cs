@@ -11,7 +11,7 @@ using Telegram.Bot.Extensions;
 namespace Jellyfin.Plugin.TgJelly.Templates;
 
 /// <summary>
-/// Builds the data-only template model of a message from its <see cref="RenderModel"/> (spec §8.5): strings, numbers,
+/// Builds the data-only template model of a message from its <see cref="RenderModel"/>: strings, numbers,
 /// booleans and arrays of these, never a Jellyfin or Telegram object. The result has exactly the fields of
 /// <see cref="TemplateFieldCatalog"/>; missing data is <c>null</c>, or an empty array.
 /// </summary>
@@ -85,7 +85,7 @@ public sealed class TemplateModelBuilder
         ApplyToggles(result, _settings.Current.Message.For(model.EventKey));
         if (entries is not null)
         {
-            // v0.2 kept the first entries that fit, grouped again by library, and could keep none at all.
+            // The digest keeps the first entries that fit, grouped again by library, and may keep none at all.
             return TemplateModel.Custom(
                 result,
                 null,

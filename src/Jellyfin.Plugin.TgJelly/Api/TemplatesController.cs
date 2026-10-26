@@ -19,7 +19,7 @@ using Telegram.Bot.Extensions;
 namespace Jellyfin.Plugin.TgJelly.Api;
 
 /// <summary>
-/// Message templates: list, save, reset, validate and test-send (spec §8.5, §11.2; design §5, §6).
+/// Message templates: list, save, reset, validate and test-send.
 /// </summary>
 [ApiController]
 [Route("TgJelly")]
@@ -141,7 +141,7 @@ public class TemplatesController : ControllerBase
         return result;
     }
 
-    // Sets an override's text, or removes it when the text is null. A flag clears when the template's text changes (spec §8.5).
+    // Sets an override's text, or removes it when the text is null. A flag clears when the template's text changes.
     private ActionResult<TemplatesDto> Change(string eventKey, long expectedRevision, string? text)
     {
         var changed = false;
@@ -162,7 +162,7 @@ public class TemplatesController : ControllerBase
             }
             else if (existing is null)
             {
-                list.Add(new TemplateOverride { EventKey = eventKey, Enabled = true, Text = text });
+                list.Add(new TemplateOverride { EventKey = eventKey, Text = text });
             }
             else
             {

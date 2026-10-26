@@ -4,7 +4,7 @@ using System.Collections.Generic;
 namespace Jellyfin.Plugin.TgJelly.State.Documents;
 
 /// <summary>
-/// The failed logins of one user in a sliding 10-minute window (spec §7.5): one message, edited as attempts arrive.
+/// The failed logins of one user in a sliding 10-minute window: one message, edited as attempts arrive.
 /// </summary>
 public sealed class SecurityWindow
 {

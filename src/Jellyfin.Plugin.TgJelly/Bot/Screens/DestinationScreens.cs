@@ -19,7 +19,7 @@ using Telegram.Bot.Types.ReplyMarkups;
 namespace Jellyfin.Plugin.TgJelly.Bot.Screens;
 
 /// <summary>
-/// The destination list, the per-destination screens and their switches (spec §6.3), and the <c>/test</c> picker. Every
+/// The destination list, the per-destination screens and their switches, and the <c>/test</c> picker. Every
 /// change re-reads the settings and applies itself to the destination found by ID at save time, so a change made in the
 /// dashboard while a screen is open is not lost.
 /// </summary>
@@ -173,7 +173,7 @@ public sealed class DestinationScreens
 
         if (offerAdd)
         {
-            // Adding lives with the destinations (owner, 2026-10-25), as the primary action of the screen.
+            // Adding lives with the destinations, as the primary action of the screen.
             var add = Buttons.Callback(_strings, "menu.add", CallbackData.Format("oa"));
             add.Style = KeyboardButtonStyle.Primary;
             rows.Add([add]);
@@ -260,7 +260,7 @@ public sealed class DestinationScreens
     }
 
     /// <summary>
-    /// A forum destination's topics (owner, 2026-10-25): one line per group, and per media event with separate media
+    /// A forum destination's topics: one line per group, and per media event with separate media
     /// topics; a button for each opens its choice.
     /// </summary>
     private Screen Topics(string id, string? note = null)
@@ -387,18 +387,12 @@ public sealed class DestinationScreens
         var created = thread;
         Change(id, x =>
         {
-            if (choice == "n" && created is { } t && !x.KnownTopics.Any(k => k.ThreadId == t))
+            if (choice == "n" && created is { } t)
             {
-                x.KnownTopics = [.. x.KnownTopics, new KnownTopic { ThreadId = t, Name = name }];
+                x.RememberTopic(t, name);
             }
 
-            var routes = x.TopicRoutes.Where(r => !string.Equals(r.Slot, slot, StringComparison.Ordinal)).ToList();
-            if (created is { } th)
-            {
-                routes.Add(new TopicRoute { Slot = slot, ThreadId = th });
-            }
-
-            x.TopicRoutes = [.. TopicSlots.All.SelectMany(s => routes.Where(r => r.Slot == s))];
+            x.SetRoutes([(slot, created)]);
             if (slot == "media")
             {
                 // One topic for all media again ends separate topics; the events' own choices are kept for next time.
@@ -581,7 +575,7 @@ public sealed class DestinationScreens
         {
             var on = d.Events.Contains(key, StringComparer.Ordinal);
             d.Events = [.. EventCatalog.AllKeys.Where(k => k == key ? !on : d.Events.Contains(k, StringComparer.Ordinal))];
-            d.Preset = EventCatalog.PresetFor(d.Events);
+            d.FollowsNewEvents = EventCatalog.HasAll(d.Events);
         });
     }
 

@@ -7,7 +7,7 @@ using Jellyfin.Plugin.TgJelly.State.Documents;
 namespace Jellyfin.Plugin.TgJelly.Rendering;
 
 /// <summary>
-/// The buttons of a security or server message (spec §8.1), from the payload snapshot in <see cref="RenderModel.Values"/>.
+/// The buttons of a security or server message, from the payload snapshot in <see cref="RenderModel.Values"/>.
 /// The poster is the TgJelly logo when the message's Poster switch is on; the text comes from the message's template.
 /// </summary>
 public sealed class AlertLayouts

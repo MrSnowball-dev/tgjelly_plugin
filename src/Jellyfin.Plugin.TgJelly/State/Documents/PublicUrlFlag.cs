@@ -3,7 +3,7 @@ using System;
 namespace Jellyfin.Plugin.TgJelly.State.Documents;
 
 /// <summary>
-/// Set when Telegram rejected a button URL (spec §9.4 row 7); cleared when PublicUrl changes or a send with buttons succeeds.
+/// Set when Telegram rejected a button URL; cleared when PublicUrl changes or a send with buttons succeeds.
 /// </summary>
 public sealed class PublicUrlFlag
 {

@@ -5,7 +5,7 @@ using Telegram.Bot.Extensions;
 namespace Jellyfin.Plugin.TgJelly.Templates;
 
 /// <summary>
-/// A Scriban context that escapes every expression result for Telegram HTML (spec §8.5). Literal template text
+/// A Scriban context that escapes every expression result for Telegram HTML. Literal template text
 /// is written unescaped, <see cref="RawHtml"/> as-is.
 /// </summary>
 public sealed class TelegramTemplateContext : TemplateContext

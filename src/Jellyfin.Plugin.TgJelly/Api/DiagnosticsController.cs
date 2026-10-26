@@ -8,7 +8,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace Jellyfin.Plugin.TgJelly.Api;
 
 /// <summary>
-/// Serves the diagnostics report (spec §12).
+/// Serves the diagnostics report.
 /// </summary>
 [ApiController]
 [Route("TgJelly")]

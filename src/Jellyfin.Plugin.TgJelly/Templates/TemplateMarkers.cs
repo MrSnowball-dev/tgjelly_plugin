@@ -4,7 +4,7 @@ using System.Text;
 namespace Jellyfin.Plugin.TgJelly.Templates;
 
 /// <summary>
-/// The invisible markers of the preview-only render (design §6.5): each top-level piece's output is written as
+/// The invisible markers of the preview-only render: each top-level piece's output is written as
 /// <see cref="Start"/>, the piece's decimal index, <see cref="IndexEnd"/>, the output, then <see cref="End"/>. The page
 /// turns them into spans for the hover link. They are private-use characters, and the sent message never holds them.
 /// </summary>

@@ -13,10 +13,10 @@ public sealed class DestinationsDto
     /// <summary>Gets the destinations.</summary>
     public IReadOnlyList<DestinationDto> Items { get; init; } = [];
 
-    /// <summary>Gets the chats the bot was added to outside setup that are worth offering (spec §6.5).</summary>
+    /// <summary>Gets the chats the bot was added to outside setup that are worth offering.</summary>
     public IReadOnlyList<DetectedChatDto> DetectedChats { get; init; } = [];
 
-    /// <summary>Gets a value indicating whether the dashboard's manual block is unlocked (spec §6.5).</summary>
+    /// <summary>Gets a value indicating whether the dashboard's manual block is unlocked.</summary>
     public bool ManualUnlocked { get; init; }
 
     /// <summary>Gets the event catalog, for the destination editor.</summary>

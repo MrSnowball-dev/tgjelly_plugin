@@ -1,7 +1,7 @@
 namespace Jellyfin.Plugin.TgJelly.Log;
 
 /// <summary>
-/// What happened to one message for one destination (design §8.1). When a send has several details, the row takes
+/// What happened to one message for one destination. When a send has several details, the row takes
 /// the most serious: <see cref="Failed"/>, then <see cref="SentWithBuiltIn"/>, <see cref="SentWithoutPhoto"/> and
 /// <see cref="SentLate"/>.
 /// </summary>

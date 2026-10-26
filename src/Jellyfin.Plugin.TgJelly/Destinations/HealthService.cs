@@ -14,7 +14,7 @@ using Microsoft.Extensions.Logging;
 namespace Jellyfin.Plugin.TgJelly.Destinations;
 
 /// <summary>
-/// Owns <c>state.health</c> (spec §9.4): records problems found by sends, runs re-checks (on request, at session
+/// Owns <c>state.health</c>: records problems found by sends, runs re-checks (on request, at session
 /// start, on <c>my_chat_member</c>, and every 30 minutes while a destination is unhealthy or has photos blocked),
 /// and raises <see cref="Recovered"/> so held Outbox entries go out.
 /// </summary>
@@ -72,7 +72,7 @@ public sealed class HealthService : BackgroundService
     /// Raised, with the destination ID, when a destination's status changes to Lost, NeedsPermissions or TopicMissing.
     /// Subscribers must be quick; one that throws is logged and ignored.
     /// </summary>
-    [System.Diagnostics.CodeAnalysis.SuppressMessage("Design", "CA1003:Use generic event handler instances", Justification = "The plan 4 contract passes the destination ID itself.")]
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Design", "CA1003:Use generic event handler instances", Justification = "Subscribers get the destination ID itself.")]
     public event EventHandler<string>? ProblemFound;
 
     /// <summary>
@@ -241,7 +241,7 @@ public sealed class HealthService : BackgroundService
     }
 
     /// <summary>
-    /// Asks for a re-check of every destination (at the start of a bot session, spec §9.2 step 5).
+    /// Asks for a re-check of every destination (at the start of a bot session).
     /// </summary>
     public void RequestCheckAll()
     {

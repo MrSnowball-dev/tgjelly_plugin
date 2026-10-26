@@ -136,7 +136,7 @@ public sealed class TemplatesControllerTests : IAsyncLifetime
     [Fact]
     public void Get_ItemsCarryTheirApplicableSwitches()
     {
-        // The dashboard's "What it shows" card lists exactly these (design §6.2, Ruling R6): the page reads them from
+        // The dashboard's "What it shows" card lists exactly these: the page reads them from
         // here rather than keeping its own copy of the table.
         var items = _controller.Get().Value!.Items;
 

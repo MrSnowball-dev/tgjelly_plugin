@@ -1,12 +1,14 @@
 using System;
+using System.Collections.Generic;
 using System.ComponentModel;
+using System.Linq;
 using System.Text.Json.Serialization;
 using System.Xml.Serialization;
 
 namespace Jellyfin.Plugin.TgJelly.Configuration;
 
 /// <summary>
-/// A chat (or forum topic) that receives notifications (spec §10.1).
+/// A chat (or forum topic) that receives notifications.
 /// </summary>
 public class Destination
 {
@@ -51,20 +53,21 @@ public class Destination
     public string KindKey => Kind == ChatKind.Supergroup && (IsForum || ThreadId != 0) ? "dest.kind.Forum" : "dest.kind." + Kind;
 
     /// <summary>
-    /// Gets or sets the internal preset: Everything while every event is on (so later versions' events are added),
-    /// Custom otherwise (spec §7.2). Not shown anywhere.
+    /// Gets or sets a value indicating whether events a later version adds are switched on here too: true while
+    /// every event is on.
     /// </summary>
     [XmlIgnore]
-    public PresetKind Preset { get; set; } = PresetKind.Everything;
-
-    /// <summary>Gets or sets <see cref="Preset"/> as XML text; an unknown name (from a newer version) reads as <see cref="EnumText.Fallback{T}"/>.</summary>
-    [XmlElement(nameof(Preset))]
     [JsonIgnore]
+    public bool FollowsNewEvents { get; set; } = true;
+
+    /// <summary>Gets or sets <see cref="FollowsNewEvents"/> as stored: "Everything" or "Custom".</summary>
+    [XmlElement("Preset")]
+    [JsonPropertyName("preset")]
     [EditorBrowsable(EditorBrowsableState.Never)]
-    public string PresetXml
+    public string PresetText
     {
-        get => Preset.ToString();
-        set => Preset = EnumText.Parse<PresetKind>(value);
+        get => FollowsNewEvents ? "Everything" : "Custom";
+        set => FollowsNewEvents = string.Equals(value, "Everything", StringComparison.Ordinal);
     }
 
     /// <summary>Gets or sets, for a forum, the slots that post to their own topic (<see cref="TopicSlots"/>).</summary>
@@ -121,5 +124,46 @@ public class Destination
             "security" or "server" => group,
             _ => null,
         };
+    }
+
+    /// <summary>
+    /// Adds a topic TgJelly knows, or renames it; an empty name keeps the one already known.
+    /// </summary>
+    /// <param name="thread">The topic's thread ID.</param>
+    /// <param name="name">Its name, or empty when unknown.</param>
+    public void RememberTopic(int thread, string name)
+    {
+        var known = Array.Find(KnownTopics, t => t.ThreadId == thread);
+        var topic = new KnownTopic { ThreadId = thread, Name = name.Length > 0 ? name : known?.Name ?? string.Empty };
+        KnownTopics = known is null ? [.. KnownTopics, topic] : [.. KnownTopics.Select(t => t == known ? topic : t)];
+    }
+
+    /// <summary>
+    /// Points slots at topics: a thread ID sets the slot's route, <c>null</c> removes it. Routes stay in slot order.
+    /// </summary>
+    /// <param name="changes">The slots and their new threads.</param>
+    public void SetRoutes(IEnumerable<(string Slot, int? ThreadId)> changes)
+    {
+        ArgumentNullException.ThrowIfNull(changes);
+        // A hand-edited file can repeat a slot; the last entry wins rather than failing the change.
+        var routes = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (var route in TopicRoutes)
+        {
+            routes[route.Slot] = route.ThreadId;
+        }
+
+        foreach (var (slot, thread) in changes)
+        {
+            if (thread is { } t)
+            {
+                routes[slot] = t;
+            }
+            else
+            {
+                routes.Remove(slot);
+            }
+        }
+
+        TopicRoutes = [.. TopicSlots.All.Where(routes.ContainsKey).Select(slot => new TopicRoute { Slot = slot, ThreadId = routes[slot] })];
     }
 }

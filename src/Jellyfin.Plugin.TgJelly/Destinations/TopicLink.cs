@@ -6,7 +6,7 @@ using Telegram.Bot.Types;
 namespace Jellyfin.Plugin.TgJelly.Destinations;
 
 /// <summary>
-/// A forum topic's link (spec F35, §6.5): <c>t.me/c/&lt;id&gt;/&lt;topic&gt;</c> for private supergroups or
+/// A forum topic's link: <c>t.me/c/&lt;id&gt;/&lt;topic&gt;</c> for private supergroups or
 /// <c>t.me/&lt;username&gt;/&lt;topic&gt;</c> for public ones, optionally followed by a message ID.
 /// </summary>
 /// <param name="Chat">The chat: a numeric <c>-100…</c> ID or an <c>@username</c>.</param>

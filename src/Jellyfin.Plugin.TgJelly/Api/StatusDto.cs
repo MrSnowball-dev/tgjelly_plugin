@@ -5,7 +5,7 @@ using Jellyfin.Plugin.TgJelly.State.Documents;
 namespace Jellyfin.Plugin.TgJelly.Api;
 
 /// <summary>
-/// Response of <c>GET /TgJelly/Status</c> (spec §11.2). Jellyfin serializes it in PascalCase.
+/// Response of <c>GET /TgJelly/Status</c>. Jellyfin serializes it in PascalCase.
 /// Later plans add the Telegram connection state and counters.
 /// </summary>
 public sealed class StatusDto
@@ -38,12 +38,12 @@ public sealed class StatusDto
     public IReadOnlyList<string> LoadWarnings { get; init; } = [];
 
     /// <summary>
-    /// Gets the most recent errors, oldest first (spec §10.3 <c>status.lastErrors</c>).
+    /// Gets the most recent errors, oldest first.
     /// </summary>
     public IReadOnlyList<StatusError> LastErrors { get; init; } = [];
 
     /// <summary>
-    /// Gets the bot connection state (the <c>ConnectionState</c> name), spec §6.6.
+    /// Gets the bot connection state (the <c>ConnectionState</c> name).
     /// </summary>
     public string ConnectionState { get; init; } = string.Empty;
 
@@ -80,13 +80,13 @@ public sealed class StatusDto
     /// </summary>
     public int UnhealthyDestinations { get; init; }
 
-    /// <summary>Gets the number of items waiting for their metadata (spec §7.4 step 2).</summary>
+    /// <summary>Gets the number of items waiting for their metadata.</summary>
     public int PendingMedia { get; init; }
 
-    /// <summary>Gets the update check problem after 3 failures in a row, or <c>null</c> (spec §7.6).</summary>
+    /// <summary>Gets the update check problem after 3 failures in a row, or <c>null</c>.</summary>
     public string? UpdateCheckFailing { get; init; }
 
-    /// <summary>Gets the number of destinations whose library filter names only removed libraries (spec §7.3).</summary>
+    /// <summary>Gets the number of destinations whose library filter names only removed libraries.</summary>
     public int RemovedLibraryFilters { get; init; }
 
     /// <summary>Gets the notices the admin hasn't dismissed.</summary>

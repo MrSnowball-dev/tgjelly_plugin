@@ -25,7 +25,7 @@ public sealed class PipelineServiceTests : IDisposable
     [Fact]
     public async Task Stop_DrainsIntake_AndSendsHeldLockouts_Within5s()
     {
-        _h.AddDestination(-1001, preset: PresetKind.Everything);
+        _h.AddDestination(-1001);
         using var service = await StartedAsync(PipelineRig.Compatible);
 
         for (var i = 0; i < 1000; i++)

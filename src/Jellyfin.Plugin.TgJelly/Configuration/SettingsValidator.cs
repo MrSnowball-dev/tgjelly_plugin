@@ -5,7 +5,7 @@ using System.Globalization;
 namespace Jellyfin.Plugin.TgJelly.Configuration;
 
 /// <summary>
-/// Checks the ranges and uniqueness rules of spec §10.1.
+/// Checks the settings' value ranges and uniqueness rules.
 /// </summary>
 public static class SettingsValidator
 {

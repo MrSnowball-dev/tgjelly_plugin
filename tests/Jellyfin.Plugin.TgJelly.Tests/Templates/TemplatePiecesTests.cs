@@ -13,7 +13,7 @@ using Xunit;
 
 namespace Jellyfin.Plugin.TgJelly.Tests.Templates;
 
-// The hover link between template and preview (design §6.5): a template's top-level pieces, and the preview-only render
+// The hover link between template and preview: a template's top-level pieces, and the preview-only render
 // that marks each piece's output. The sent message never sees the markers.
 public sealed class TemplatePiecesTests : IDisposable
 {
@@ -126,7 +126,7 @@ public sealed class TemplatePiecesTests : IDisposable
     [Fact]
     public void MarkedRender_Shortened_StrippedEqualsFitted()
     {
-        // The overview shrinks first, then the whole text is cut: the visible part still maps (design §6.5).
+        // The overview shrinks first, then the whole text is cut: the visible part still maps.
         foreach (var text in new[] { "{{ title }} {{ overview }}", "<b>{{ title }}</b> " + new string('a', 1200) + " {{ year }}" })
         {
             var sample = _sample.Build("media.movie", text);
@@ -157,7 +157,7 @@ public sealed class TemplatePiecesTests : IDisposable
     public void SentMessage_NeverHasMarkers()
     {
         const string text = "<b>{{ title }}</b> ({{ year }}) {{ if overview }}{{ overview }}{{ end }}";
-        _h.Settings.Update(null, c => c.Templates = [new TemplateOverride { EventKey = "media.movie", Enabled = true, Text = text }]);
+        _h.Settings.Update(null, c => c.Templates = [new TemplateOverride { EventKey = "media.movie", Text = text }]);
         var item = _library.Add(new MediaItem { Id = Guid.NewGuid(), Kind = MediaKind.Movie, Name = "Arrival", Year = 2016, Overview = "Aliens." });
         var model = new RenderModel { Kind = RenderKind.Media, EventKey = "media.movie", At = _h.Time.GetUtcNow(), ItemIds = [item.Id.ToString("N")] };
 

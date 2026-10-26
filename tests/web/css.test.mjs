@@ -1,4 +1,4 @@
-// Stylesheet tests (plan 8, design §5.3 and §8). Run: node --import ./tests/web/jellyfin-resolve.mjs --test 'tests/web/*.test.mjs'
+// Stylesheet tests. Run: node --import ./tests/web/jellyfin-resolve.mjs --test 'tests/web/*.test.mjs'
 // tgjelly.css lives inside Jellyfin's own page, so every rule is scoped under #tgjelly-root, and every colour comes from
 // a --tgj- token that reads Jellyfin's palette, so the page follows the server's theme.
 import { test } from 'node:test';
@@ -161,7 +161,7 @@ const COLOR_LITERAL = /#[0-9a-f]{3,8}\b|\b(rgba?|hsla?|hwb|lab|lch|oklab|oklch|c
 const NON_COLOR_TOKEN = /^--tgj-(space|step|radius|font|leading|dur|ease)\b/;
 const PALETTE = /^var\(--jf-palette-[\w-]+,\s*\S[^)]*\)$/;
 const MIX = /^color-mix\(in [\w-]+,\s*var\(--tgj-[\w-]+\)(\s+\d+%)?,\s*(var\(--tgj-[\w-]+\)|transparent)(\s+\d+%)?\)$/;
-// R3: the template preview imitates a Telegram bubble on purpose (design §3), so its tgj-tg- rules keep Telegram's colours.
+// The template preview imitates a Telegram bubble on purpose, so its tgj-tg- rules keep Telegram's colours.
 const TELEGRAM_BUBBLE = /\.tgj-tg-[\w-]/;
 
 /** Every colour that doesn't come from a --tgj- token (or a token that doesn't come from Jellyfin's palette). */
@@ -256,7 +256,7 @@ test('the colour checker catches raw colours and palette reads outside tokens', 
     assert.deepEqual(colorProblems('#tgjelly-root .a { color: currentColor; background: transparent; border-color: inherit }'), []);
     assert.deepEqual(colorProblems('#tgjelly-root .a { border: 1px solid var(--tgj-white) }'), [], 'a token name is not a colour literal');
     assert.equal(colorProblems('#tgjelly-root .a { border: 1px solid var(--tgj-line, white) }').length, 1, 'but a fallback is');
-    // R3: the Telegram bubble keeps Telegram's colours.
+    // The Telegram bubble keeps Telegram's colours.
     assert.deepEqual(colorProblems('#tgjelly-root .tgj-tg-bubble, #tgjelly-root .tgj-tg-text a { color: #3390ec }'), []);
     assert.equal(colorProblems('#tgjelly-root .tgj-tg-bubble, #tgjelly-root .tgj-card { color: #3390ec }').length, 2, 'only when every selector is the bubble');
 });

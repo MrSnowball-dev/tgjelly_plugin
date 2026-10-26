@@ -14,7 +14,7 @@ using Microsoft.Extensions.Logging;
 namespace Jellyfin.Plugin.TgJelly.Pipeline;
 
 /// <summary>
-/// Moves events from intake to the Outbox (spec §7): media through readiness, routing and the aggregator; security
+/// Moves events from intake to the Outbox: media through readiness, routing and the aggregator; security
 /// and server events through the coalescer and routing; then rendering for each destination. One failing output is
 /// logged and skipped; the rest still go.
 /// </summary>
@@ -123,7 +123,7 @@ public sealed class NotificationPipeline
     }
 
     /// <summary>
-    /// Empties the intake queues, then sends the held lockouts (graceful stop, spec §12).
+    /// Empties the intake queues, then sends the held lockouts (graceful stop).
     /// </summary>
     /// <param name="budget">Stops taking more batches once this has passed; held lockouts are still sent.</param>
     public void Drain(TimeSpan? budget = null)

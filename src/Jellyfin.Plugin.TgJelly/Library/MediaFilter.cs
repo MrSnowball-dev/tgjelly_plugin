@@ -1,7 +1,7 @@
 namespace Jellyfin.Plugin.TgJelly.Library;
 
 /// <summary>
-/// The new-media filter (spec §7.4 step 1, F12). Pure and O(1): it runs inside Jellyfin's ItemAdded callback.
+/// The new-media filter. Pure and O(1): it runs inside Jellyfin's ItemAdded callback.
 /// </summary>
 public static class MediaFilter
 {
@@ -23,7 +23,7 @@ public static class MediaFilter
             return FilterVerdict.SeriesContext;
         }
 
-        // Audio without an album is not announced (spec §7.1).
+        // Audio without an album is not announced.
         if (facts.Kind == MediaKind.Audio && facts.PendingId == System.Guid.Empty)
         {
             return FilterVerdict.Drop;

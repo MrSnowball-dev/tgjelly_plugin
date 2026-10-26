@@ -64,11 +64,11 @@ public class NoticeBuilderTests
     public void TemplateFlag_GivesNotice_UntilTextChanges()
     {
         using var h = new BotTestHarness();
-        h.Settings.Update(null, c => c.Templates = [new TemplateOverride { EventKey = "security.lockout", Enabled = true, Text = "a" }]);
+        h.Settings.Update(null, c => c.Templates = [new TemplateOverride { EventKey = "security.lockout", Text = "a" }]);
         var flags = new TemplateFlags(h.State, h.Settings, h.Time);
         flags.Flag("security.lockout", "error", "line 1, column 2: bad", TemplateText.Hash("a"));
         flags.Flag("media.movie", "truncated", string.Empty, TemplateText.Hash("b"));
-        h.Settings.Update(null, c => c.Templates = [.. c.Templates, new TemplateOverride { EventKey = "media.movie", Enabled = true, Text = "b" }]);
+        h.Settings.Update(null, c => c.Templates = [.. c.Templates, new TemplateOverride { EventKey = "media.movie", Text = "b" }]);
 
         var notices = NewBuilder(h).Active();
 
@@ -79,7 +79,7 @@ public class NoticeBuilderTests
         Assert.Contains("line 1, column 2: bad", error.Text, StringComparison.Ordinal);
         Assert.Contains("Movies", notices.Single(n => n.Id.StartsWith("template:media.movie:", StringComparison.Ordinal)).Text, StringComparison.Ordinal);
 
-        h.Settings.Update(null, c => c.Templates = [new TemplateOverride { EventKey = "security.lockout", Enabled = true, Text = "changed" }]);
+        h.Settings.Update(null, c => c.Templates = [new TemplateOverride { EventKey = "security.lockout", Text = "changed" }]);
 
         Assert.Empty(NewBuilder(h).Active());
     }
@@ -88,7 +88,7 @@ public class NoticeBuilderTests
     public void TemplateFlag_Digest_UsesTheDigestLabel_AndSaysEditedAndBuiltIn()
     {
         using var h = new BotTestHarness();
-        h.Settings.Update(null, c => c.Templates = [new TemplateOverride { EventKey = TemplateKeys.Digest, Enabled = true, Text = "a" }]);
+        h.Settings.Update(null, c => c.Templates = [new TemplateOverride { EventKey = TemplateKeys.Digest, Text = "a" }]);
         new TemplateFlags(h.State, h.Settings, h.Time).Flag(TemplateKeys.Digest, "error", "bad", TemplateText.Hash("a"));
 
         var text = Assert.Single(NewBuilder(h).Active()).Text;
@@ -178,7 +178,7 @@ public class NoticeBuilderTests
     }
 
     private static NoticeBuilder NewBuilder(BotTestHarness h, FakeLibrary? library = null) =>
-        new(h.State, h.Secrets, h.Settings, library ?? new FakeLibrary(), h.Strings, h.Time, new TemplateFlags(h.State, h.Settings, h.Time));
+        new(h.State, h.Secrets, h.Settings, library ?? new FakeLibrary(), h.Strings, new TemplateFlags(h.State, h.Settings, h.Time));
 
     private static void Raise(BotTestHarness h, string kind)
     {

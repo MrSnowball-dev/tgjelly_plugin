@@ -12,7 +12,7 @@ using Jellyfin.Plugin.TgJelly.Strings;
 namespace Jellyfin.Plugin.TgJelly.Delivery;
 
 /// <summary>
-/// The queue rules of the Outbox (spec §9.3) over <c>queue.json</c>: per-destination caps with the rolling summary
+/// The queue rules of the Outbox over <c>queue.json</c>: per-destination caps with the rolling summary
 /// for security and server entries, the 24 h TTL, priority, edit merging, retries, and the sent-message and
 /// file_id records. Delivery itself is <c>OutboxDelivery</c>.
 /// </summary>
@@ -36,7 +36,7 @@ public sealed class Outbox
     /// <summary>How long a cached file_id is reused.</summary>
     public static readonly TimeSpan FileIdTtl = TimeSpan.FromHours(24);
 
-    // A sent message stays editable this long after its last edit (the sliding security window, spec §7.5).
+    // A sent message stays editable this long after its last edit (the sliding security window).
     private static readonly TimeSpan SentWindowGrace = TimeSpan.FromMinutes(10);
 
     private static readonly TimeSpan FirstRetry = TimeSpan.FromSeconds(2);
@@ -123,7 +123,7 @@ public sealed class Outbox
                 var mine = q.Outbox.Where(e => e.DestinationId == entry.DestinationId);
                 if (entry.Op == OutboxOp.Edit && entry.TargetKey is not null)
                 {
-                    // The message isn't sent yet: render it again instead of queuing an edit (spec §7.5 step 3).
+                    // The message isn't sent yet: render it again instead of queuing an edit.
                     var unsent = q.Outbox.Find(e => e.Op == OutboxOp.Send && e.DestinationId == entry.DestinationId && e.SentKey == entry.TargetKey);
                     if (unsent is not null && unsent.EntryId != _inFlight)
                     {
@@ -489,7 +489,7 @@ public sealed class Outbox
 
     /// <summary>
     /// Forgets sent messages nothing will edit any more: kept until max(<c>sentAt</c> + LateEditHours,
-    /// <c>lastEditAt</c> + 10 min) (spec §10.3). Not counted as evictions.
+    /// <c>lastEditAt</c> + 10 min). Not counted as evictions.
     /// </summary>
     /// <param name="now">The current time.</param>
     /// <param name="lateEditHours">The late-edit window in hours.</param>

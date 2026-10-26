@@ -6,7 +6,7 @@ using Jellyfin.Plugin.TgJelly.State.Documents;
 namespace Jellyfin.Plugin.TgJelly.Destinations;
 
 /// <summary>
-/// Whether the manual setup fallbacks are shown (spec §6.5): after a setup failure in the last 7 days, while some
+/// Whether the manual setup fallbacks are shown: after a setup failure in the last 7 days, while some
 /// destination is unhealthy, or while a chat was added outside setup. It only controls what the two UIs show; the
 /// API accepts manual adds at any time.
 /// </summary>

@@ -13,7 +13,7 @@ namespace Jellyfin.Plugin.TgJelly.Library;
 
 /// <summary>
 /// <see cref="ILibraryAccess"/> over <see cref="ILibraryManager"/>. Reads only; never calls anything that writes items
-/// or images (D13).
+/// or images.
 /// </summary>
 public sealed class JellyfinLibrary : ILibraryAccess
 {

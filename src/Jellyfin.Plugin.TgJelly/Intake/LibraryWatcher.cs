@@ -12,8 +12,8 @@ using Microsoft.Extensions.Logging;
 namespace Jellyfin.Plugin.TgJelly.Intake;
 
 /// <summary>
-/// Turns Jellyfin's item callbacks into media intake (spec §7.4 step 1). Callbacks are O(1), never throw and never do
-/// I/O (§5.4 rule 3). Also tells the Aggregator whether a scan is running.
+/// Turns Jellyfin's item callbacks into media intake. Callbacks are O(1), never throw and never do
+/// I/O. Also tells the Aggregator whether a scan is running.
 /// </summary>
 public sealed class LibraryWatcher : BackgroundService, IScanState
 {
@@ -92,7 +92,7 @@ public sealed class LibraryWatcher : BackgroundService, IScanState
     }
 
     /// <summary>
-    /// Handles <see cref="ILibraryManager.ItemUpdated"/>: forwarded only for pending items whose metadata is ready (F13).
+    /// Handles <see cref="ILibraryManager.ItemUpdated"/>: forwarded only for pending items whose metadata is ready.
     /// </summary>
     /// <param name="sender">The sender.</param>
     /// <param name="e">The event.</param>

@@ -236,23 +236,6 @@ public sealed class TelegramSenderTests : System.IDisposable
     }
 
     [Fact]
-    public async Task SendPrompt_SendsTheReplyKeyboard()
-    {
-        var keyboard = new ReplyKeyboardMarkup(
-            KeyboardButton.WithRequestChat("Pick a channel", new KeyboardButtonRequestChat { RequestId = 7, ChatIsChannel = true, RequestTitle = true }))
-        {
-            ResizeKeyboard = true,
-            OneTimeKeyboard = true,
-        };
-
-        await Sender.SendPromptAsync(new OutgoingPrompt(42, "<b>Pick</b>", keyboard), TestContext.Current.CancellationToken);
-
-        var body = Assert.Single(_api.CallsTo("sendMessage")).Body;
-        Assert.Equal("html", ((string)body["parse_mode"]!).ToLowerInvariant()); // the Bot API ignores case
-        Assert.Equal(7, (int)body["reply_markup"]!["keyboard"]![0]![0]!["request_chat"]!["request_id"]!);
-    }
-
-    [Fact]
     public async Task DeleteMessage_TreatsNotFoundAsFalse()
     {
         var ct = TestContext.Current.CancellationToken;

@@ -1,7 +1,7 @@
 namespace Jellyfin.Plugin.TgJelly.Api;
 
 /// <summary>
-/// The bot's <c>t.me</c> links (spec §11.2); empty while no bot username is known.
+/// The bot's <c>t.me</c> links; empty while no bot username is known.
 /// </summary>
 public sealed class LinksDto
 {

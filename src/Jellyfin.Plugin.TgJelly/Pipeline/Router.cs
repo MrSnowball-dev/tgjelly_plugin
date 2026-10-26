@@ -7,7 +7,7 @@ using Jellyfin.Plugin.TgJelly.Log;
 namespace Jellyfin.Plugin.TgJelly.Pipeline;
 
 /// <summary>
-/// Picks the destinations for an event (spec §5.3, §7.2, §7.3): enabled, subscribed by exact key, and for media the
+/// Picks the destinations for an event: enabled, subscribed by exact key, and for media the
 /// library filter. Pure.
 /// </summary>
 public static class Router
@@ -27,7 +27,7 @@ public static class Router
     }
 
     /// <summary>
-    /// Says why a destination doesn't get an event, for the Log (design §8.2).
+    /// Says why a destination doesn't get an event, for the Log.
     /// </summary>
     /// <param name="eventKey">The event key.</param>
     /// <param name="libraryIds">For media, the item's libraries; <c>null</c> for other events.</param>

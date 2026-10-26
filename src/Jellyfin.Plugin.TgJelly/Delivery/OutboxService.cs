@@ -14,7 +14,7 @@ using Microsoft.Extensions.Logging;
 namespace Jellyfin.Plugin.TgJelly.Delivery;
 
 /// <summary>
-/// The Outbox loop (spec §9.3): while connected, picks the next deliverable entry and delivers it; otherwise sleeps
+/// The Outbox loop: while connected, picks the next deliverable entry and delivers it; otherwise sleeps
 /// until the queue, a destination's health, the settings or the connection change, or a waiting entry is due.
 /// </summary>
 public sealed class OutboxService : BackgroundService

@@ -300,6 +300,6 @@ public sealed class NotificationRendererTemplateTests : IDisposable
         ItemIds = [item.Id.ToString("N")],
     };
 
-    private void Set(string key, string text, bool enabled = true)
-        => _h.Settings.Update(null, c => c.Templates = [new TemplateOverride { EventKey = key, Enabled = enabled, Text = text }]);
+    private void Set(string key, string text)
+        => _h.Settings.Update(null, c => c.Templates = [new TemplateOverride { EventKey = key, Text = text }]);
 }

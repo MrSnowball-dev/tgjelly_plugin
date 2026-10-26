@@ -28,7 +28,7 @@ public sealed class OutboxDeliveryTests : IDisposable
     {
         _h.Connect();
         _outbox = new Outbox(_h.State, _h.Strings, _h.Time);
-        _pacing = new PacingGate(_h.Time);
+        _pacing = new PacingGate();
         var gate = new InstanceGate(_h.Paths, _h.Time, NullLogger<InstanceGate>.Instance);
         _h.Track(gate);
         _health = new HealthService(gate, _h.Connection, new DestinationChecker(_h.Connection, _h.Strings), _h.Settings, _h.State, _h.Time, NullLogger<HealthService>.Instance);
@@ -171,8 +171,8 @@ public sealed class OutboxDeliveryTests : IDisposable
     [Fact]
     public async Task Migration_IntoAnExistingDestination_MergesAndRepoints()
     {
-        var old = _h.AddDestination(-1001, ChatKind.Group, preset: PresetKind.NewMedia);
-        var existing = _h.AddDestination(-1009, preset: PresetKind.AdminAlerts);
+        var old = _h.AddDestination(-1001, ChatKind.Group, events: BotTestHarness.MediaEvents);
+        var existing = _h.AddDestination(-1009, events: BotTestHarness.AdminEvents);
         _health.MarkProblem(old.Id, HealthStatus.Ok, string.Empty);
         _h.Api.OnSequence(
             "sendMessage",
@@ -184,7 +184,7 @@ public sealed class OutboxDeliveryTests : IDisposable
 
         var remaining = Assert.Single(_h.Settings.Current.Destinations);
         Assert.Equal(existing.Id, remaining.Id);
-        Assert.Equal(PresetKind.Custom, remaining.Preset);
+        Assert.False(remaining.FollowsNewEvents);
         Assert.Contains("media.movie", remaining.Events);
         Assert.Contains("server.started", remaining.Events);
         Assert.Equal(existing.Id, Assert.Single(_outbox.Snapshot()).DestinationId);
@@ -208,7 +208,7 @@ public sealed class OutboxDeliveryTests : IDisposable
     public async Task ParseError_WithTemplate_FlagsIt()
     {
         var d = _h.AddDestination(-1001);
-        _h.Settings.Update(null, c => c.Templates = [new TemplateOverride { EventKey = "media.movie", Enabled = true, Text = "<b>x" }]);
+        _h.Settings.Update(null, c => c.Templates = [new TemplateOverride { EventKey = "media.movie", Text = "<b>x" }]);
         _h.Api.OnSequence("sendMessage", FakeBotApi.Error(400, "Bad Request: can't parse entities: Unsupported start tag \"x\" at byte offset 0"), FakeBotApi.Ok("""{"message_id":5,"date":1790000000,"chat":{"id":-1001,"type":"supergroup"},"text":"x"}"""));
         var entry = Entry(d, "<x>");
         entry.Message.TemplateKey = "media.movie";
@@ -225,7 +225,7 @@ public sealed class OutboxDeliveryTests : IDisposable
     public async Task ParseError_WithTemplate_FlagsIt_WhateverEnabledSays()
     {
         var d = _h.AddDestination(-1001);
-        _h.Settings.Update(null, c => c.Templates = [new TemplateOverride { EventKey = "media.movie", Enabled = true, Text = "<b>x" }]);
+        _h.Settings.Update(null, c => c.Templates = [new TemplateOverride { EventKey = "media.movie", Text = "<b>x" }]);
         _h.Api.OnSequence("sendMessage", FakeBotApi.Error(400, "Bad Request: can't parse entities: Unsupported start tag \"x\" at byte offset 0"), FakeBotApi.Ok("""{"message_id":5,"date":1790000000,"chat":{"id":-1001,"type":"supergroup"},"text":"x"}"""));
         var entry = Entry(d, "<x>");
         entry.Message.TemplateKey = "media.movie";

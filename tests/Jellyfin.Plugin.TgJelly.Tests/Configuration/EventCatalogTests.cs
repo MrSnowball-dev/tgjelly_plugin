@@ -1,3 +1,4 @@
+using System.Linq;
 using Jellyfin.Plugin.TgJelly.Configuration;
 using Xunit;
 
@@ -6,15 +7,12 @@ namespace Jellyfin.Plugin.TgJelly.Tests.Configuration;
 public class EventCatalogTests
 {
     [Fact]
-    public void Presets_ExpandToTheSpecsKeys()
+    public void HasAll_IsTrueOnlyWithEveryEvent()
     {
-        Assert.Equal(19, EventCatalog.Expand(PresetKind.Everything).Length);
-        Assert.Equal(["media.movie", "media.episodes", "media.album", "media.musicvideo", "media.book"], EventCatalog.Expand(PresetKind.NewMedia));
-        var admin = EventCatalog.Expand(PresetKind.AdminAlerts);
-        Assert.Equal(13, admin.Length);
-        Assert.DoesNotContain("security.login_succeeded", admin);
-        Assert.Contains("server.started", admin);
-        Assert.Empty(EventCatalog.Expand(PresetKind.Custom));
+        Assert.Equal(19, EventCatalog.AllKeys.Count);
+        Assert.True(EventCatalog.HasAll([.. EventCatalog.AllKeys]));
+        Assert.False(EventCatalog.HasAll([.. EventCatalog.AllKeys.Skip(1)]));
+        Assert.False(EventCatalog.HasAll([]));
     }
 
     [Theory]
