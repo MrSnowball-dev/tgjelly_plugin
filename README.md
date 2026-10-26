@@ -1,15 +1,43 @@
-# TgJelly
+<p align="center">
+  <img src="build/logo.png" alt="TgJelly: Telegram notifications for Jellyfin" width="640">
+</p>
+
+<p align="center">
+  <a href="https://github.com/MrSnowball-dev/tgjelly_plugin/releases/latest"><img src="https://img.shields.io/github/v/release/MrSnowball-dev/tgjelly_plugin?label=release&color=2aabee" alt="Latest release"></a>
+  <img src="https://img.shields.io/badge/Jellyfin-10.11%20%7C%2012-aa5cc3?logo=jellyfin&logoColor=white" alt="Jellyfin 10.11 and 12">
+  <img src="https://img.shields.io/badge/.NET-9.0-512bd4?logo=dotnet&logoColor=white" alt=".NET 9">
+  <a href="https://github.com/MrSnowball-dev/tgjelly_plugin/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/MrSnowball-dev/tgjelly_plugin/ci.yml?branch=main&label=CI" alt="CI"></a>
+  <a href="https://github.com/MrSnowball-dev/tgjelly_plugin/releases"><img src="https://img.shields.io/github/downloads/MrSnowball-dev/tgjelly_plugin/total?color=2aabee" alt="Downloads"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/MrSnowball-dev/tgjelly_plugin?color=blue" alt="License: GPL-3.0"></a>
+</p>
+
+<p align="center">
+  <a href="#install">Install</a> ·
+  <a href="#set-up">Set up</a> ·
+  <a href="#events">Events</a> ·
+  <a href="#message-templates">Templates</a> ·
+  <a href="#troubleshooting">Troubleshooting</a>
+</p>
 
 TgJelly puts a Telegram bot inside your Jellyfin server. It sends notifications to the chats, groups and channels you choose.
 
-It tells you about new media (movies, episodes, albums, music videos, books), security events (failed logins, lockouts, new users), and server events (startup, updates, plugin changes, failed tasks). You set it up from the Jellyfin dashboard or from the bot itself.
+- **Media:** new movies, episodes, albums, music videos and books, with poster, overview, rating and links. A season added at once arrives as one message, not twenty.
+- **Security:** failed logins, lockouts, new and deleted users, password changes.
+- **Server:** startup, Jellyfin updates, plugin changes, failed scheduled tasks.
 
-<!-- screenshot: a new-movie notification in Telegram -->
+You set it up from the Jellyfin dashboard or from the bot itself. Every message is a template you can change, and forum groups can get a topic per kind of event.
+
+<p align="center">
+  <img src="docs/images/telegram.png" alt="A TgJelly message in a Telegram forum topic: three new episodes, then a sign-in alert" width="420">
+</p>
 
 ## Requirements
 
-- Jellyfin 10.11 or Jellyfin 12.
-- A Telegram account, to create the bot.
+| | |
+|---|---|
+| Jellyfin | 10.11 or 12, one build for both |
+| Telegram | any account, to create the bot with @BotFather |
+| Network | the server must reach `api.telegram.org`, directly or through a SOCKS5 or HTTP proxy |
 
 ## Install
 
@@ -21,7 +49,7 @@ It tells you about new media (movies, episodes, albums, music videos, books), se
 
 2. Open the plugin Catalog, install "TgJelly", and restart Jellyfin.
 
-One build works on Jellyfin 10.11 and Jellyfin 12.
+Updates come through the same Catalog. Each [release](https://github.com/MrSnowball-dev/tgjelly_plugin/releases) also has the zip, if you prefer to install by hand.
 
 ## Set up
 
@@ -31,7 +59,7 @@ One build works on Jellyfin 10.11 and Jellyfin 12.
 4. Press **Open in Telegram**. Telegram opens the chat with the bot.
 5. In the bot, tap **Start**. With no destinations yet, it offers **Add to a channel** and **Add to a group**: choose the chat in Telegram. The destination starts with every event on. To add more later, open **Destinations** and tap **Add destination**.
 
-<!-- screenshot: the Telegram page after the token is accepted -->
+<img src="docs/images/overview.png" alt="The Overview section of the Telegram page, connected to a bot">
 
 TgJelly doesn't change the bot's name, description, photo or command menu: set them in BotFather as you like. The commands (/menu, /status, /test, /help) work whether or not they are in the menu.
 
@@ -45,11 +73,11 @@ Each destination has event switches, grouped into Media, Security and Server. A 
 
 You can also limit a destination to some libraries, send media, security or server events silently, pause a destination, and send a test message.
 
-<!-- screenshot: the destination editor with the event switches -->
+<img src="docs/images/destination.png" alt="The destination editor for a forum group, with event switches and a topic choice per group" width="720">
 
 ## The dashboard
 
-The **Telegram** page in the Jellyfin Dashboard has a sidebar of sections. On a phone it becomes a row of tabs. The header shows the connection state and the plugin's version, such as v0.6; click the version to open its release page.
+The **Telegram** page in the Jellyfin Dashboard has a sidebar of sections. On a phone it becomes a row of tabs. The header shows the connection state and the plugin's version, such as v1.0; click the version to open its release page.
 
 - **Overview:** the connection state, notices, and the bot. With no bot connected, it starts with Connect. A notice reminds you to restrict the bot's access in BotFather.
 - **Destinations:** the chats that get messages, with their events, libraries, silent groups, pause, and test.
@@ -92,6 +120,8 @@ Hover a piece of the template, such as one field, an `if` block or a run of text
 
 The **Log** has one row for each message and each destination, newest first. Each row shows when, the event, the destination, the result and, if it is not Sent, why. A Sent row also says why when a later update of that message failed: the chat then still shows the earlier version. The results are Sent, Waiting, Skipped, Sent late, Sent with built-in, Sent without photo and Failed. Test messages have their own label, Test or Test failed. Click a row that needs attention to see what Telegram said, how many tries there were, and what to do.
 
+<img src="docs/images/log.png" alt="The Log section, one row per message and destination" width="720">
+
 Use **Problems only** to hide the rows that went well, and the Destination and Event selects to narrow the list. The top line shows when the last message reached Telegram, and tells you when Jellyfin has sent no events for a day, so you can tell silence from a failure.
 
 The Log keeps 7 days or 5,000 rows, whichever is less. It is stored apart from your settings.
@@ -102,7 +132,7 @@ TgJelly sends at most two messages a second, so a big library scan doesn't run i
 
 Every message is a template, and you can change any of them. Open the message on the Messages page. The editor shows the built-in template, so you start from what you already get. The preview shows how it will look in Telegram. Your changes save themselves a second after you stop typing, unless the template has errors. Press Send test to send it to a destination, and Reset to go back to the built-in one. The poster and buttons keep following their own switches. See [docs/templates.md](docs/templates.md) for the syntax, the fields you can use, and the built-in templates.
 
-<!-- screenshot: the Messages page with its preview -->
+<img src="docs/images/messages.png" alt="The Messages page: switches, the template and its Telegram-style preview" width="720">
 
 ## Privacy
 
@@ -123,7 +153,7 @@ Every message is a template, and you can change any of them. Open the message on
 
 ## Build from source
 
-You need the .NET 9 SDK and the .NET 10 SDK, Python 3, and Node 22 for the page tests.
+You need the .NET 10 SDK (pinned by `global.json`) with the .NET 9 runtime, Python 3, and Node 22 for the page tests.
 
 ```
 dotnet build Jellyfin.Plugin.TgJelly.slnx -c Release
@@ -131,9 +161,7 @@ dotnet test --solution Jellyfin.Plugin.TgJelly.slnx -c Release --no-build
 python3 build/package.py --release 0.0 --output artifacts
 ```
 
-The last command writes both zips and `manifest.json` to `artifacts/`.
-
-Maintainers: after the first release, enable GitHub Pages from the `gh-pages` branch (Settings, Pages), or the install URL above will not work.
+The last command writes `tgjelly_0.0.0.0.zip` and `manifest.json` to `artifacts/`. A release tag `vX.Y` or `vX.Y.Z` builds version `X.Y.0.0` or `X.Y.Z.0`.
 
 ## License
 
