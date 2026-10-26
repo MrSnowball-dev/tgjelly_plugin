@@ -28,4 +28,14 @@ public class DestinationTests
 
         Assert.Equal([("security", 8), ("server", 4)], d.TopicRoutes.Select(r => (r.Slot, r.ThreadId)));
     }
+
+    [Fact]
+    public void SetRoutes_HandEditedDuplicateSlots_KeepsOneRoute()
+    {
+        var d = new Destination { TopicRoutes = [new TopicRoute { Slot = "media", ThreadId = 5 }, new TopicRoute { Slot = "media", ThreadId = 6 }] };
+
+        d.SetRoutes([("server", 4)]);
+
+        Assert.Equal([("media", 6), ("server", 4)], d.TopicRoutes.Select(r => (r.Slot, r.ThreadId)));
+    }
 }

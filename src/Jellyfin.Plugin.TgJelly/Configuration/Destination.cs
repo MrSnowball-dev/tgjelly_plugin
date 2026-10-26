@@ -145,7 +145,13 @@ public class Destination
     public void SetRoutes(IEnumerable<(string Slot, int? ThreadId)> changes)
     {
         ArgumentNullException.ThrowIfNull(changes);
-        var routes = TopicRoutes.ToDictionary(r => r.Slot, r => r.ThreadId, StringComparer.Ordinal);
+        // A hand-edited file can repeat a slot; the last entry wins rather than failing the change.
+        var routes = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (var route in TopicRoutes)
+        {
+            routes[route.Slot] = route.ThreadId;
+        }
+
         foreach (var (slot, thread) in changes)
         {
             if (thread is { } t)
