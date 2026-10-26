@@ -27,7 +27,9 @@ TgJelly puts a Telegram bot inside your Jellyfin server. It sends notifications 
 
 You set it up from the Jellyfin dashboard or from the bot itself. Every message is a template you can change, and forum groups can get a topic per kind of event.
 
-<!-- screenshot: a new-movie notification in Telegram -->
+<p align="center">
+  <img src="docs/images/telegram.png" alt="A TgJelly message in a Telegram forum topic: three new episodes, then a sign-in alert" width="420">
+</p>
 
 ## Requirements
 
@@ -57,7 +59,7 @@ Updates come through the same Catalog. Each [release](https://github.com/MrSnowb
 4. Press **Open in Telegram**. Telegram opens the chat with the bot.
 5. In the bot, tap **Start**. With no destinations yet, it offers **Add to a channel** and **Add to a group**: choose the chat in Telegram. The destination starts with every event on. To add more later, open **Destinations** and tap **Add destination**.
 
-<!-- screenshot: the Telegram page after the token is accepted -->
+<img src="docs/images/overview.png" alt="The Overview section of the Telegram page, connected to a bot">
 
 TgJelly doesn't change the bot's name, description, photo or command menu: set them in BotFather as you like. The commands (/menu, /status, /test, /help) work whether or not they are in the menu.
 
@@ -71,7 +73,7 @@ Each destination has event switches, grouped into Media, Security and Server. A 
 
 You can also limit a destination to some libraries, send media, security or server events silently, pause a destination, and send a test message.
 
-<!-- screenshot: the destination editor with the event switches -->
+<img src="docs/images/destination.png" alt="The destination editor for a forum group, with event switches and a topic choice per group" width="720">
 
 ## The dashboard
 
@@ -118,6 +120,8 @@ Hover a piece of the template, such as one field, an `if` block or a run of text
 
 The **Log** has one row for each message and each destination, newest first. Each row shows when, the event, the destination, the result and, if it is not Sent, why. A Sent row also says why when a later update of that message failed: the chat then still shows the earlier version. The results are Sent, Waiting, Skipped, Sent late, Sent with built-in, Sent without photo and Failed. Test messages have their own label, Test or Test failed. Click a row that needs attention to see what Telegram said, how many tries there were, and what to do.
 
+<img src="docs/images/log.png" alt="The Log section, one row per message and destination" width="720">
+
 Use **Problems only** to hide the rows that went well, and the Destination and Event selects to narrow the list. The top line shows when the last message reached Telegram, and tells you when Jellyfin has sent no events for a day, so you can tell silence from a failure.
 
 The Log keeps 7 days or 5,000 rows, whichever is less. It is stored apart from your settings.
@@ -128,7 +132,7 @@ TgJelly sends at most two messages a second, so a big library scan doesn't run i
 
 Every message is a template, and you can change any of them. Open the message on the Messages page. The editor shows the built-in template, so you start from what you already get. The preview shows how it will look in Telegram. Your changes save themselves a second after you stop typing, unless the template has errors. Press Send test to send it to a destination, and Reset to go back to the built-in one. The poster and buttons keep following their own switches. See [docs/templates.md](docs/templates.md) for the syntax, the fields you can use, and the built-in templates.
 
-<!-- screenshot: the Messages page with its preview -->
+<img src="docs/images/messages.png" alt="The Messages page: switches, the template and its Telegram-style preview" width="720">
 
 ## Privacy
 
