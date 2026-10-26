@@ -1,15 +1,41 @@
-# TgJelly
+<p align="center">
+  <img src="build/logo.png" alt="TgJelly: Telegram notifications for Jellyfin" width="640">
+</p>
+
+<p align="center">
+  <a href="https://github.com/MrSnowball-dev/tgjelly_plugin/releases/latest"><img src="https://img.shields.io/github/v/release/MrSnowball-dev/tgjelly_plugin?label=release&color=2aabee" alt="Latest release"></a>
+  <img src="https://img.shields.io/badge/Jellyfin-10.11%20%7C%2012-aa5cc3?logo=jellyfin&logoColor=white" alt="Jellyfin 10.11 and 12">
+  <img src="https://img.shields.io/badge/.NET-9.0-512bd4?logo=dotnet&logoColor=white" alt=".NET 9">
+  <a href="https://github.com/MrSnowball-dev/tgjelly_plugin/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/MrSnowball-dev/tgjelly_plugin/ci.yml?branch=main&label=CI" alt="CI"></a>
+  <a href="https://github.com/MrSnowball-dev/tgjelly_plugin/releases"><img src="https://img.shields.io/github/downloads/MrSnowball-dev/tgjelly_plugin/total?color=2aabee" alt="Downloads"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/MrSnowball-dev/tgjelly_plugin?color=blue" alt="License: GPL-3.0"></a>
+</p>
+
+<p align="center">
+  <a href="#install">Install</a> ·
+  <a href="#set-up">Set up</a> ·
+  <a href="#events">Events</a> ·
+  <a href="#message-templates">Templates</a> ·
+  <a href="#troubleshooting">Troubleshooting</a>
+</p>
 
 TgJelly puts a Telegram bot inside your Jellyfin server. It sends notifications to the chats, groups and channels you choose.
 
-It tells you about new media (movies, episodes, albums, music videos, books), security events (failed logins, lockouts, new users), and server events (startup, updates, plugin changes, failed tasks). You set it up from the Jellyfin dashboard or from the bot itself.
+- **Media:** new movies, episodes, albums, music videos and books, with poster, overview, rating and links. A season added at once arrives as one message, not twenty.
+- **Security:** failed logins, lockouts, new and deleted users, password changes.
+- **Server:** startup, Jellyfin updates, plugin changes, failed scheduled tasks.
+
+You set it up from the Jellyfin dashboard or from the bot itself. Every message is a template you can change, and forum groups can get a topic per kind of event.
 
 <!-- screenshot: a new-movie notification in Telegram -->
 
 ## Requirements
 
-- Jellyfin 10.11 or Jellyfin 12.
-- A Telegram account, to create the bot.
+| | |
+|---|---|
+| Jellyfin | 10.11 or 12, one build for both |
+| Telegram | any account, to create the bot with @BotFather |
+| Network | the server must reach `api.telegram.org`, directly or through a SOCKS5 or HTTP proxy |
 
 ## Install
 
@@ -21,7 +47,7 @@ It tells you about new media (movies, episodes, albums, music videos, books), se
 
 2. Open the plugin Catalog, install "TgJelly", and restart Jellyfin.
 
-One build works on Jellyfin 10.11 and Jellyfin 12.
+Updates come through the same Catalog. Each [release](https://github.com/MrSnowball-dev/tgjelly_plugin/releases) also has the zip, if you prefer to install by hand.
 
 ## Set up
 
@@ -49,7 +75,7 @@ You can also limit a destination to some libraries, send media, security or serv
 
 ## The dashboard
 
-The **Telegram** page in the Jellyfin Dashboard has a sidebar of sections. On a phone it becomes a row of tabs. The header shows the connection state and the plugin's version, such as v0.6; click the version to open its release page.
+The **Telegram** page in the Jellyfin Dashboard has a sidebar of sections. On a phone it becomes a row of tabs. The header shows the connection state and the plugin's version, such as v1.0; click the version to open its release page.
 
 - **Overview:** the connection state, notices, and the bot. With no bot connected, it starts with Connect. A notice reminds you to restrict the bot's access in BotFather.
 - **Destinations:** the chats that get messages, with their events, libraries, silent groups, pause, and test.
@@ -123,7 +149,7 @@ Every message is a template, and you can change any of them. Open the message on
 
 ## Build from source
 
-You need the .NET 9 SDK and the .NET 10 SDK, Python 3, and Node 22 for the page tests.
+You need the .NET 10 SDK (pinned by `global.json`) with the .NET 9 runtime, Python 3, and Node 22 for the page tests.
 
 ```
 dotnet build Jellyfin.Plugin.TgJelly.slnx -c Release
@@ -131,9 +157,7 @@ dotnet test --solution Jellyfin.Plugin.TgJelly.slnx -c Release --no-build
 python3 build/package.py --release 0.0 --output artifacts
 ```
 
-The last command writes both zips and `manifest.json` to `artifacts/`.
-
-Maintainers: after the first release, enable GitHub Pages from the `gh-pages` branch (Settings, Pages), or the install URL above will not work.
+The last command writes `tgjelly_0.0.0.0.zip` and `manifest.json` to `artifacts/`. A release tag `vX.Y` or `vX.Y.Z` builds version `X.Y.0.0` or `X.Y.Z.0`.
 
 ## License
 
