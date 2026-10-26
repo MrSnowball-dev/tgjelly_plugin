@@ -21,7 +21,7 @@ It tells you about new media (movies, episodes, albums, music videos, books), se
 
 2. Open the plugin Catalog, install "TgJelly", and restart Jellyfin.
 
-The repository has one build for Jellyfin 10.11 and one for Jellyfin 12. Jellyfin picks the right one.
+One build works on Jellyfin 10.11 and Jellyfin 12.
 
 ## Set up
 
