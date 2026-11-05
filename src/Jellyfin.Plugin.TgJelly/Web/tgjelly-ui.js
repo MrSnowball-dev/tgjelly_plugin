@@ -188,7 +188,8 @@ export function card({ title, description = '', body, id = null, extraClass = ''
 
 /**
  * A setting row: the label and its explanation on the left, the control on the right, and the save cue beside the
- * control. Rows in a card are separated by thin dividers. Add extraClass 'tgj-row--stack' to put a wide control
+ * control. Why a save failed goes under the explanation (data-tgj-cue-why), so the cue beside the control stays one
+ * short label. Rows in a card are separated by thin dividers. Add extraClass 'tgj-row--stack' to put a wide control
  * (a long text field) under its label.
  * @param {{ label: string, hint?: string, control: string, cueKey?: string | null, extraClass?: string }} options
  *   control is trusted HTML; cueKey names the cue the auto-save queue writes to (data-tgj-cue).
@@ -197,7 +198,8 @@ export function card({ title, description = '', body, id = null, extraClass = ''
 export function row({ label, hint = '', control, cueKey = null, extraClass = '' }) {
     return `<div class="${cls('tgj-row', extraClass)}">`
         + `<div class="tgj-row-text"><span class="tgj-row-label">${esc(label)}</span>`
-        + `${hint ? `<span class="tgj-row-hint">${esc(hint)}</span>` : ''}</div>`
+        + `${hint ? `<span class="tgj-row-hint">${esc(hint)}</span>` : ''}`
+        + `${cueKey === null ? '' : `<span class="tgj-cue-why" data-tgj-cue-why="${esc(cueKey)}" aria-live="polite"></span>`}</div>`
         + `<div class="tgj-row-control">${control ?? ''}`
         + `${cueKey === null ? '' : `<span class="tgj-cue" data-tgj-cue="${esc(cueKey)}" aria-live="polite"></span>`}</div></div>`;
 }

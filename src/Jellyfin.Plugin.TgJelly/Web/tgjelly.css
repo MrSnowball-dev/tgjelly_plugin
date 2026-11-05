@@ -687,8 +687,9 @@
     animation: tgj-cue-in var(--tgj-dur) ease-out;
 }
 
-/* A reason can be long: it goes under the control, and contain keeps it from widening the control column. */
-#tgjelly-root .tgj-cue--error {
+/* A reason inline with the label (spots outside a setting row) can be long: it goes under the control, and contain
+   keeps it from widening the control column. */
+#tgjelly-root .tgj-cue--error:has(.tgj-cue-reason) {
     order: 1;
     flex-basis: 100%;
     contain: inline-size;
@@ -699,6 +700,22 @@
 /* The reason after the Not saved label: plain error-coloured text, which wraps. */
 #tgjelly-root .tgj-cue-reason {
     color: var(--tgj-error-text);
+}
+
+/* In a setting row, why a save failed goes under the option's text; Not saved stays beside the control. */
+#tgjelly-root .tgj-cue-why {
+    display: block;
+    margin-top: var(--tgj-space-1);
+    color: var(--tgj-error-text);
+    font-size: var(--tgj-step--1);
+}
+
+#tgjelly-root .tgj-cue-why:empty {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
 }
 
 @keyframes tgj-cue-saved {
