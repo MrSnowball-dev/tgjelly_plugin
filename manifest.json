@@ -3,6 +3,14 @@
     "guid": "e547b901-0dc4-42ae-8999-3871dd141270",
     "versions": [
       {
+        "version": "1.1.0.0",
+        "changelog": "TgJelly 1.1\n\n\"Jellyfin needs a restart\" can now carry a Restart button.\n\n- Turn it on under Messages, \"Jellyfin needs a restart\", Restart button. It is off by default, and the bot's Settings has the same switch.\n- Only admins of the group or channel can press it, or you in a private chat with the bot. Anyone else gets a short notice and nothing happens.\n- Pressing it changes the message to \"Restarting\u2026\" and restarts Jellyfin. When Jellyfin is back, the same message changes to \"Jellyfin is up\", using your server.started template, and that chat gets no separate startup message.\n- If the restart is refused, or Jellyfin is still running after the timeout, the message shows why and the button comes back so you can try again. The timeout is under Advanced, Restart button (30 to 900 seconds, 2 minutes by default).\n- Every press appears in the Log.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/MrSnowball-dev/tgjelly_plugin/releases/download/v1.1/tgjelly_1.1.0.0.zip",
+        "checksum": "f1b6fca747ad7cd176cc7e15efc4250f",
+        "timestamp": "2026-11-05T19:28:26Z"
+      },
+      {
         "version": "1.0.0.0",
         "changelog": "TgJelly 1.0\n\nThe first stable release: Telegram notifications for Jellyfin, from a bot that runs inside your server and is set up from the dashboard or the bot itself.\n\nOne build now works on both Jellyfin 10.11 and Jellyfin 12. There is one download per release, and versions follow the release number: this one is 1.0.0.0.\n\nAlso in this release:\n- The \"wrong build for this server\" check is gone, along with its banner and status lines, because there is no wrong build any more.\n- The version label in the dashboard header shows v1.0 and links to this release.",
         "targetAbi": "10.11.0.0",
