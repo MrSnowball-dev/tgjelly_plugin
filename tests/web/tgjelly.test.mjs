@@ -881,14 +881,22 @@ test('bot username is escaped', async () => {
 // --- auto-save helpers ---
 
 /** The newest cue spot for a key, as { className, innerHTML } (an empty one when the key has none). */
-const cue = (view, key) => ({ className: 'tgj-cue', innerHTML: '', ...view.cues.get(key) });
-const SAVED_CUE = { className: 'tgj-cue tgj-cue--saved', innerHTML: ui.label(EN['web.autosave.saved'], 'good') };
-const SAVING_CUE = { className: 'tgj-cue tgj-cue--saving', innerHTML: ui.label(EN['web.autosave.saving'], 'progress') };
-const IDLE_CUE = { className: 'tgj-cue', innerHTML: '' };
-/** A Not saved cue: the bad label, then the reason as plain text (escaped: nothing in it is markup). */
+/** A cue: its spot beside the control, and why (the reason spot under a setting row's text; '' when empty or none). */
+const cue = (view, key) => ({ className: 'tgj-cue', innerHTML: '', ...view.cues.get(key), why: view.whys.get(key)?.innerHTML ?? '' });
+const SAVED_CUE = { className: 'tgj-cue tgj-cue--saved', innerHTML: ui.label(EN['web.autosave.saved'], 'good'), why: '' };
+const SAVING_CUE = { className: 'tgj-cue tgj-cue--saving', innerHTML: ui.label(EN['web.autosave.saving'], 'progress'), why: '' };
+const IDLE_CUE = { className: 'tgj-cue', innerHTML: '', why: '' };
+/** A Not saved cue in a setting row: the bad label beside the control, the reason (escaped) under the option's text. */
 const errorCue = reason => ({
     className: 'tgj-cue tgj-cue--error',
+    innerHTML: ui.label(EN['web.autosave.notSaved'], 'bad'),
+    why: ui.esc(reason),
+});
+/** A Not saved cue outside a setting row: the bad label, then the reason as plain text (escaped). */
+const inlineErrorCue = reason => ({
+    className: 'tgj-cue tgj-cue--error',
     innerHTML: `${ui.label(EN['web.autosave.notSaved'], 'bad')} <span class="tgj-cue-reason">${ui.esc(reason)}</span>`,
+    why: '',
 });
 /** A focus change: focus leaves the field with these attributes, for the one with to's attributes (null: outside). */
 const leave = (view, attrs, to = null) => dispatchOn(view, 'focusout', attrs, {}, { relatedTarget: to ? fakeTarget(to) : null });
@@ -1052,7 +1060,7 @@ test('cue_saved_isGoodLabel', async () => {
     assert.equal(EN['web.autosave.saved'], 'Saved');
 });
 
-test('cue_notSaved_labelPlusReason', async () => {
+test('cue_notSaved_labelBesideTheControl_reasonUnderTheText', async () => {
     const { view } = mount({
         'PUT TgJelly/Proxy': { status: 400, body: { Errors: [{ Field: 'Proxy.Url', Message: 'Must be <host:port>' }] } },
     });
@@ -1064,8 +1072,8 @@ test('cue_notSaved_labelPlusReason', async () => {
     const spot = view.cues.get('proxy');
     assert.equal(EN['web.autosave.notSaved'], 'Not saved');
     assert.equal(spot.className, 'tgj-cue tgj-cue--error');
-    assert.equal(spot.innerHTML, `${ui.label('Not saved', 'bad')} <span class="tgj-cue-reason">Must be &lt;host:port&gt;</span>`,
-        'the state word is a bad label, and the reason follows as plain text');
+    assert.equal(spot.innerHTML, ui.label('Not saved', 'bad'), 'beside the control: only the state word, as a bad label');
+    assert.equal(view.whys.get('proxy').innerHTML, 'Must be &lt;host:port&gt;', 'the reason, as plain text, under the option text');
 });
 
 test('header_connected_isGoodLabel', async () => {
@@ -2431,13 +2439,13 @@ test('template_withErrors_notSaved', async () => {
     await timers.advance(1000);
     assert.deepEqual(tplPuts(api), []);
     assert.equal(EN['web.templates.notSavedErrors'], 'fix the template errors');
-    assert.deepEqual(cue(view, TPL_CUE), errorCue(EN['web.templates.notSavedErrors']));
+    assert.deepEqual(cue(view, TPL_CUE), inlineErrorCue(EN['web.templates.notSavedErrors']));
 
     // Leaving the field doesn't send it either, and the reason stays until the text is fixed.
     leave(view, tplAttrs());
     await timers.advance(5000);
     assert.deepEqual(tplPuts(api), []);
-    assert.deepEqual(cue(view, TPL_CUE), errorCue(EN['web.templates.notSavedErrors']));
+    assert.deepEqual(cue(view, TPL_CUE), inlineErrorCue(EN['web.templates.notSavedErrors']));
     assert.equal(hooks.state.forms['tpl:media.movie'].local.Text, 'Hi {{ oops', 'the typed text is kept');
 });
 
@@ -2458,7 +2466,7 @@ test('a template with errors is not saved while its preview check is still on it
 
     await flush();
     assert.deepEqual(tplPuts(api), []);
-    assert.deepEqual(cue(view, TPL_CUE), errorCue(EN['web.templates.notSavedErrors']));
+    assert.deepEqual(cue(view, TPL_CUE), inlineErrorCue(EN['web.templates.notSavedErrors']));
 });
 
 test('template_empty_notSaved', async () => {
@@ -2474,7 +2482,7 @@ test('template_empty_notSaved', async () => {
         leave(view, tplAttrs());
         await flush();
         assert.deepEqual(tplPuts(api), [], JSON.stringify(value));
-        assert.deepEqual(cue(view, TPL_CUE), errorCue(EN['web.templates.notSavedEmpty']), JSON.stringify(value));
+        assert.deepEqual(cue(view, TPL_CUE), inlineErrorCue(EN['web.templates.notSavedEmpty']), JSON.stringify(value));
     }
 
     assert.equal(hooks.state.forms['tpl:media.movie'].local.Text, '   \n\t ');
@@ -2489,7 +2497,7 @@ test('template_fixedAfterError_saves', async () => {
     await show(view);
     tplType(view, 'Hi {{ oops');
     await timers.advance(1000);
-    assert.deepEqual(cue(view, TPL_CUE), errorCue(EN['web.templates.notSavedErrors']));
+    assert.deepEqual(cue(view, TPL_CUE), inlineErrorCue(EN['web.templates.notSavedErrors']));
 
     tplType(view, 'Hi {{ title }}');
     await timers.advance(1000);
@@ -2521,7 +2529,7 @@ test('a template save conflict takes the server data and retries once; a second 
     tplType(again.view, 'mine');
     await again.timers.advance(1000);
     assert.equal(tplPuts(again.api).length, 2, 'retried once only');
-    assert.deepEqual(cue(again.view, TPL_CUE), errorCue(EN['web.autosave.conflict']));
+    assert.deepEqual(cue(again.view, TPL_CUE), inlineErrorCue(EN['web.autosave.conflict']));
     assert.ok(again.el('tgj-messages').innerHTML.includes('>mine</textarea>'), 'the typed text is kept');
     assert.equal(again.hooks.state.templates.Revision, 9);
     assert.equal(again.hooks.state.forms['tpl:media.movie'].dirty, true);
@@ -3900,7 +3908,7 @@ test('a throwing save cue says the cause and the next step', async t => {
     await show(view);
     hooks.queueSave({ key: 'proxy', mode: 'now', send: async () => { throw new TypeError('Failed to fetch'); } });
     await flush();
-    const cue = view.cues.get('proxy').innerHTML;
+    const cue = view.whys.get('proxy').innerHTML;
     assert.ok(cue.includes('Failed to fetch') && /Jellyfin/.test(cue) && /reload/i.test(cue), cue);
 });
 
@@ -3969,6 +3977,6 @@ test('only fetch-style failures count as network errors, through runAction and a
 
     hooks.queueSave({ key: 'proxy', mode: 'now', send: async () => { throw new TypeError('x is not a function'); } });
     await flush();
-    const cue = view.cues.get('proxy').innerHTML;
+    const cue = view.whys.get('proxy').innerHTML;
     assert.ok(cue.includes('unexpected error') && !cue.includes("Couldn&#39;t reach") && !cue.includes('reach Jellyfin'), cue);
 });

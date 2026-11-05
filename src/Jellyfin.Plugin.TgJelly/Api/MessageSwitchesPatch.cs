@@ -23,10 +23,13 @@ public sealed class MessageSwitchesPatch
     /// <summary>Gets or sets <see cref="MessageSwitches.ShowProviderLinks"/>, or <c>null</c> to keep it.</summary>
     public bool? ShowProviderLinks { get; set; }
 
+    /// <summary>Gets or sets <see cref="MessageSwitches.ShowRestartButton"/>, or <c>null</c> to keep it.</summary>
+    public bool? ShowRestartButton { get; set; }
+
     /// <summary>Gets a value indicating whether at least one switch was sent.</summary>
     [System.Text.Json.Serialization.JsonIgnore]
     public bool HasAny => ShowPoster is not null || ShowOverview is not null || ShowRatingGenres is not null
-        || ShowOpenInJellyfin is not null || ShowProviderLinks is not null;
+        || ShowOpenInJellyfin is not null || ShowProviderLinks is not null || ShowRestartButton is not null;
 
     /// <summary>
     /// Sets the switches that were sent.
@@ -40,5 +43,6 @@ public sealed class MessageSwitchesPatch
         switches.ShowRatingGenres = ShowRatingGenres ?? switches.ShowRatingGenres;
         switches.ShowOpenInJellyfin = ShowOpenInJellyfin ?? switches.ShowOpenInJellyfin;
         switches.ShowProviderLinks = ShowProviderLinks ?? switches.ShowProviderLinks;
+        switches.ShowRestartButton = ShowRestartButton ?? switches.ShowRestartButton;
     }
 }

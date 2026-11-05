@@ -52,7 +52,7 @@ public sealed class MessageSettingsUpdate
             {
                 errors.Add(new SettingsError(
                     field + ".Switches",
-                    $"The entry for \"{entry.EventKey}\" changes nothing. Send at least one of ShowPoster, ShowOverview, ShowRatingGenres, ShowOpenInJellyfin or ShowProviderLinks as true or false."));
+                    $"The entry for \"{entry.EventKey}\" changes nothing. Send at least one of ShowPoster, ShowOverview, ShowRatingGenres, ShowOpenInJellyfin, ShowProviderLinks or ShowRestartButton as true or false."));
             }
             else if (!MessageOptions.IsKey(entry.EventKey))
             {

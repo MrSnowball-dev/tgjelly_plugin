@@ -31,9 +31,12 @@ test('row_escapesLabelAndHint', () => {
     const html = ui.row({ label: EVIL, hint: EVIL, control: '<input data-x>', cueKey: 'settings.<x>' });
     assert.ok(!html.includes('<img'), html);
     assert.equal(html.split(EVIL_ESCAPED).length - 1, 2);
+    assert.ok(html.includes('<span class="tgj-cue-why" data-tgj-cue-why="settings.&lt;x&gt;" aria-live="polite"></span></div>'), 'the reason spot ends the text column');
     assert.ok(html.includes('<input data-x>'), 'the control is trusted HTML');
     assert.ok(html.includes('<span class="tgj-cue" data-tgj-cue="settings.&lt;x&gt;" aria-live="polite"></span>'), html);
-    assert.ok(html.indexOf('tgj-cue') > html.indexOf('<input data-x>'), 'the cue sits beside the control');
+    assert.ok(html.includes('<span class="tgj-cue-why" data-tgj-cue-why="settings.&lt;x&gt;" aria-live="polite"></span></div>'), 'the reason spot ends the text column');
+    assert.ok(html.indexOf('class="tgj-cue"') > html.indexOf('<input data-x>'), 'the cue sits beside the control');
+    assert.ok(html.indexOf('tgj-cue-why') < html.indexOf('<input data-x>'), 'the reason goes under the text');
 });
 
 test('row_withoutCueKey_hasNoCue_andNoEmptyHint', () => {

@@ -797,12 +797,15 @@ export default function TgJellyPage(view, params) {
     const changeSeq = new Map();
     const heldFields = new Map();
 
+    /** Why a save failed, as plain text. */
+    const cueReason = cue => (cue.text === CONFLICT_KEY ? text(state.strings, 'web.autosave.conflict') : cue.text ?? '');
+
     /**
-     * The markup a cue shows: the state word as a label, Saved good, Saving… progress and Not saved bad, and
-     * after Not saved the reason as plain text, so it can be long. The states come from tgjelly-autosave.js, the words
-     * from the strings.
+     * The markup a cue shows: the state word as a label, Saved good, Saving… progress and Not saved bad. After Not
+     * saved comes the reason as plain text, unless the spot has its own reason spot (a setting row puts it under the
+     * option's text). The states come from tgjelly-autosave.js, the words from the strings.
      */
-    const cueHtml = cue => {
+    const cueHtml = (cue, reasonApart) => {
         const S = state.strings;
         if (cue.state === 'saved') {
             return label(text(S, 'web.autosave.saved'), 'good');
@@ -813,8 +816,8 @@ export default function TgJellyPage(view, params) {
         }
 
         if (cue.state === 'error') {
-            const reason = cue.text === CONFLICT_KEY ? text(S, 'web.autosave.conflict') : cue.text ?? '';
-            return `${label(text(S, 'web.autosave.notSaved'), 'bad')} <span class="tgj-cue-reason">${esc(reason)}</span>`;
+            const notSaved = label(text(S, 'web.autosave.notSaved'), 'bad');
+            return reasonApart ? notSaved : `${notSaved} <span class="tgj-cue-reason">${esc(cueReason(cue))}</span>`;
         }
 
         return '';
@@ -831,8 +834,17 @@ export default function TgJellyPage(view, params) {
         }
 
         const cue = cues.get(key);
+        const whySpots = [...view.querySelectorAll(`[data-tgj-cue-why="${selectorValue(key)}"]`)];
         const className = cue ? `tgj-cue tgj-cue--${cue.state}` : 'tgj-cue';
-        const html = cue ? cueHtml(cue) : '';
+        const html = cue ? cueHtml(cue, whySpots.length > 0) : '';
+        const why = cue && cue.state === 'error' ? esc(cueReason(cue)) : '';
+        for (const spot of whySpots) {
+            if ((painted.get(spot) ?? '') !== why) {
+                spot.innerHTML = why;
+                painted.set(spot, why);
+            }
+        }
+
         for (const spot of view.querySelectorAll(`[data-tgj-cue="${selectorValue(key)}"]`)) {
             if (spot.className !== className) {
                 spot.className = className;

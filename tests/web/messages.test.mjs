@@ -177,12 +177,14 @@ const options = select => [...select.matchAll(/<option value="([^"]*)"( selected
 const switchesIn = html => [...html.matchAll(/<button[^>]*role="switch"[^>]*data-tgj-input="msgSwitch"[^>]*>/g)]
     .map(([tag]) => [/data-tgj-id="([^"]+)"/.exec(tag)[1], /data-tgj-key="([^"]+)"/.exec(tag)[1]]);
 const putSettings = api => api.calls.filter(c => c.type === 'PUT' && c.url === '/jf/TgJelly/Settings').map(c => JSON.parse(c.data));
-const cue = (view, key) => ({ className: 'tgj-cue', innerHTML: '', ...view.cues.get(key) });
-const SAVED_CUE = { className: 'tgj-cue tgj-cue--saved', innerHTML: ui.label(EN['web.autosave.saved'], 'good') };
-const IDLE_CUE = { className: 'tgj-cue', innerHTML: '' };
+const cue = (view, key) => ({ className: 'tgj-cue', innerHTML: '', ...view.cues.get(key), why: view.whys.get(key)?.innerHTML ?? '' });
+const SAVED_CUE = { className: 'tgj-cue tgj-cue--saved', innerHTML: ui.label(EN['web.autosave.saved'], 'good'), why: '' };
+const IDLE_CUE = { className: 'tgj-cue', innerHTML: '', why: '' };
+/** A Not saved cue in a setting row: the bad label beside the control, the reason (escaped) under the option's text. */
 const errorCue = reason => ({
     className: 'tgj-cue tgj-cue--error',
-    innerHTML: `${ui.label(EN['web.autosave.notSaved'], 'bad')} <span class="tgj-cue-reason">${ui.esc(reason)}</span>`,
+    innerHTML: ui.label(EN['web.autosave.notSaved'], 'bad'),
+    why: ui.esc(reason),
 });
 const switchAttrs = (key, name) => ({
     'data-tgj-input': 'msgSwitch', 'data-tgj-id': key, 'data-tgj-key': name,

@@ -45,6 +45,8 @@ export function makeView(ids) {
     const elements = new Map();
     // The save cue spots (data-tgj-cue="key"): like a browser, each write that holds one makes a new, empty span.
     const cues = new Map();
+    // The reason spots of setting rows (data-tgj-cue-why="key"), the same way.
+    const whys = new Map();
     const register = html => {
         for (const match of html.matchAll(/\sid="([^"]+)"/g)) {
             if (!elements.has(match[1])) {
@@ -54,6 +56,10 @@ export function makeView(ids) {
 
         for (const match of html.matchAll(/<span class="([^"]*)" data-tgj-cue="([^"]+)"/g)) {
             cues.set(unescapeHtml(match[2]), { className: match[1], innerHTML: '' });
+        }
+
+        for (const match of html.matchAll(/<span class="([^"]*)" data-tgj-cue-why="([^"]+)"/g)) {
+            whys.set(unescapeHtml(match[2]), { className: match[1], innerHTML: '' });
         }
     };
     for (const id of ids) {
@@ -76,12 +82,20 @@ export function makeView(ids) {
             return spot ? [spot] : [];
         }
 
+        const why = /^\[data-tgj-cue-why="((?:[^"\\]|\\.)*)"\]$/.exec(selector);
+        if (why) {
+            const spot = whys.get(why[1].replace(/\\(.)/g, '$1'));
+            return spot ? [spot] : [];
+        }
+
         const name = /data-tgj-input="(\w+)"/.exec(selector)?.[1];
         return view.fields.filter(field => field.name === name);
     };
     view.elements = elements;
     // The newest cue spot for each key, as { className, innerHTML }.
     view.cues = cues;
+    // The newest reason spot for each key.
+    view.whys = whys;
     return view;
 }
 
