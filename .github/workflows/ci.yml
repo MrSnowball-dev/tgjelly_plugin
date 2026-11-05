@@ -1,10 +1,8 @@
 name: CI
 
-# A change is tested in full once, on its PR. A push to main only builds and runs the unit tests, and a release
-# (release.yml) smoke-tests its own zip on Jellyfin 10.11 and 12.
+# A change is tested in full once, on its PR. A merge to main runs nothing; a release (release.yml) builds, unit-tests
+# and smoke-tests the exact commit it ships, on Jellyfin 10.11 and 12.
 on:
-  push:
-    branches: [main]
   pull_request:
   workflow_dispatch:
   workflow_call:
@@ -99,7 +97,7 @@ jobs:
       - name: List publish output
         run: ls -1 artifacts/publish
 
-      # .github/smoke-matrix.json lists every smoke run; a release keeps the entries marked "release", a push to main none.
+      # .github/smoke-matrix.json lists every smoke run; a release keeps the entries marked "release", a push none.
       - name: Choose the smoke runs
         id: smoke
         env:
