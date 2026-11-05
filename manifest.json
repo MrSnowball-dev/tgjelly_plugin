@@ -3,6 +3,14 @@
     "guid": "e547b901-0dc4-42ae-8999-3871dd141270",
     "versions": [
       {
+        "version": "1.1.1.0",
+        "changelog": "TgJelly 1.1.1\n\nA fix for the Restart button from 1.1.\n\n- The Restart button switch can now be turned on from the dashboard. In 1.1, saving it failed with \"The entry for \"server.restart_pending\" changes nothing\".\n- When a setting can't be saved, \"Not saved\" now stays beside the switch or field, and the reason appears under the setting's description instead of squeezed under the control.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/MrSnowball-dev/tgjelly_plugin/releases/download/v1.1.1/tgjelly_1.1.1.0.zip",
+        "checksum": "d8b240fa953d9d85eeea41e0d67da3c6",
+        "timestamp": "2026-11-05T20:44:30Z"
+      },
+      {
         "version": "1.1.0.0",
         "changelog": "TgJelly 1.1\n\n\"Jellyfin needs a restart\" can now carry a Restart button.\n\n- Turn it on under Messages, \"Jellyfin needs a restart\", Restart button. It is off by default, and the bot's Settings has the same switch.\n- Only admins of the group or channel can press it, or you in a private chat with the bot. Anyone else gets a short notice and nothing happens.\n- Pressing it changes the message to \"Restarting\u2026\" and restarts Jellyfin. When Jellyfin is back, the same message changes to \"Jellyfin is up\", using your server.started template, and that chat gets no separate startup message.\n- If the restart is refused, or Jellyfin is still running after the timeout, the message shows why and the button comes back so you can try again. The timeout is under Advanced, Restart button (30 to 900 seconds, 2 minutes by default).\n- Every press appears in the Log.",
         "targetAbi": "10.11.0.0",
