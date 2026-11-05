@@ -13,7 +13,6 @@ using Microsoft.Extensions.Logging;
 using Telegram.Bot.Extensions;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
-using Telegram.Bot.Types.ReplyMarkups;
 
 namespace Jellyfin.Plugin.TgJelly.Destinations;
 
@@ -78,9 +77,7 @@ public sealed class DestinationTester
         ArgumentNullException.ThrowIfNull(sample);
         var group = EventCatalog.GroupOf(sample.EventKey);
         var silent = destination.SilentGroups.Contains(group, StringComparer.Ordinal);
-        var buttons = sample.Buttons.Count == 0
-            ? null
-            : new InlineKeyboardMarkup(sample.Buttons.Select(row => row.Select(b => InlineKeyboardButton.WithUrl(b.Text, b.Url))));
+        var buttons = Delivery.ButtonMarkup.Of(sample.Buttons);
         // A sample goes where that message would go: its slot's topic in a forum.
         var thread = destination.ThreadFor(sample.EventKey);
         Task<Message> SendText(ITelegramSender sender, CancellationToken token)

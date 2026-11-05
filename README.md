@@ -6,7 +6,7 @@
   <a href="https://github.com/MrSnowball-dev/tgjelly_plugin/releases/latest"><img src="https://img.shields.io/github/v/release/MrSnowball-dev/tgjelly_plugin?label=release&color=2aabee" alt="Latest release"></a>
   <img src="https://img.shields.io/badge/Jellyfin-10.11%20%7C%2012-aa5cc3?logo=jellyfin&logoColor=white" alt="Jellyfin 10.11 and 12">
   <img src="https://img.shields.io/badge/.NET-9.0-512bd4?logo=dotnet&logoColor=white" alt=".NET 9">
-  <a href="https://github.com/MrSnowball-dev/tgjelly_plugin/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/MrSnowball-dev/tgjelly_plugin/ci.yml?branch=main&label=CI" alt="CI"></a>
+  <a href="https://github.com/MrSnowball-dev/tgjelly_plugin/actions/workflows/release.yml"><img src="https://img.shields.io/github/actions/workflow/status/MrSnowball-dev/tgjelly_plugin/release.yml?label=release%20build" alt="Release build"></a>
   <a href="https://github.com/MrSnowball-dev/tgjelly_plugin/releases"><img src="https://img.shields.io/github/downloads/MrSnowball-dev/tgjelly_plugin/total?color=2aabee" alt="Downloads"></a>
   <a href="LICENSE"><img src="https://img.shields.io/github/license/MrSnowball-dev/tgjelly_plugin?color=blue" alt="License: GPL-3.0"></a>
 </p>
