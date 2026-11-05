@@ -12,9 +12,12 @@ public class MessageSwitches
     private static readonly string[] AllNames =
     [
         nameof(ShowPoster), nameof(ShowOverview), nameof(ShowRatingGenres), nameof(ShowOpenInJellyfin), nameof(ShowProviderLinks),
+        nameof(ShowRestartButton),
     ];
 
     private static readonly string[] PosterOnly = [nameof(ShowPoster)];
+
+    private static readonly string[] PosterAndRestart = [nameof(ShowPoster), nameof(ShowRestartButton)];
 
     // What each message's rendering honours today: MediaLayouts sends the poster and the Open button for every media
     // group, and the IMDb/TMDb row only for a movie or a series; TemplateModelBuilder empties overview, rating and genres
@@ -22,7 +25,7 @@ public class MessageSwitches
     // and its fields have none of these, so no switch changes it.
     private static readonly Dictionary<string, string[]> MediaApplicable = new(StringComparer.Ordinal)
     {
-        ["media.movie"] = AllNames,
+        ["media.movie"] = [nameof(ShowPoster), nameof(ShowOverview), nameof(ShowRatingGenres), nameof(ShowOpenInJellyfin), nameof(ShowProviderLinks)],
         ["media.episodes"] = [nameof(ShowPoster), nameof(ShowOpenInJellyfin), nameof(ShowProviderLinks)],
         ["media.album"] = [nameof(ShowPoster), nameof(ShowOpenInJellyfin)],
         ["media.musicvideo"] = [nameof(ShowPoster), nameof(ShowOverview), nameof(ShowRatingGenres), nameof(ShowOpenInJellyfin)],
@@ -49,13 +52,27 @@ public class MessageSwitches
     public bool ShowProviderLinks { get; set; } = true;
 
     /// <summary>
+    /// Gets or sets a value indicating whether "Jellyfin needs a restart" carries a Restart button. Off unless switched
+    /// on, for every message: only that one honours it.
+    /// </summary>
+    public bool ShowRestartButton { get; set; }
+
+    /// <summary>
     /// Returns the switches that change a message, in the order shown; the others are hidden for it.
     /// </summary>
     /// <param name="eventKey">The event key, or <see cref="MessageOptions.DigestKey"/>.</param>
-    /// <returns>The switch names: none for the digest, only <see cref="ShowPoster"/> for Security and Server.</returns>
+    /// <returns>
+    /// The switch names: none for the digest, only <see cref="ShowPoster"/> for Security and Server, and
+    /// <see cref="ShowRestartButton"/> as well for <c>server.restart_pending</c>.
+    /// </returns>
     public static IReadOnlyList<string> Applicable(string eventKey)
     {
         ArgumentNullException.ThrowIfNull(eventKey);
+        if (eventKey == "server.restart_pending")
+        {
+            return PosterAndRestart;
+        }
+
         return MediaApplicable.TryGetValue(eventKey, out var names) ? names : EventCatalog.GroupOf(eventKey) == "media" ? [] : PosterOnly;
     }
 
@@ -84,6 +101,7 @@ public class MessageSwitches
         nameof(ShowRatingGenres) => ShowRatingGenres,
         nameof(ShowOpenInJellyfin) => ShowOpenInJellyfin,
         nameof(ShowProviderLinks) => ShowProviderLinks,
+        nameof(ShowRestartButton) => ShowRestartButton,
         _ => throw new ArgumentOutOfRangeException(nameof(name), name, "Not a message switch."),
     };
 
@@ -110,6 +128,9 @@ public class MessageSwitches
                 break;
             case nameof(ShowProviderLinks):
                 ShowProviderLinks = value;
+                break;
+            case nameof(ShowRestartButton):
+                ShowRestartButton = value;
                 break;
             default:
                 throw new ArgumentOutOfRangeException(nameof(name), name, "Not a message switch.");

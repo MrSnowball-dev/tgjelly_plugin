@@ -14,6 +14,7 @@ import {
 } from './configurationpage?name=tgjelly-ui.js';
 import {
     BATCHING_FIELDS, UPDATE_KINDS, batchingError, overlayPaths, pathValue, renderBatching, renderDiagnostics,
+    renderRestart, restartTimeoutError,
     renderToken, renderUpdates, settingsFormData, settingsRequest,
 } from './configurationpage?name=tgjelly-advanced.js';
 import {
@@ -383,7 +384,8 @@ export default function TgJellyPage(view, params) {
         batching: {
             id: 'tgj-batching',
             load: loadSettings,
-            render: () => renderBatching(state.settings, state.strings, settingsUi()),
+            // The Restart button's timeout sits under the batching card.
+            render: () => renderBatching(state.settings, state.strings, settingsUi()) + renderRestart(state.settings, state.strings, settingsUi()),
         },
         updates: {
             id: 'tgj-updates',
@@ -1571,7 +1573,18 @@ export default function TgJellyPage(view, params) {
                 });
             }
         },
-        updEnabled: (el, event) => {
+        restartTimeout: (el, event) => {
+            if (event.type === 'input') {
+                const path = 'Restart.TimeoutSeconds';
+                const typedText = String(el.value ?? '').trim();
+                markDirty('settings', path, /^-?\d+$/.test(typedText) ? Number(typedText) : typedText);
+                saveSetting(path, 'debounce', el, {
+                    delay: TYPING_SAVE_MS,
+                    validate: () => restartTimeoutError(pathValue(state.forms.settings.local, path), state.strings),
+                });
+            }
+        },
+                updEnabled: (el, event) => {
             if (event.type === 'click') {
                 markDirty('settings', 'UpdateCheck.Enabled', flipped('UpdateCheck.Enabled'));
                 renderSection('updates');

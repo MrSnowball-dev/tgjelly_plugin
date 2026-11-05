@@ -26,4 +26,7 @@ public sealed class SettingsUpdateRequest
     /// <summary>Gets or sets the update-check settings.</summary>
     [Required]
     public UpdateCheckOptions UpdateCheck { get; set; } = new();
+
+    /// <summary>Gets or sets the Restart button's settings; <c>null</c> keeps them.</summary>
+    public RestartOptions? Restart { get; set; }
 }

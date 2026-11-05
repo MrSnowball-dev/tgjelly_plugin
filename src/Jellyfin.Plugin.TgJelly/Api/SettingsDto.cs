@@ -28,6 +28,9 @@ public sealed class SettingsDto
     /// <summary>Gets the update-check settings.</summary>
     public UpdateCheckOptions UpdateCheck { get; init; } = new();
 
+    /// <summary>Gets the Restart button's settings.</summary>
+    public RestartOptions Restart { get; init; } = new();
+
     /// <summary>Gets the proxy mode.</summary>
     public string ProxyMode { get; init; } = string.Empty;
 

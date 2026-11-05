@@ -117,6 +117,11 @@ public sealed class TemplateSample
             rows.Add([new OutboxButton { Text = _strings.Get("button.releaseNotes"), Url = notes }]);
         }
 
+        if (eventKey == "server.restart_pending" && options.ShowRestartButton)
+        {
+            rows.Add([Restart.RestartButton.Button(_strings)]);
+        }
+
         return rows;
     }
 }

@@ -249,7 +249,11 @@ public sealed class NotificationPipeline
         foreach (var output in outputs)
         {
             _log?.AlertRouted(output, destinations);
-            foreach (var destination in Router.Route(output.Model.EventKey, null, destinations))
+
+            // Jellyfin is back from a restart asked for with a Restart button: that message becomes "Jellyfin is up",
+            // and its chat gets no separate one.
+            var inPlace = output.Op == OutboxOp.Send && output.Model.EventKey == "server.started" ? EditRestarted(output.Model, destinations) : null;
+            foreach (var destination in Router.Route(output.Model.EventKey, null, destinations).Where(d => d.ChatId != inPlace))
             {
                 // Each entry owns its model: the Outbox keeps entries by reference and merges edits into them. An edit
                 // of an earlier alert updates that alert's row.
@@ -260,6 +264,36 @@ public sealed class NotificationPipeline
                 });
             }
         }
+    }
+
+    // Queues the edit of the message whose Restart button was pressed, and returns its chat; null when there is none.
+    private long? EditRestarted(RenderModel model, IReadOnlyList<Destination> destinations)
+    {
+        PendingRestart? pending = null;
+        _state.Update(s =>
+        {
+            pending = s.PendingRestart;
+            s.PendingRestart = null;
+        });
+        if (pending is null || destinations.FirstOrDefault(d => d.Id == pending.DestinationId) is not { } destination)
+        {
+            return null;
+        }
+
+        var key = "restart:" + pending.MessageId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        Guard(() =>
+        {
+            _outbox.Remember(destination.Id, key, new SentMessage
+            {
+                MessageId = pending.MessageId,
+                Kind = pending.Photo ? SentKind.Photo : SentKind.Text,
+                SentAt = _time.GetUtcNow(),
+                EventKey = "server.restart_pending",
+                LogId = pending.LogId,
+            });
+            Enqueue(destination, Copy(model), OutboxOp.Edit, model.EventKey, sentKey: null, targetKey: key, replyToKey: null, logId: pending.LogId);
+        });
+        return destination.ChatId;
     }
 
     // Returns the Log row that carries the message, or null when there was nothing to send.

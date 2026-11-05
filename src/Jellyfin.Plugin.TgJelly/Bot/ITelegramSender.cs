@@ -81,6 +81,21 @@ public interface ITelegramSender
     /// <returns>A task.</returns>
     Task AnswerCallbackAsync(string callbackQueryId, CancellationToken ct);
 
+    /// <summary>Calls <c>answerCallbackQuery</c> with a text, shown as a popup.</summary>
+    /// <param name="callbackQueryId">The callback query.</param>
+    /// <param name="text">The text (at most 200 characters).</param>
+    /// <param name="ct">Cancels the call.</param>
+    /// <returns>A task.</returns>
+    Task AnswerCallbackAsync(string callbackQueryId, string text, CancellationToken ct);
+
+    /// <summary>Calls <c>editMessageReplyMarkup</c>.</summary>
+    /// <param name="chatId">The chat.</param>
+    /// <param name="messageId">The message.</param>
+    /// <param name="buttons">The new buttons; <c>null</c> removes them.</param>
+    /// <param name="ct">Cancels the call.</param>
+    /// <returns>A task.</returns>
+    Task EditButtonsAsync(long chatId, int messageId, Telegram.Bot.Types.ReplyMarkups.InlineKeyboardMarkup? buttons, CancellationToken ct);
+
     /// <summary>Calls <c>deleteMessage</c>.</summary>
     /// <param name="chatId">The chat.</param>
     /// <param name="messageId">The message.</param>

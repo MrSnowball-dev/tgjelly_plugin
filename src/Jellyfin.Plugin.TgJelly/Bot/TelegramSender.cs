@@ -134,6 +134,14 @@ public sealed class TelegramSender : ITelegramSender
         => _client.AnswerCallbackQuery(callbackQueryId: callbackQueryId, cancellationToken: ct);
 
     /// <inheritdoc />
+    public Task AnswerCallbackAsync(string callbackQueryId, string text, CancellationToken ct)
+        => _client.AnswerCallbackQuery(callbackQueryId: callbackQueryId, text: text, showAlert: true, cancellationToken: ct);
+
+    /// <inheritdoc />
+    public Task EditButtonsAsync(long chatId, int messageId, InlineKeyboardMarkup? buttons, CancellationToken ct)
+        => _client.EditMessageReplyMarkup(chatId: chatId, messageId: messageId, replyMarkup: buttons, cancellationToken: ct);
+
+    /// <inheritdoc />
     public async Task<bool> DeleteMessageAsync(long chatId, int messageId, CancellationToken ct)
     {
         try

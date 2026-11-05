@@ -37,15 +37,17 @@ public class MessageSwitchesTests
     {
         // A digest is text only (NotificationRenderer) and has no overview, rating or genres fields.
         Assert.Empty(MessageSwitches.Applicable("media.digest"));
-        Assert.Equal(MessageSwitches.Names, MessageSwitches.Applicable("media.movie"));
+        Assert.Equal(MessageSwitches.Names.Where(n => n != "ShowRestartButton"), MessageSwitches.Applicable("media.movie"));
         Assert.Equal(["ShowPoster", "ShowOpenInJellyfin", "ShowProviderLinks"], MessageSwitches.Applicable("media.episodes"));
         Assert.Equal(["ShowPoster", "ShowOpenInJellyfin"], MessageSwitches.Applicable("media.album"));
         Assert.Equal(["ShowPoster", "ShowOverview", "ShowRatingGenres", "ShowOpenInJellyfin"], MessageSwitches.Applicable("media.musicvideo"));
         Assert.Equal(["ShowPoster", "ShowOverview", "ShowRatingGenres", "ShowOpenInJellyfin"], MessageSwitches.Applicable("media.book"));
-        foreach (var key in EventCatalog.AllKeys.Where(k => EventCatalog.GroupOf(k) != "media"))
+        foreach (var key in EventCatalog.AllKeys.Where(k => EventCatalog.GroupOf(k) != "media" && k != "server.restart_pending"))
         {
             Assert.Equal(["ShowPoster"], MessageSwitches.Applicable(key));
         }
+
+        Assert.Equal(["ShowPoster", "ShowRestartButton"], MessageSwitches.Applicable("server.restart_pending"));
     }
 
     [Fact]

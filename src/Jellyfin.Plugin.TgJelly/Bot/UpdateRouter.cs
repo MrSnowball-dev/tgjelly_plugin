@@ -13,7 +13,7 @@ namespace Jellyfin.Plugin.TgJelly.Bot;
 /// <summary>
 /// Sorts incoming updates for the poll loop: button presses are answered at once, and everything that needs
 /// screens or storage is queued for the <see cref="BotWorker"/>. In groups, only migrations, topic renames,
-/// and a person's <c>/start@bot …</c> are taken. Never throws.
+/// a person's <c>/start@bot …</c> and a notification's Restart button are taken. Never throws.
 /// </summary>
 public sealed class UpdateRouter : IUpdateHandler
 {
@@ -25,6 +25,7 @@ public sealed class UpdateRouter : IUpdateHandler
     private readonly BotMemory _memory;
     private readonly SettingsStore _settings;
     private readonly ILogger<UpdateRouter> _logger;
+    private readonly Restart.RestartButton? _restart;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="UpdateRouter"/> class.
@@ -37,8 +38,10 @@ public sealed class UpdateRouter : IUpdateHandler
     /// <param name="memory">The bot's memory, whose detected chats and flows follow the migration.</param>
     /// <param name="settings">The settings, whose topic names follow the forums.</param>
     /// <param name="logger">The logger.</param>
-    public UpdateRouter(BotWorkQueue queue, IBotFlows flows, BotConnection connection, HealthService health, DestinationMigration migration, BotMemory memory, SettingsStore settings, ILogger<UpdateRouter> logger)
+    /// <param name="restart">The Restart button of notifications, pressed in any chat.</param>
+    public UpdateRouter(BotWorkQueue queue, IBotFlows flows, BotConnection connection, HealthService health, DestinationMigration migration, BotMemory memory, SettingsStore settings, ILogger<UpdateRouter> logger, Restart.RestartButton? restart = null)
     {
+        _restart = restart;
         _queue = queue;
         _flows = flows;
         _connection = connection;
@@ -77,6 +80,13 @@ public sealed class UpdateRouter : IUpdateHandler
 
     private async Task RouteCallbackAsync(CallbackQuery query, CancellationToken ct)
     {
+        // A notification's Restart button: answered by its handler (with a popup when refused), in any chat.
+        if (_restart is { } restart && Restart.RestartButton.IsPress(query))
+        {
+            _queue.Enqueue("restart", token => restart.OnPressAsync(query, token));
+            return;
+        }
+
         if (_connection.Sender is { } sender)
         {
             try

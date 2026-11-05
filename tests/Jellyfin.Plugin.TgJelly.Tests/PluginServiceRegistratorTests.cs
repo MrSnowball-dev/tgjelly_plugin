@@ -36,6 +36,8 @@ public class PluginServiceRegistratorTests
         services.AddSingleton(Substitute.For<MediaBrowser.Controller.Library.ILibraryManager>());
         services.AddSingleton(Substitute.For<MediaBrowser.Controller.Configuration.IServerConfigurationManager>());
         services.AddSingleton(Substitute.For<MediaBrowser.Model.Tasks.ITaskManager>());
+        services.AddSingleton(Substitute.For<MediaBrowser.Controller.ISystemManager>());
+        services.AddSingleton(Substitute.For<IHostApplicationLifetime>());
         new PluginServiceRegistrator().RegisterServices(services, host);
         using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true });
 
@@ -44,6 +46,7 @@ public class PluginServiceRegistratorTests
         Assert.NotNull(provider.GetRequiredService<Jellyfin.Plugin.TgJelly.Library.IServerInfo>());
         Assert.NotNull(provider.GetRequiredService<Jellyfin.Plugin.TgJelly.Rendering.NotificationRenderer>());
         Assert.NotNull(provider.GetRequiredService<Jellyfin.Plugin.TgJelly.Templates.TemplateRenderer>());
+        Assert.NotNull(provider.GetRequiredService<Jellyfin.Plugin.TgJelly.Restart.RestartButton>());
         using (var scope = provider.CreateScope())
         {
             Assert.Single(scope.ServiceProvider.GetServices<MediaBrowser.Controller.Events.IEventConsumer<MediaBrowser.Controller.Events.Authentication.AuthenticationRequestEventArgs>>());

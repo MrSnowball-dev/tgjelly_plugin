@@ -141,7 +141,8 @@ public sealed class TemplatesControllerTests : IAsyncLifetime
         var items = _controller.Get().Value!.Items;
 
         Assert.All(items, item => Assert.Equal(MessageSwitches.Applicable(item.EventKey), item.ApplicableSwitches));
-        Assert.Equal(MessageSwitches.Names, items.Single(i => i.EventKey == "media.movie").ApplicableSwitches);
+        Assert.Equal(MessageSwitches.Names.Where(n => n != "ShowRestartButton"), items.Single(i => i.EventKey == "media.movie").ApplicableSwitches);
+        Assert.Equal(["ShowPoster", "ShowRestartButton"], items.Single(i => i.EventKey == "server.restart_pending").ApplicableSwitches);
         Assert.Equal(["ShowPoster", "ShowOpenInJellyfin", "ShowProviderLinks"], items.Single(i => i.EventKey == "media.episodes").ApplicableSwitches);
         Assert.Equal(["ShowPoster"], items.Single(i => i.EventKey == "security.lockout").ApplicableSwitches);
         Assert.Equal(["ShowPoster"], items.Single(i => i.EventKey == "server.started").ApplicableSwitches);

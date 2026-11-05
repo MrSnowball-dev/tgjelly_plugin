@@ -23,6 +23,9 @@ export const BATCHING_FIELDS = [
     { key: 'ReadyTimeoutMinutes', min: 1, max: 120, label: 'web.batching.readyTimeout.label', hint: 'web.batching.readyTimeout.hint' },
 ];
 
+/** The Restart button's timeout field: its range (RestartOptions) and its strings. */
+export const RESTART_TIMEOUT = { key: 'TimeoutSeconds', min: 30, max: 900, label: 'web.restart.timeout.label', hint: 'web.restart.timeout.hint' };
+
 /**
  * The settings editor's data from a SettingsDto: the fields PUT Settings takes. Mode may arrive as a name or a number.
  * @param {object} settings
@@ -33,6 +36,7 @@ export function settingsFormData(settings) {
         PublicUrl: settings.PublicUrl ?? '',
         Message: messageFormData(settings.Message),
         Batching: { ...(settings.Batching ?? {}) },
+        Restart: { TimeoutSeconds: (settings.Restart ?? {}).TimeoutSeconds ?? 120 },
         UpdateCheck: {
             Enabled: Boolean(check.Enabled),
             Fixes: check.Fixes !== false,
@@ -83,6 +87,10 @@ export function settingsRequest(form, paths, revision, S) {
     const errors = BATCHING_FIELDS
         .filter(f => !Number.isInteger(data.Batching[f.key]))
         .map(f => ({ Field: `Batching.${f.key}`, Message: text(S, 'web.settings.notNumber') }));
+    if (!Number.isInteger(data.Restart?.TimeoutSeconds)) {
+        errors.push({ Field: 'Restart.TimeoutSeconds', Message: text(S, 'web.settings.notNumber') });
+    }
+
     return errors.length > 0
         ? { body: null, errors }
         : {
@@ -91,6 +99,7 @@ export function settingsRequest(form, paths, revision, S) {
                 PublicUrl: String(data.PublicUrl ?? '').trim(),
                 Message: messageRequest(data.Message, paths),
                 Batching: data.Batching,
+                Restart: { TimeoutSeconds: data.Restart.TimeoutSeconds },
                 UpdateCheck: updateCheckRequest(data.UpdateCheck),
             },
             errors: [],
@@ -150,6 +159,53 @@ export function renderBatching(settings, S, ui) {
         });
     });
     return card({ title: text(S, 'web.batching.title'), body: rows.join('') });
+}
+
+/**
+ * Why the Restart timeout can't be saved (plain text), or null: SettingsValidator's range.
+ * @param {unknown} value a number, or the text typed where it isn't a whole number
+ * @param {Record<string, string>} S
+ * @returns {string | null}
+ */
+export function restartTimeoutError(value, S) {
+    if (!Number.isInteger(value)) {
+        return text(S, 'web.settings.notNumber');
+    }
+
+    return value < RESTART_TIMEOUT.min || value > RESTART_TIMEOUT.max
+        ? text(S, 'web.settings.range', { min: RESTART_TIMEOUT.min, max: RESTART_TIMEOUT.max })
+        : null;
+}
+
+/**
+ * The Restart button card under Advanced: how long a restart from Telegram may take. Saves like a batching field.
+ * @param {object | null} settings
+ * @param {Record<string, string>} S
+ * @param {{ form?: { local: object } }} ui form is state.forms.settings
+ * @returns {string} HTML
+ */
+export function renderRestart(settings, S, ui) {
+    if (!settings || !ui.form) {
+        return '';
+    }
+
+    const f = RESTART_TIMEOUT;
+    const path = `Restart.${f.key}`;
+    return card({
+        title: text(S, 'web.restart.title'),
+        body: row({
+            label: text(S, f.label),
+            hint: text(S, f.hint, { min: f.min, max: f.max }),
+            cueKey: path,
+            control: numberField({
+                input: 'restartTimeout',
+                value: ui.form.local.Restart?.[f.key],
+                min: f.min,
+                max: f.max,
+                attrs: { 'data-tgj-field': path, 'data-tgj-save': path, 'aria-label': text(S, f.label) },
+            }),
+        }),
+    });
 }
 
 /**

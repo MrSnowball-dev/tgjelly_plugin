@@ -85,6 +85,7 @@ public class SettingsController : ControllerBase
             message.ApplyTo(c.Message);
             c.Batching = request.Batching;
             c.UpdateCheck = request.UpdateCheck;
+            c.Restart = request.Restart ?? c.Restart;
         });
 
         if (result.Status == SettingsUpdateStatus.Saved && !string.Equals(before, publicUrl, StringComparison.Ordinal))
@@ -189,6 +190,7 @@ public class SettingsController : ControllerBase
             Message = MessageSettingsDto.From(c.Message),
             Batching = c.Batching,
             UpdateCheck = c.UpdateCheck,
+            Restart = c.Restart,
             ProxyMode = c.Proxy.Mode.ToString(),
             ProxyUrl = c.Proxy.Url,
             HasProxyUsername = secrets.ProxyUsername.Length > 0,
