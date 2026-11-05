@@ -3,6 +3,14 @@
     "guid": "e547b901-0dc4-42ae-8999-3871dd141270",
     "versions": [
       {
+        "version": "1.1.2.0",
+        "changelog": "TgJelly 1.1.2\n\nA fix for the Restart button.\n\n- A test send of \"Jellyfin needs a restart\" from the Messages editor works again with the Restart button on. In 1.1.1 it failed with \"Text buttons are not allowed in the inline keyboard\". Real notifications were not affected.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/MrSnowball-dev/tgjelly_plugin/releases/download/v1.1.2/tgjelly_1.1.2.0.zip",
+        "checksum": "b980fb924313059bb7c1ac5da346cfa0",
+        "timestamp": "2026-11-05T21:00:06Z"
+      },
+      {
         "version": "1.1.1.0",
         "changelog": "TgJelly 1.1.1\n\nA fix for the Restart button from 1.1.\n\n- The Restart button switch can now be turned on from the dashboard. In 1.1, saving it failed with \"The entry for \"server.restart_pending\" changes nothing\".\n- When a setting can't be saved, \"Not saved\" now stays beside the switch or field, and the reason appears under the setting's description instead of squeezed under the control.",
         "targetAbi": "10.11.0.0",
