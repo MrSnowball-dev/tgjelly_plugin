@@ -96,6 +96,27 @@ public sealed class NotificationPipelineTests : IDisposable
     }
 
     [Fact]
+    public void ServerStarted_AfterARestartButton_EditsThatMessage_AndItsChatGetsNoOther()
+    {
+        var pressed = _h.AddDestination(-1002, events: BotTestHarness.AdminEvents);
+        var other = _h.AddDestination(-1003, events: BotTestHarness.AdminEvents);
+        _h.State.Update(s => s.PendingRestart = new PendingRestart { DestinationId = pressed.Id, ChatId = -1002, MessageId = 55, LogId = "restart|row" });
+
+        _rig.Queues.Publish("server.started", new Dictionary<string, string> { [EventFields.Version] = "12.2.0", [EventFields.Server] = "Home" });
+        _rig.Pipeline.RunOnce();
+
+        var entries = _rig.Outbox.Snapshot();
+        Assert.Equal(2, entries.Count);
+        var edit = Assert.Single(entries, e => e.DestinationId == pressed.Id);
+        Assert.Equal((OutboxOp.Edit, "restart:55", "restart|row"), (edit.Op, edit.TargetKey, edit.LogId));
+        Assert.StartsWith("✅ Jellyfin is up", edit.Message.Text, StringComparison.Ordinal);
+        Assert.True(_rig.Outbox.TryGetSent(pressed.Id, "restart:55", out var target));
+        Assert.Equal(55, target.MessageId);
+        Assert.Equal(OutboxOp.Send, Assert.Single(entries, e => e.DestinationId == other.Id).Op);
+        Assert.Null(_h.State.Read(s => s.PendingRestart));
+    }
+
+    [Fact]
     public void RenderFailure_IsRecorded_AndOtherOutputsStillGo()
     {
         _h.AddDestination(-1001, events: BotTestHarness.MediaEvents);

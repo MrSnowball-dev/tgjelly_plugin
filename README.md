@@ -23,7 +23,7 @@ TgJelly puts a Telegram bot inside your Jellyfin server. It sends notifications 
 
 - **Media:** new movies, episodes, albums, music videos and books, with poster, overview, rating and links. A season added at once arrives as one message, not twenty.
 - **Security:** failed logins, lockouts, new and deleted users, password changes.
-- **Server:** startup, Jellyfin updates, plugin changes, failed scheduled tasks.
+- **Server:** startup, Jellyfin updates, plugin changes, failed scheduled tasks, and "needs a restart" with an optional Restart button that chat admins can press.
 
 You set it up from the Jellyfin dashboard or from the bot itself. Every message is a template you can change, and forum groups can get a topic per kind of event.
 

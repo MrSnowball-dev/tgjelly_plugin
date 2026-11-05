@@ -24,7 +24,7 @@ const TEMPLATES_DOCS = 'https://github.com/MrSnowball-dev/tgjelly_plugin/blob/ma
 const MESSAGE_SECTIONS = ['media', 'security', 'server'];
 
 /** Every message switch (MessageSwitches.Names). A message shows only the ones its template item lists. */
-const SWITCHES = ['ShowPoster', 'ShowOverview', 'ShowRatingGenres', 'ShowOpenInJellyfin', 'ShowProviderLinks'];
+const SWITCHES = ['ShowPoster', 'ShowOverview', 'ShowRatingGenres', 'ShowOpenInJellyfin', 'ShowProviderLinks', 'ShowRestartButton'];
 
 /** The settings form path of the switches; one message's switch is at Message.Switches.<event key>.<switch>. */
 const SWITCHES_PATH = 'Message.Switches';
@@ -283,7 +283,8 @@ export function renderMessageSwitches(item, settings, form, S) {
         rows.push(row({
             label: title,
             // A Security or Server message's poster is the TgJelly logo.
-            hint: name === 'ShowPoster' && !media ? text(S, 'web.messages.logoHint') : '',
+            hint: name === 'ShowPoster' && !media ? text(S, 'web.messages.logoHint')
+                : name === 'ShowRestartButton' ? text(S, 'web.messages.restartHint') : '',
             cueKey: switchSaveKey(key, name),
             control: switchControl({
                 input: 'msgSwitch',

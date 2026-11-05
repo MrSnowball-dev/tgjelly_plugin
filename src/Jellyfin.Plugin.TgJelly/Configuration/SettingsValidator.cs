@@ -30,6 +30,7 @@ public static class SettingsValidator
 
         RequireNotNull(errors, nameof(PluginConfiguration.Batching), configuration.Batching);
         RequireNotNull(errors, nameof(PluginConfiguration.UpdateCheck), configuration.UpdateCheck);
+        RequireNotNull(errors, nameof(PluginConfiguration.Restart), configuration.Restart);
         RequireNotNull(errors, nameof(PluginConfiguration.Destinations), configuration.Destinations);
         RequireNotNull(errors, nameof(PluginConfiguration.Templates), configuration.Templates);
 
@@ -45,6 +46,8 @@ public static class SettingsValidator
         {
             errors.Add(new SettingsError("Batching.MaxHoldMinutes", "Must be at least as long as the quiet window."));
         }
+
+        CheckRange(errors, "Restart.TimeoutSeconds", (configuration.Restart ?? new RestartOptions()).TimeoutSeconds, RestartOptions.MinTimeoutSeconds, RestartOptions.MaxTimeoutSeconds);
 
         var ids = new HashSet<string>(StringComparer.Ordinal);
         var chats = new HashSet<(long ChatId, int ThreadId)>();

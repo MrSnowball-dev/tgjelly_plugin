@@ -35,4 +35,7 @@ public sealed class StateDocument
 
     /// <summary>Gets or sets the recent setup failures.</summary>
     public List<SetupFailure> SetupFailures { get; set; } = [];
+
+    /// <summary>Gets or sets the restart a Restart button asked for, until Jellyfin is back or the restart failed.</summary>
+    public PendingRestart? PendingRestart { get; set; }
 }

@@ -463,6 +463,19 @@ public sealed class Outbox
     }
 
     /// <summary>
+    /// Records a message TgJelly didn't send through the Outbox under a key, so an edit can target it (a message whose
+    /// Restart button was pressed, edited in place once Jellyfin is back).
+    /// </summary>
+    /// <param name="destinationId">The destination.</param>
+    /// <param name="key">The key.</param>
+    /// <param name="sent">The message.</param>
+    public void Remember(string destinationId, string key, SentMessage sent)
+    {
+        ArgumentNullException.ThrowIfNull(sent);
+        _state.UpdateQueue(q => q.SentMessages[SentKey(destinationId, key)] = sent, urgent: true);
+    }
+
+    /// <summary>
     /// Finds the latest model of the message under <paramref name="key"/>: a queued edit's, else a queued send's, else
     /// the sent message's.
     /// </summary>

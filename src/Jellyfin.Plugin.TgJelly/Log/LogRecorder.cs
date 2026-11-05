@@ -352,6 +352,51 @@ public sealed class LogRecorder
     });
 
     /// <summary>
+    /// Records a press of a message's Restart button as Waiting. The "Jellyfin is up" edit after the restart moves the
+    /// same row on (it is queued with this row's ID); <see cref="RestartFailed"/> settles it otherwise.
+    /// </summary>
+    /// <param name="logId">The row.</param>
+    /// <param name="destination">Where the button was pressed.</param>
+    /// <param name="by">Who pressed it.</param>
+    public void RestartAsked(string logId, Destination destination, string by) => Safe(() =>
+    {
+        ArgumentNullException.ThrowIfNull(destination);
+        var now = _time.GetUtcNow();
+        _log.Upsert(new LogEntry
+        {
+            Id = logId,
+            At = now,
+            UpdatedAt = now,
+            EventKey = "server.restart_pending",
+            Title = _strings.Get("web.log.title.restart", ("name", by)),
+            DestinationId = destination.Id,
+            DestinationTitle = destination.Title,
+            Result = LogResult.Waiting,
+            Details = [_strings.Get("web.log.why.restarting")],
+        });
+    });
+
+    /// <summary>
+    /// Records that a restart asked for with the Restart button failed.
+    /// </summary>
+    /// <param name="logId">The row from <see cref="RestartAsked"/>.</param>
+    /// <param name="error">Why, in plain words.</param>
+    public void RestartFailed(string logId, string error) => Safe(() =>
+    {
+        var now = _time.GetUtcNow();
+        _log.Update(logId, existing => existing is null
+            ? null
+            : existing with
+            {
+                Result = LogResult.Failed,
+                UpdatedAt = now,
+                Details = [_strings.Get("web.log.why.restartFailed", ("error", error))],
+                Tries = existing.Tries + 1,
+                Advice = _strings.Get("web.log.advice.restartFailed"),
+            });
+    });
+
+    /// <summary>
     /// Removes the rows of held groups that went out inside another message (a digest), which has its own row.
     /// </summary>
     /// <param name="logIds">The rows.</param>

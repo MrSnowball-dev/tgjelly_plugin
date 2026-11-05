@@ -48,6 +48,7 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddRedactedLogger<OutboxDelivery>();
         serviceCollection.AddRedactedLogger<OutboxService>();
         serviceCollection.AddRedactedLogger<UpdateRouter>();
+        serviceCollection.AddRedactedLogger<Restart.RestartButton>();
         serviceCollection.AddRedactedLogger<Bot.Screens.FlowEngine>();
         serviceCollection.AddRedactedLogger<ManagerNotifier>();
         serviceCollection.AddRedactedLogger<Bot.Flows.OnboardingFlow>();
@@ -101,6 +102,8 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<PacingGate>();
         serviceCollection.AddSingleton<OutboxDelivery>();
         serviceCollection.AddSingleton<IServerStartup, ServerStartup>();
+        serviceCollection.AddSingleton<Restart.IServerRestart, Restart.JellyfinServerRestart>();
+        serviceCollection.AddSingleton<Restart.RestartButton>();
         serviceCollection.AddSingleton<BotWorkQueue>();
         serviceCollection.AddSingleton<ManagerNotifier>();
         serviceCollection.AddSingleton<Bot.Screens.ScreenSender>();

@@ -33,7 +33,11 @@ public sealed class AlertLayouts
     /// Builds an alert's buttons.
     /// </summary>
     /// <param name="model">The alert's model.</param>
-    /// <returns>The message without text: only "Release notes" for an update with a URL has a button, and the logo is its poster when the message's switch is on and the logo file can be written.</returns>
+    /// <returns>
+    /// The message without text: "Release notes" for an update with a URL, and Restart for a pending restart when its
+    /// switch is on, are the only buttons; the logo is its poster when the message's switch is on and the logo file can
+    /// be written.
+    /// </returns>
     public OutboxMessage Render(RenderModel model)
     {
         ArgumentNullException.ThrowIfNull(model);
@@ -45,8 +49,14 @@ public sealed class AlertLayouts
             buttons.Add([new OutboxButton { Text = _formatter.Strings.Get("button.releaseNotes"), Url = url }]);
         }
 
+        var switches = _settings.Current.Message.For(model.EventKey);
+        if (model.EventKey == "server.restart_pending" && switches.ShowRestartButton)
+        {
+            buttons.Add([Restart.RestartButton.Button(_formatter.Strings)]);
+        }
+
         var message = new OutboxMessage { Buttons = buttons };
-        if (_settings.Current.Message.For(model.EventKey).ShowPoster && _logo.Ensure() is { } path)
+        if (switches.ShowPoster && _logo.Ensure() is { } path)
         {
             message.PosterPath = path;
             message.PosterCacheKey = _logo.CacheKey;

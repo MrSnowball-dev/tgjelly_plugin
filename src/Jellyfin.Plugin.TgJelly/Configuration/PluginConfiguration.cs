@@ -57,6 +57,11 @@ public class PluginConfiguration : BasePluginConfiguration
     public UpdateCheckOptions UpdateCheck { get; set; } = new();
 
     /// <summary>
+    /// Gets or sets the Restart button's settings.
+    /// </summary>
+    public RestartOptions Restart { get; set; } = new();
+
+    /// <summary>
     /// Gets or sets the notification destinations.
     /// </summary>
     public Destination[] Destinations { get; set; } = Array.Empty<Destination>();
@@ -80,6 +85,7 @@ public class PluginConfiguration : BasePluginConfiguration
         Message ??= new MessageOptions();
         Batching ??= new BatchingOptions();
         UpdateCheck ??= new UpdateCheckOptions();
+        Restart ??= new RestartOptions();
         Destinations ??= Array.Empty<Destination>();
         Templates ??= Array.Empty<TemplateOverride>();
         for (var i = 0; i < Destinations.Length; i++)

@@ -3334,6 +3334,24 @@ test('batching_savesAfter800ms_orOnBlur', async () => {
     assert.deepEqual(cue(view, 'Batching.MaxHoldMinutes'), IDLE_CUE, 'the error goes once the value changes');
 });
 
+test('restartTimeout_savesUnderAdvanced_withItsRange', async () => {
+    const { view, api, timers, el } = mount({ 'PUT TgJelly/Settings': echoSettings() });
+    await show(view);
+    assert.match(el('tgj-batching').innerHTML, /type="number"[^>]*data-tgj-input="restartTimeout"[^>]*value="120"[^>]*min="30" max="900"/);
+    const attrs = { 'data-tgj-input': 'restartTimeout', 'data-tgj-field': 'Restart.TimeoutSeconds', 'data-tgj-save': 'Restart.TimeoutSeconds' };
+
+    dispatchOn(view, 'input', attrs, { value: '10' });
+    await timers.advance(800);
+    assert.equal(putSettings(api).length, 0, 'out of range: not sent');
+    assert.deepEqual(cue(view, 'Restart.TimeoutSeconds'), errorCue(m.text(EN, 'web.settings.range', { min: 30, max: 900 })));
+
+    dispatchOn(view, 'input', attrs, { value: '300' });
+    await timers.advance(800);
+    assert.equal(putSettings(api).length, 1);
+    assert.deepEqual(putSettings(api)[0].Restart, { TimeoutSeconds: 300 });
+    assert.deepEqual(cue(view, 'Restart.TimeoutSeconds'), SAVED_CUE);
+});
+
 test('publicUrl_savesOnBlurOnly_validatesClientSide', async () => {
     const { view, api, timers, el, hooks } = mount({ 'PUT TgJelly/Settings': echoSettings() });
     await show(view);
@@ -3439,7 +3457,7 @@ test('noSaveButtons_inMessagesOrAdvanced', async () => {
     assert.ok(!SYMBOLS.test(html));
 
     // Every setting has its cue spot beside it.
-    const cueKeys = ['PublicUrl', ...MESSAGE_KEYS.map(toggleCue), ...BATCHING_KEYS.map(k => `Batching.${k}`), 'UpdateCheck.Enabled', 'UpdateCheck.Fixes', 'UpdateCheck.NewReleases', 'UpdateCheck.NewMajor', 'proxy'];
+    const cueKeys = ['PublicUrl', ...MESSAGE_KEYS.map(toggleCue), ...BATCHING_KEYS.map(k => `Batching.${k}`), 'Restart.TimeoutSeconds', 'UpdateCheck.Enabled', 'UpdateCheck.Fixes', 'UpdateCheck.NewReleases', 'UpdateCheck.NewMajor', 'proxy'];
     for (const key of cueKeys) {
         assert.ok(html.includes(`data-tgj-cue="${key}"`), key);
     }
@@ -3449,7 +3467,7 @@ test('noSaveButtons_inMessagesOrAdvanced', async () => {
     const settingsHtml = ['tgj-messages', 'tgj-proxy', 'tgj-batching', 'tgj-updates'].map(id => el(id).innerHTML).join('');
     const controls = settingsHtml.match(/<(?:input|select)\b[^>]*>|<button[^>]*role="switch"[^>]*>/g)
         .filter(control => !/data-tgj-input="(?:msgSection|msgKey|tplTestTo)"/.test(control));
-    assert.equal(controls.length, 1 + 6 + 4 + 6 + 4);
+    assert.equal(controls.length, 1 + 6 + 4 + 6 + 1 + 4);
     for (const control of controls) {
         assert.match(control, /data-tgj-input="[^"]+"[\s\S]*data-tgj-save="[^"]+"/, control);
     }
