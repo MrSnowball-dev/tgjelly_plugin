@@ -159,6 +159,21 @@ public sealed class DestinationTesterTests : IDisposable
     }
 
     [Fact]
+    public async Task SendSample_RestartButton_IsACallbackButton()
+    {
+        // 1.1.1 sent it as a URL button without a URL, which Telegram refuses as a text button.
+        var d = _h.AddDestination(-1001);
+        var sample = new SampleMessage("<b>cap</b>", false, false, [[Jellyfin.Plugin.TgJelly.Restart.RestartButton.Button(_h.Strings)]], 3, 1024, null, "<b>text</b>", "server.restart_pending");
+
+        var result = await _tester.SendSampleAsync(d, sample, TestContext.Current.CancellationToken);
+
+        Assert.True(result.Sent);
+        var button = Assert.Single(_h.Api.CallsTo("sendMessage")).Body["reply_markup"]!["inline_keyboard"]![0]![0]!;
+        Assert.Equal(Jellyfin.Plugin.TgJelly.Restart.RestartButton.Data, (string?)button["callback_data"]);
+        Assert.Null(button["url"]);
+    }
+
+    [Fact]
     public async Task SendSample_NotConnected_Error()
     {
         var d = _h.AddDestination(-1001);

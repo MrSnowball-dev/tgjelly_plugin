@@ -160,11 +160,7 @@ public sealed class OutboxDelivery
     }
 
     private static InlineKeyboardMarkup? Markup(OutboxMessage message)
-        => message.NoButtons || message.Buttons.Count == 0
-            ? null
-            : new InlineKeyboardMarkup(message.Buttons.Select(row => row.Select(b => b.CallbackData is { } data
-                ? InlineKeyboardButton.WithCallbackData(b.Text, data)
-                : InlineKeyboardButton.WithUrl(b.Text, b.Url))));
+        => message.NoButtons ? null : ButtonMarkup.Of(message.Buttons);
 
     private static string Body(OutboxMessage message, string html) => message.PlainText ? HtmlText.ToPlain(html) : html;
 
